@@ -1,0 +1,36 @@
+# TVF Universal Lead Engine — n8n Community Edition
+# Build plan substage: S0.2
+#
+# Usage (from this folder, on the chosen host — see BUILD_PLAN.md S0.0):
+#   docker compose up -d          start (editor at http://localhost:5678)
+#   docker compose logs -f n8n    watch logs
+#   docker compose down           stop (data persists in the named volume)
+#
+# Security note: the port is bound to 127.0.0.1 only — the n8n editor is
+# NEVER exposed to the network/internet (impl. plan §4.3). If the host is
+# remote (Oracle VM / EC2), reach the editor via an SSH tunnel:
+#   ssh -L 5678:localhost:5678 <user>@<host>
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: tvf-lead-engine-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      # Timezone drives the Schedule Trigger (weekly Tuesday run, impl. plan §11)
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - TZ=Asia/Kolkata
+      # n8n's own execution data stays in its default SQLite inside this volume;
+      # all lead data lives in Supabase (impl. plan §4.3)
+      - N8N_DIAGNOSTICS_ENABLED=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
+    name: tvf_lead_engine_n8n_data

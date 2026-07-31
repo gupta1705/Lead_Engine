@@ -1,0 +1,14 @@
+# Local tool state — not project source
+.claude/
+.gstack/
+
+# Secrets — never committed, stored outside the repo per project convention
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# OS cruft
+.DS_Store
+Thumbs.db

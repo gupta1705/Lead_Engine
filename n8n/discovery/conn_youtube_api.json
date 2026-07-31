@@ -1,0 +1,324 @@
+{
+  "name": "conn_youtube_api",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n1",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select config->'youtube_discovery_queries' as queries, id as segment_id\nfrom segments\nwhere slug = 'us-production-houses';"
+      },
+      "id": "n2",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        440,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SET_ON_IMPORT",
+          "name": "Supabase — Lead Engine"
+        }
+      },
+      "notes": "Uses the SAME Postgres credential created in S2.1. Reassign on import if the credential ID doesn't auto-link."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Split Queries  |  Mode: Run Once for All Items\n// Runs right after the Postgres \"Load Config\" node.\n// Input: 1 item —\n//   { queries: [ { query, genre_hint }, ... ], segment_id: \"<uuid>\" }\n// Output: one item per discovery query, each carrying segment_id\n// forward so every later item can reach it without a lookup.\n\nconst row = $input.first().json;\nconst queries = row.queries || [];\nconst segmentId = row.segment_id;\n\nreturn queries.map(q => ({\n  json: {\n    query: q.query,\n    genre_hint: q.genre_hint !== undefined ? q.genre_hint : null,\n    segment_id: segmentId\n  }\n}));\n"
+      },
+      "id": "n3",
+      "name": "Split Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "queryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "type",
+              "value": "channel"
+            },
+            {
+              "name": "regionCode",
+              "value": "US"
+            },
+            {
+              "name": "maxResults",
+              "value": "25"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n4",
+      "name": "Search Channels",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        400
+      ],
+      "credentials": {
+        "queryAuth": {
+          "id": "SET_ON_IMPORT",
+          "name": "YouTube Data API Key"
+        }
+      },
+      "notes": "Requires the Query Auth credential from S3.3 Step 1 (query param name 'key'). Runs once per item from Split Queries."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Flatten Search Results  |  Mode: Run Once for All Items\n// Runs after the HTTP Request node that calls YouTube search.list once\n// per item from \"Split Queries\".\n//\n// Input: one item PER QUERY, each holding a raw search.list response\n// (up to 25 channels nested in .items[]).\n//\n// IMPORTANT ASSUMPTION: this zips search responses to their original\n// query by ARRAY INDEX against $('Split Queries').all(). n8n runs the\n// HTTP Request node once per input item, in the same order, so this\n// pairing is reliable as long as no node in between reorders or drops\n// items. This is the part most likely to need a look if results come\n// back attached to the wrong query on first real test.\n//\n// Output: one item per unique channel (deduped within this run),\n// carrying the query context forward.\n\nconst queryItems = $('Split Queries').all();\nconst searchResponses = $input.all();\n\nconst seen = new Set();\nconst output = [];\n\nsearchResponses.forEach((resp, idx) => {\n  const ctx = queryItems[idx] ? queryItems[idx].json : {};\n  const channels = (resp.json && resp.json.items) || [];\n\n  for (const ch of channels) {\n    const channelId = ch.id && ch.id.channelId;\n    if (!channelId || seen.has(channelId)) continue;\n    seen.add(channelId);\n\n    output.push({\n      json: {\n        channel_id: channelId,\n        matched_query: ctx.query || null,\n        genre_hint: ctx.genre_hint !== undefined ? ctx.genre_hint : null,\n        segment_id: ctx.segment_id || null\n      }\n    });\n  }\n});\n\nreturn output;\n"
+      },
+      "id": "n5",
+      "name": "Flatten Search Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/channels",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "queryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,statistics"
+            },
+            {
+              "name": "id",
+              "value": "={{ $json.channel_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n6",
+      "name": "Get Channel Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        400
+      ],
+      "credentials": {
+        "queryAuth": {
+          "id": "SET_ON_IMPORT",
+          "name": "YouTube Data API Key"
+        }
+      },
+      "notes": "Same YouTube credential as Search Channels. One call per channel (not batched into groups of 50 - a deliberate v1 simplification, see script comments)."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Filter, Score, and Shape for Staging  |  Mode: Run Once for All Items\n// Runs after the HTTP Request node that calls YouTube channels.list once\n// per item from \"Flatten Search Results\" (one channel_id per call — not\n// batched into groups of 50, a deliberate v1 simplification: channels.list\n// costs only 1 quota unit/call, so even ~150 individual calls is trivial\n// against the 10,000/day budget, and skipping batching removes a whole\n// layer of item-grouping logic that would otherwise be unverified until\n// a live test run).\n//\n// THRESHOLDS BELOW ARE A STARTING POINT, NOT FINAL - tune them during\n// S3.8's real-query test against actual results.\n//\n// KNOWN v1 SIMPLIFICATION: this connector does NOT set activity_signal\n// (the is_active gate's input). A real \"last upload\" check needs a\n// separate API call this script doesn't make. Leaving the key unset is\n// SAFE by design - the gate treats unknown as pass-through - it just\n// means the is_active gate won't actively catch anything yet from this\n// connector; Layer B enrichment (which visits the real site) is a more\n// natural place to add a fuller check later.\n\nconst ADMIT_KEYWORDS = ['studio', 'media', 'production', 'productions', 'network', 'films', 'pictures', 'entertainment'];\nconst SUBSCRIBER_FLOOR = 1000;\nconst OVERSIZED_SUBSCRIBER_CEILING = 5000000;\nconst KNOWN_MAJORS_KEYWORDS = [\n  'disney', 'warner bros', 'nbcuniversal', 'paramount', 'sony pictures',\n  'viacomcbs', 'mgm', 'lionsgate', 'netflix', 'amazon studios', 'hbo',\n  'a24', 'universal pictures', '20th century'\n];\n\nfunction extractDomain(text) {\n  if (!text) return null;\n  const urlRegex = /https?:\\/\\/(?:www\\.)?([a-z0-9-]+(?:\\.[a-z0-9-]+)+)(?:\\/[^\\s]*)?/gi;\n  const matches = [...text.matchAll(urlRegex)];\n  const EXCLUDE = ['youtube.com', 'youtu.be', 'instagram.com', 'twitter.com', 'x.com',\n                   'facebook.com', 'tiktok.com', 'linkedin.com', 'linktr.ee', 'bit.ly'];\n  for (const m of matches) {\n    const host = m[1].toLowerCase();\n    if (!EXCLUDE.some(ex => host === ex || host.endsWith('.' + ex))) {\n      return host;\n    }\n  }\n  return null;\n}\n\nfunction extractEmail(text) {\n  if (!text) return null;\n  const emailRegex = /[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i;\n  const direct = text.match(emailRegex);\n  if (direct) return direct[0].toLowerCase();\n  const deobfuscated = text\n    .replace(/\\s*\\[?\\(?\\s*at\\s*\\)?\\]?\\s*/gi, '@')\n    .replace(/\\s*\\[?\\(?\\s*dot\\s*\\)?\\]?\\s*/gi, '.');\n  const fallback = deobfuscated.match(emailRegex);\n  return fallback ? fallback[0].toLowerCase() : null;\n}\n\nconst channelItems = $('Flatten Search Results').all();\nconst detailResponses = $input.all();\n\nconst output = [];\n\ndetailResponses.forEach((resp, idx) => {\n  const ctx = channelItems[idx] ? channelItems[idx].json : {};\n  const channel = resp.json && resp.json.items && resp.json.items[0];\n  if (!channel) return; // channels.list found nothing for this id - skip\n\n  const snippet = channel.snippet || {};\n  const stats = channel.statistics || {};\n  const title = snippet.title || '';\n  const description = snippet.description || '';\n  const subscriberCount = stats.subscriberCount ? parseInt(stats.subscriberCount, 10) : null;\n  const country = snippet.country || null;\n\n  // --- ADMISSION FILTER: creators-vs-studios judgment ---\n  const haystack = (title + ' ' + description).toLowerCase();\n  const keywordHit = ADMIT_KEYWORDS.some(k => haystack.includes(k));\n  const aboveFloor = subscriberCount !== null && subscriberCount >= SUBSCRIBER_FLOOR;\n  if (!keywordHit && !aboveFloor) {\n    return; // discarded - neither signal suggests a real studio\n  }\n\n  // --- scoring_inputs this connector can set (null-vs-zero rule: only\n  // write a key when there's real evidence either way; leave it out\n  // entirely if genuinely unassessed) ---\n  const scoringInputs = {};\n\n  if (ctx.genre_hint) {\n    scoringInputs.genre_fit = 1;\n  }\n\n  if (country) {\n    scoringInputs.geography_signal = country === 'US' ? 'us' : 'non_us';\n  }\n\n  const isKnownMajor = KNOWN_MAJORS_KEYWORDS.some(k => haystack.includes(k));\n  const isOversized = subscriberCount !== null && subscriberCount >= OVERSIZED_SUBSCRIBER_CEILING;\n  if (isKnownMajor || isOversized) {\n    scoringInputs.major_or_oversized_signal = true;\n  }\n\n  scoringInputs.has_reachable_presence = true; // a channel is itself a presence - always confirmed true\n\n  const domain = extractDomain(description);\n  const email = extractEmail(description);\n\n  output.push({\n    json: {\n      segment_id: ctx.segment_id,\n      name: title,\n      domain: domain,\n      source: 'youtube_api',\n      source_url: `https://www.youtube.com/channel/${ctx.channel_id}`,\n      raw: {\n        channel_id: ctx.channel_id,\n        matched_query: ctx.matched_query,\n        subscriber_count: subscriberCount,\n        video_count: stats.videoCount ? parseInt(stats.videoCount, 10) : null,\n        country: country,\n        description: description,\n        extracted_email: email,\n        scoring_inputs: scoringInputs\n      }\n    }\n  });\n});\n\nreturn output;\n"
+      },
+      "id": "n7",
+      "name": "Filter, Score, and Shape for Staging",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into staging_candidates (segment_id, name, domain, source, source_url, raw)\nvalues ($1, $2, $3, $4, $5, $6::jsonb)",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.name }},{{ $json.domain }},{{ $json.source }},{{ $json.source_url }},{{ JSON.stringify($json.raw) }}"
+        }
+      },
+      "id": "n8",
+      "name": "Insert Staging Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1780,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SET_ON_IMPORT",
+          "name": "Supabase — Lead Engine"
+        }
+      },
+      "notes": "Runs once per surviving candidate item. VERIFY the parameterized-query field name against your n8n version - it may be called 'Query Parameters' rather than nested under options.queryReplacement depending on version. The $1..$6 positional-parameter APPROACH is what matters; the exact field name to enter it in may need a one-time adjustment on first open."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Summarize For Source Run  |  Mode: Run Once for All Items\n// This node is a PARALLEL branch off \"Filter, Score, and Shape for\n// Staging\" - it reads the same admitted-candidate items that also flow\n// to the staging_candidates insert, and collapses them into one summary\n// row for source_runs. It does not run after that insert; it runs\n// alongside it, on the same input.\n\nconst items = $input.all();\nconst segmentId = items.length > 0 ? items[0].json.segment_id : null;\n\nreturn [{\n  json: {\n    segment_id: segmentId,\n    source: 'youtube_api',\n    candidates_found: items.length,\n    candidates_new: items.length, // dedupe against EXISTING entities happens later, at Run A's promote step (S4)\n    status: 'succeeded'\n  }\n}];\n"
+      },
+      "id": "n9",
+      "name": "Summarize For Source Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into source_runs (segment_id, source, candidates_found, candidates_new, status, finished_at)\nvalues ($1, $2, $3, $4, $5, now())",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.source }},{{ $json.candidates_found }},{{ $json.candidates_new }},{{ $json.status }}"
+        }
+      },
+      "id": "n10",
+      "name": "Insert Source Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        2000,
+        520
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SET_ON_IMPORT",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Split Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Queries": {
+      "main": [
+        [
+          {
+            "node": "Search Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Channels": {
+      "main": [
+        [
+          {
+            "node": "Flatten Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten Search Results": {
+      "main": [
+        [
+          {
+            "node": "Get Channel Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Channel Details": {
+      "main": [
+        [
+          {
+            "node": "Filter, Score, and Shape for Staging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter, Score, and Shape for Staging": {
+      "main": [
+        [
+          {
+            "node": "Insert Staging Candidates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Summarize For Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize For Source Run": {
+      "main": [
+        [
+          {
+            "node": "Insert Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
