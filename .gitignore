@@ -12,3 +12,19 @@ credentials.json
 # OS cruft
 .DS_Store
 Thumbs.db
+
+# Secrets inventory IS project source -- only the values are secret
+!.env.example
+
+# Python byte-code from tools/
+__pycache__/
+*.pyc
+
+# Generated from the LIVE DATABASE, never committed.
+# Unlike docs/P1_scoring_cheatsheet.md (which regenerates from config/*.json and
+# so is reproducible by anyone with the repo), this page can only be rebuilt
+# from Supabase. A committed copy would go stale the moment anyone dispositions
+# a lead, while still looking authoritative -- and it carries real contact names,
+# emails and internal verdicts on named companies. Regenerate with:
+#   python tools/review_artifact.py
+docs/review_queue.html

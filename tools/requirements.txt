@@ -1,0 +1,5 @@
+# Only needed by tools/verify_repo.py (the P0 repo self-check).
+# pglast wraps libpg_query -- the real PostgreSQL parser -- so a SQL syntax
+# error is caught here instead of in the Supabase editor, mid-sitting.
+pglast>=8.0
+psycopg2-binary>=2.9
