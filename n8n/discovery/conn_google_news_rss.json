@@ -1,0 +1,255 @@
+{
+  "id": "newsrssdiscov01",
+  "versionId": "newsrssdiscov02",
+  "name": "conn_google_news_rss",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "newsrss-trigger-01",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select config->'news_rss_discovery_queries' as queries, id as segment_id from segments where slug = 'us-production-houses';",
+        "options": {}
+      },
+      "id": "newsrss-config-02",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        80,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Split News Queries  |  Mode: Run Once for All Items\n// Runs right after the Postgres \"Load Config\" node.\n// Input: 1 item — { queries: [ { query, deal_kind }, ... ], segment_id }\n// Output: one item per query, each carrying a ready-built Google News RSS URL\n// plus the context every later node needs.\n//\n// Google News exposes its search as an RSS feed, which is why this source\n// costs nothing and needs no API key: no quota, no credential, no signup.\n//   https://news.google.com/rss/search?q=<query>&hl=en-US&gl=US&ceid=US:en\n// hl/gl/ceid pin the edition to US English. Unlike YouTube's regionCode -- which\n// biases by VIEWER region and let 54 non-US channels through at P4 -- these\n// select which Google News edition is searched, so US trade press dominates.\n// It is still a bias, not a filter: a non-US company can appear in US trade\n// press, and should. The us_geography gate is what actually decides.\n\nconst row = $input.first().json;\nconst queries = row.queries || [];\nconst segmentId = row.segment_id;\n\nconst BASE = 'https://news.google.com/rss/search';\n\nreturn queries.map(q => ({\n  json: {\n    query: q.query,\n    deal_kind: q.deal_kind !== undefined ? q.deal_kind : null,\n    segment_id: segmentId,\n    feed_url: `${BASE}?q=${encodeURIComponent(q.query)}&hl=en-US&gl=US&ceid=US:en`\n  }\n}));\n"
+      },
+      "id": "newsrss-split-03",
+      "name": "Split News Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "notes": "source: code/11_split_news_queries.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.feed_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "newsrss-fetch-04",
+      "name": "Fetch News Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Parse News Feed  |  Mode: Run Once for All Items\n// Runs after the HTTP Request node that fetches each Google News RSS URL built\n// by \"Split News Queries\". One request per query, so N inputs -> N outputs and\n// the pairing is index-for-index.\n//\n// WHY THIS NODE EXISTS INSTEAD OF n8n's RSS READ NODE. The first version used\n// RSS Read and recovered the query context from `item.pairedItem`. That looked\n// reasonable and was wrong: on a live run the RSS node returned 287 articles\n// with pairedItem.item counting 0..118 -- enumerating its own OUTPUT items, not\n// the 6 query inputs. Every row past index 5 therefore resolved to an empty\n// context, lost its segment_id, and the insert died on a NOT NULL constraint.\n//\n// An HTTP Request node has no such ambiguity: it emits exactly one item per\n// input item, in order, so index i of this node's input IS query i. That is the\n// same shape the YouTube connector uses and has already proven live.\n//\n// Parsing Google News RSS by regex is safe in a way that general XML parsing is\n// not: the feed is machine-generated, flat, and always the same handful of tags.\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  return s\n    .replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1')\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/&apos;/g, \"'\")\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))\n    .replace(/&amp;/g, '&');   // last, so &amp;lt; does not become <\n}\n\nfunction tag(block, name) {\n  const m = block.match(new RegExp('<' + name + '[^>]*>([\\\\s\\\\S]*?)<\\\\/' + name + '>'));\n  return m ? decodeEntities(m[1]).trim() : null;\n}\n\nfunction stripHtml(s) {\n  return (s || '').replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();\n}\n\nconst queryItems = $('Split News Queries').all();\nconst responses = $input.all();\n\nconst output = [];\n\nresponses.forEach((resp, idx) => {\n  const ctx = queryItems[idx] ? queryItems[idx].json : {};\n\n  // The HTTP node hands back the body as a string when the response format is\n  // text; be tolerant about where it lands across n8n versions.\n  const j = resp.json || {};\n  const xml = typeof j === 'string' ? j\n    : (j.data || j.body || j.text || '');\n  if (!xml || typeof xml !== 'string') return;\n\n  const blocks = xml.split('<item>').slice(1);\n  blocks.forEach((chunk) => {\n    const block = chunk.split('</item>')[0];\n    const title = tag(block, 'title');\n    if (!title) return;\n\n    output.push({\n      json: {\n        title: title,\n        link: tag(block, 'link'),\n        pubDate: tag(block, 'pubDate'),\n        description: stripHtml(tag(block, 'description') || ''),\n        feed_source: tag(block, 'source'),\n        // Query context travels ON the item from here on. No later node has to\n        // reconstruct it, which is the whole point of this rewrite.\n        matched_query: ctx.query || null,\n        deal_kind: ctx.deal_kind !== undefined ? ctx.deal_kind : null,\n        segment_id: ctx.segment_id || null\n      }\n    });\n  });\n});\n\nreturn output;\n"
+      },
+      "id": "newsrss-parse-05",
+      "name": "Parse News Feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "notes": "source: code/12_parse_news_feed.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Extract Companies From Headlines  |  Mode: Run Once for All Items\n// Runs after the RSS Read node, which is executed once per query item from\n// \"Split News Queries\" and returns parsed feed items.\n//\n// THIS IS THE HARD NODE. A headline is prose, not a record. Turning\n//   \"Netflix Orders Comedy Series From Lantern Row Media\"\n// into a lead means answering two separate questions, and conflating them is\n// how this connector would go wrong:\n//\n//   1. WHICH company is this about?   -> name extraction\n//   2. Is there real evidence of an   -> international_ip_experience\n//      IP/format deal?\n//\n// The second is worth 30 points, the heaviest criterion in the rubric. The\n// lesson from P4 applies directly: `genre_fit` awarded a full 15/15 to every\n// channel a genre-flavoured QUERY surfaced, which credited companies for the\n// search string rather than for anything about them. So:\n//\n//   **The query is never the evidence. The headline text is.**\n//\n// A row scores international_ip_experience = 1 only when a deal phrase appears\n// in the headline or summary itself. Matching the query alone earns nothing --\n// the article is merely how we found them.\n//\n// PRECISION OVER RECALL, deliberately. Name extraction only accepts a\n// capitalised phrase ending in a company suffix (Media / Studios / Pictures /\n// Films / Productions / Entertainment / Television). \"Lantern Row Media\" is\n// admitted; a bare \"Lantern Row\" is not. That throws away real companies, and\n// it is the right trade: a wrong name in staging becomes a wrong company in\n// the review queue, and eventually a cold email to a stranger. A missed one\n// costs nothing but a lead we never knew about.\n\n// Suffixes that mark the end of a company name.\nconst COMPANY_SUFFIX = [\n  'Media', 'Studio', 'Studios', 'Pictures', 'Films', 'Film',\n  'Productions', 'Production', 'Entertainment', 'Television', 'TV',\n  'Company', 'Group', 'Network', 'Works', 'House', 'Collective'\n];\n\n// Buyers, platforms and trade outlets. These appear in almost every deal\n// headline and are never the lead -- we want the shop that MADE the thing,\n// not the streamer that bought it or the magazine that reported it.\nconst NOT_A_LEAD = [\n  'netflix', 'amazon', 'prime video', 'apple', 'apple tv', 'disney', 'hulu',\n  'hbo', 'max', 'warner', 'paramount', 'peacock', 'nbc', 'nbcuniversal', 'abc',\n  'cbs', 'fox', 'sony', 'lionsgate', 'mgm', 'a24', 'bbc', 'itv', 'channel 4',\n  'sky', 'canal+', 'zdf', 'rai', 'globo', 'roku', 'tubi', 'starz', 'showtime',\n  'amc', 'fx', 'discovery', 'universal', 'columbia', 'miramax', 'legendary',\n  'variety', 'deadline', 'hollywood reporter', 'thr', 'screen daily',\n  'c21media', 'broadcast', 'televisual', 'realscreen', 'worldscreen',\n  'yahoo', 'msn', 'google news'\n];\n\n// Deal language, split by WHAT IT ACTUALLY PROVES. Lumping these together was\n// this connector's first bug: \"Netflix Orders Comedy Series From Tandem\n// Pictures\" earned the 30-point international_ip_experience on the strength of\n// \"series order\". A domestic commission proves a company can get a show made\n// and placed. It says nothing about adapting foreign IP -- which is the single\n// criterion this whole source exists to supply. Same error as P4's genre_fit,\n// one rung later.\n\n// Terms of art for cross-border IP work. These are what the 30 points are for.\nconst IP_FORMAT_PHRASES = [\n  'format rights', 'format deal', 'formats deal', 'adaptation rights',\n  'remake rights', 'english-language remake', 'english language remake',\n  'local adaptation', 'local version', 'international co-production',\n  'co-production', 'coproduction', 'co-produce', 'coproduce', 'co-producing'\n];\n\n// Evidence a company has a live route to market. Real, and worth the\n// 20-point distribution_relationship -- but a different claim entirely.\nconst DISTRIBUTION_PHRASES = [\n  'first-look deal', 'output deal', 'series order', 'straight-to-series',\n  'greenlights', 'greenlit', 'commissions', 'commissioned'\n];\n\n// Genuinely ambiguous: \"acquires the rights\" could be a Korean format or a\n// domestic novel, and a headline rarely says which. Recorded in `raw` so a\n// reviewer can look, but it earns NOTHING automatically. Guessing here is how\n// a 30-point criterion gets awarded on a coin flip.\nconst AMBIGUOUS_PHRASES = [\n  'options the rights', 'optioned the rights', 'acquires the rights',\n  'acquired the rights', 'adapt the', 'adapting the'\n];\n\nfunction stripPublisher(title) {\n  // Google News titles read \"Headline text - Publisher Name\".\n  const idx = title.lastIndexOf(' - ');\n  if (idx === -1) return { headline: title, publisher: null };\n  return {\n    headline: title.slice(0, idx).trim(),\n    publisher: title.slice(idx + 3).trim()\n  };\n}\n\nfunction stripHtml(s) {\n  return (s || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ')\n                  .replace(/\\s+/g, ' ').trim();\n}\n\nfunction isExcluded(name) {\n  const n = name.toLowerCase();\n  return NOT_A_LEAD.some(x => n === x || n.startsWith(x + ' ') || n.endsWith(' ' + x));\n}\n\n// Headline vocabulary that can never be part of a company name. Without this\n// a greedy match reads \"Netflix Orders Comedy Series From Tandem Pictures\" as\n// the company \"Series From Tandem Pictures\" -- capitalised, suffix-terminated,\n// and completely wrong.\nconst STOP_WORDS = new Set([\n  'a', 'an', 'the', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'by',\n  'with', 'from', 'its', 'his', 'her', 'their', 'new', 'first', 'next',\n  'orders', 'order', 'sets', 'set', 'acquires', 'acquire', 'acquired',\n  'names', 'named', 'adds', 'adding', 'announces', 'announced', 'launches',\n  'launched', 'signs', 'signed', 'joins', 'joined', 'taps', 'tapped',\n  'hires', 'hired', 'inks', 'inked', 'options', 'optioned', 'boards',\n  'lands', 'landed', 'picks', 'picked', 'buys', 'bought', 'plans', 'planned',\n  'reveals', 'revealed', 'unveils', 'brings', 'takes', 'gets', 'wins',\n  'series', 'season', 'show', 'drama', 'comedy', 'film', 'movie', 'documentary',\n  'deal', 'rights', 'format', 'formats', 'adaptation', 'remake', 'co-production',\n  'exclusive', 'report', 'acquisition', 'partnership', 'slate', 'project',\n]);\n\n// Origin adjectives. Trade headlines describe SOURCE MATERIAL with exactly the\n// grammar of a company name -- \"Korean Film\", \"Belgian Hit TV\", \"Indian Action\n// Film\". All three came out of the first live run as leads. A nationality word\n// anywhere in a candidate name means the phrase is describing what is being\n// adapted, not who is adapting it.\nconst ORIGIN_WORDS = new Set([\n  'korean', 'belgian', 'indian', 'farsi', 'spanish', 'israeli', 'german',\n  'japanese', 'french', 'turkish', 'italian', 'dutch', 'danish', 'swedish',\n  'norwegian', 'finnish', 'polish', 'russian', 'chinese', 'thai', 'brazilian',\n  'mexican', 'argentine', 'australian', 'british', 'irish', 'scottish',\n  'welsh', 'canadian', 'american', 'nordic', 'latin', 'asian', 'european',\n  'african', 'arabic', 'hebrew', 'mandarin', 'cantonese', 'ukrainian',\n  'original', 'foreign', 'international', 'domestic'\n]);\n\n// Words too generic to identify anyone on their own. A name made ENTIRELY of\n// these is a category, not a company: \"Audiovisual Works\", \"Tiny House\".\nconst GENERIC_WORDS = new Set([\n  'film', 'films', 'tv', 'television', 'works', 'house', 'company', 'production',\n  'productions', 'studio', 'studios', 'media', 'group', 'network', 'entertainment',\n  'pictures', 'collective', 'audiovisual', 'content', 'video', 'digital', 'new',\n  'hit', 'tiny', 'big', 'little', 'good', 'great', 'best'\n]);\n\n// Walk BACKWARDS from each company suffix, collecting capitalised words until\n// something that cannot belong to a name. More restrictive than a regex, and\n// restrictive is what this needs to be: a wrong name here becomes a wrong\n// company in the review queue and eventually a cold email to a stranger.\n//\n// The rejection rules below are not speculative -- each one was written against\n// a specific wrong name the first live run produced from 119 real headlines.\nfunction extractCompanies(text) {\n  if (!text) return [];\n  const tokens = text.split(/\\s+/).filter(Boolean);\n  const suffixSet = new Set(COMPANY_SUFFIX.map(s => s.toLowerCase()));\n  const out = [];\n\n  for (let i = 0; i < tokens.length; i++) {\n    // Exact token match only. \"Co-Production\" must not read as the suffix\n    // \"Production\", and \"Studios,\" keeps its comma out of the name.\n    const bare = tokens[i].replace(/[^A-Za-z0-9'’&.-]+$/, '');\n    if (!suffixSet.has(bare.toLowerCase())) continue;\n\n    // The suffix itself must be capitalised. Catches \"Reese Witherspoon's\n    // production company\" and \"English-language remake of Indian film\", where\n    // the word is ordinary prose rather than part of a proper noun.\n    if (!/^[A-Z]/.test(bare)) continue;\n\n    const parts = [bare];\n    for (let j = i - 1; j >= 0 && parts.length < 4; j--) {\n      const w = tokens[j].replace(/[^A-Za-z0-9'’&.-]+$/, '');\n      if (!w) break;\n      if (STOP_WORDS.has(w.toLowerCase())) break;      // headline verb/preposition\n      if (!/^[A-Z0-9]/.test(w)) break;                  // lowercase = sentence prose\n      if (/['’]s$/.test(w)) break;                      // \"Sol Kyung Gu's Film\"\n      parts.unshift(w);\n    }\n\n    // A bare suffix on its own (\"Studios\", \"Media\") is not a company name.\n    if (parts.length < 2) continue;\n\n    const lower = parts.map(p => p.toLowerCase().replace(/['’]s$/, ''));\n    if (lower.some(w => ORIGIN_WORDS.has(w))) continue;   // describing the source\n    if (lower.every(w => GENERIC_WORDS.has(w))) continue; // a category, not a name\n\n    const name = parts.join(' ');\n    if (isExcluded(name)) continue;\n    if (!out.includes(name)) out.push(name);\n  }\n\n  // Prefer the longest match. \"Highlander Production\" and \"Highlander\n  // Production Company\" both came back from one headline on the live run;\n  // keeping the prefix would create two entities for one company.\n  return out.filter(n => !out.some(o => o !== n && o.startsWith(n + ' ')));\n}\n\nfunction matchPhrases(text, list) {\n  const t = (text || '').toLowerCase();\n  return list.filter(p => t.includes(p));\n}\n\nconst feedItems = $input.all();\n\nconst seen = new Set();\nconst output = [];\n\nfeedItems.forEach((item) => {\n  const j = item.json || {};\n\n  // Query context arrives ON the item from \"Parse News Feed\" -- no pairedItem\n  // lookup, no index arithmetic. The first version reconstructed it from\n  // item.pairedItem and lost every row past index 5 on the live run, because\n  // that field enumerates output items rather than query inputs.\n  const ctx = j;\n\n  const rawTitle = j.title || '';\n  const { headline, publisher } = stripPublisher(rawTitle);\n  const summary = stripHtml(j.description || j.contentSnippet || j.content || '');\n  const evidenceText = headline + ' ' + summary;\n\n  const companies = extractCompanies(headline);\n  if (companies.length === 0) return;          // nothing nameable -- drop\n\n  const ipPhrases = matchPhrases(evidenceText, IP_FORMAT_PHRASES);\n  const distPhrases = matchPhrases(evidenceText, DISTRIBUTION_PHRASES);\n  const ambiguous = matchPhrases(evidenceText, AMBIGUOUS_PHRASES);\n\n  companies.forEach((name) => {\n    const key = name.toLowerCase();\n    if (seen.has(key)) return;\n    seen.add(key);\n\n    const scoringInputs = {};\n\n    // THE 30-POINT DECISION. Only cross-border IP language earns it, and only\n    // from the headline/summary text -- never from the query that found it.\n    if (ipPhrases.length > 0) {\n      scoringInputs.international_ip_experience = 1;\n    }\n\n    // A separate, weaker claim: this company gets shows commissioned and\n    // placed. Worth 20 points on its own criterion, and not a substitute\n    // for the one above.\n    if (distPhrases.length > 0) {\n      scoringInputs.distribution_relationship = 1;\n    }\n\n    // A company named in US trade press has a public presence by definition.\n    scoringInputs.has_reachable_presence = true;\n\n    // Everything else this connector genuinely cannot see -- geography,\n    // headcount, genre, ownership -- is left ABSENT, not guessed. 04b turns\n    // absent into an explicit 0 before scoring, and records it as unverified\n    // so a reviewer can tell a default from a finding.\n\n    output.push({\n      json: {\n        segment_id: ctx.segment_id,\n        name: name,\n        domain: null,               // filled at enrichment (P16), like AICP rows\n        source: 'google_news_rss',\n        source_url: j.link || null,\n        raw: {\n          headline: headline,\n          publisher: publisher,\n          summary: summary.slice(0, 500),\n          published_at: j.pubDate || j.isoDate || null,\n          matched_query: ctx.matched_query || null,\n          query_deal_kind: ctx.deal_kind || null,\n          ip_format_phrases: ipPhrases,\n          distribution_phrases: distPhrases,\n          ambiguous_phrases: ambiguous,\n          all_companies_in_headline: companies,\n          scoring_inputs: scoringInputs\n        }\n      }\n    });\n  });\n});\n\nreturn output;\n"
+      },
+      "id": "newsrss-extract-06",
+      "name": "Extract Companies From Headlines",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "notes": "source: code/13_extract_companies.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values ($1, $2, $3, $4, $5, $6::jsonb)",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.name }},{{ $json.domain }},{{ $json.source }},{{ $json.source_url }},{{ JSON.stringify($json.raw) }}"
+        }
+      },
+      "id": "newsrss-insert-07",
+      "name": "Insert Staging Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1180,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Summarize For Source Run  |  Mode: Run Once for All Items\n// This node is a PARALLEL branch off \"Filter, Score, and Shape for\n// Staging\" - it reads the same admitted-candidate items that also flow\n// to the staging_candidates insert, and collapses them into one summary\n// row for source_runs. It does not run after that insert; it runs\n// alongside it, on the same input.\n\n// SHARED BY EVERY CONNECTOR (2026-08-24). `source` is read off the incoming\n// items rather than hardcoded, so the same node serves YouTube, News RSS,\n// X-intent, Wikidata and AICP without five near-identical copies drifting\n// apart. Each connector's shaping node already stamps `source` on every row.\nconst items = $input.all();\nconst first = items.length > 0 ? items[0].json : {};\nconst segmentId = first.segment_id || null;\nconst source = first.source || 'unknown';\n\nreturn [{\n  json: {\n    segment_id: segmentId,\n    source: source,\n    candidates_found: items.length,\n    candidates_new: items.length, // dedupe against EXISTING entities happens later, at the promote step (P9)\n    status: 'succeeded'\n  }\n}];\n"
+      },
+      "id": "newsrss-summary-08",
+      "name": "Summarize For Source Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        420
+      ],
+      "notes": "source: code/04_summarize_source_run.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into source_runs (segment_id, source, candidates_found, candidates_new, status, finished_at) values ($1, $2, $3, $4, $5, now())",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.source }},{{ $json.candidates_found }},{{ $json.candidates_new }},{{ $json.status }}"
+        }
+      },
+      "id": "newsrss-run-09",
+      "name": "Insert Source Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1400,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Split News Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split News Queries": {
+      "main": [
+        [
+          {
+            "node": "Fetch News Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch News Feed": {
+      "main": [
+        [
+          {
+            "node": "Parse News Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse News Feed": {
+      "main": [
+        [
+          {
+            "node": "Extract Companies From Headlines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Companies From Headlines": {
+      "main": [
+        [
+          {
+            "node": "Insert Staging Candidates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Summarize For Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize For Source Run": {
+      "main": [
+        [
+          {
+            "node": "Insert Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

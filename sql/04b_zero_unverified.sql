@@ -1,44 +1,63 @@
 -- 04B_ZERO_UNVERIFIED.SQL
--- Owner decision, 2026-08-23: **an unverified rubric or modifier input scores 0.**
+-- Owner rule, 2026-08-23: **an unverified rubric or modifier input scores 0.**
 --
--- This REVERSES the "null != zero" handling for reviewer-entered data. It does
--- not reverse it for the engine: 06_score.sql still treats an absent key as
--- never-assessed, because that machinery is what lets a partially-enriched
--- entity be scored at all mid-pipeline. What changes is the DATA we hand it --
--- we now hand it explicit zeros instead of blanks.
+-- Originally written for the ten hand-entered P1 rows. GENERALISED 2026-08-23
+-- for P4: it now applies to every pre-review entity in the segment regardless
+-- of source, because the moment a connector starts writing rows this has to run
+-- over them too. If it stayed scoped to `manual_p1`, YouTube-sourced leads would
+-- be scored on partial denominators while hand-entered ones were scored on the
+-- full pool -- and Checkpoint 1 (P11) compares approval rate PER SOURCE. The
+-- connector would look better than it is, for a reason that has nothing to do
+-- with the companies it found.
 --
--- WHY THE OWNER IS RIGHT ABOUT THIS
--- Excluding unverified criteria from the denominator inflates every score. It
--- produced a 90.00 for Lowbrow Studios computed from 4 of 6 criteria, sitting
--- in the same column as scores computed from 5 -- numbers that are not
--- comparable, presented as though they were. "We could not verify it" and "it
--- is not there" have the same practical consequence for a lead: no evidence of
--- the thing TVF needs. Scoring it as 0 is the conservative reading.
+-- WHERE THIS SITS IN THE PIPELINE: after promote (P9), before scoring (P15).
+-- Run it on every batch. Idempotent -- a second run changes nothing, because
+-- every key already exists.
 --
--- WHAT THIS COSTS, STATED PLAINLY
--- After this runs, the data can no longer distinguish "checked, found nothing"
--- from "never checked". That distinction is genuinely useful at P11 when
--- reading why a criterion scored low across a whole batch. So this script
--- preserves it OUT of the score: every key it defaults to 0 is also recorded
--- in `metadata.p1_unverified`. The score is conservative; the provenance
--- survives; P11 can still tell the two apart.
+-- SCOPE: only entities not yet dispositioned. A shortlisted or rejected row is
+-- a decision already made; this never reaches back and alters one.
 --
--- WHAT IS DELIBERATELY NOT TOUCHED: THE GATES
--- Gate inputs are not 0-or-1 evidence, they are exclusion triggers, and every
--- one fires ONLY on confirmed disqualifying evidence:
---     us_geography              excludes when geography_signal = 'non_us'
---     not_a_major_or_oversized  excludes when major_or_oversized_signal = true
+-- WHAT IT COSTS, STATED PLAINLY: after this runs, the data cannot distinguish
+-- "checked, found nothing" from "never checked". That distinction is genuinely
+-- useful at P11 when reading why a criterion scored low across a whole batch,
+-- so it is preserved OUT of the score: every key defaulted to 0 is recorded in
+-- `metadata.unverified_inputs`. Conservative score, provenance intact.
+--
+-- ⚑ LOAD-BEARING FOR P14 (dedupe/merge). The merge rule there is "existing
+-- values kept unless empty" -- and a defaulted 0 is not empty. Without care, a
+-- company first found by YouTube (international_ip_experience defaulted to 0)
+-- and later found by News RSS with a real format-deal headline would KEEP the
+-- 0 and discard the 1. The fix is already available: any key listed in
+-- `unverified_inputs` must be treated as overwritable by real evidence. That
+-- list is why this script records it rather than just writing zeros.
+--
+-- WHAT IS DELIBERATELY NOT TOUCHED: THE GATES. Gate inputs are not evidence,
+-- they are exclusion triggers, and each fires ONLY on confirmed disqualifying
+-- evidence:
+--     us_geography                excludes when geography_signal = 'non_us'
+--     not_a_major_or_oversized    excludes when major_or_oversized_signal = true
 --     usable_first_party_presence excludes when has_reachable_presence = false
---     is_active                 excludes when activity_signal = 'confirmed_dormant'
--- Defaulting an unknown gate input to a falsy value would FIRE two of those
--- four and silently reject real companies for the crime of not being
--- researched. "Unknown scores 0" is right for evidence; it is actively
--- destructive for exclusion triggers. Gates keep passing on unknown.
+--     is_active                   excludes when activity_signal = 'confirmed_dormant'
+-- Defaulting an unknown gate input to a falsy value would FIRE two of those four
+-- and silently reject real companies for the crime of not being researched.
+-- "Unknown scores 0" is right for evidence and destructive for triggers.
 --
--- Idempotent: re-running changes nothing, because every key already exists.
--- Config-driven: no criterion names appear below, so it works unchanged for
--- Segment 2 and any future rubric revision.
+-- Config-driven: no criterion name appears below, so it works unchanged for a
+-- rubric revision or for Segment 2.
 
+----------------------------------------------------------------------
+-- MIGRATION (harmless once applied): the metadata key was `p1_unverified`
+-- when this only ran over P1 rows. It is source-agnostic now, so the key is
+-- `unverified_inputs`. Renames in place; no-op if already done.
+----------------------------------------------------------------------
+update entities
+set metadata = (metadata - 'p1_unverified')
+               || jsonb_build_object('unverified_inputs', metadata->'p1_unverified')
+where metadata ? 'p1_unverified';
+
+----------------------------------------------------------------------
+-- THE RULE
+----------------------------------------------------------------------
 with keys as (
     -- every rubric + modifier input the config defines (NOT gates)
     select split_part(x.item->>'input', '.', 3) as key
@@ -54,13 +73,14 @@ target as (
     select e.id, coalesce(e.metadata->'scoring_inputs', '{}'::jsonb) as si
     from entities e
     where e.segment_id = (select id from segments where slug = 'us-production-houses')
-      and e.source = 'manual_p1'
+      and e.status in ('discovered', 'enriched', 'scored', 'ready_for_review')
 ),
 gaps as (
-    -- which keys each row is missing, BEFORE we fill them
+    -- which keys each row is missing, BEFORE they are filled
     select t.id,
            coalesce(jsonb_agg(k.key order by k.key)
-                    filter (where not (t.si ? k.key) or jsonb_typeof(t.si->k.key) = 'null'),
+                    filter (where not (t.si ? k.key)
+                               or jsonb_typeof(t.si->k.key) = 'null'),
                     '[]'::jsonb) as unverified
     from target t
     cross join keys k
@@ -76,29 +96,31 @@ set metadata =
                 e.metadata,
                 '{scoring_inputs}',
                 -- defaults first, real values second: `||` lets the RIGHT side
-                -- win, so anything actually assessed is preserved untouched
-                (select d from defaults) || coalesce(e.metadata->'scoring_inputs', '{}'::jsonb)
+                -- win, so anything actually assessed survives untouched
+                (select d from defaults)
+                || coalesce(e.metadata->'scoring_inputs', '{}'::jsonb)
             ),
-            '{p1_unverified}',
+            '{unverified_inputs}',
             g.unverified
         )
 from gaps g
 where e.id = g.id;
 
 ----------------------------------------------------------------------
--- CONFIRM: every row now carries all 9 rubric+modifier keys, and each
--- records which of them were defaulted rather than evidenced.
+-- CONFIRM: every pre-review row carries the full rubric+modifier key set,
+-- and records which of those were defaulted rather than evidenced.
 ----------------------------------------------------------------------
 select
-    e.name,
-    (select count(*) from jsonb_object_keys(e.metadata->'scoring_inputs')) as total_keys,
-    jsonb_array_length(e.metadata->'p1_unverified')                        as defaulted_to_zero,
-    e.metadata->'p1_unverified'                                            as which
+    e.source,
+    count(*)                                                          as rows,
+    min((select count(*) from jsonb_object_keys(e.metadata->'scoring_inputs'))) as min_keys,
+    round(avg(jsonb_array_length(e.metadata->'unverified_inputs')), 1) as avg_defaulted
 from entities e
 where e.segment_id = (select id from segments where slug = 'us-production-houses')
-  and e.source = 'manual_p1'
-order by e.name;
+  and e.status in ('discovered', 'enriched', 'scored', 'ready_for_review')
+group by e.source
+order by e.source;
 
--- Re-score after this: 06_score.sql. Every entity now has all 6 rubric
--- criteria assessed, so every score is out of the full 110-point pool and the
--- numbers are finally comparable to each other.
+-- Re-score after this: every entity now has all rubric criteria assessed, so
+-- every score is out of the full pool and the numbers are comparable across
+-- sources -- which is the whole point of Checkpoint 1.

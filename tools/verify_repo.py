@@ -314,6 +314,194 @@ def check_cheatsheet_current(cfg):
         print("  ok    doc     P1_scoring_cheatsheet.md matches the config")
 
 
+def check_n8n_workflows(cfg):
+    """7. n8n connector workflows are structurally sound.
+
+    A workflow is a JSON file full of SQL strings and config-key references,
+    none of which any editor checks. The SQL inside a Postgres node is exactly
+    as capable of a syntax error as a .sql file -- and far easier to miss,
+    because it only surfaces when the workflow runs live, mid-sitting, after
+    the API calls have already burned quota.
+    """
+    wf_dir = ROOT / "n8n"
+    if not wf_dir.exists():
+        return
+    try:
+        from pglast import parse_sql
+        from pglast.parser import ParseError
+        can_parse = True
+    except ImportError:
+        can_parse = False
+
+    mark = len(failures)
+    n_wf = n_sql = 0
+    for path in sorted(wf_dir.rglob("*.json")):
+        try:
+            wf = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            fail("%s is not valid JSON: %s" % (path.name, e))
+            continue
+        n_wf += 1
+        nodes = wf.get("nodes", [])
+        if not nodes:
+            fail("%s has no nodes" % path.name)
+            continue
+
+        for node in nodes:
+            params = node.get("parameters", {}) or {}
+            query = params.get("query")
+            if not query or not isinstance(query, str):
+                continue
+            n_sql += 1
+            # Config keys the workflow reads must actually exist in the config.
+            for key in re.findall(r"config->'([a-z0-9_]+)'", query):
+                if key not in cfg:
+                    fail("%s node '%s' reads config->'%s', which the config "
+                         "does not define" % (path.name, node.get("name"), key))
+            if can_parse:
+                try:
+                    parse_sql(query)
+                except ParseError as e:
+                    fail("%s node '%s': SQL does not parse: %s"
+                         % (path.name, node.get("name"), e))
+    if len(failures) == mark:
+        print("  ok    n8n     %d workflow(s), %d embedded SQL statement(s) valid"
+              % (n_wf, n_sql))
+
+
+def check_workflow_code_sync():
+    """10. Workflow JSON jsCode matches the .js files it claims to come from.
+
+    n8n stores a Code node script INSIDE the workflow JSON, and the repo also
+    keeps it as a reviewable .js file. Two copies, and on 2026-08-24 they
+    diverged: the genre_fit fix landed in the .js file, the fixtures passed
+    against it, and n8n kept running the stale embedded copy -- so 123 live
+    companies were scored on evidence nobody had. Green tests, wrong data.
+    """
+    import subprocess
+    tool = ROOT / "tools" / "sync_workflow_code.py"
+    if not tool.exists():
+        return
+    r = subprocess.run([sys.executable, str(tool), "--check"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        bad = [l.strip() for l in r.stdout.splitlines()
+               if "DRIFTED" in l or "UNMAPPED" in l]
+        indent = "\n        "
+        fail("workflow JSON has drifted from the .js files:"
+             + indent + indent.join(bad)
+             + indent + "n8n runs the JSON, not the .js files. Fix with:"
+             + indent + "python tools/sync_workflow_code.py"
+             + indent + "python tools/n8n_setup.py")
+    else:
+        n = 0
+        for line in r.stdout.splitlines():
+            if "already in sync" in line:
+                n = int(line.strip().split()[0])
+        print("  ok    wfcode  %d Code node(s) match their .js source" % n)
+
+
+def check_connector_fixtures():
+    """8. The connector Code nodes still behave, run as node.js.
+
+    These scripts were logic-validated once before the repo was cleared and
+    have never run against live YouTube. Rule 4 says a re-adopted artifact is
+    re-verified at adoption, not trusted because it passed once.
+    """
+    import shutil
+    import subprocess
+    test_dir = ROOT / "n8n" / "discovery" / "test"
+    # Every connector gets its own fixture file; discover them rather than
+    # naming one, so P6-P8 are covered the moment they are written instead of
+    # whenever someone remembers to add them here.
+    tests = sorted(test_dir.glob("run_*fixtures.js")) if test_dir.exists() else []
+    if not tests:
+        return
+    if not shutil.which("node"):
+        notices.append(
+            "CONNECTOR FIXTURES SKIPPED -- node.js is not on PATH.\n"
+            "        Run them with:  node n8n/discovery/test/run_*_fixtures.js"
+        )
+        return
+    total = 0
+    for test in tests:
+        r = subprocess.run(["node", str(test)], capture_output=True, text=True)
+        if r.returncode != 0:
+            bad = [l.strip() for l in (r.stdout + r.stderr).splitlines() if "FAIL" in l]
+            fail("%s FAILED:\n        %s"
+                 % (test.name, "\n        ".join(bad[:8] or ["(run it directly)"])))
+        else:
+            total += sum(1 for l in r.stdout.splitlines() if l.strip().startswith("PASS"))
+    if total:
+        print("  ok    conn    %d connector fixture checks across %d file(s)"
+              % (total, len(tests)))
+
+
+def check_live_config(cfg):
+    """9. The LIVE database config matches the repo config.
+
+    verify_repo has always compared the three repo copies to each other, which
+    is not the same as checking the database. On 2026-08-24 that gap bit:
+    `news_rss_discovery_queries` was added to all three repo copies, everything
+    reported GREEN, and the P5 connector still returned nothing -- because
+    03b was never re-run, so the live segments row had never heard of the key.
+    The failure was silent and looked like a broken connector.
+
+    Needs SUPABASE_DB_URL; skipped with a notice when absent, so the offline
+    checks still run on a machine with no credentials.
+    """
+    env = ROOT / ".env"
+    if not env.exists():
+        return
+    url = None
+    for line in env.read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith("SUPABASE_DB_URL="):
+            url = line.split("=", 1)[1].strip().strip('"').strip("'")
+    if not url:
+        notices.append("LIVE CONFIG CHECK SKIPPED -- SUPABASE_DB_URL not set in .env")
+        return
+    try:
+        import psycopg2
+    except ImportError:
+        notices.append("LIVE CONFIG CHECK SKIPPED -- psycopg2 not installed")
+        return
+    try:
+        conn = psycopg2.connect(url, connect_timeout=10)
+    except Exception:
+        notices.append("LIVE CONFIG CHECK SKIPPED -- could not reach the database")
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute("select config from segments where slug = %s",
+                        ("us-production-houses",))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row:
+        fail("no segments row for 'us-production-houses' in the live database")
+        return
+    live = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+
+    only_repo = sorted(set(cfg) - set(live))
+    only_live = sorted(set(live) - set(cfg))
+    differ = sorted(k for k in set(cfg) & set(live)
+                    if json.dumps(cfg[k], sort_keys=True)
+                    != json.dumps(live[k], sort_keys=True))
+    if only_repo or only_live or differ:
+        detail = ""
+        if only_repo:
+            detail += "; in the repo but NOT live: %s" % only_repo
+        if only_live:
+            detail += "; live but not in the repo: %s" % only_live
+        if differ:
+            detail += "; differing: %s" % differ
+        fail("LIVE DATABASE CONFIG HAS DRIFTED from the repo%s\n"
+             "        Fix: python tools/run_sql.py sql/03b_sync_segment_config_v3.sql"
+             % detail)
+    else:
+        print("  ok    live    database config matches the repo exactly")
+
+
 def main():
     print("TVF Lead Engine -- repo self-check (P0, repo half)\n")
     check_sql_parses()
@@ -323,6 +511,10 @@ def main():
         known = check_structure(cfg)
         check_template_keys(cfg, known)
         check_cheatsheet_current(cfg)
+        check_n8n_workflows(cfg)
+        check_live_config(cfg)
+    check_workflow_code_sync()
+    check_connector_fixtures()
 
     print("")
     for n in notices:

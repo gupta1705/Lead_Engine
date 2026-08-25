@@ -1,0 +1,237 @@
+{
+  "id": "wikidataseed01",
+  "versionId": "wikidataseed01",
+  "name": "conn_wikidata",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wd-trigger",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select config->'wikidata_discovery' as wikidata, id as segment_id from segments where slug = 'us-production-houses';",
+        "options": {}
+      },
+      "id": "wd-config",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        80,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Build SPARQL Query  |  Mode: Run Once for All Items\n// Runs right after the Postgres \"Load Config\" node.\n// Input: 1 item -- { wikidata: {entity_class, country, limit, ...}, segment_id }\n// Output: 1 item carrying a ready-to-fetch Wikidata query-service URL.\n//\n// WHY THIS SOURCE IS WORTH A RUNG. Every other connector leaves `domain` null:\n// a YouTube description rarely carries a website, and a news headline names a\n// company without linking to it. Wikidata has P856 (official website) as a\n// first-class property, so this is the one source that arrives WITH the domain\n// already attached -- which is exactly what Apollo needs at P16 to match an\n// organisation.\n//\n// A live probe found **363 US film/TV production companies with a website**.\n// That is a seed, not a stream: Wikidata is notable-only, so the list changes\n// slowly and this workflow is meant to be re-run occasionally, not weekly.\n//\n// CC0 licensed and free forever -- no key, no quota, no signup. The service\n// does require a descriptive User-Agent, which the HTTP node sets.\n//\n// The entity class and country live in config so Segment 2 is a config row\n// rather than a code change: swap Q1762059 (film production company) for\n// whatever class that segment hunts.\n\nconst row = $input.first().json;\nconst cfg = row.wikidata || {};\nconst segmentId = row.segment_id;\n\nconst entityClass = cfg.entity_class || 'Q1762059';   // film production company\nconst country     = cfg.country      || 'Q30';        // United States\nconst limit       = cfg.limit        || 400;\n\n// P31/P279* walks subclasses, so \"film production company\" also catches\n// \"television production company\" and similar narrower classes.\n// OPTIONALs are genuinely optional: a company missing an inception date should\n// still be returned, not filtered out.\nconst sparql = `\nSELECT DISTINCT ?company ?companyLabel ?website ?inception ?dissolved ?parentLabel ?employees WHERE {\n  ?company wdt:P31/wdt:P279* wd:${entityClass} .\n  ?company wdt:P17 wd:${country} .\n  ?company wdt:P856 ?website .\n  OPTIONAL { ?company wdt:P571  ?inception }\n  OPTIONAL { ?company wdt:P576  ?dissolved }\n  OPTIONAL { ?company wdt:P749  ?parent }\n  OPTIONAL { ?company wdt:P1128 ?employees }\n  SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\". }\n}\nLIMIT ${limit}`.trim();\n\nreturn [{\n  json: {\n    segment_id: segmentId,\n    entity_class: entityClass,\n    country: country,\n    sparql: sparql,\n    query_url: 'https://query.wikidata.org/sparql?format=json&query='\n               + encodeURIComponent(sparql)\n  }\n}];\n"
+      },
+      "id": "wd-build",
+      "name": "Build SPARQL Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "notes": "source: code/21_build_sparql.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.query_url }}",
+        "options": {
+          "timeout": 120000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.com)"
+            },
+            {
+              "name": "Accept",
+              "value": "application/sparql-results+json"
+            }
+          ]
+        }
+      },
+      "id": "wd-fetch",
+      "name": "Fetch Wikidata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Shape Wikidata Results  |  Mode: Run Once for All Items\n// Runs after the HTTP Request node that calls the Wikidata query service.\n// Input: 1 item holding a SPARQL JSON result set.\n//\n// WHAT THIS CONNECTOR CAN HONESTLY SET, AND WHAT IT CANNOT.\n//\n//   domain                     -- from P856. THE point of this source. Every\n//                                 other connector leaves it null.\n//   geography_signal = 'us'    -- the query itself filters on P17 = United\n//                                 States, so this is a fact about the result\n//                                 set, not a guess.\n//   has_reachable_presence     -- it has a published website by construction.\n//   activity_signal            -- 'confirmed_dormant' when P576 (dissolution\n//                                 date) exists. 38 of the 363 carry one. No\n//                                 other connector can supply this gate input,\n//                                 and it is the difference between a live shop\n//                                 and a company that closed in 2011.\n//   major_or_oversized_signal  -- true when the company has a parent\n//                                 organisation that is a known major, or its\n//                                 own name matches one. Wikidata models\n//                                 ownership properly (P749), so subsidiaries\n//                                 are detectable here in a way they are not\n//                                 from a YouTube channel title.\n//\n// NOT set: right_size, genre_fit, collaboration_openness,\n// international_ip_experience. Wikidata knows a company exists and is notable;\n// it does not know whether it makes comedy, wants a partner, or has six people.\n// Only 14 of 363 even carry an employee count (P1128), so size is recorded as\n// a note when present and left to enrichment otherwise.\n//\n// THE SIZE PROBLEM, STATED PLAINLY. Wikidata is notable-only, and notable\n// skews large: the first page of results is Icon Productions, Relativity\n// Media, Warner Independent. The rubric wants 2-20 people. Expect a low hit\n// rate and lean on `major_or_oversized_signal` plus the P13 gate to clear the\n// obvious misses -- this source earns its place by supplying DOMAINS, not by\n// precision.\n\nconst KNOWN_MAJORS = [\n  'disney', 'warner', 'nbcuniversal', 'universal', 'paramount', 'sony',\n  'columbia', 'viacom', 'mgm', 'lionsgate', 'netflix', 'amazon', 'hbo', 'a24',\n  '20th century', 'fox', 'dreamworks', 'pixar', 'marvel', 'lucasfilm',\n  'miramax', 'legendary', 'blumhouse', 'skydance', 'apple', 'comcast'\n];\n\nfunction hostOf(url) {\n  if (!url) return null;\n  const m = String(url).match(/^[a-z][a-z0-9+.-]*:\\/\\/([^/?#]+)/i);\n  if (!m) return null;\n  return m[1].toLowerCase().replace(/^www\\./, '') || null;\n}\n\nfunction isMajorName(s) {\n  const t = (s || '').toLowerCase();\n  return KNOWN_MAJORS.some(k => t.includes(k));\n}\n\nconst resp = $input.first().json;\nconst body = (resp && resp.results && resp.results.bindings) ? resp\n           : (resp && resp.data && resp.data.results ? resp.data : null);\nconst rows = body ? body.results.bindings : [];\n\n// Wikidata returns one row per value combination, so a company with two\n// inception statements appears twice. Collapse on the entity URI.\nconst byEntity = new Map();\nfor (const r of rows) {\n  const uri = r.company && r.company.value;\n  if (!uri) continue;\n  if (!byEntity.has(uri)) byEntity.set(uri, r);\n  else {\n    // prefer the row that carries the most information\n    const cur = byEntity.get(uri);\n    if (Object.keys(r).length > Object.keys(cur).length) byEntity.set(uri, r);\n  }\n}\n\nconst segmentId = $('Build SPARQL Query').first().json.segment_id;\nconst output = [];\n\nfor (const [uri, r] of byEntity) {\n  const name = r.companyLabel && r.companyLabel.value;\n  // A label that is still a Q-number means the item has no English label --\n  // an unusable name, and not worth a row.\n  if (!name || /^Q\\d+$/.test(name)) continue;\n\n  const website = r.website && r.website.value;\n  const domain = hostOf(website);\n  if (!domain) continue;   // the whole point of this source\n\n  const scoringInputs = {\n    geography_signal: 'us',      // guaranteed by the P17 filter in the query\n    has_reachable_presence: true // it has a published website by construction\n  };\n\n  const dissolved = r.dissolved && r.dissolved.value;\n  if (dissolved) {\n    scoringInputs.activity_signal = 'confirmed_dormant';\n  }\n\n  const parent = r.parentLabel && r.parentLabel.value;\n  if (isMajorName(name) || (parent && isMajorName(parent))) {\n    scoringInputs.major_or_oversized_signal = true;\n  }\n\n  const employees = r.employees && parseInt(r.employees.value, 10);\n  if (Number.isFinite(employees) && employees > 50) {\n    scoringInputs.major_or_oversized_signal = true;\n  }\n\n  output.push({\n    json: {\n      segment_id: segmentId,\n      name: name,\n      domain: domain,\n      source: 'wikidata',\n      source_url: uri,\n      raw: {\n        wikidata_uri: uri,\n        website: website,\n        inception: r.inception ? r.inception.value : null,\n        dissolved: dissolved || null,\n        parent_organisation: parent || null,\n        employees: Number.isFinite(employees) ? employees : null,\n        scoring_inputs: scoringInputs\n      }\n    }\n  });\n}\n\nreturn output;\n"
+      },
+      "id": "wd-shape",
+      "name": "Shape Wikidata Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "notes": "source: code/22_shape_wikidata.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values ($1, $2, $3, $4, $5, $6::jsonb)",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.name }},{{ $json.domain }},{{ $json.source }},{{ $json.source_url }},{{ JSON.stringify($json.raw) }}"
+        }
+      },
+      "id": "wd-insert",
+      "name": "Insert Staging Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        960,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Summarize For Source Run  |  Mode: Run Once for All Items\n// This node is a PARALLEL branch off \"Filter, Score, and Shape for\n// Staging\" - it reads the same admitted-candidate items that also flow\n// to the staging_candidates insert, and collapses them into one summary\n// row for source_runs. It does not run after that insert; it runs\n// alongside it, on the same input.\n\n// SHARED BY EVERY CONNECTOR (2026-08-24). `source` is read off the incoming\n// items rather than hardcoded, so the same node serves YouTube, News RSS,\n// X-intent, Wikidata and AICP without five near-identical copies drifting\n// apart. Each connector's shaping node already stamps `source` on every row.\nconst items = $input.all();\nconst first = items.length > 0 ? items[0].json : {};\nconst segmentId = first.segment_id || null;\nconst source = first.source || 'unknown';\n\nreturn [{\n  json: {\n    segment_id: segmentId,\n    source: source,\n    candidates_found: items.length,\n    candidates_new: items.length, // dedupe against EXISTING entities happens later, at the promote step (P9)\n    status: 'succeeded'\n  }\n}];\n"
+      },
+      "id": "wd-summary",
+      "name": "Summarize For Source Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        420
+      ],
+      "notes": "source: code/04_summarize_source_run.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into source_runs (segment_id, source, candidates_found, candidates_new, status, finished_at) values ($1, $2, $3, $4, $5, now())",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.source }},{{ $json.candidates_found }},{{ $json.candidates_new }},{{ $json.status }}"
+        }
+      },
+      "id": "wd-run",
+      "name": "Insert Source Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1180,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Build SPARQL Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SPARQL Query": {
+      "main": [
+        [
+          {
+            "node": "Fetch Wikidata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Wikidata": {
+      "main": [
+        [
+          {
+            "node": "Shape Wikidata Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Wikidata Results": {
+      "main": [
+        [
+          {
+            "node": "Insert Staging Candidates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Summarize For Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize For Source Run": {
+      "main": [
+        [
+          {
+            "node": "Insert Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

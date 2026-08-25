@@ -368,7 +368,7 @@ def render(rows, generated_at):
         meta = as_obj(r["metadata"])
         bd = as_obj(r["score_breakdown"])
         research = meta.get("p1_research", {})
-        unverified = set(meta.get("p1_unverified", []) or [])
+        unverified = set(meta.get("unverified_inputs", []) or [])
         score = float(r["fit_score"])
         b, blabel = band(score, t_review, t_priority)
         dom = r["domain"] or ""
@@ -481,7 +481,7 @@ def render(rows, generated_at):
   <p class="note"><strong>Unverified inputs score zero.</strong> Every candidate is scored across all six
   criteria, out of the full 110-point pool, so these numbers are comparable to each other. A criterion
   marked <span class="mono">unverified</span> on a card is a zero that was defaulted, not a zero anyone
-  checked &mdash; the distinction is preserved in <span class="mono">metadata.p1_unverified</span> so it
+  checked &mdash; the distinction is preserved in <span class="mono">metadata.unverified_inputs</span> so it
   survives for the P11 review. Thresholds were reset in the same sitting: review %g, priority %g.</p>
 
   <p class="section-label">Ranked</p>

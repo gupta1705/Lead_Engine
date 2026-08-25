@@ -1,0 +1,212 @@
+{
+  "id": "aicpdirectory1",
+  "versionId": "aicpdirectory1",
+  "name": "conn_aicp_directory",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "aicp-trigger",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select id as segment_id from segments where slug = 'us-production-houses';",
+        "options": {}
+      },
+      "id": "aicp-config",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        80,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://www.aicp.com/membership-information/member-directory/general-member-directory",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.com)"
+            }
+          ]
+        }
+      },
+      "id": "aicp-fetch",
+      "name": "Fetch AICP Directory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Parse AICP Directory  |  Mode: Run Once for All Items\n// Runs after the HTTP Request node that fetches the AICP General Member\n// Directory page as text.\n//\n// COMPLIANCE, CHECKED BEFORE A LINE OF THIS WAS WRITTEN.\n//   robots.txt   https://www.aicp.com/robots.txt reads \"User-agent: * /\n//                Disallow:\" -- an empty Disallow permits everything.\n//   first-party  The directory is AICP's own public page, served as static\n//                HTML. Verified live: 1.13MB of server-rendered markup with\n//                member names in it, not a JavaScript shell.\n//   scope        NAMES ONLY, for internal use. AICP's terms are\n//                reference-only: no bulk republishing. Names enter our own\n//                enrichment pipeline and go no further. That is why this\n//                connector deliberately does not lift addresses, contacts or\n//                anything else the page happens to show.\n//   politeness   One request per run, and the run is monthly-ish. This is not\n//                a crawl.\n//\n// WHAT IT CAN SET: essentially nothing beyond the name. No domain (the listing\n// does not link out), no geography, no size. `has_reachable_presence` is NOT\n// set either -- AICP membership is not a first-party presence we have\n// verified, and asserting it would be exactly the kind of free-points\n// inflation this project has already had to unwind twice.\n//\n// So an AICP row arrives as a bare name, scores near zero, and stays that way\n// until enrichment finds it a domain at P16. That is the intended shape of\n// this source, not a defect: it is a NAME LIST of real commercial production\n// companies, and the value is in the names being real.\n\nconst MARKUP = /<h4[^>]*class=\"[^\"]*font-semiBold[^\"]*\"[^>]*>([\\s\\S]*?)<\\/h4>\\s*<p[^>]*>([\\s\\S]*?)<\\/p>/g;\n\n// Member types that are production companies. AICP also lists associate\n// members -- insurers, equipment houses, payroll firms, post facilities --\n// which are vendors to the industry, not IP-owning producers, and the review\n// checklist explicitly rules them out.\nconst ADMIT_TYPES = ['production company', 'production companies'];\n\nfunction clean(s) {\n  return (s || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ')\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))\n    .replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nconst resp = $input.first().json;\nconst html = typeof resp === 'string' ? resp\n           : (resp.data || resp.body || resp.text || '');\n\nconst segmentId = $('Load Config').first().json.segment_id;\n\nconst seen = new Set();\nconst output = [];\nlet skippedType = 0;\n\nif (typeof html === 'string' && html.length > 0) {\n  let m;\n  while ((m = MARKUP.exec(html)) !== null) {\n    const name = clean(m[1]);\n    const memberType = clean(m[2]).toLowerCase();\n\n    if (!name || name.length < 2) continue;\n    if (!ADMIT_TYPES.some(t => memberType.includes(t))) { skippedType++; continue; }\n\n    const key = name.toLowerCase();\n    if (seen.has(key)) continue;   // the page repeats members across regions\n    seen.add(key);\n\n    output.push({\n      json: {\n        segment_id: segmentId,\n        name: name,\n        domain: null,          // filled at enrichment (P16), by design\n        source: 'aicp_directory',\n        source_url: 'https://www.aicp.com/membership-information/member-directory/general-member-directory',\n        raw: {\n          member_type: memberType,\n          // No scoring inputs. This source knows a name and nothing else, and\n          // saying so plainly is worth more than a manufactured signal.\n          scoring_inputs: {}\n        }\n      }\n    });\n  }\n}\n\nif (output.length > 0) {\n  output[0].json.raw.parse_stats = {\n    admitted: output.length,\n    skipped_non_production_member_types: skippedType\n  };\n}\n\nreturn output;\n"
+      },
+      "id": "aicp-parse",
+      "name": "Parse AICP Directory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ],
+      "notes": "source: code/31_parse_aicp_directory.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values ($1, $2, $3, $4, $5, $6::jsonb)",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.name }},{{ $json.domain }},{{ $json.source }},{{ $json.source_url }},{{ JSON.stringify($json.raw) }}"
+        }
+      },
+      "id": "aicp-insert",
+      "name": "Insert Staging Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        740,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Summarize For Source Run  |  Mode: Run Once for All Items\n// This node is a PARALLEL branch off \"Filter, Score, and Shape for\n// Staging\" - it reads the same admitted-candidate items that also flow\n// to the staging_candidates insert, and collapses them into one summary\n// row for source_runs. It does not run after that insert; it runs\n// alongside it, on the same input.\n\n// SHARED BY EVERY CONNECTOR (2026-08-24). `source` is read off the incoming\n// items rather than hardcoded, so the same node serves YouTube, News RSS,\n// X-intent, Wikidata and AICP without five near-identical copies drifting\n// apart. Each connector's shaping node already stamps `source` on every row.\nconst items = $input.all();\nconst first = items.length > 0 ? items[0].json : {};\nconst segmentId = first.segment_id || null;\nconst source = first.source || 'unknown';\n\nreturn [{\n  json: {\n    segment_id: segmentId,\n    source: source,\n    candidates_found: items.length,\n    candidates_new: items.length, // dedupe against EXISTING entities happens later, at the promote step (P9)\n    status: 'succeeded'\n  }\n}];\n"
+      },
+      "id": "aicp-summary",
+      "name": "Summarize For Source Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        420
+      ],
+      "notes": "source: code/04_summarize_source_run.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into source_runs (segment_id, source, candidates_found, candidates_new, status, finished_at) values ($1, $2, $3, $4, $5, now())",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.source }},{{ $json.candidates_found }},{{ $json.candidates_new }},{{ $json.status }}"
+        }
+      },
+      "id": "aicp-run",
+      "name": "Insert Source Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        960,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch AICP Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AICP Directory": {
+      "main": [
+        [
+          {
+            "node": "Parse AICP Directory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AICP Directory": {
+      "main": [
+        [
+          {
+            "node": "Insert Staging Candidates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Summarize For Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize For Source Run": {
+      "main": [
+        [
+          {
+            "node": "Insert Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -156,6 +156,28 @@ values (
     { "query": "branded content studio", "genre_hint": null },
     { "query": "production company", "genre_hint": null }
   ],
+  "news_rss_discovery_queries": [
+    { "query": "\"format rights\" production company series", "deal_kind": "format_deal" },
+    { "query": "\"adaptation rights\" series independent studio", "deal_kind": "adaptation" },
+    { "query": "\"co-production\" independent production company series", "deal_kind": "co_production" },
+    { "query": "\"first-look deal\" production company", "deal_kind": "output_deal" },
+    { "query": "\"local adaptation\" OR \"English-language remake\" production company", "deal_kind": "adaptation" },
+    { "query": "indie studio options rights international series", "deal_kind": "option" }
+  ],
+  "x_intent_discovery_queries": [
+    { "query": "\"open to co-productions\" production company", "intent": "explicit_invitation" },
+    { "query": "indie production company \"looking for partners\"", "intent": "explicit_invitation" },
+    { "query": "\"seeking a production partner\" series", "intent": "explicit_invitation" },
+    { "query": "\"accepting submissions\" production company series", "intent": "open_door" },
+    { "query": "site:x.com \"co-production\" film series", "intent": "social_post" },
+    { "query": "site:x.com production company \"looking for\" partner", "intent": "social_post" }
+  ],
+  "wikidata_discovery": {
+    "entity_class": "Q1762059",
+    "country": "Q30",
+    "limit": 400,
+    "guidance": "Wikidata SPARQL seed. entity_class Q1762059 is film production company; P31/P279* walks subclasses so television production companies come along too. country Q30 is the United States, which is what makes geography_signal us a fact rather than a guess. A live probe on 2026-08-25 found 363 US production companies carrying an official website (P856) - and the website is the whole point: every other connector leaves domain null, and Apollo matches organisations by domain at P16. CC0, no key, no quota. Notable-only, so this is a seed re-run occasionally rather than a weekly stream, and it skews LARGE - the first page is Icon Productions, Relativity Media, Warner Independent. Expect a low hit rate against the 2-20 person target and lean on major_or_oversized_signal plus the P13 gate. Only 14 of 363 carry an employee count, so size stays an enrichment question. For Segment 2, change entity_class here rather than touching any code."
+  },
   "metadata_fields": [
     "subtype",
     "hq_city", "hq_state",
@@ -204,6 +226,11 @@ values (
       "detail": "Commercial/branded shops. Static HTML, names only, needs domain enrichment downstream. ToS is reference-only."
     }
   ],
+  "self_exclusion": {
+    "domains": ["theviralfever.com", "tvfplay.com"],
+    "name_patterns": ["the viral fever", "girliyapa", "contagious online media"],
+    "guidance": "TVF and its affiliates must never enter the lead pool. This is not hypothetical: the first live YouTube run on 2026-08-24 surfaced The Viral Fever own channel among 125 candidates. It was caught only because 13.1M subscribers tripped the major_or_oversized gate - a smaller affiliate channel, a regional spinoff, or a partner shop would have sailed through, been scored, reviewed, and eventually put on a send list. Matching is deliberately conservative: domains match on exact host or subdomain, name_patterns match as whole words against a lowercased entity name. Note the absence of a bare tvf pattern - it would match TVFoods, TVFirst and similar unrelated names, and a self-exclusion rule that quietly deletes real leads is worse than the problem it solves. Add specific affiliate names here as they come up rather than broadening the patterns."
+  },
   "enrichment": {
     "provider": "apollo",
     "contact_method": "apollo_org_match_then_people_search",

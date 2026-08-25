@@ -1,0 +1,255 @@
+{
+  "id": "xintentsignal01",
+  "versionId": "xintentsignal01",
+  "name": "conn_x_intent_signals",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "xintent-trigger-01",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select config->'x_intent_discovery_queries' as queries, id as segment_id from segments where slug = 'us-production-houses';",
+        "options": {}
+      },
+      "id": "xintent-config-02",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        80,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Split News Queries  |  Mode: Run Once for All Items\n// Runs right after the Postgres \"Load Config\" node.\n// Input: 1 item — { queries: [ { query, deal_kind }, ... ], segment_id }\n// Output: one item per query, each carrying a ready-built Google News RSS URL\n// plus the context every later node needs.\n//\n// Google News exposes its search as an RSS feed, which is why this source\n// costs nothing and needs no API key: no quota, no credential, no signup.\n//   https://news.google.com/rss/search?q=<query>&hl=en-US&gl=US&ceid=US:en\n// hl/gl/ceid pin the edition to US English. Unlike YouTube's regionCode -- which\n// biases by VIEWER region and let 54 non-US channels through at P4 -- these\n// select which Google News edition is searched, so US trade press dominates.\n// It is still a bias, not a filter: a non-US company can appear in US trade\n// press, and should. The us_geography gate is what actually decides.\n\nconst row = $input.first().json;\nconst queries = row.queries || [];\nconst segmentId = row.segment_id;\n\nconst BASE = 'https://news.google.com/rss/search';\n\nreturn queries.map(q => ({\n  json: {\n    query: q.query,\n    deal_kind: q.deal_kind !== undefined ? q.deal_kind : null,\n    segment_id: segmentId,\n    feed_url: `${BASE}?q=${encodeURIComponent(q.query)}&hl=en-US&gl=US&ceid=US:en`\n  }\n}));\n"
+      },
+      "id": "xintent-split-03",
+      "name": "Split News Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "notes": "source: code/11_split_news_queries.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.feed_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "xintent-fetch-04",
+      "name": "Fetch News Feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Parse News Feed  |  Mode: Run Once for All Items\n// Runs after the HTTP Request node that fetches each Google News RSS URL built\n// by \"Split News Queries\". One request per query, so N inputs -> N outputs and\n// the pairing is index-for-index.\n//\n// WHY THIS NODE EXISTS INSTEAD OF n8n's RSS READ NODE. The first version used\n// RSS Read and recovered the query context from `item.pairedItem`. That looked\n// reasonable and was wrong: on a live run the RSS node returned 287 articles\n// with pairedItem.item counting 0..118 -- enumerating its own OUTPUT items, not\n// the 6 query inputs. Every row past index 5 therefore resolved to an empty\n// context, lost its segment_id, and the insert died on a NOT NULL constraint.\n//\n// An HTTP Request node has no such ambiguity: it emits exactly one item per\n// input item, in order, so index i of this node's input IS query i. That is the\n// same shape the YouTube connector uses and has already proven live.\n//\n// Parsing Google News RSS by regex is safe in a way that general XML parsing is\n// not: the feed is machine-generated, flat, and always the same handful of tags.\n\nfunction decodeEntities(s) {\n  if (!s) return '';\n  return s\n    .replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1')\n    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/&apos;/g, \"'\")\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))\n    .replace(/&amp;/g, '&');   // last, so &amp;lt; does not become <\n}\n\nfunction tag(block, name) {\n  const m = block.match(new RegExp('<' + name + '[^>]*>([\\\\s\\\\S]*?)<\\\\/' + name + '>'));\n  return m ? decodeEntities(m[1]).trim() : null;\n}\n\nfunction stripHtml(s) {\n  return (s || '').replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();\n}\n\nconst queryItems = $('Split News Queries').all();\nconst responses = $input.all();\n\nconst output = [];\n\nresponses.forEach((resp, idx) => {\n  const ctx = queryItems[idx] ? queryItems[idx].json : {};\n\n  // The HTTP node hands back the body as a string when the response format is\n  // text; be tolerant about where it lands across n8n versions.\n  const j = resp.json || {};\n  const xml = typeof j === 'string' ? j\n    : (j.data || j.body || j.text || '');\n  if (!xml || typeof xml !== 'string') return;\n\n  const blocks = xml.split('<item>').slice(1);\n  blocks.forEach((chunk) => {\n    const block = chunk.split('</item>')[0];\n    const title = tag(block, 'title');\n    if (!title) return;\n\n    output.push({\n      json: {\n        title: title,\n        link: tag(block, 'link'),\n        pubDate: tag(block, 'pubDate'),\n        description: stripHtml(tag(block, 'description') || ''),\n        feed_source: tag(block, 'source'),\n        // Query context travels ON the item from here on. No later node has to\n        // reconstruct it, which is the whole point of this rewrite.\n        matched_query: ctx.query || null,\n        deal_kind: ctx.deal_kind !== undefined ? ctx.deal_kind : null,\n        segment_id: ctx.segment_id || null\n      }\n    });\n  });\n});\n\nreturn output;\n"
+      },
+      "id": "xintent-parse-05",
+      "name": "Parse News Feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "notes": "source: code/12_parse_news_feed.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Filter And Extract Intent Signals  |  Mode: Run Once for All Items\n// Runs after \"Parse News Feed\" (shared with the News RSS connector), which has\n// already turned each feed response into one item per article/post carrying its\n// own query context.\n//\n// WHAT THIS SOURCE IS FOR. Every other connector can prove at most one or two\n// rubric criteria. This one targets `collaboration_openness` (15 points), which\n// nothing else sets: a company that publicly says it is open to co-productions\n// or looking for partners is telling you the thing the rubric wants to know.\n//\n// WHY IT NEEDS A RELEVANCE FILTER, AND WHY THAT IS NOT OPTIONAL. \"Co-production\"\n// is a term of art in UK adult social care and public-service design, and that\n// usage dominates the feed. A live probe of `site:x.com \"co-production\"`\n// returned, in order: a Swansea co-production network, an adult social care\n// conference, a Nigeria-China film partnership, and a co-production week\n// newsletter. One of four was about screen. Without an industry gate this\n// connector fills staging with local-government engagement work.\n//\n// The plan predicted this: \"Noisy by design -- needs a basic relevance filter\n// node before landing in staging.\"\n\n// At least one of these must appear, or the item is not about screen at all.\nconst INDUSTRY_WORDS = [\n  'film', 'films', 'tv', 'television', 'series', 'drama', 'comedy', 'sitcom',\n  'documentary', 'doc', 'feature', 'streamer', 'streaming', 'studio', 'studios',\n  'screen', 'broadcaster', 'network', 'showrunner', 'pilot', 'season',\n  'production company', 'producer', 'producers', 'cinema', 'animation',\n  'format', 'scripted', 'unscripted'\n];\n\n// Any of these and the item is discarded outright, however screen-ish it looks.\n// Each was written against a real false positive from the live probe.\nconst OFF_DOMAIN = [\n  'social care', 'adult care', 'healthcare', 'health care', 'nhs', 'patient',\n  'council', 'local authority', 'public services', 'community engagement',\n  'service users', 'lived experience', 'co-production week', 'wellbeing',\n  'housing', 'charity', 'school', 'university', 'curriculum', 'energy',\n  'apparel', 'biotech', 'pharma', 'oil', 'mining', 'agriculture'\n];\n\n// Explicit invitations. These are the actual evidence for the criterion --\n// a company saying, in its own words, that it wants partners.\nconst INVITATION_PHRASES = [\n  'open to co-production', 'open to co-productions', 'open for co-production',\n  'looking for partners', 'looking for a partner', 'seeking partners',\n  'seeking a production partner', 'seeking co-production',\n  'accepting submissions', 'open for submissions', 'pitch us',\n  'work with us', 'collaborate with us', 'partner with us',\n  'looking to collaborate', 'open to collaboration'\n];\n\nconst COMPANY_SUFFIX = [\n  'Media', 'Studio', 'Studios', 'Pictures', 'Films', 'Film',\n  'Productions', 'Production', 'Entertainment', 'Television',\n  'Company', 'Group', 'Network', 'Works', 'Collective'\n];\n\nconst NOT_A_LEAD = [\n  'netflix', 'amazon', 'prime video', 'apple', 'disney', 'hulu', 'hbo', 'max',\n  'warner', 'paramount', 'peacock', 'nbc', 'abc', 'cbs', 'fox', 'sony',\n  'lionsgate', 'mgm', 'a24', 'bbc', 'itv', 'channel 4', 'sky', 'starz',\n  'showtime', 'amc', 'discovery', 'universal', 'variety', 'deadline',\n  'hollywood reporter', 'screen daily', 'c21media', 'broadcast', 'x.com',\n  'twitter', 'google news', 'yahoo', 'msn'\n];\n\nconst STOP_WORDS = new Set([\n  'a', 'an', 'the', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'by',\n  'with', 'from', 'its', 'our', 'we', 'us', 'their', 'new', 'first', 'next',\n  'is', 'are', 'was', 'were', 'be', 'been', 'this', 'that', 'these', 'those',\n  'open', 'looking', 'seeking', 'accepting', 'announces', 'announced', 'joins',\n  'series', 'season', 'show', 'drama', 'comedy', 'film', 'movie', 'documentary',\n  'partner', 'partners', 'partnership', 'submission', 'submissions', 'pitch',\n  'exclusive', 'report', 'week', 'network', 'conference'\n]);\n\nconst ORIGIN_WORDS = new Set([\n  'korean', 'belgian', 'indian', 'spanish', 'israeli', 'german', 'japanese',\n  'french', 'turkish', 'italian', 'dutch', 'danish', 'swedish', 'norwegian',\n  'polish', 'russian', 'chinese', 'brazilian', 'mexican', 'australian',\n  'british', 'irish', 'welsh', 'scottish', 'canadian', 'american', 'nigerian',\n  'nordic', 'european', 'african', 'asian', 'original', 'foreign', 'international'\n]);\n\nconst GENERIC_WORDS = new Set([\n  'film', 'films', 'tv', 'television', 'works', 'company', 'production',\n  'productions', 'studio', 'studios', 'media', 'group', 'network',\n  'entertainment', 'pictures', 'collective', 'content', 'video', 'digital',\n  'new', 'big', 'little', 'good', 'great', 'best', 'co'\n]);\n\nfunction hasAny(text, list) {\n  const t = text.toLowerCase();\n  return list.filter(w => t.includes(w));\n}\n\nfunction isExcluded(name) {\n  const n = name.toLowerCase();\n  return NOT_A_LEAD.some(x => n === x || n.startsWith(x + ' ') || n.endsWith(' ' + x));\n}\n\n// Same backwards walk the News RSS extractor uses, and for the same reason:\n// a wrong name here becomes a cold email to a stranger. n8n Code nodes cannot\n// import shared modules, so this is duplicated deliberately -- the fixtures\n// cover both copies.\nfunction extractCompanies(text) {\n  if (!text) return [];\n  const tokens = text.split(/\\s+/).filter(Boolean);\n  const suffixSet = new Set(COMPANY_SUFFIX.map(s => s.toLowerCase()));\n  const out = [];\n  for (let i = 0; i < tokens.length; i++) {\n    const bare = tokens[i].replace(/[^A-Za-z0-9'’&.-]+$/, '');\n    if (!suffixSet.has(bare.toLowerCase())) continue;\n    if (!/^[A-Z]/.test(bare)) continue;\n    const parts = [bare];\n    for (let j = i - 1; j >= 0 && parts.length < 4; j--) {\n      const w = tokens[j].replace(/[^A-Za-z0-9'’&.-]+$/, '');\n      if (!w) break;\n      if (STOP_WORDS.has(w.toLowerCase())) break;\n      if (!/^[A-Z0-9]/.test(w)) break;\n      if (/['’]s$/.test(w)) break;\n      parts.unshift(w);\n    }\n    if (parts.length < 2) continue;\n    const lower = parts.map(p => p.toLowerCase().replace(/['’]s$/, ''));\n    if (lower.some(w => ORIGIN_WORDS.has(w))) continue;\n    if (lower.every(w => GENERIC_WORDS.has(w))) continue;\n    const name = parts.join(' ');\n    if (isExcluded(name)) continue;\n    if (!out.includes(name)) out.push(name);\n  }\n  return out.filter(n => !out.some(o => o !== n && o.startsWith(n + ' ')));\n}\n\nconst feedItems = $input.all();\nconst seen = new Set();\nconst output = [];\nlet droppedOffDomain = 0, droppedNoIndustry = 0, droppedNoName = 0, droppedNoInvite = 0;\n\nfeedItems.forEach((item) => {\n  const j = item.json || {};\n  const title = j.title || '';\n  const body = (title + ' ' + (j.description || '')).trim();\n  if (!body) return;\n\n  // 1. hard reject anything from another sector\n  const off = hasAny(body, OFF_DOMAIN);\n  if (off.length > 0) { droppedOffDomain++; return; }\n\n  // 2. require positive screen-industry evidence\n  const industry = hasAny(body, INDUSTRY_WORDS);\n  if (industry.length === 0) { droppedNoIndustry++; return; }\n\n  // 3. require an actual invitation. Without one there is no signal here that\n  //    the News RSS connector does not already carry better.\n  const invitations = hasAny(body, INVITATION_PHRASES);\n  if (invitations.length === 0) { droppedNoInvite++; return; }\n\n  const companies = extractCompanies(title);\n  if (companies.length === 0) { droppedNoName++; return; }\n\n  companies.forEach((name) => {\n    const key = name.toLowerCase();\n    if (seen.has(key)) return;\n    seen.add(key);\n\n    output.push({\n      json: {\n        segment_id: j.segment_id || null,\n        name: name,\n        domain: null,\n        source: 'x_intent_signals',\n        source_url: j.link || null,\n        raw: {\n          post_text: title,\n          summary: (j.description || '').slice(0, 400),\n          published_at: j.pubDate || null,\n          matched_query: j.matched_query || null,\n          intent_kind: j.deal_kind || null,\n          invitation_phrases: invitations,\n          industry_words: industry.slice(0, 6),\n          scoring_inputs: {\n            // The criterion this source exists for. Full credit: the config\n            // guidance gives full points for \"an explicit collaboration or\n            // partnership invitation on their own site\", and a public post\n            // saying it in the company's own words is the same claim.\n            collaboration_openness: 1,\n            has_reachable_presence: true\n          }\n        }\n      }\n    });\n  });\n});\n\n// Rejection counts travel with the run so the noise level is measurable rather\n// than a guess. If droppedOffDomain dwarfs the output, the queries need work --\n// which is a config edit, not a code change.\nif (output.length > 0) {\n  output[0].json.raw.filter_stats = {\n    seen: feedItems.length,\n    dropped_off_domain: droppedOffDomain,\n    dropped_no_industry_words: droppedNoIndustry,\n    dropped_no_invitation: droppedNoInvite,\n    dropped_no_company_name: droppedNoName,\n    admitted: output.length\n  };\n}\n\nreturn output;\n"
+      },
+      "id": "xintent-filter-06",
+      "name": "Filter And Extract Intent Signals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "notes": "source: code/14_filter_extract_intent.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values ($1, $2, $3, $4, $5, $6::jsonb)",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.name }},{{ $json.domain }},{{ $json.source }},{{ $json.source_url }},{{ JSON.stringify($json.raw) }}"
+        }
+      },
+      "id": "xintent-insert-07",
+      "name": "Insert Staging Candidates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1180,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Node: Summarize For Source Run  |  Mode: Run Once for All Items\n// This node is a PARALLEL branch off \"Filter, Score, and Shape for\n// Staging\" - it reads the same admitted-candidate items that also flow\n// to the staging_candidates insert, and collapses them into one summary\n// row for source_runs. It does not run after that insert; it runs\n// alongside it, on the same input.\n\n// SHARED BY EVERY CONNECTOR (2026-08-24). `source` is read off the incoming\n// items rather than hardcoded, so the same node serves YouTube, News RSS,\n// X-intent, Wikidata and AICP without five near-identical copies drifting\n// apart. Each connector's shaping node already stamps `source` on every row.\nconst items = $input.all();\nconst first = items.length > 0 ? items[0].json : {};\nconst segmentId = first.segment_id || null;\nconst source = first.source || 'unknown';\n\nreturn [{\n  json: {\n    segment_id: segmentId,\n    source: source,\n    candidates_found: items.length,\n    candidates_new: items.length, // dedupe against EXISTING entities happens later, at the promote step (P9)\n    status: 'succeeded'\n  }\n}];\n"
+      },
+      "id": "xintent-summary-08",
+      "name": "Summarize For Source Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        420
+      ],
+      "notes": "source: code/04_summarize_source_run.js (edit the file, then run tools/sync_workflow_code.py)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into source_runs (segment_id, source, candidates_found, candidates_new, status, finished_at) values ($1, $2, $3, $4, $5, now())",
+        "options": {
+          "queryReplacement": "={{ $json.segment_id }},{{ $json.source }},{{ $json.candidates_found }},{{ $json.candidates_new }},{{ $json.status }}"
+        }
+      },
+      "id": "xintent-run-09",
+      "name": "Insert Source Run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1400,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "supabaseleadeng1",
+          "name": "Supabase — Lead Engine"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Split News Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split News Queries": {
+      "main": [
+        [
+          {
+            "node": "Fetch News Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch News Feed": {
+      "main": [
+        [
+          {
+            "node": "Parse News Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse News Feed": {
+      "main": [
+        [
+          {
+            "node": "Filter And Extract Intent Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter And Extract Intent Signals": {
+      "main": [
+        [
+          {
+            "node": "Insert Staging Candidates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Summarize For Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize For Source Run": {
+      "main": [
+        [
+          {
+            "node": "Insert Source Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
