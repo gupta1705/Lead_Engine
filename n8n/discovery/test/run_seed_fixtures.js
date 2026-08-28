@@ -37,16 +37,17 @@ const built = wrap("21_build_sparql.js")(
   inputOf(items([{ wikidata: cfg.wikidata_discovery, segment_id: SEGMENT_ID }])), null);
 
 console.log("21_build_sparql");
-check("emits exactly one query item", built.length === 1);
+check("emits one query item PER class -- the combined query timed out live",
+  built.length === cfg.wikidata_discovery.entity_classes.length);
 check("uses the configured entity class, not a hardcoded one",
   cfg.wikidata_discovery.entity_classes.every(
-    (c) => built[0].json.sparql.includes("wd:" + c)));
+    (c) => built.some((b) => b.json.sparql.includes("wd:" + c))));
 check("queries BOTH class trees -- film and TV are siblings, not parent/child",
-  built[0].json.sparql.includes("VALUES ?cls")
-  && built[0].json.sparql.includes("wd:Q10689397"),
+  built.some((b) => b.json.sparql.includes("wd:Q1762059"))
+  && built.some((b) => b.json.sparql.includes("wd:Q10689397")),
   "the single-class version silently missed 124 US TV production companies");
 check("filters to the configured country",
-  built[0].json.sparql.includes("wdt:P17 wd:" + cfg.wikidata_discovery.country));
+  built.every((b) => b.json.sparql.includes("wdt:P17 wd:" + cfg.wikidata_discovery.country)));
 check("requires an official website (P856) -- the reason this source exists",
   built[0].json.sparql.includes("wdt:P856"));
 check("asks for dissolution date (P576), which no other connector can supply",

@@ -71,19 +71,22 @@ function asResults(v) {
   return null;
 }
 
-const resp = $input.first().json;
-const body = asResults(resp);
-const rows = body ? body.results.bindings : [];
+// One response PER CLASS arrives here (the fetch node runs once per query
+// item), so collect bindings across all of them; the byEntity map below
+// already dedupes a company that appears in both class trees.
+const rows = [];
+for (const item of $input.all()) {
+  const body = asResults(item.json);
+  if (body) rows.push(...body.results.bindings);
+}
 
 // A silent zero here is the failure mode that wasted a live run: the node was
 // green, the query was fine, and nothing reached the database. Fail loudly.
 if (rows.length === 0) {
   throw new Error(
-    'Wikidata returned no usable rows. The response was ' + typeof resp +
-    ' with keys [' + (resp && typeof resp === 'object'
-      ? Object.keys(resp).join(', ') : 'n/a') +
-    ']. If the query genuinely matched nothing that is a query problem; if the ' +
-    'body is a string this parser failed to read it.');
+    'Wikidata returned no usable rows across ' + $input.all().length + ' response(s). First was ' + typeof ($input.first() && $input.first().json) +
+    '. If the queries genuinely matched nothing that is a query problem; if the ' +
+    'bodies are strings this parser failed to read them.');
 }
 
 // Wikidata returns one row per value combination, so a company with two

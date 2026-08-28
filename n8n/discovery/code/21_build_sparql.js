@@ -38,14 +38,19 @@ const entityClasses = cfg.entity_classes
 const country = cfg.country || 'Q30';        // United States
 const limit   = cfg.limit   || 600;
 
-const valuesClause = entityClasses.map(c => 'wd:' + c).join(' ');
+// ONE QUERY PER CLASS, not one query with a VALUES join. The combined
+// two-tree query timed out against the query service's 60-second ceiling on
+// the first live run (execution #14) -- each P279* subclass walk is expensive
+// and the label service multiplies it. A single-class query of exactly this
+// shape has already succeeded live, so N classes become N items here; the
+// HTTP node runs once per item, and the shaping node merges and dedupes.
 
 // OPTIONALs are genuinely optional: a company missing an inception date should
 // still be returned, not filtered out.
-const sparql = `
+return entityClasses.map(cls => {
+  const sparql = `
 SELECT DISTINCT ?company ?companyLabel ?website ?inception ?dissolved ?parentLabel ?employees WHERE {
-  VALUES ?cls { ${valuesClause} }
-  ?company wdt:P31/wdt:P279* ?cls .
+  ?company wdt:P31/wdt:P279* wd:${cls} .
   ?company wdt:P17 wd:${country} .
   ?company wdt:P856 ?website .
   OPTIONAL { ?company wdt:P571  ?inception }
@@ -55,14 +60,15 @@ SELECT DISTINCT ?company ?companyLabel ?website ?inception ?dissolved ?parentLab
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 LIMIT ${limit}`.trim();
-
-return [{
-  json: {
-    segment_id: segmentId,
-    entity_classes: entityClasses,
-    country: country,
-    sparql: sparql,
-    query_url: 'https://query.wikidata.org/sparql?format=json&query='
-               + encodeURIComponent(sparql)
-  }
-}];
+  return {
+    json: {
+      segment_id: segmentId,
+      entity_class: cls,
+      entity_classes: entityClasses,
+      country: country,
+      sparql: sparql,
+      query_url: 'https://query.wikidata.org/sparql?format=json&query='
+                 + encodeURIComponent(sparql)
+    }
+  };
+});
