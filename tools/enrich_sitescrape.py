@@ -486,6 +486,80 @@ def write_size(cur, eid, found):
         cur.execute("select set_scoring_input(%s,'right_size','1'::jsonb)", (eid,))
 
 
+class Db:
+    """A connection that survives the pooler hanging up on us.
+
+    TWO RUNS DIED OF THIS on 2026-08-29, at 47 and 183 companies respectively,
+    both with "server closed the connection unexpectedly". Supabase's session
+    pooler does not keep a single connection alive for the two hours this pass
+    takes, and the tool was holding exactly one from start to finish. Losing an
+    hour of polite, rate-limited crawling to a dropped socket is the definition
+    of avoidable.
+
+    Every write goes through run(), which probes the connection, reconnects if
+    it has gone, and retries the work once. Progress is already durable --
+    site_read is stamped per company -- so a reconnect resumes exactly where it
+    was rather than redoing anything.
+    """
+
+    def __init__(self):
+        self._conn = None
+
+    def _fresh(self):
+        from run_sql import load_db_url
+        import psycopg2
+        self._conn = psycopg2.connect(load_db_url(), connect_timeout=20)
+        return self._conn
+
+    def _live(self):
+        import psycopg2
+        if self._conn is None or self._conn.closed:
+            return self._fresh()
+        try:
+            with self._conn.cursor() as c:
+                c.execute("select 1")
+            return self._conn
+        except psycopg2.Error:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            return self._fresh()
+
+    def run(self, fn):
+        """fn(cur) -> anything. Committed on success, retried once on a drop."""
+        import psycopg2
+        for attempt in (1, 2):
+            conn = self._live()
+            try:
+                with conn.cursor() as cur:
+                    out = fn(cur)
+                conn.commit()
+                return out
+            except psycopg2.OperationalError:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+                self._conn = None
+                if attempt == 2:
+                    raise
+                log("      (database connection dropped -- reconnecting)")
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+
+    def close(self):
+        try:
+            if self._conn:
+                self._conn.close()
+        except Exception:
+            pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=10)
@@ -539,7 +613,8 @@ def main():
         params.append(args.source)
     params.append(args.limit)
 
-    conn = psycopg2.connect(load_db_url(), connect_timeout=20)
+    db = Db()
+    conn = db._live()
     with conn.cursor() as cur:
         cur.execute("""
             select e.id, e.name, e.domain, e.fit_score
@@ -553,7 +628,7 @@ def main():
     if not targets:
         log("nothing to do -- every domain in scope is already "
             + ("read" if args.qualify else "contactable"))
-        conn.close(); return 0
+        db.close(); return 0
 
     log("B1 site-scrape enrichment -- %d target(s)%s\n"
         % (len(targets), "  [DRY RUN]" if args.dry_run else ""))
@@ -586,11 +661,10 @@ def main():
                 log("      domain does not resolve -- skipping, likely dead")
                 stats["no_mx"] += 1
                 if not args.dry_run:
-                    with conn.cursor() as cur:
-                        cur.execute("""update entities set metadata =
-                            jsonb_set(metadata,'{enrichment_result}','"domain_dead"')
-                            where id = %s""", (eid,))
-                    conn.commit()
+                    db.run(lambda cur, _e=eid: cur.execute(
+                        "update entities set metadata ="
+                        " jsonb_set(metadata,'{enrichment_result}','\"domain_dead\"')"
+                        " where id = %s", (_e,)))
                 continue
 
             if found is None:
@@ -599,10 +673,9 @@ def main():
                 continue
 
             if not args.dry_run:
-                with conn.cursor() as cur:
-                    cur.execute("""update entities set metadata =
-                        jsonb_set(metadata,'{site_read}','"done"') where id = %s""", (eid,))
-                conn.commit()
+                db.run(lambda cur, _e=eid: cur.execute(
+                    "update entities set metadata ="
+                    " jsonb_set(metadata,'{site_read}','\"done\"') where id = %s", (_e,)))
 
             if found["blocked"]:
                 log("      %s -- not fetched" % found["blocked"])
@@ -616,28 +689,29 @@ def main():
                     ("  | team of %d" % found["team_count"]) if found["team_count"] >= 2 else ""))
                 stats["none"] += 1
                 if not args.dry_run:
-                    with conn.cursor() as cur:
-                        # Qualification evidence stands on its own: a site with no
-                        # published address can still show a team page and a
+                    def _write_no_email(cur, _e=eid, _f=found):
+                        # Qualification evidence stands on its own: a site with
+                        # no published address can still show a team page and a
                         # partnership invitation, and both are scoreable.
-                        write_size(cur, eid, found)
-                        if found["invitation"]:
+                        write_size(cur, _e, _f)
+                        if _f["invitation"]:
                             cur.execute(
                                 "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                                (eid,))
+                                (_e,))
                         # NEVER zero a contact another source already found. In
                         # --qualify mode most rows arrive WITH an AICP contact;
-                        # writing 0 here because this particular page published no
-                        # mailto: would delete 10 points of real evidence.
-                        cur.execute("select 1 from contacts where entity_id = %s", (eid,))
+                        # writing 0 here because this particular page published
+                        # no mailto: would delete 10 points of real evidence.
+                        cur.execute("select 1 from contacts where entity_id = %s", (_e,))
                         if cur.fetchone() is None:
-                            cur.execute("""update entities set metadata =
-                                jsonb_set(metadata,'{enrichment_result}','"no_contact_found"')
-                                where id = %s""", (eid,))
+                            cur.execute(
+                                "update entities set metadata ="
+                                " jsonb_set(metadata,'{enrichment_result}','\"no_contact_found\"')"
+                                " where id = %s", (_e,))
                             cur.execute(
                                 "select set_scoring_input(%s,'reachable_decision_maker','0'::jsonb)",
-                                (eid,))
-                    conn.commit()
+                                (_e,))
+                    db.run(_write_no_email)
                 continue
 
             best = emails[0]
@@ -657,33 +731,34 @@ def main():
             if args.dry_run:
                 continue
 
-            with conn.cursor() as cur:
+            def _write_found(cur, _e=eid, _f=found, _b=best, _em=emails,
+                             _r=rdm, _k=kind):
                 cur.execute("""
                     insert into contacts (entity_id, full_name, role_title, email,
                                           email_status, email_verified_at, verifier,
                                           source, is_primary)
                     values (%s,%s,%s,%s,%s, now(), 'sitescrape_mx', 'site_scrape', true)
                     on conflict do nothing
-                """, (eid, best["name"], best["role"], best["email"],
-                      "unverified" if kind == "personal" else "catch_all"))
-                for extra in emails[1:4]:
+                """, (_e, _b["name"], _b["role"], _b["email"],
+                      "unverified" if _k == "personal" else "catch_all"))
+                for extra in _em[1:4]:
                     cur.execute("""
                         insert into contacts (entity_id, full_name, role_title, email,
                                               email_status, source, is_primary)
                         values (%s,%s,%s,%s,'unverified','site_scrape',false)
                         on conflict do nothing
-                    """, (eid, extra["name"], extra["role"], extra["email"]))
+                    """, (_e, extra["name"], extra["role"], extra["email"]))
                 cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
-                            (eid, str(rdm)))
-                if found["invitation"]:
+                            (_e, str(_r)))
+                if _f["invitation"]:
                     cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                                (eid,))
-                write_size(cur, eid, found)
+                                (_e,))
+                write_size(cur, _e, _f)
                 cur.execute("""update entities
                                set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
                                    status = case when status = 'discovered' then 'enriched' else status end
-                               where id = %s""", (eid,))
-            conn.commit()
+                               where id = %s""", (_e,))
+            db.run(_write_found)
 
     conn.close()
     log("\n  named person   : %d" % stats["personal"])
