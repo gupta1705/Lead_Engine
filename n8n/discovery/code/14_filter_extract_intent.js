@@ -44,9 +44,25 @@ const INVITATION_PHRASES = [
   'open to co-production', 'open to co-productions', 'open for co-production',
   'looking for partners', 'looking for a partner', 'seeking partners',
   'seeking a production partner', 'seeking co-production',
-  'accepting submissions', 'open for submissions', 'pitch us',
-  'work with us', 'collaborate with us', 'partner with us',
+  'pitch us', 'work with us', 'collaborate with us', 'partner with us',
   'looking to collaborate', 'open to collaboration'
+];
+// REMOVED 2026-08-27: 'accepting submissions' and 'open for submissions'.
+// The first live run returned four rows and ALL FOUR were film festivals --
+// Hamilton Film Festival, El-Gouna, Cold Snap, and a photo competition. That
+// phrase is festival vocabulary, not production-company vocabulary: festivals
+// solicit submissions, production companies solicit partners. Keeping it cost
+// 100% precision on the only real run this connector has had.
+
+// Festivals, competitions, markets and funds all talk like they want your work,
+// and none of them is a co-production partner. Any hit here rejects the item
+// outright, before extraction gets a chance to name something.
+const NOT_A_PRODUCER = [
+  'film festival', 'festival', 'awards', 'competition', 'contest',
+  'call for entries', 'call for submissions', 'submission deadline',
+  'screenwriting', 'screenplay contest', 'grant', 'fund', 'fellowship',
+  'residency', 'masterclass', 'workshop', 'conference', 'summit', 'expo',
+  'market', 'academy award', 'nominations'
 ];
 
 const COMPANY_SUFFIX = [
@@ -135,7 +151,8 @@ function extractCompanies(text) {
 const feedItems = $input.all();
 const seen = new Set();
 const output = [];
-let droppedOffDomain = 0, droppedNoIndustry = 0, droppedNoName = 0, droppedNoInvite = 0;
+let droppedOffDomain = 0, droppedNoIndustry = 0, droppedNoName = 0, droppedNoInvite = 0,
+    droppedNotProducer = 0;
 
 feedItems.forEach((item) => {
   const j = item.json || {};
@@ -146,6 +163,12 @@ feedItems.forEach((item) => {
   // 1. hard reject anything from another sector
   const off = hasAny(body, OFF_DOMAIN);
   if (off.length > 0) { droppedOffDomain++; return; }
+
+  // 1b. hard reject festivals, competitions, markets and funds. They are
+  //     screen-industry AND they invite people in, so they pass every other
+  //     test here -- and none of them is a company you can co-produce with.
+  const notProducer = hasAny(body, NOT_A_PRODUCER);
+  if (notProducer.length > 0) { droppedNotProducer++; return; }
 
   // 2. require positive screen-industry evidence
   const industry = hasAny(body, INDUSTRY_WORDS);
@@ -200,6 +223,7 @@ if (output.length > 0) {
   output[0].json.raw.filter_stats = {
     seen: feedItems.length,
     dropped_off_domain: droppedOffDomain,
+    dropped_festival_or_fund: droppedNotProducer,
     dropped_no_industry_words: droppedNoIndustry,
     dropped_no_invitation: droppedNoInvite,
     dropped_no_company_name: droppedNoName,

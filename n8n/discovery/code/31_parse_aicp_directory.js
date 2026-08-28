@@ -33,7 +33,48 @@ const MARKUP = /<h4[^>]*class="[^"]*font-semiBold[^"]*"[^>]*>([\s\S]*?)<\/h4>\s*
 // members -- insurers, equipment houses, payroll firms, post facilities --
 // which are vendors to the industry, not IP-owning producers, and the review
 // checklist explicitly rules them out.
-const ADMIT_TYPES = ['production company', 'production companies'];
+// The directory publishes a member type per company, and it is far more
+// informative than a keyword match. Measured against the live page (282
+// members, 2026-08-27): a bare `includes('production company')` admits
+// "Post Production Company", "Production Service Company", "Editorial Company"
+// and "Audio Post Production" -- shops that finish other people's work rather
+// than own IP. The review checklist rules exactly those out
+// ("NOT corporate/service video"), so the filter uses two rules instead of one.
+//
+// SERVICE_ONLY: the type STARTS with a finishing/service discipline.
+// MAKES_CONTENT: it also names real production, which rescues the legitimate
+// hybrids like "Production and Post Production Company".
+// Result on the live page: 256 admitted, 24 dropped.
+// ⚑ The subtlety that makes a naive version wrong: "Post Production Company"
+// CONTAINS the substring "production company". Any rule that looks for that
+// phrase rescues exactly the vendors it is meant to exclude. So the phrase is
+// stripped FIRST, and the decision is made on what is left.
+const POST_PRODUCTION = /post[\s-]?production/gi;
+const SERVICE_DISCIPLINE = /(editorial|audio|sound|vfx|visual effects|print production|production service|artist representative|creative services|editing|colou?r|digital creation|interactive)/i;
+const MAKES_CONTENT = /\bproduction\b|\bproducer\b|live action|branded content/i;
+
+// Verified against the live directory (280 members, 2026-08-27): admits 246,
+// rejects 34 -- post houses, editorial shops, audio finishers, VFX studios and
+// the "Associate Member" vendor tier. Keeps hybrids like "Production and Post
+// Production Company", which genuinely make content as well as finish it.
+function producesContent(memberType) {
+  const t = (memberType || '').toLowerCase();
+  if (t.includes('associate member')) return false;   // an explicit vendor tier
+  const stripped = t.replace(POST_PRODUCTION, ' ');
+  const service = SERVICE_DISCIPLINE.test(stripped);
+  const makes = MAKES_CONTENT.test(stripped);
+  return makes && !(service && !makes);
+}
+
+// Script fragments that leak into a captured name. The AICP directory renders
+// one Alpine.js handler per member -- `fetch('/api/membership/601') .then(...)
+// console.dir(...)` -- inside an HTML ATTRIBUTE, not a <script> tag, so
+// stripping <script> does not remove it and it lands inside some <h4> captures.
+// The first live run (2026-08-27) produced names like
+//   "1Park9 --> response.json()) .then(data => { console.dir(data.data);"
+// A real company name never contains any of these, so cutting at the first
+// occurrence is safe and total.
+const SCRIPT_JUNK = /(-->|console\.|fetch\(|\.then\(|=>|\{|\}).*$/s;
 
 function clean(s) {
   return (s || '')
@@ -41,7 +82,9 @@ function clean(s) {
     .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ')
     .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(SCRIPT_JUNK, '')
     .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—|]+|[\s\-–—|]+$/g, '')
     .trim();
 }
 
@@ -61,8 +104,10 @@ if (typeof html === 'string' && html.length > 0) {
     const name = clean(m[1]);
     const memberType = clean(m[2]).toLowerCase();
 
-    if (!name || name.length < 2) continue;
-    if (!ADMIT_TYPES.some(t => memberType.includes(t))) { skippedType++; continue; }
+    // A name longer than this is not a company, it is markup that survived
+    // the sanitiser. Cheap belt-and-braces against the script-leak bug.
+    if (!name || name.length < 2 || name.length > 60) continue;
+    if (!producesContent(memberType)) { skippedType++; continue; }
 
     const key = name.toLowerCase();
     if (seen.has(key)) continue;   // the page repeats members across regions

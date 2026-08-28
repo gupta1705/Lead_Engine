@@ -39,7 +39,12 @@ const built = wrap("21_build_sparql.js")(
 console.log("21_build_sparql");
 check("emits exactly one query item", built.length === 1);
 check("uses the configured entity class, not a hardcoded one",
-  built[0].json.sparql.includes("wd:" + cfg.wikidata_discovery.entity_class));
+  cfg.wikidata_discovery.entity_classes.every(
+    (c) => built[0].json.sparql.includes("wd:" + c)));
+check("queries BOTH class trees -- film and TV are siblings, not parent/child",
+  built[0].json.sparql.includes("VALUES ?cls")
+  && built[0].json.sparql.includes("wd:Q10689397"),
+  "the single-class version silently missed 124 US TV production companies");
 check("filters to the configured country",
   built[0].json.sparql.includes("wdt:P17 wd:" + cfg.wikidata_discovery.country));
 check("requires an official website (P856) -- the reason this source exists",
@@ -138,7 +143,18 @@ const aicpHtml = `
 <div class="member"><h4 class="font-semiBold">Gotham Post &amp; Finishing</h4>
 <p class="text-[16px]">Associate Member - Post Production</p></div>
 <div class="member"><h4 class="font-semiBold">O&#39;Brien Films</h4>
-<p class="text-[16px]">Production Company</p></div>`;
+<p class="text-[16px]">Production Company</p></div>
+<div class="member"
+><h4 class="font-semiBold">1Park9 --> response.json()) .then(data => { console.dir(data.data);</h4>
+<p class="text-[16px]">Production Company</p></div>
+<div class="member"><h4 class="font-semiBold">Belladonna</h4>
+<p class="text-[16px]">Editorial Company</p></div>
+<div class="member"><h4 class="font-semiBold">HB Collective</h4>
+<p class="text-[16px]">Audio Post Production</p></div>
+<div class="member"><h4 class="font-semiBold">Furlined</h4>
+<p class="text-[16px]">VFX Studio</p></div>
+<div class="member"><h4 class="font-semiBold">Alongside Global Inc</h4>
+<p class="text-[16px]">Production and Post Production Company</p></div>`;
 
 const aicpStore = { "Load Config": [{ json: { segment_id: SEGMENT_ID } }] };
 const aicp = wrap("31_parse_aicp_directory.js")(
@@ -146,6 +162,26 @@ const aicp = wrap("31_parse_aicp_directory.js")(
 const aicpNames = aicp.map((r) => r.json.name);
 
 console.log("\n31_parse_aicp_directory");
+// REGRESSIONS FROM THE FIRST LIVE RUN (2026-08-27). The directory renders one
+// Alpine.js handler per member inside an HTML ATTRIBUTE -- not a <script> tag,
+// so stripping scripts never touched it -- and the fragment landed inside the
+// captured <h4>. All 231 names came back as
+//   "1Park9 --> response.json()) .then(data => { console.dir(data.data);"
+check("strips the Alpine.js fragment out of a captured name",
+  aicpNames.includes("1Park9"),
+  "got: " + JSON.stringify(aicpNames.filter((n) => n.indexOf("1Park9") === 0)));
+check("no name carries script residue",
+  aicpNames.every((n) => !/console\.|=>|-->|response\.json/.test(n)));
+// The member type filters better than any keyword match -- but note the trap it
+// has to survive: "Post Production Company" CONTAINS "production company", so a
+// naive rule rescues exactly the vendors it means to exclude.
+check("rejects an editorial-only house", !aicpNames.includes("Belladonna"));
+check("rejects an audio post house", !aicpNames.includes("HB Collective"));
+check("rejects a VFX-only studio", !aicpNames.includes("Furlined"));
+check("KEEPS a hybrid that also produces",
+  aicpNames.includes("Alongside Global Inc"),
+  '"Production and Post Production Company" makes content too -- excluding it '
+  + "would throw away real candidates");
 check("extracts member names from the real markup shape",
   aicpNames.includes("2M Productions") && aicpNames.includes("Lantern Row Media"));
 check("dedupes a member repeated across regions",
@@ -165,8 +201,11 @@ check("sets NO scoring inputs at all",
 check("tagged source=aicp_directory",
   aicp.every((r) => r.json.source === "aicp_directory"));
 check("carries segment_id", aicp.every((r) => r.json.segment_id === SEGMENT_ID));
+// 5 skipped: two Associate Member tiers (payroll, post), plus the editorial,
+// audio-post and VFX-only houses added as live-run regressions.
 check("reports how many non-production members it skipped",
-  aicp[0].json.raw.parse_stats.skipped_non_production_member_types === 2);
+  aicp[0].json.raw.parse_stats.skipped_non_production_member_types === 5,
+  "got " + aicp[0].json.raw.parse_stats.skipped_non_production_member_types);
 check("empty response body does not crash", (() => {
   const empty = wrap("31_parse_aicp_directory.js")(
     inputOf(items([{ data: "" }])), ctxOf(aicpStore));

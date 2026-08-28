@@ -157,26 +157,28 @@ values (
     { "query": "production company", "genre_hint": null }
   ],
   "news_rss_discovery_queries": [
-    { "query": "\"format rights\" production company series", "deal_kind": "format_deal" },
-    { "query": "\"adaptation rights\" series independent studio", "deal_kind": "adaptation" },
-    { "query": "\"co-production\" independent production company series", "deal_kind": "co_production" },
-    { "query": "\"first-look deal\" production company", "deal_kind": "output_deal" },
     { "query": "\"local adaptation\" OR \"English-language remake\" production company", "deal_kind": "adaptation" },
-    { "query": "indie studio options rights international series", "deal_kind": "option" }
+    { "query": "\"US remake\" OR \"American remake\" series", "deal_kind": "adaptation" },
+    { "query": "\"format rights\" OR \"remake rights\" producer", "deal_kind": "format_deal" },
+    { "query": "\"international co-production\" series", "deal_kind": "co_production" },
+    { "query": "\"acquires format\" OR \"format deal\" television", "deal_kind": "format_deal" },
+    { "query": "\"first-look deal\" independent production company", "deal_kind": "output_deal" }
   ],
   "x_intent_discovery_queries": [
     { "query": "\"open to co-productions\" production company", "intent": "explicit_invitation" },
     { "query": "indie production company \"looking for partners\"", "intent": "explicit_invitation" },
     { "query": "\"seeking a production partner\" series", "intent": "explicit_invitation" },
     { "query": "\"accepting submissions\" production company series", "intent": "open_door" },
+    { "query": "\"co-production partner\" series OR film", "intent": "explicit_invitation" },
+    { "query": "\"seeking co-producers\" OR \"seeking co-producer\"", "intent": "explicit_invitation" },
     { "query": "site:x.com \"co-production\" film series", "intent": "social_post" },
     { "query": "site:x.com production company \"looking for\" partner", "intent": "social_post" }
   ],
   "wikidata_discovery": {
-    "entity_class": "Q1762059",
+    "entity_classes": ["Q1762059", "Q10689397"],
     "country": "Q30",
-    "limit": 400,
-    "guidance": "Wikidata SPARQL seed. entity_class Q1762059 is film production company; P31/P279* walks subclasses so television production companies come along too. country Q30 is the United States, which is what makes geography_signal us a fact rather than a guess. A live probe on 2026-08-25 found 363 US production companies carrying an official website (P856) - and the website is the whole point: every other connector leaves domain null, and Apollo matches organisations by domain at P16. CC0, no key, no quota. Notable-only, so this is a seed re-run occasionally rather than a weekly stream, and it skews LARGE - the first page is Icon Productions, Relativity Media, Warner Independent. Expect a low hit rate against the 2-20 person target and lean on major_or_oversized_signal plus the P13 gate. Only 14 of 363 carry an employee count, so size stays an enrichment question. For Segment 2, change entity_class here rather than touching any code."
+    "limit": 600,
+    "guidance": "Wikidata SPARQL seed. entity_classes: Q1762059 is film production company, Q10689397 is television production company. They are SIBLING classes, not parent/child - a live probe on 2026-08-28 showed the film tree alone misses 124 US TV production companies with websites, so both are queried via VALUES and each subclass tree is still walked. country Q30 is the United States, which is what makes geography_signal us a fact rather than a guess. A live probe on 2026-08-25 found 363 US production companies carrying an official website (P856) - and the website is the whole point: every other connector leaves domain null, and Apollo matches organisations by domain at P16. CC0, no key, no quota. Notable-only, so this is a seed re-run occasionally rather than a weekly stream, and it skews LARGE - the first page is Icon Productions, Relativity Media, Warner Independent. Expect a low hit rate against the 2-20 person target and lean on major_or_oversized_signal plus the P13 gate. Only 14 of 363 carry an employee count, so size stays an enrichment question. For Segment 2, change entity_class here rather than touching any code."
   },
   "metadata_fields": [
     "subtype",

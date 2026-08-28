@@ -25,17 +25,27 @@ const row = $input.first().json;
 const cfg = row.wikidata || {};
 const segmentId = row.segment_id;
 
-const entityClass = cfg.entity_class || 'Q1762059';   // film production company
-const country     = cfg.country      || 'Q30';        // United States
-const limit       = cfg.limit        || 400;
+// CORRECTED 2026-08-28. The original version queried one class and its
+// comment asserted that P31/P279* under "film production company" also
+// catches television production companies. A live probe disproved that:
+// Q10689397 (television production company) is a SIBLING of Q1762059 in the
+// class tree, not a subclass, so the first live run silently missed **124 US
+// TV production companies with websites** -- for a TV-format segment, the
+// most relevant slice of the source. Classes are now a config ARRAY joined
+// with VALUES, and each subclass tree is still walked.
+const entityClasses = cfg.entity_classes
+  || (cfg.entity_class ? [cfg.entity_class] : ['Q1762059', 'Q10689397']);
+const country = cfg.country || 'Q30';        // United States
+const limit   = cfg.limit   || 600;
 
-// P31/P279* walks subclasses, so "film production company" also catches
-// "television production company" and similar narrower classes.
+const valuesClause = entityClasses.map(c => 'wd:' + c).join(' ');
+
 // OPTIONALs are genuinely optional: a company missing an inception date should
 // still be returned, not filtered out.
 const sparql = `
 SELECT DISTINCT ?company ?companyLabel ?website ?inception ?dissolved ?parentLabel ?employees WHERE {
-  ?company wdt:P31/wdt:P279* wd:${entityClass} .
+  VALUES ?cls { ${valuesClause} }
+  ?company wdt:P31/wdt:P279* ?cls .
   ?company wdt:P17 wd:${country} .
   ?company wdt:P856 ?website .
   OPTIONAL { ?company wdt:P571  ?inception }
@@ -49,7 +59,7 @@ LIMIT ${limit}`.trim();
 return [{
   json: {
     segment_id: segmentId,
-    entity_class: entityClass,
+    entity_classes: entityClasses,
     country: country,
     sparql: sparql,
     query_url: 'https://query.wikidata.org/sparql?format=json&query='

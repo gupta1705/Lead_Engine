@@ -60,10 +60,17 @@ const NOT_A_LEAD = [
 // one rung later.
 
 // Terms of art for cross-border IP work. These are what the 30 points are for.
+// EXTENDED 2026-08-28 with the vocabulary the query probe surfaced: "US remake"
+// / "American remake" headlines carried IP language at 78% but several used
+// only those exact phrases, which this list did not yet recognise -- so the
+// query would have found the article and the extractor would have scored it
+// zero. Query vocabulary and evidence vocabulary must move together.
 const IP_FORMAT_PHRASES = [
   'format rights', 'format deal', 'formats deal', 'adaptation rights',
   'remake rights', 'english-language remake', 'english language remake',
+  'english-language adaptation', 'english-language version',
   'local adaptation', 'local version', 'international co-production',
+  'us remake', 'american remake', 'american adaptation', 'acquires format',
   'co-production', 'coproduction', 'co-produce', 'coproduce', 'co-producing'
 ];
 

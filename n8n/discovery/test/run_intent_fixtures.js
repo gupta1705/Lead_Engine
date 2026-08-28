@@ -72,9 +72,17 @@ const POSTS = [
   { label: "a major saying it is open -- never a lead",
     title: "Netflix Studios is looking for partners on unscripted series",
     desc: "Streaming giant opens submissions.", admit: false },
-  { label: "accepting submissions from a real shop",
+  // CHANGED 2026-08-27. This case used to assert that "accepting submissions"
+  // earned admission. The first live run proved that wrong: all four rows it
+  // returned were festivals using exactly that phrase. Submissions language
+  // belongs to festivals; partnership language belongs to companies. The case
+  // is kept, inverted, so the old behaviour cannot quietly return.
+  { label: "submissions language alone is NOT a partner signal",
     title: "Lantern Row Media accepting submissions for its comedy series slate",
-    desc: "The production company opens its door to writers.", admit: true,
+    desc: "The production company opens its door to writers.", admit: false },
+  { label: "the same shop using real partnership language",
+    title: "Lantern Row Media is looking for partners on its comedy series slate",
+    desc: "The production company wants co-production partners.", admit: true,
     expect: "Lantern Row Media" },
 ];
 
@@ -126,6 +134,32 @@ check("reports its own noise level so tuning is measurable",
   rows.length > 0 && rows[0].json.raw.filter_stats
   && rows[0].json.raw.filter_stats.dropped_off_domain >= 3,
   "if off-domain drops dwarf admissions, the queries need work -- a config edit");
+
+// ---- REGRESSIONS FROM THE FIRST LIVE RUN -----------------------------------
+// The first live P6 run returned exactly four rows and ALL FOUR were film
+// festivals or competitions. Not a near miss -- 0% precision. "Accepting
+// submissions" is festival vocabulary: festivals solicit submissions,
+// production companies solicit partners. These are the real post texts.
+const LIVE_NOISE = [
+  "Dan Bailey's Outdoor Company accepting submissions for 2025 Cold Snap Film competition",
+  "18th Annual Hamilton Film Festival Set for July; Accepting Submissions Now",
+  "Egypt's El-Gouna Film Festival starts accepting submissions for its 2026 edition",
+  "Sundance Institute opens its screenwriting fellowship for submissions",
+  "Tribeca Festival announces call for entries across all categories",
+];
+const noiseRows = wrap("14_filter_extract_intent.js")(inputOf(items(
+  LIVE_NOISE.map((t) => ({
+    title: t, description: "", matched_query: queries[0].query, deal_kind: null,
+    segment_id: SEGMENT_ID, link: "https://x.com/a/1", pubDate: null })))), ctxOf({}));
+
+console.log("\n14_filter_extract_intent -- regressions from the live run");
+check("rejects ALL FIVE festival/competition posts", noiseRows.length === 0,
+  "the live run admitted 4 of 4 of these; got " + noiseRows.length
+  + (noiseRows.length ? " -> " + noiseRows.map((r) => r.json.name).join(", ") : ""));
+LIVE_NOISE.slice(0, 3).forEach((t) => {
+  check("  rejects: " + t.slice(0, 52),
+    !noiseRows.some((r) => r.json.raw.post_text === t));
+});
 
 // ---- 04 Summarize (shared) -------------------------------------------------
 const summary = wrap("04_summarize_source_run.js")(inputOf(rows), ctxOf({}));

@@ -54,10 +54,37 @@ function isMajorName(s) {
   return KNOWN_MAJORS.some(k => t.includes(k));
 }
 
+// The SPARQL endpoint answers with application/sparql-results+json, but n8n
+// does not always hand it back parsed -- on the first live run (2026-08-27) the
+// whole document arrived as a STRING, so `resp.results` was undefined, `rows`
+// came out empty, and the workflow reported success while inserting nothing.
+// Accept every shape rather than assume one: parsed object, string body, or
+// wrapped under `data`.
+function asResults(v) {
+  if (!v) return null;
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v); } catch (e) { return null; }
+  }
+  if (v.results && v.results.bindings) return v;
+  if (v.data) return asResults(v.data);
+  if (v.body) return asResults(v.body);
+  return null;
+}
+
 const resp = $input.first().json;
-const body = (resp && resp.results && resp.results.bindings) ? resp
-           : (resp && resp.data && resp.data.results ? resp.data : null);
+const body = asResults(resp);
 const rows = body ? body.results.bindings : [];
+
+// A silent zero here is the failure mode that wasted a live run: the node was
+// green, the query was fine, and nothing reached the database. Fail loudly.
+if (rows.length === 0) {
+  throw new Error(
+    'Wikidata returned no usable rows. The response was ' + typeof resp +
+    ' with keys [' + (resp && typeof resp === 'object'
+      ? Object.keys(resp).join(', ') : 'n/a') +
+    ']. If the query genuinely matched nothing that is a query problem; if the ' +
+    'body is a string this parser failed to read it.');
+}
 
 // Wikidata returns one row per value combination, so a company with two
 // inception statements appears twice. Collapse on the entity URI.

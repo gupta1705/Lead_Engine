@@ -169,6 +169,19 @@ check("connector never guesses geography, size or genre",
     return !("geography_signal" in si) && !("right_size" in si) && !("genre_fit" in si);
   }));
 
+// New IP vocabulary from the 2026-08-28 query rebalance: the queries now hunt
+// "US remake" / "American remake" headlines, so the extractor must recognise
+// that exact language as IP evidence -- query vocabulary and evidence
+// vocabulary move together or the connector finds articles it scores zero.
+const usRemake = wrap("13_extract_companies.js")(inputOf(items([{
+  title: "Thornfield Pictures To Produce American Remake Of Danish Hit - Variety",
+  description: "The US remake lands at a streamer.", matched_query: queries[0].query,
+  deal_kind: null, segment_id: SEGMENT_ID, link: "https://example.test/r", pubDate: null,
+}])), ctxOf(store));
+check("'American remake' earns international_ip_experience",
+  usRemake.length === 1
+  && usRemake[0].json.raw.scoring_inputs.international_ip_experience === 1);
+
 // ---- 13 Extract: regressions from the FIRST LIVE RUN -----------------------
 // Every headline below is real, taken from the 119 names the first live P5 run
 // produced. Each one yielded a "company" that is not a company. Fixture cases
