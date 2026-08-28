@@ -1,0 +1,45 @@
+# TVF Lead Engine -- the review UI and the operator tooling in one image.
+#
+# Deliberately boring. python:slim, pip install, copy the source. There is no
+# node stage, no asset build and nothing to compile, because the frontend is
+# three static files (see app/main.py for why). A build that cannot fail in
+# interesting ways is worth a lot four days before a deadline.
+#
+# The image also carries tools/ so enrichment and export can be run inside the
+# container -- `docker compose run --rm app python tools/enrich_sitescrape.py`
+# -- which is what makes the cloud step a lift-and-shift rather than a rewrite.
+
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# psycopg2-binary needs no build toolchain; curl is here for the healthcheck.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app/    ./app/
+COPY tools/  ./tools/
+COPY sql/    ./sql/
+COPY config/ ./config/
+
+# Run as a non-root user. This container talks to a database holding contact
+# details for real people; root is not the identity that should hold that.
+RUN useradd --create-home --uid 10001 tvf && chown -R tvf:tvf /srv
+USER tvf
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
+
+# One worker: the workload is a handful of reviewers, and a single process
+# keeps the psycopg2 pool honest. Scale with replicas, not workers, if ever.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

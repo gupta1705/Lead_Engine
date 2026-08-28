@@ -77,7 +77,7 @@ def obj(v):
     return json.loads(v) if isinstance(v, str) else (v or {})
 
 
-def fetch(min_score, source):
+def fetch(min_score, source, status=None):
     from run_sql import load_db_url
     import psycopg2
     where = ["s.slug = %s"]
@@ -88,6 +88,13 @@ def fetch(min_score, source):
     if source:
         where.append("e.source = %s")
         params.append(source)
+    # status filter: the web UI exports a shortlist, the CLI exports everything
+    if status and status != "all":
+        if status == "open":
+            where.append("e.status in ('discovered','enriched','scored','ready_for_review')")
+        else:
+            where.append("e.status = %s")
+            params.append(status)
     sql = """
         select e.id, e.name, e.domain, e.source, e.source_url, e.status,
                e.status_reason, e.fit_score, e.metadata,
@@ -203,6 +210,9 @@ def main():
     ap.add_argument("-o", "--out", default=None)
     ap.add_argument("--min-score", type=float, default=None)
     ap.add_argument("--source", default=None)
+    ap.add_argument("--status", default=None,
+                    help="shortlisted | rejected | open | all "
+                         "(default: every row in the segment)")
     args = ap.parse_args()
 
     try:
@@ -212,7 +222,7 @@ def main():
     except ImportError:
         sys.exit("openpyxl not installed:  pip install openpyxl")
 
-    rows = fetch(args.min_score, args.source)
+    rows = fetch(args.min_score, args.source, args.status)
     if not rows:
         print("no rows matched"); return 1
 

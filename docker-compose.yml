@@ -1,0 +1,60 @@
+# TVF Lead Engine -- the whole stack, one command.
+#
+#   docker compose up -d --build     start everything
+#   docker compose logs -f app       watch the review UI
+#   docker compose down              stop (n8n data persists in its volume)
+#
+# Review UI   http://localhost:8000
+# n8n editor  http://localhost:5678
+#
+# SECURITY. Both ports bind to 127.0.0.1 only, so nothing here is reachable
+# from the network even if the host has a public IP. That is what makes it safe
+# to run this WITHOUT authentication: the review UI has no login, and it must
+# not get one bolted on casually. Before this is exposed to anyone outside this
+# machine, read docs/DEPLOY.md -- the cloud step puts auth in front of it first.
+#
+# Secrets come from .env, which is gitignored and never baked into the image.
+
+services:
+  app:
+    build: .
+    image: tvf-lead-engine:latest
+    container_name: tvf-lead-engine-app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL}
+      - SEGMENT_SLUG=${SEGMENT_SLUG:-us-production-houses}
+      - TZ=Asia/Kolkata
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: tvf-lead-engine-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      # Drives the Schedule Trigger for the weekly run (P25 onward).
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - TZ=Asia/Kolkata
+      - N8N_DIAGNOSTICS_ENABLED=false
+      # n8n 1.x+ refuses to start without this once permissions are enforced.
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
+    name: tvf_lead_engine_n8n_data

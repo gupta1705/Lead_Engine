@@ -41,6 +41,7 @@ Usage:
     python tools/enrich_sitescrape.py --source google_news_rss --limit 12
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import re
 import socket
 import sys
@@ -100,6 +101,25 @@ TARGET_ROLE_RE = re.compile(
     r"managing director|creative director|president|owner|partner)", re.I)
 
 
+class _Redirect308(urllib.request.HTTPRedirectHandler):
+    """Follow 307/308 the way every browser does.
+
+    Python 3.11 handles these; 3.10, which this runs on, does not -- it raises
+    HTTPError instead. Because robots_for() fails CLOSED on an unexpected
+    status, that turned an ordinary "we moved to www" redirect into "this site
+    refuses robots inspection, skip it entirely". A live batch lost Bob
+    Industries to exactly that. Failing closed is right; failing closed on a
+    redirect is just a missing feature.
+    """
+    def http_error_308(self, req, fp, code, msg, headers):
+        return self.http_error_301(req, fp, 301, msg, headers)
+
+    http_error_307 = http_error_308
+
+
+_OPENER = urllib.request.build_opener(_Redirect308)
+
+
 def log(msg):
     print(msg, flush=True)
 
@@ -109,7 +129,7 @@ def fetch(url):
         "User-Agent": UA,
         "Accept": "text/html,application/xhtml+xml",
     })
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+    with _OPENER.open(req, timeout=TIMEOUT) as r:
         ctype = r.headers.get("Content-Type", "")
         if "html" not in ctype.lower():
             return ""
@@ -122,7 +142,7 @@ def robots_for(domain):
     url = "https://%s/robots.txt" % domain
     try:
         req = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with _OPENER.open(req, timeout=TIMEOUT) as r:
             rp.parse(r.read(200_000).decode("utf-8", "ignore").splitlines())
         return rp, None
     except urllib.error.HTTPError as e:
@@ -235,10 +255,91 @@ def name_matches_local(name, addr):
     return len(local) >= 3 and any(p.startswith(local) for p in parts)
 
 
+# Role words that appear beside a person's name on a team/about page. Used to
+# COUNT people, which is the only headcount evidence a public site reliably
+# gives. Deliberately broad: on a 6-person shop the titles are idiosyncratic
+# ("Chief Frame-Fucker" is a real one from this pool).
+TEAM_ROLE_RE = re.compile(
+    r"\b(founder|co-?founder|partner|president|owner|ceo|cfo|coo|"
+    r"executive producer|producer|director of|head of|managing|principal|"
+    r"creative director|art director|editor|writer|designer|animator|"
+    r"coordinator|supervisor|manager|strategist|developer|assistant)\b", re.I)
+
+PERSON_RE = re.compile(r"\b([A-Z][a-z]{1,14})\s+([A-Z][a-z'\-]{1,18})\b")
+
+# Pages that list REPRESENTED TALENT rather than staff. A commercial production
+# company's /directors page names the directors on its roster -- freelancers it
+# represents, not employees -- so counting them would inflate a 6-person shop
+# into a 20-person one. Arts & Sciences lists 14 directors and is a boutique.
+ROSTER_PATH_RE = re.compile(r"/(directors?|talent|roster|artists?|cast)", re.I)
+
+# Words that look like a person but are not one. A whitelist of full phrases
+# was tried first and failed immediately: "Founding Director" is not in it, so
+# it counted as a fourth employee on a three-person team page. Rejecting on
+# WORD membership instead is structural -- no title, however inventive, can
+# survive it, because every title is built from these words.
+NON_NAME_WORDS = set("""
+founder founding co-founder partner partners president owner ceo cfo coo cto
+executive producer producers production productions director directors creative
+managing manager management head chief senior junior associate assistant
+supervisor coordinator editor editorial writer writers designer design animator
+animation strategist developer development artist artists talent roster
+company studio studios film films media group inc llc ltd
+new york los angeles san francisco united states privacy policy terms cookie
+read more learn get in touch contact about our work team home news careers
+case study post latest all rights reserved copyright
+award awards nominated winning emmy oscar academy peabody clio
+city center centre county state park avenue street airlines air
+american america national international global worldwide
+project projects series film2 episode season client clients brand brands
+university college institute foundation museum theatre theater
+""".split())
+
+
+def looks_like_person(first, last):
+    """Reject anything built out of job-title or navigation vocabulary."""
+    return (first.lower() not in NON_NAME_WORDS
+            and last.lower() not in NON_NAME_WORDS)
+
+
+def count_people(html, path):
+    """How many distinct humans does this page name?
+
+    Returns (count, kind) where kind is 'staff' or 'roster'. Only names that sit
+    within ~120 characters of a role word are counted, which is what separates a
+    team page from a page that merely mentions two people in a paragraph.
+
+    This is EVIDENCE, not truth: it is recorded alongside the count and the page
+    it came from so a reviewer can check it in one click. A site with no team
+    page yields nothing rather than a guess.
+    """
+    text = re.sub(r"<[^>]+>", " | ", html)
+    text = re.sub(r"\s+", " ", text)
+    people = set()
+    leadership = False
+    for m in PERSON_RE.finditer(text):
+        full = m.group(0)
+        if not looks_like_person(m.group(1), m.group(2)):
+            continue
+        window = text[max(0, m.start() - 120):m.end() + 120]
+        if TEAM_ROLE_RE.search(window):
+            people.add(full.lower())
+            if LEADERSHIP_RE.search(window):
+                leadership = True
+    kind = "roster" if ROSTER_PATH_RE.search(path or "") else "staff"
+    return len(people), kind, leadership
+
+
+LEADERSHIP_RE = re.compile(
+    r"\b(founder|founding|co-?founder|partner|president|owner|ceo|principal|"
+    r"managing director|executive producer|head of)\b", re.I)
+
+
 def scrape_site(domain, company=None):
     """Return findings for one domain, honouring robots.txt throughout."""
     out = {"pages": 0, "emails": [], "invitation": None, "blocked": None,
-           "error": None}
+           "error": None, "team_count": 0, "team_page": None,
+           "team_leadership": False}
 
     rp, err = robots_for(domain)
     if rp is None:
@@ -282,6 +383,16 @@ def scrape_site(domain, company=None):
             m = INVITATION_RE.search(re.sub(r"<[^>]+>", " ", html))
             if m:
                 out["invitation"] = m.group(1).lower()
+
+        # Headcount evidence. Keep the LARGEST staff count seen across the
+        # site: a team page names more people than an about page, and the
+        # fuller list is the better evidence. Roster pages are counted but
+        # never treated as headcount (see ROSTER_PATH_RE).
+        n, kind, lead = count_people(html, path)
+        if kind == "staff" and n > out["team_count"]:
+            out["team_count"] = n
+            out["team_page"] = path
+            out["team_leadership"] = lead
 
         for addr in set(EMAIL_RE.findall(html)):
             addr = addr.lower().rstrip(".")
@@ -330,12 +441,72 @@ def scrape_site(domain, company=None):
     return out
 
 
+def write_size(cur, eid, found):
+    """Turn a counted team page into right_size -- or, more often, into nothing.
+
+    WHY THIS IS DELIBERATELY TIMID. A live inspection of one team page showed
+    the counter finding real staff (Adam Chaves, Alexis Gordon, Jamila Ephron)
+    alongside credits and places ("Delta Air", "Kansas City", "John Oliver").
+    Precision was roughly two thirds. That is not good enough to drive a
+    20-point criterion on its own -- but the errors are not symmetric, and that
+    asymmetry is what makes a safe rule possible:
+
+        NOISE ONLY EVER INFLATES A COUNT. It never deflates one.
+
+    So a count of 2-20 proves the true staff number is AT MOST 20, which is
+    exactly what "~2-20 core people" asks for. The rule is sound in that band
+    and nowhere else:
+
+        2-20, leadership named  -> 1.0   true headcount <= 20, in band
+        anything else           -> nothing written
+
+    Above 20 the evidence is genuinely ambiguous -- a 54-name page is either a
+    real mid-size company or a boutique whose page lists every collaborator it
+    ever hired, and this counter cannot tell those apart. Writing 0 there would
+    penalise good boutiques for having generous credits pages. Absent means
+    unassessed, the engine renormalises over what it did assess, and a human
+    can settle it in one click. That is the whole point of Invariant 1.
+
+    The raw count is recorded either way, so the reviewer sees the evidence
+    rather than a bare score.
+    """
+    n = found.get("team_count") or 0
+    if n < 2:
+        return
+    # record what we saw, always -- even when it is not scoreable
+    cur.execute("""update entities set metadata = metadata || jsonb_build_object(
+                       'team_size_evidence', jsonb_build_object(
+                           'people_named', %s, 'page', %s,
+                           'leadership_named', %s, 'method', 'site_team_page',
+                           'scored', %s))
+                   where id = %s""",
+                (n, found.get("team_page"), bool(found.get("team_leadership")),
+                 bool(2 <= n <= 20 and found.get("team_leadership")), eid))
+    if 2 <= n <= 20 and found.get("team_leadership"):
+        cur.execute("select set_scoring_input(%s,'right_size','1'::jsonb)", (eid,))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=10)
     ap.add_argument("--source", default=None)
     ap.add_argument("--dry-run", action="store_true",
                     help="scrape and report, write nothing")
+    ap.add_argument("--workers", type=int, default=8,
+                    help="how many DIFFERENT sites to read at once (default 8). "
+                         "Politeness is per-host, not global: every site still "
+                         "sees one request every 2 seconds from us, because no "
+                         "two workers ever share a domain. Serial reading of "
+                         "552 domains measured at ~23 hours, which is a "
+                         "fragility problem more than a patience one.")
+    ap.add_argument("--qualify", action="store_true",
+                    help="read sites for QUALIFICATION signals (team size, "
+                         "collaboration invitation) across every domain in "
+                         "scope, including companies that already have a "
+                         "contact. Without this flag the tool only visits "
+                         "companies with no contact yet, which structurally "
+                         "excluded the 243 AICP rows -- the best-contactable "
+                         "part of the pool -- from ever being scored.")
     args = ap.parse_args()
 
     from run_sql import load_db_url
@@ -355,8 +526,13 @@ def main():
              # founder/partner ownership with no parent on record, so a
              # subsidiary fails review even if someone does reply.
              "e.metadata->'discovery_raw'->'wikidata'->>'parent_organisation' is null",
-             "e.status in ('discovered','enriched','scored','ready_for_review')",
-             "not exists (select 1 from contacts c where c.entity_id = e.id)"]
+             "e.status in ('discovered','enriched','scored','ready_for_review')"]
+    if not args.qualify:
+        # contact-finding mode: skip anyone we can already reach
+        where.append("not exists (select 1 from contacts c where c.entity_id = e.id)")
+    else:
+        # qualification mode: skip only what has already been read
+        where.append("coalesce(e.metadata->>'site_read','') <> 'done'")
     params = [SEGMENT]
     if args.source:
         where.append("e.source = %s")
@@ -375,88 +551,139 @@ def main():
         targets = cur.fetchall()
 
     if not targets:
-        log("nothing to enrich -- every domain in scope already has a contact")
+        log("nothing to do -- every domain in scope is already "
+            + ("read" if args.qualify else "contactable"))
         conn.close(); return 0
 
     log("B1 site-scrape enrichment -- %d target(s)%s\n"
         % (len(targets), "  [DRY RUN]" if args.dry_run else ""))
 
     stats = {"personal": 0, "role": 0, "none": 0, "blocked": 0, "no_mx": 0}
-    for eid, name, domain, score in targets:
-        log("  %-34s %s" % (name[:34], domain))
-        if not has_mx(domain):
-            log("      domain does not resolve -- skipping, likely dead")
-            stats["no_mx"] += 1
+
+    # NETWORK IN PARALLEL, DATABASE IN SERIAL.
+    # Each worker owns one domain for the whole of its visit, so the 2-second
+    # spacing inside scrape_site is still 2 seconds *per site* -- the thing
+    # politeness actually means. Nothing shares a host. Writes all happen on
+    # this thread against the single connection, so there is no concurrent-DB
+    # question to get wrong.
+    def read_one(t):
+        eid, name, domain, score = t
+        try:
+            if not has_mx(domain):
+                return (t, None, "no_mx")
+            return (t, scrape_site(domain, name), None)
+        except Exception as exc:                       # never let one site kill the run
+            return (t, None, type(exc).__name__)
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+        for t, found, err in pool.map(read_one, targets):
+            eid, name, domain, score = t
+            done += 1
+            log("  [%d/%d] %-32s %s" % (done, len(targets), name[:32], domain))
+
+            if err == "no_mx":
+                log("      domain does not resolve -- skipping, likely dead")
+                stats["no_mx"] += 1
+                if not args.dry_run:
+                    with conn.cursor() as cur:
+                        cur.execute("""update entities set metadata =
+                            jsonb_set(metadata,'{enrichment_result}','"domain_dead"')
+                            where id = %s""", (eid,))
+                    conn.commit()
+                continue
+
+            if found is None:
+                log("      read failed (%s) -- left for a later pass" % err)
+                stats["blocked"] += 1
+                continue
+
             if not args.dry_run:
                 with conn.cursor() as cur:
                     cur.execute("""update entities set metadata =
-                        jsonb_set(metadata,'{enrichment_result}','"domain_dead"')
-                        where id = %s""", (eid,))
+                        jsonb_set(metadata,'{site_read}','"done"') where id = %s""", (eid,))
                 conn.commit()
-            continue
 
-        found = scrape_site(domain, name)
-        if found["blocked"]:
-            log("      %s -- not fetched" % found["blocked"])
-            stats["blocked"] += 1
-            continue
+            if found["blocked"]:
+                log("      %s -- not fetched" % found["blocked"])
+                stats["blocked"] += 1
+                continue
 
-        emails = found["emails"]
-        if not emails:
-            log("      %d page(s) read, no address published" % found["pages"])
-            stats["none"] += 1
-            if not args.dry_run:
-                with conn.cursor() as cur:
-                    cur.execute("""update entities set metadata =
-                        jsonb_set(metadata,'{enrichment_result}','"no_contact_found"')
-                        where id = %s""", (eid,))
-                    cur.execute("select set_scoring_input(%s,'reachable_decision_maker','0'::jsonb)", (eid,))
-                conn.commit()
-            continue
+            emails = found["emails"]
+            if not emails:
+                log("      %d page(s) read, no address published%s" % (
+                    found["pages"],
+                    ("  | team of %d" % found["team_count"]) if found["team_count"] >= 2 else ""))
+                stats["none"] += 1
+                if not args.dry_run:
+                    with conn.cursor() as cur:
+                        # Qualification evidence stands on its own: a site with no
+                        # published address can still show a team page and a
+                        # partnership invitation, and both are scoreable.
+                        write_size(cur, eid, found)
+                        if found["invitation"]:
+                            cur.execute(
+                                "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
+                                (eid,))
+                        # NEVER zero a contact another source already found. In
+                        # --qualify mode most rows arrive WITH an AICP contact;
+                        # writing 0 here because this particular page published no
+                        # mailto: would delete 10 points of real evidence.
+                        cur.execute("select 1 from contacts where entity_id = %s", (eid,))
+                        if cur.fetchone() is None:
+                            cur.execute("""update entities set metadata =
+                                jsonb_set(metadata,'{enrichment_result}','"no_contact_found"')
+                                where id = %s""", (eid,))
+                            cur.execute(
+                                "select set_scoring_input(%s,'reachable_decision_maker','0'::jsonb)",
+                                (eid,))
+                    conn.commit()
+                continue
 
-        best = emails[0]
-        kind = best["kind"]
-        # reachable_decision_maker = 1.0 means "a NAMED person in a target
-        # role". A personal-shaped address with nobody attached to it is
-        # reachable but not named, so it scores like a role inbox.
-        if kind == "personal" and not best["name"]:
-            kind = "role"
-        stats[kind] += 1
-        rdm = 1.0 if kind == "personal" else 0.5
-        log("      %d page(s) | %s (%s)%s%s"
-            % (found["pages"], best["email"], kind,
-               "  name=" + best["name"] if best["name"] else "",
-               "  invite=" + found["invitation"] if found["invitation"] else ""))
+            best = emails[0]
+            kind = best["kind"]
+            # reachable_decision_maker = 1.0 means "a NAMED person in a target
+            # role". A personal-shaped address with nobody attached to it is
+            # reachable but not named, so it scores like a role inbox.
+            if kind == "personal" and not best["name"]:
+                kind = "role"
+            stats[kind] += 1
+            rdm = 1.0 if kind == "personal" else 0.5
+            log("      %d page(s) | %s (%s)%s%s"
+                % (found["pages"], best["email"], kind,
+                   "  name=" + best["name"] if best["name"] else "",
+                   "  invite=" + found["invitation"] if found["invitation"] else ""))
 
-        if args.dry_run:
-            continue
+            if args.dry_run:
+                continue
 
-        with conn.cursor() as cur:
-            cur.execute("""
-                insert into contacts (entity_id, full_name, role_title, email,
-                                      email_status, email_verified_at, verifier,
-                                      source, is_primary)
-                values (%s,%s,%s,%s,%s, now(), 'sitescrape_mx', 'site_scrape', true)
-                on conflict do nothing
-            """, (eid, best["name"], best["role"], best["email"],
-                  "unverified" if kind == "personal" else "catch_all"))
-            for extra in emails[1:4]:
+            with conn.cursor() as cur:
                 cur.execute("""
                     insert into contacts (entity_id, full_name, role_title, email,
-                                          email_status, source, is_primary)
-                    values (%s,%s,%s,%s,'unverified','site_scrape',false)
+                                          email_status, email_verified_at, verifier,
+                                          source, is_primary)
+                    values (%s,%s,%s,%s,%s, now(), 'sitescrape_mx', 'site_scrape', true)
                     on conflict do nothing
-                """, (eid, extra["name"], extra["role"], extra["email"]))
-            cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
-                        (eid, str(rdm)))
-            if found["invitation"]:
-                cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                            (eid,))
-            cur.execute("""update entities
-                           set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
-                               status = case when status = 'discovered' then 'enriched' else status end
-                           where id = %s""", (eid,))
-        conn.commit()
+                """, (eid, best["name"], best["role"], best["email"],
+                      "unverified" if kind == "personal" else "catch_all"))
+                for extra in emails[1:4]:
+                    cur.execute("""
+                        insert into contacts (entity_id, full_name, role_title, email,
+                                              email_status, source, is_primary)
+                        values (%s,%s,%s,%s,'unverified','site_scrape',false)
+                        on conflict do nothing
+                    """, (eid, extra["name"], extra["role"], extra["email"]))
+                cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
+                            (eid, str(rdm)))
+                if found["invitation"]:
+                    cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
+                                (eid,))
+                write_size(cur, eid, found)
+                cur.execute("""update entities
+                               set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
+                                   status = case when status = 'discovered' then 'enriched' else status end
+                               where id = %s""", (eid,))
+            conn.commit()
 
     conn.close()
     log("\n  named person   : %d" % stats["personal"])
