@@ -60,6 +60,7 @@ UA = ("TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.
 TIMEOUT = 15
 DELAY_SECONDS = 2.0          # between requests to the same host
 MAX_PAGES_PER_SITE = 4
+SITE_STAMP = "v2"
 
 # Pages worth trying, in priority order. Anything not linked from the homepage
 # is not guessed at beyond these conventional paths.
@@ -94,6 +95,25 @@ INVITATION_RE = re.compile(
     r"open to collaboration|co-?production|partnership enquiries|"
     r"partnership inquiries|pitch us|get in touch about a project|"
     r"looking for partners|we collaborate with)", re.I)
+
+# TVF's lanes, read from the company's own self-description. Full credit for
+# genre_fit needs credit-verified evidence; a site SAYING "comedy" is real but
+# self-reported, so it scores 0.5 and records which words matched.
+GENRE_RE = re.compile(
+    r"\b(comedy|comedic|sitcom|sketch comedy|satir(?:e|ical)|humor(?:ous)?|"
+    r"slice[- ]of[- ]life|coming[- ]of[- ]age|young[- ]adult|"
+    r"scripted (?:series|comedy|content)|web series|branded comedy)\b", re.I)
+
+# "Our series premiered on Netflix" is distribution evidence. "A commercial
+# for Netflix" is service work for an advertiser that happens to be a
+# streamer -- the opposite of a route to market -- so ad-vocabulary within the
+# window disqualifies the match.
+PLATFORM_RE = re.compile(
+    r"\b(series|show|film|feature|documentary|original)s?\b[^.<]{0,60}?"
+    r"\b(netflix|hulu|hbo(?: max)?|max|amazon prime|prime video|apple tv\+?|"
+    r"disney\+|peacock|paramount\+)\b", re.I)
+SERVICE_WORK_RE = re.compile(
+    r"\b(commercial|branded?|spot|campaign|advertis|promo)\w*\b", re.I)
 
 TARGET_ROLE_RE = re.compile(
     r"(founder|co-?founder|head of development|development executive|"
@@ -339,7 +359,7 @@ def scrape_site(domain, company=None):
     """Return findings for one domain, honouring robots.txt throughout."""
     out = {"pages": 0, "emails": [], "invitation": None, "blocked": None,
            "error": None, "team_count": 0, "team_page": None,
-           "team_leadership": False}
+           "team_leadership": False, "genre_terms": set(), "platform_claim": None}
 
     rp, err = robots_for(domain)
     if rp is None:
@@ -379,10 +399,23 @@ def scrape_site(domain, company=None):
             continue
         out["pages"] += 1
 
+        page_text = re.sub(r"<[^>]+>", " ", html)
         if out["invitation"] is None:
-            m = INVITATION_RE.search(re.sub(r"<[^>]+>", " ", html))
+            m = INVITATION_RE.search(page_text)
             if m:
                 out["invitation"] = m.group(1).lower()
+
+        # content signals: what does this company SAY it makes, and where has
+        # its original work actually run
+        for g in GENRE_RE.findall(page_text):
+            out["genre_terms"].add(g.lower())
+        if out["platform_claim"] is None:
+            for m in PLATFORM_RE.finditer(page_text):
+                window = page_text[max(0, m.start() - 80):m.end() + 40]
+                if not SERVICE_WORK_RE.search(window):
+                    out["platform_claim"] = re.sub(
+                        r"\s+", " ", m.group(0)).strip()[:160]
+                    break
 
         # Headcount evidence. Keep the LARGEST staff count seen across the
         # site: a team page names more people than an about page, and the
@@ -439,6 +472,38 @@ def scrape_site(domain, company=None):
     out["emails"] = sorted(seen_emails.values(),
                            key=lambda e: (e["kind"] != "personal", e["email"]))
     return out
+
+
+def write_content_signals(cur, eid, found):
+    """Genre and platform evidence from the site's own pages.
+
+    Both are SELF-REPORTED, so both score 0.5 and both are gated in SQL on the
+    current value being absent-or-zero: site self-description must never
+    overwrite a full credit earned from news coverage or human research.
+    """
+    terms = sorted(found.get("genre_terms") or [])
+    if terms:
+        cur.execute(
+            "select set_scoring_input(%s,'genre_fit','0.5'::jsonb)"
+            " from entities where id = %s"
+            "  and coalesce((metadata->'scoring_inputs'->>'genre_fit')::numeric,0) = 0",
+            (eid, eid))
+        cur.execute(
+            "update entities set metadata = metadata ||"
+            " jsonb_build_object('site_genre_evidence', %s::jsonb)"
+            " where id = %s",
+            ('["' + '","'.join(t.replace('"', '') for t in terms[:8]) + '"]', eid))
+    claim = found.get("platform_claim")
+    if claim:
+        cur.execute(
+            "select set_scoring_input(%s,'distribution_relationship','0.5'::jsonb)"
+            " from entities where id = %s"
+            "  and coalesce((metadata->'scoring_inputs'->>'distribution_relationship')::numeric,0) = 0",
+            (eid, eid))
+        cur.execute(
+            "update entities set metadata = metadata ||"
+            " jsonb_build_object('site_platform_evidence', to_jsonb(%s::text))"
+            " where id = %s", (claim, eid))
 
 
 def write_size(cur, eid, found):
@@ -532,7 +597,11 @@ def main():
         where.append("not exists (select 1 from contacts c where c.entity_id = e.id)")
     else:
         # qualification mode: skip only what has already been read
-        where.append("coalesce(e.metadata->>'site_read','') <> 'done'")
+        # STAMP is versioned: bumping it makes every already-read site
+        # eligible for exactly one more pass. v2 = the pass that added genre
+        # and platform detection; sites read before it never looked for either.
+        where.append("coalesce(e.metadata->>'site_read','') <> %s")
+        params.append(SITE_STAMP)
     params = [SEGMENT]
     if args.source:
         where.append("e.source = %s")
@@ -602,7 +671,8 @@ def main():
             if not args.dry_run:
                 db.run(lambda cur, _e=eid: cur.execute(
                     "update entities set metadata ="
-                    " jsonb_set(metadata,'{site_read}','\"done\"') where id = %s", (_e,)))
+                    " jsonb_set(metadata,'{site_read}', to_jsonb(%s::text))"
+                    " where id = %s", (SITE_STAMP, _e)))
 
             if found["blocked"]:
                 log("      %s -- not fetched" % found["blocked"])
@@ -621,6 +691,7 @@ def main():
                         # no published address can still show a team page and a
                         # partnership invitation, and both are scoreable.
                         write_size(cur, _e, _f)
+                        write_content_signals(cur, _e, _f)
                         if _f["invitation"]:
                             cur.execute(
                                 "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
@@ -681,6 +752,7 @@ def main():
                     cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
                                 (_e,))
                 write_size(cur, _e, _f)
+                write_content_signals(cur, _e, _f)
                 cur.execute("""update entities
                                set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
                                    status = case when status = 'discovered' then 'enriched' else status end
