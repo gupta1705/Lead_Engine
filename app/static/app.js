@@ -43,6 +43,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     $("#view-" + btn.dataset.view).classList.add("active");
     if (btn.dataset.view === "dashboard") loadDashboard();
     if (btn.dataset.view === "shortlist") loadShortlist();
+    syncExportLink();
   });
 });
 
@@ -148,6 +149,7 @@ async function loadLeads() {
   $("#pageInfo").textContent = `${from}–${to} of ${d.total.toLocaleString()}`;
   $("#prevPage").disabled = state.page === 0;
   $("#nextPage").disabled = to >= d.total;
+  syncExportLink();
 }
 
 /* ----------------------------------------------------------- detail */
@@ -292,6 +294,22 @@ $("#minScore").addEventListener("input", (e) => {
   clearTimeout(debounce);
   debounce = setTimeout(() => { state.page = 0; loadLeads(); }, 200);
 });
+/* Keep the Export button pointed at whatever the reviewer is currently
+ * looking at. A download that does not match the screen is a bug report
+ * waiting to happen. */
+function syncExportLink() {
+  const p = new URLSearchParams();
+  const onShortlist = $('.tab.active').dataset.view === "shortlist";
+  p.set("status", onShortlist ? "shortlisted" : "open");
+  if (!onShortlist) {
+    if (+$("#minScore").value) p.set("min_score", $("#minScore").value);
+    if ($("#source").value) p.set("source", $("#source").value);
+  }
+  const a = $("#exportBtn");
+  a.href = "/api/export.xlsx?" + p.toString();
+  a.textContent = onShortlist ? "Export shortlist" : "Export this view";
+}
+
 $("#prevPage").addEventListener("click", () => { state.page--; loadLeads(); });
 $("#nextPage").addEventListener("click", () => { state.page++; loadLeads(); });
 

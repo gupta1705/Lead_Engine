@@ -118,7 +118,7 @@ def wikidata_lookup(names):
         label = b["label"]["value"]
         site = b["website"]["value"]
         m = re.match(r"^[a-z][a-z0-9+.\-]*://(?:www\.)?([^/?#]+)", site, re.I)
-        if m:
+        if m and not is_third_party(m.group(1)):
             out.setdefault(label.lower(), m.group(1).lower())
     return out
 
@@ -136,6 +136,40 @@ def candidates_for(name):
         if stem and stem not in stems and 3 <= len(stem) <= 40:
             stems.append(stem)
     return [s + t for s in stems for t in TLDS]
+
+
+# A domain is only useful if it is the company's OWN site. Wikidata's P856 is
+# usually right but not always -- a live run resolved Platinum Dunes to
+# bloody-disgusting.com, the horror NEWS SITE that covers them, and a guess
+# elsewhere landed on jotform.com. Both would have produced a contact at a
+# company the lead has never worked for.
+#
+# Builders are matched EXACTLY, never by suffix: rossettiproduction.wixsite.com
+# genuinely is a small shop's site, while bare wixsite.com is not.
+BLOCK_SUFFIX = {
+    "youtube.com", "youtu.be", "instagram.com", "twitter.com", "x.com",
+    "facebook.com", "tiktok.com", "linkedin.com", "linktr.ee", "bit.ly",
+    "vimeo.com", "patreon.com", "substack.com", "medium.com", "beacons.ai",
+    "eventbrite.com", "mailchimp.com", "gmail.com",
+}
+BLOCK_EXACT = {
+    "jotform.com", "wix.com", "wixsite.com", "squarespace.com",
+    "wordpress.com", "godaddy.com", "shopify.com", "weebly.com", "carrd.co",
+    "imdb.com", "crunchbase.com", "variety.com", "deadline.com",
+    "hollywoodreporter.com", "indiewire.com", "wikipedia.org",
+    "productionlist.com", "zoominfo.com", "rocketreach.co", "indeed.com",
+    "glassdoor.com", "dnb.com", "bizapedia.com", "bloody-disgusting.com",
+}
+
+
+def is_third_party(domain):
+    """True when this host belongs to a platform or a publisher, not a company."""
+    d = (domain or "").lower().lstrip(".")
+    if not d:
+        return True
+    if d in BLOCK_EXACT:
+        return True
+    return any(d == b or d.endswith("." + b) for b in BLOCK_SUFFIX)
 
 
 def resolves(domain):

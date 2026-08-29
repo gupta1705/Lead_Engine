@@ -268,17 +268,27 @@ def decide(lead_id: str, body: dict = Body(...)):
 
 # -------------------------------------------------------------------- export
 @app.get("/api/export.xlsx")
-def export(status: str = "shortlisted"):
-    """The owner's 17-column sheet, generated live from the current selection."""
+def export(status: str = "shortlisted", min_score: float = 0, source: str = ""):
+    """The owner's 17-column sheet, generated live from the current selection.
+
+    Takes the same filters the review queue is showing, because a reviewer who
+    has just narrowed the list to what they care about expects the download to
+    match. Exporting only the shortlist regardless of the screen was the
+    original behaviour and it produced a near-empty file whenever nothing had
+    been shortlisted yet -- a bad first impression of a working pipeline.
+    """
     import subprocess
     import tempfile
     tmp = os.path.join(tempfile.gettempdir(), "tvf_leads_export.xlsx")
     if os.path.exists(tmp):
         os.remove(tmp)
-    r = subprocess.run(
-        ["python", os.path.join(REPO, "tools", "export_leads.py"),
-         "-o", tmp, "--status", status],
-        capture_output=True, text=True, cwd=REPO)
+    cmd = ["python", os.path.join(REPO, "tools", "export_leads.py"),
+           "-o", tmp, "--status", status]
+    if min_score:
+        cmd += ["--min-score", str(min_score)]
+    if source:
+        cmd += ["--source", source]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO)
     if not os.path.exists(tmp):
         raise HTTPException(500, "export failed: " + ((r.stderr or r.stdout)[-400:]))
     return FileResponse(
@@ -295,6 +305,40 @@ def health():
         return {"ok": True}
     except Exception as e:
         raise HTTPException(503, "database unreachable: " + type(e).__name__)
+
+
+# CACHE BUSTING, and why it is not optional here.
+# There is no build step, so app.js and style.css keep the same URL forever.
+# A browser that cached them serves the OLD UI against the NEW API after every
+# deploy -- observed live on 2026-08-29, where a reloaded page ran a version of
+# app.js that predated the change being tested. With a team sharing one
+# deployment that reads as "the feature does not work".
+#
+# STATIC_V is stamped from the newest mtime under static/ and appended to the
+# asset URLs in index.html as it is served, so the URL changes exactly when the
+# bytes do -- and never otherwise, which keeps ordinary caching working.
+def _static_version():
+    newest = 0.0
+    d = os.path.join(HERE, "static")
+    for f in os.listdir(d):
+        try:
+            newest = max(newest, os.path.getmtime(os.path.join(d, f)))
+        except OSError:
+            pass
+    return str(int(newest))
+
+
+@app.get("/")
+def index():
+    from fastapi.responses import HTMLResponse
+    html = io.open(os.path.join(HERE, "static", "index.html"),
+                   encoding="utf-8").read()
+    v = _static_version()
+    html = (html.replace('href="style.css"', 'href="style.css?v=%s"' % v)
+                .replace('src="app.js"', 'src="app.js?v=%s"' % v))
+    # no-store, not no-cache: the shell is what carries the version stamps,
+    # so a stale shell defeats the whole mechanism. It is one small document.
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 app.mount("/", StaticFiles(directory=os.path.join(HERE, "static"), html=True),
