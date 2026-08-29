@@ -601,8 +601,9 @@ def main():
         # eligible for exactly one more pass. v2 = the pass that added genre
         # and platform detection; sites read before it never looked for either.
         where.append("coalesce(e.metadata->>'site_read','') <> %s")
-        params.append(SITE_STAMP)
     params = [SEGMENT]
+    if args.qualify:
+        params.append(SITE_STAMP)
     if args.source:
         where.append("e.source = %s")
         params.append(args.source)
