@@ -319,4 +319,17 @@ Three bugs were suppressing the whole pool, none of them in the scorer. B1 only 
 
 **The ceiling, stated honestly.** Top of pool is 50 and `score_threshold_priority` is 60, so the dashboard reads *0 priority* and will keep reading it. That is not a bug in the scorer — 60 needs roughly four criteria proven at once, and only 27 companies have `international_ip_experience` at all, most of them from headlines that never carried a domain. **The threshold is yours to set; it was 60 by your instruction on 2026-08-21.** Either lower it to ~45 so it means something now, or leave it as an aspiration and read the 25+ band as the working queue.
 
-**Next actions:** (1) **You — install Docker Desktop.** It is the only remaining blocker and it needs admin rights plus a reboot; everything else is written and verified (`docs/DEPLOY.md`, `Dockerfile`, `docker-compose.yml`). The app runs without it meanwhile: `python -m uvicorn app.main:app --port 8000`. (2) Re-run P5 and P7 in n8n to harvest with the rebalanced queries and the widened Wikidata class set. (3) **P11 Checkpoint 1** — the pool finally has enough evidenced, contactable rows for the per-source approval measurement to mean something.
+**LEAD-QUALITY PASS (2026-08-29, evening). Quality means two different things and both moved: the top of the pool is now TRUE, and the middle is now EVIDENCED.**
+
+*Truth first.* Two workflow sweeps (33 agents, 362 web checks, every removal adversarially re-verified) checked the entire review band company by company. 58 removals confirmed: extraction artefacts, broadcasters, a SaaS tool, a post house, two acting schools, a soundstage landlord, a payroll-services firm — plus 19 non-US companies and 17 majors/subsidiaries. Two leads had DOMAINS BELONGING TO STRANGERS (mediaprostudio.com is a Punta Cana web-design agency; seesawfilms.com is a Beijing company). One save: “Chelsea” at 48 survived — it is Chelsea Pictures, Emmy-winning NY/LA prodco, not the football club. `sql/13_apply_gates.sql` (P13’s missing enforcement) then archived 165 rows on confirmed gate evidence. **63 of the 64 leads now in the band carry a `web_verification` record a reviewer can read.**
+
+*Depth second.* The per-company news sweep (`tools/enrich_newscheck.py`) checked 292 contactable companies against the news archive: 8 distribution credits, **0 IP credits — an honest negative**: the US-small-independent × format-experience intersection is thin, and `international_ip_experience` will mostly surface in outreach conversations, not pre-verification. The v2 site pass added genre self-description (98 scored, was 74) and platform claims with ad-vocabulary excluded (distribution 73, was 38).
+
+| pool health | morning | evening |
+|---|---:|---:|
+| in-scope pool | 808 | 613 (165 out-of-scope archived on evidence) |
+| top lead | Dharma Productions (Mumbai major) | Merman Branded, 57, US, named contact |
+| reviewable | 77 (unverified) | 64, **63 web-verified US** |
+| reviewable + contactable | 51 | 50 |
+
+**Next actions:** (1) **You — Docker Desktop install** (only remaining blocker; `docs/DEPLOY.md`). (2) Re-run P5/P7 in n8n for the widened harvests. (3) **P11 Checkpoint 1** on a band that is finally worth measuring. (4) The priority threshold (60) still needs your call — top verified lead is 57.
