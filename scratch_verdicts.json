@@ -1,0 +1,557 @@
+{
+ "total": 77,
+ "confirmed_removals": [
+  {
+   "name": "Dharma Productions",
+   "kind": "production_company",
+   "country": "IN",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "One of India's biggest studios (Mumbai): valued ~$240M with 50% sold to Adar Poonawalla's Serene Productions in 2024, so a major, not a small indie; Wikipedia's infobox and the live site confirm dharma-production.com is its real official domain."
+  },
+  {
+   "name": "CCI Entertainment",
+   "kind": "production_company",
+   "country": "CA",
+   "independent": "yes",
+   "active": "defunct_or_dormant",
+   "domain_ok": "yes",
+   "note": "Toronto indie (Cambium Catalyst International) whose kids library was sold to 9 Story in 2013 and whose last credits date to ~2017 (Undercover Grandpa, Another Kind of Wedding); co-founder Zipursky launched a new banner with MarVista in 2018, and the 'Marfy of Dreams' headline is a 2009 AWN story - ccientertainment.com is still its own (stale) site."
+  },
+  {
+   "name": "Epic Story Media",
+   "kind": "production_company",
+   "country": "CA",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Canadian (Vancouver) kids-franchise producer founded 2017 by ex-DHX exec Ken Faier; Bron took only a minority stake in 2018, it remains founder-led and independent, actively bringing new co-productions to MIPCOM - but it is Canadian, not US."
+  },
+  {
+   "name": "LEONINE Studios",
+   "kind": "production_company",
+   "country": "DE",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Munich-based studio founded 2019 with KKR backing that signed an all-stock combination with France's Mediawan in April 2024 (combined group ~EUR 1B revenue, 85 labels), making it part of a major European group; leoninestudios.com is its own site."
+  },
+  {
+   "name": "ContentStudio",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "contentstudio.io is a SaaS social-media-management platform founded 2017, HQ Claymont, Delaware \u2014 a software company whose YouTube channel was scraped, not a film/TV production company."
+  },
+  {
+   "name": "Fresh Film Productions",
+   "kind": "production_company",
+   "country": "GB",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Female-led commercial production company headquartered at 50 Great Portland Street, London, with satellite offices in New York, Prague and Bangkok \u2014 its New York office explains the AICP listing but it is UK-based."
+  },
+  {
+   "name": "ITVS",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Independent Television Service is a San Francisco nonprofit funder/presenter of PBS documentaries (Independent Lens), not a commercial production company; the July 2025 CPB rescission cut ~87% of its revenue and forced 20% layoffs, though it is still operating."
+  },
+  {
+   "name": "Mirada",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "LA live-action/virtual production studio (co-founded 2010 by Guillermo del Toro and Mathew Cullen) acquired by Trailer Park Group in 2018 and listed today as one of TPG's six studios; site shows March 2026 ESPN work."
+  },
+  {
+   "name": "Nutopia",
+   "kind": "production_company",
+   "country": "GB",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Jane Root's factual production company is headquartered in London (with a US office) and no acquisition or majority investor was found \u2014 genuinely independent but not US-based despite the geo tag."
+  },
+  {
+   "name": "Therapy",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Therapy Studios (Culver City, founded 2006) is a post-production house - editorial, sound, color, VFX, and a newly launched motion-graphics department - not a content-originating production company."
+  },
+  {
+   "name": "TriBeCa Productions",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "De Niro/Rosenthal's film-TV banner became part of Tribeca Enterprises in 2003, and Tribeca Enterprises has been majority-owned by James Murdoch's Lupa Systems since 2019; tribecafilm.com is the parent Tribeca Enterprises/festival site rather than a dedicated production-company site."
+  },
+  {
+   "name": "Mediapro Studio",
+   "kind": "production_company",
+   "country": "ES",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "wrong_company",
+   "note": "The Mediapro Studio is the Madrid/Barcelona production arm of Spain's Grup Mediapro conglomerate; its real site is themediaprostudio.com, while mediaprostudio.com is an unrelated web-design agency in Punta Cana, Dominican Republic."
+  },
+  {
+   "name": "See-Saw Films",
+   "kind": "production_company",
+   "country": "GB",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "wrong_company",
+   "note": "London/Sydney producer of Slow Horses and The King's Speech, but France's Mediawan took a 51% majority stake in March 2025, and seesawfilms.com belongs to Beijing-based Seesaw Productions (The Farewell) \u2014 See-Saw's own site is see-saw-films.com."
+  },
+  {
+   "name": "Action Drama Studio",
+   "kind": "other_business",
+   "country": "AU",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "A drama school in Melbourne's north-east teaching acting, musical theatre and dance classes \u2014 not a production company \u2014 and actiondramastudio.com.au is its own site."
+  },
+  {
+   "name": "Jeetu Studio Bharthana @ Official Youtube Channel ",
+   "kind": "other_business",
+   "country": "IN",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "wrong_company",
+   "note": "A Hindi comedy YouTube channel from Bharthana, Uttar Pradesh still uploading in 2026, not a production company; zixdigital.com belongs to Zix Digital, a Thane-based YouTube channel-management/music-distribution network that merely partners with the channel."
+  },
+  {
+   "name": "Animae Caribe House",
+   "kind": "production_company",
+   "country": "TT",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "Real animation studio in Port of Spain, Trinidad & Tobago (CEO Camille Selvon, linked to the Animae Caribe festival) that announced a Feb 2026 co-production with India's Bhooshan's Junior for 52 episodes of 'Adventures of Louie & Douie' - active but Caribbean, not US; no domain was listed."
+  },
+  {
+   "name": "BOLLYWOOD SUPERHIT FILM",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "Generic phrase sliced from the headline 'AJITH'S PRODUCER BUYS REMAKE RIGHTS OF BOLLYWOOD SUPERHIT FILM' - it describes a film, not any company."
+  },
+  {
+   "name": "Both Worlds Freeli Films",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "The string fuses two separate companies from the headline - South Africa's Both Worlds and Atlanta-based Freeli Films (CEO J. Carter), which signed a US-Africa microdrama co-production pact in March 2026; Freeli Films alone could be re-extracted as a US indie lead."
+  },
+  {
+   "name": "Country House",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "Fragment of the format title 'Country House Hunters' whose rights Reese Witherspoon's company picked up - a show name chopped mid-title, not a company."
+  },
+  {
+   "name": "Czech Television",
+   "kind": "broadcaster_or_network",
+   "country": "CZ",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "Ceska televize is the Czech Republic's national public-service broadcaster (Prague), a major national network commissioning shows like the local 'The Office' - not a small indie prodco and not US-based; no domain was listed."
+  },
+  {
+   "name": "Dictionary Films",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Real Chicago production company and dictionaryfilms.com is its site (copyright 2026, new MD Brian Smego), but it is the integrated production arm of Cutters Studios - its footer lists sister companies Cutters, Another Country and Flavor - so not a standalone independent."
+  },
+  {
+   "name": "Essential Media",
+   "kind": "production_company",
+   "country": "AU",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "This is Sydney's Essential Media & Entertainment (co-producer of 'The Living Universe' with France's ZED); after merging into Essential Quail/EQ Media, being acquired by Kew Media in 2018 and bought back by management when Kew collapsed in 2020, it now operates independently as EQ Media Group (Sydney/LA) - Australian, not US, and the 'Essential Media' brand itself is retired; no domain was listed."
+  },
+  {
+   "name": "Goin\u2019 Production",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "String cut across the colon of the Letterkenny headline 'Okay Bud, Let's Get 'er Goin': Production Begins...' - 'Goin'' ends the pun and 'Production' starts the next clause; no such company exists."
+  },
+  {
+   "name": "Great Guns USA",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Great Guns USA (West Hollywood, CA) is the American arm of London-headquartered global production group Great Guns, which runs offices in London, UAE, Germany, Japan, Asia and India \u2014 greatguns.com/usa is the group's shared site, so it is not a standalone independent US company."
+  },
+  {
+   "name": "Growing Film",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "String extracted from the headline phrase 'Australia's Growing Film Partnerships' \u2014 no company named 'Growing Film' exists in this story."
+  },
+  {
+   "name": "Highlander Production Company",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "Headline fragment: the 'Kill' English-language remake is from 87Eleven Entertainment (Chad Stahelski's John Wick / Highlander-reboot company, backed by Lionsgate) \u2014 there is no company called 'Highlander Production Company'."
+  },
+  {
+   "name": "Hooligan",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "hooligannyc.com is Hooligan, a Chelsea NYC post-production boutique (offline editorial, VFX, motion graphics) with a current editor roster and active AICP listing \u2014 a post house, not a content production company, so not a co-production fit."
+  },
+  {
+   "name": "Keshet Studios",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "LA/NY-based scripted studio, but it is the U.S. production arm of Keshet International, itself the distribution arm of Israel's Keshet Media Group - a subsidiary, not independent; no domain was listed to verify."
+  },
+  {
+   "name": "Marvel TV",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "Marvel Television is a Disney-owned banner: folded into Marvel Studios in 2019 and revived in 2024 as Marvel Studios' label for live-action series (from Agatha All Along on) - a major's subsidiary, not a partner-sized indie; no domain listed."
+  },
+  {
+   "name": "MIPCOM Electric Entertainment",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "Extraction artefact: the Hollywood Reporter headline prefix 'MIPCOM:' (the Cannes TV market) got glued onto the company name - the real entity is Electric Entertainment, Dean Devlin's independent LA studio (electricentertainment.com), a genuine lead only under that correct name."
+  },
+  {
+   "name": "Nordisk Film",
+   "kind": "production_company",
+   "country": "DK",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Copenhagen studio founded 1906 and owned by the Egmont Group since 1992, so it is Danish and a major-group subsidiary, not a small US independent; nordiskfilm.com is its official site."
+  },
+  {
+   "name": "Pinewood Television",
+   "kind": "production_company",
+   "country": "GB",
+   "independent": "subsidiary_or_major",
+   "active": "defunct_or_dormant",
+   "domain_ok": "unknown",
+   "note": "London-based TV drama venture of Pinewood Group (co-producer of Jordskott 2) that was taken over by StoryFirst and rebranded Twelve Town in 2017, so the Pinewood Television name no longer exists; no domain was listed to check."
+  },
+  {
+   "name": "SILENTFACE",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "silentface.com self-describes as 'a video post-production agency' based in New York (Brooklyn, est. 2017, AICP member) \u2014 a post house rather than a scripted production company, though independent, small, US-based and active as of 2025."
+  },
+  {
+   "name": "Stink Films USA",
+   "kind": "production_company",
+   "country": "US",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "The US arm (LA office, 4406 W Jefferson Blvd) of Stink Films, a global production group headquartered at Redchurch Street, London within the multinational 'Stink Family' (stink.co) \u2014 so not a small independent US company; 2025 news shows new US leadership 'in a time of growth', and stinkfilms.com is the group's own site with a /united-states page."
+  },
+  {
+   "name": "Studios Exits India Production",
+   "kind": "artefact",
+   "country": "UNKNOWN",
+   "independent": "unknown",
+   "active": "unknown",
+   "domain_ok": "unknown",
+   "note": "Not a company: this string is clipped from the Feb 2025 Variety/Deadline headline 'BBC Studios Exits India Production, Inks Format Deal With Banijay Asia' \u2014 the actual subject is BBC Studios (UK), which shut its Indian production unit."
+  },
+  {
+   "name": "TIFFCOM Nippon TV",
+   "kind": "broadcaster_or_network",
+   "country": "JP",
+   "independent": "subsidiary_or_major",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "Headline mashup of TIFFCOM (Tokyo's content market) and Nippon TV, Japan's major commercial broadcaster (Nippon Television Holdings) that sold the 'Housekeeper' format there \u2014 the real entity is a major Japanese broadcaster, not a US indie producer; no domain was listed to verify."
+  },
+  {
+   "name": "Tua Films APC Studios",
+   "kind": "production_company",
+   "country": "IE",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "unknown",
+   "note": "String concatenates two distinct co-producers of Hulu's 'Obituary': Tua Films (Galway, Ireland, fka Magamedia) and APC Studios (Paris, France, founder-majority-owned About Premium Content) \u2014 both real independent producers, neither US-based, and no domain was listed."
+  },
+  {
+   "name": "Witthaus Editorial",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "One-person creative editorial/post-production shop of editor Scott Witthaus in Waynesboro, Virginia (full-time since leaving VCU Brandcenter in 2024) \u2014 an editing service for commercials/documentaries, not a production company that could co-produce formats."
+  },
+  {
+   "name": "Zeitgeist Films",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "NYC arthouse film DISTRIBUTOR founded 1988 by Nancy Gerstman and Emily Russo \u2014 acquires and releases finished films (2025 slate includes K\u00f6ln 75 and Holy Cow) under a distribution partnership with Kino Lorber; it does not produce content."
+  },
+  {
+   "name": "Zoic Studios",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Privately held visual-effects studio (founded 2002, ~150 staff, Culver City HQ plus Vancouver and NYC) doing VFX service work on others' films and series (Game of Thrones, Avengers), announcing new executive hires in 2025 \u2014 a vendor, not a producing partner."
+  },
+  {
+   "name": "3-2-1 Acting Studios",
+   "kind": "other_business",
+   "country": "US",
+   "independent": "yes",
+   "active": "yes",
+   "domain_ok": "yes",
+   "note": "Acting SCHOOL for kids/teens/adults run by Mae Ross in La Crescenta, CA (classes listed on Yelp as of July 2026); 321actingstudios.com 301-redirects to its main site 321talentshowcase.com, so the domain is theirs \u2014 but it produces no content."
+  }
+ ],
+ "refuted_removals": [],
+ "clean": [
+  {
+   "name": "2M Productions",
+   "country": "US",
+   "note": "Small Las Vegas, NV commercial/corporate video production shop (EPs Matt Wilkinson and Michelle Valdez, matt@2mpros.com, 702 area code) listed as an AICP Commercial Agreement signatory as of April 2026 - active and independent, but a commercial house, not a scripted co-production partner."
+  },
+  {
+   "name": "Angel Studios",
+   "country": "US",
+   "note": "Provo, Utah audience-driven studio/distributor (The Chosen, Sound of Freedom) that went public via SPAC in Sept 2025 as NYSE: ANGX with ~$413M trailing revenue - independent of any major but a sizeable public company, not small; angel.com is its confirmed official domain."
+  },
+  {
+   "name": "Merman Branded, LLC",
+   "country": "US",
+   "note": "US branded-entertainment arm (LA/NY offices, run by managing partners Kira Carstensen and Ellen Jacobson-Clarke) of Merman, the independent company founded by Sharon Horgan and Clelia Mountford; hellomerman.com hosts its official US branded contact pages, though the parent group is London-founded UK/US."
+  },
+  {
+   "name": "Alldayeveryday Productions, LLC",
+   "country": "US",
+   "note": "Bicoastal NY/LA full-service production company (commercials, docs, features); its site features 2026 work including 'The Marshal' and no parent company appears anywhere."
+  },
+  {
+   "name": "Myriad Pictures",
+   "country": "US",
+   "note": "Kirk D'Amico's Santa Monica independent production/finance/international-sales company (founded 1999) was active at AFM 2025 with a new slate after selling its 114-title library to Three Point Capital."
+  },
+  {
+   "name": "Panoptica",
+   "country": "US",
+   "note": "NYC-based AICP-member commercial/branded video production shop (2-10 staff) whose live site is panopticafilms.com; it also develops original film/series/doc content."
+  },
+  {
+   "name": "Prodigium Pictures LLC",
+   "country": "US",
+   "note": "Manhattan-based B-Corp production company founded 2011 (social-impact films/docs/commercials, e.g. HBO Max docuseries Gaming Wall Street) with prodigium-pictures.com as its own live site."
+  },
+  {
+   "name": "SOCIETY",
+   "country": "US",
+   "note": "Los Angeles union-signatory commercial/branded-content production company with a director roster; society.tv is its own site showing brand work through 2024 (Lexus, Deloitte, MasterClass)."
+  },
+  {
+   "name": "DECKER'S DREAM | CONTENT STUDIO",
+   "country": "UNKNOWN",
+   "note": "No trace of this name on the open web or in YouTube-scoped searches; it appears to be a self-styled name of a tiny/obscure YouTube channel pulled by the youtube_api connector, not an establishable production company."
+  },
+  {
+   "name": "Electric Entertainment",
+   "country": "US",
+   "note": "Dean Devlin's independent LA studio (no studio parent; financing deal with Content Partners Capital) was highly active in 2025 - Leverage: Redemption S3 on Prime Video (Apr 2025) and The Librarians: The Next Chapter on TNT (May 2025) - with electricentertainment.com as its official site."
+  },
+  {
+   "name": "Giant Screen Films",
+   "country": "US",
+   "note": "Privately held giant-screen/IMAX documentary producer-distributor based at 909 Davis St, Evanston, IL since 1997 (merged operations with D3D Cinema), with an active site and catalog at gsfilms.com."
+  },
+  {
+   "name": "Platinum Dunes",
+   "country": "US",
+   "note": "Michael Bay/Brad Fuller's founder-owned US banner, relaunched 2022 with a first-look deal at Universal (A Quiet Place: Day One, 2025 OutRun adaptation), so active and independent though hardly small; no domain was listed to verify."
+  },
+  {
+   "name": "Providence Pictures",
+   "country": "US",
+   "note": "Independent Providence, RI documentary house (Gary Glassman) with 50+ programs for PBS/NOVA, Discovery, Nat Geo and BBC, and providencepictures.com is its own active site."
+  },
+  {
+   "name": "1stAveMachine",
+   "country": "US",
+   "note": "Brooklyn, NY production company founded 2004 (live action, animation, mixed media), ~66 staff, recently signed director Emil Nava and launched music venture Ammolite Machine; 1stavemachine.com is its own site."
+  },
+  {
+   "name": "ARIS",
+   "country": "US",
+   "note": "Small Los Angeles full-service creative production and post studio founded 2016 (2-10 employees), clients include Chevy, AmEx, Coca-Cola; wearearis.com is the company's own live site."
+  },
+  {
+   "name": "ArtClass LLC",
+   "country": "US",
+   "note": "Independent live-action and post studio founded 2018, HQ El Segundo CA with NY/LA/London offices, roster of commercial directors plus ArtClass Films for long-form; artclasscontent.com is its own site."
+  },
+  {
+   "name": "Atlanta-Based Freeli Films",
+   "country": "US",
+   "note": "Extracted name carries the headline prefix 'Atlanta-Based', but it maps to a real company, Freeli Films (Atlanta, founded by J. Carter, credits with BET/Starz/Peacock/Prime Video), which in March 2026 launched a microdrama co-production partnership with South Africa's Both Worlds with Taye Diggs attached; no domain listed to verify."
+  },
+  {
+   "name": "Believe Media, Inc.",
+   "country": "US",
+   "note": "Los Angeles commercial/music-video production company founded 2000 by Liz Silver and Luke Thornton (offices LA, NY, London, Prague), still hiring and signing directors as of April 2025; believemedia.com is its own site."
+  },
+  {
+   "name": "BODEGA Studios",
+   "country": "US",
+   "note": "New York-based commercial production company (also LA/SF) that is part of the Northern Lights family of companies - an independently owned post/production group, not a major studio; bodegastudios.com is its own site."
+  },
+  {
+   "name": "Golden Productions, Inc.",
+   "country": "US",
+   "note": "golden.la is Golden LA, a Los Angeles live-action/design/VFX production studio founded 2014; site shows @2025 footer and recent Apple/Airbnb/WhatsApp work with no parent company mentioned."
+  },
+  {
+   "name": "Good Times Production and Technology",
+   "country": "US",
+   "note": "LA commercial production and technology company founded by EPs Corwin Carroll and Eric McCasline; itsgoodtimes.com carries news through Feb 2026 (Black Keys music video) and a 2026 copyright."
+  },
+  {
+   "name": "Invisible Collective",
+   "country": "US",
+   "note": "LA-based, diverse-owned creative collective/production company founded 2018 by co-founder/director Justin Polk (2-10 employees); invisiblecollective.co is live with directors and team rosters and it holds a current AICP member listing."
+  },
+  {
+   "name": "Logan Industry",
+   "country": "US",
+   "note": "Los Angeles full-service commercial/film-TV production company launched by the producers of The Donut King (Jose Nunez, founding partner); loganindustry.com is its live official site with no parent company indicated."
+  },
+  {
+   "name": "Madre Productions LLC",
+   "country": "US",
+   "note": "Bilingual boutique founded in the U.S. in 2022 by the partners of Mexico City's MADREFOCA (with U.S. managing partner Jonathon Ker), still expanding (Europe/UK EP added 2024); press and the AICP member page both confirm madre.us as its site."
+  },
+  {
+   "name": "Mayan Productions, Inc",
+   "country": "US",
+   "note": "Los Angeles company (incorporated 1988) of commercial director Paul Dektor, who is its CEO/CFO/Secretary; pauldektor.com is his live LA director-portfolio site (1151 N Highland Ave) that AICP lists as the company's URL, though the site itself never shows the Mayan name."
+  },
+  {
+   "name": "Native Content",
+   "country": "US",
+   "note": "Boutique LA commercial/branded-content production company (founded 2008 by Tomer DeVito, 1050 N Orange Dr) with no major parent; nativecontent.com is live and shows recent Toyota and Air Jordan work."
+  },
+  {
+   "name": "Pictures In A Row (Picrow, Inc.)",
+   "country": "US",
+   "note": "Hollywood (736 Seward St, LA) production/post studio founded 1995 by Peter Lang and Adam Gross with no parent company found, still listed active in 2026, and known as Amazon's physical-production partner on Transparent and The Marvelous Mrs. Maisel; picrow.com is its own site."
+  },
+  {
+   "name": "Quriosity Productions LLC",
+   "country": "US",
+   "note": "Chicago-based minority-owned boutique production/post/photography company founded in 2013 by Qadree Holmes, an AICP member with its own live site at quriosityproductions.com; primarily a commercial/branded-content shop rather than scripted TV."
+  },
+  {
+   "name": "Reverie Content, Inc.",
+   "country": "US",
+   "note": "Los Angeles production company founded 2019 by Rich Pring and Cathleen O'Conor Stern (live-action, animation, branded entertainment), AICP member with live site reveriecontent.com and no parent company found; focus is commercials/branded content more than scripted series."
+  },
+  {
+   "name": "Sentient Entertainment",
+   "country": "US",
+   "note": "Los Angeles production and management company founded 2012 by Renee Tab and Christopher Tuffin, holder of The Others and Thesis remake rights (partnered with Universal) and launcher of sales arm Sentient Pictures International in 2022, with no evidence of closure; no domain was listed (its actual site is senti-ent.com)."
+  },
+  {
+   "name": "Spears & Arrows",
+   "country": "US",
+   "note": "Santa Monica CA commercial/branded-content production company founded 2014 by its own producers; spearsandarrows.tv is live with a 2025 copyright and active socials, and no parent company appears anywhere."
+  },
+  {
+   "name": "Station Film, Inc.",
+   "country": "US",
+   "note": "Bicoastal (Brooklyn NY / LA) commercial production company launched 2008 by founders Stephen Orent and Caroline Gibney; stationfilm.com shows a 2026 copyright, recent Nike/Amazon work, and an NMSDC minority-owned-business badge rather than any parent."
+  },
+  {
+   "name": "STORY",
+   "country": "US",
+   "note": "Full-service commercial film production and post company with offices in Chicago (106 N Aberdeen St), New York and LA; storyco.tv is its own live site with a current director roster and no parent company mentioned."
+  },
+  {
+   "name": "Supply&Demand",
+   "country": "US",
+   "note": "Bicoastal production company (599 Broadway NYC and Santa Monica CA) founded 2002 and still owned by founder/EP Tim Case; supplyanddemand.tv is live with a 16-director roster and trade coverage (director signings 2024, SHOOT rep-report mentions into Oct 2025) shows ongoing operation."
+  },
+  {
+   "name": "Taste In Motion, Inc.",
+   "country": "US",
+   "note": "Boutique food/tabletop commercial production company (founded 2017, ~11 staff) headquartered at 599 Broadway NYC with LA and Vienna presence; owned by equal partners Thomas Schauer, Tim Case and Becky Donahue \u2014 a sister shop to Supply&Demand (same address and Case), not a major's subsidiary \u2014 and tasteinmotion.com is its live official site."
+  },
+  {
+   "name": "WTP Pictures",
+   "country": "US",
+   "note": "Independent founder-led (Jesse Ford, Susan Rued Anderson) production studio with Detroit and LA offices, rebranded from We The People, producing commercials, branded content and long-form entertainment including 'Revolution' for History Channel; wtppictures.com is its own site."
+  }
+ ]
+}
