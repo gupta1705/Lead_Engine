@@ -158,6 +158,28 @@ const CASES = [
     detail: { items: [] },
     expect: (r) => r === undefined,
   },
+  {
+    label: "a SaaS/form host is never taken as the company domain",
+    id: "UC_jotform",
+    detail: channelDetail({
+      title: "Decker's Dream Content Studio",
+      description: "Booking form: https://jotform.com/decker  contact support@jotform.com",
+      country: "US", subs: 4000,
+    }),
+    // Regression: a live row took jotform.com as its website AND
+    // support@jotform.com as its contact -- a form vendor's own help desk.
+    expect: (r) => r && r.domain !== "jotform.com",
+  },
+  {
+    label: "a builder SUBDOMAIN is still a real company site",
+    id: "UC_wixsub",
+    detail: channelDetail({
+      title: "Rossetti Productions",
+      description: "We are at https://rossettiproduction.wixsite.com/home",
+      country: "US", subs: 2500,
+    }),
+    expect: (r) => r && r.domain === "rossettiproduction.wixsite.com",
+  },
 ];
 
 // ---------------------------------------------------------------- run
@@ -187,6 +209,7 @@ const searchResponses = configQueries.map((q, i) => {
   if (i === 0) return { items: CASES.slice(0, 3).map((c) => searchHit(c.id)) };
   if (i === 1) return { items: [searchHit(CASES[0].id), ...CASES.slice(3, 6).map((c) => searchHit(c.id))] };
   if (i === 2) return { items: CASES.slice(6, 10).map((c) => searchHit(c.id)) };
+  if (i === 3) return { items: CASES.slice(10).map((c) => searchHit(c.id)) };
   return { items: [] };
 });
 const store = { "Split Queries": split };

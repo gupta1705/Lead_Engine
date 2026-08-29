@@ -31,13 +31,31 @@ function extractDomain(text) {
   if (!text) return null;
   const urlRegex = /https?:\/\/(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:\/[^\s]*)?/gi;
   const matches = [...text.matchAll(urlRegex)];
-  const EXCLUDE = ['youtube.com', 'youtu.be', 'instagram.com', 'twitter.com', 'x.com',
-                   'facebook.com', 'tiktok.com', 'linkedin.com', 'linktr.ee', 'bit.ly'];
+  // A domain is only useful if it is the company's OWN site. Widened
+  // 2026-08-29 after a live row surfaced DECKER'S DREAM at jotform.com, with
+  // support@jotform.com attached as its contact -- scraped off an embedded
+  // form. Emailing that would have meant emailing a form vendor about a
+  // company it has never heard of. Same class as the social links this list
+  // already caught, just less obvious.
+  //
+  // Builders are matched EXACTLY, not by suffix: rossettiproduction.wixsite.com
+  // genuinely is a small shop's website, while bare wixsite.com is not.
+  const EXCLUDE_SUFFIX = ['youtube.com', 'youtu.be', 'instagram.com',
+                   'twitter.com', 'x.com', 'facebook.com', 'tiktok.com',
+                   'linkedin.com', 'linktr.ee', 'bit.ly', 'vimeo.com',
+                   'patreon.com', 'substack.com', 'medium.com', 'beacons.ai',
+                   'eventbrite.com', 'mailchimp.com', 'gmail.com'];
+  const EXCLUDE_EXACT = ['jotform.com', 'wix.com', 'wixsite.com',
+                   'squarespace.com', 'wordpress.com', 'godaddy.com',
+                   'shopify.com', 'weebly.com', 'carrd.co', 'imdb.com',
+                   'crunchbase.com', 'variety.com', 'deadline.com',
+                   'hollywoodreporter.com', 'indiewire.com', 'wikipedia.org',
+                   'productionlist.com', 'zoominfo.com', 'rocketreach.co'];
   for (const m of matches) {
     const host = m[1].toLowerCase();
-    if (!EXCLUDE.some(ex => host === ex || host.endsWith('.' + ex))) {
-      return host;
-    }
+    if (EXCLUDE_SUFFIX.some(ex => host === ex || host.endsWith('.' + ex))) continue;
+    if (EXCLUDE_EXACT.includes(host)) continue;
+    return host;
   }
   return null;
 }
