@@ -486,80 +486,6 @@ def write_size(cur, eid, found):
         cur.execute("select set_scoring_input(%s,'right_size','1'::jsonb)", (eid,))
 
 
-class Db:
-    """A connection that survives the pooler hanging up on us.
-
-    TWO RUNS DIED OF THIS on 2026-08-29, at 47 and 183 companies respectively,
-    both with "server closed the connection unexpectedly". Supabase's session
-    pooler does not keep a single connection alive for the two hours this pass
-    takes, and the tool was holding exactly one from start to finish. Losing an
-    hour of polite, rate-limited crawling to a dropped socket is the definition
-    of avoidable.
-
-    Every write goes through run(), which probes the connection, reconnects if
-    it has gone, and retries the work once. Progress is already durable --
-    site_read is stamped per company -- so a reconnect resumes exactly where it
-    was rather than redoing anything.
-    """
-
-    def __init__(self):
-        self._conn = None
-
-    def _fresh(self):
-        from run_sql import load_db_url
-        import psycopg2
-        self._conn = psycopg2.connect(load_db_url(), connect_timeout=20)
-        return self._conn
-
-    def _live(self):
-        import psycopg2
-        if self._conn is None or self._conn.closed:
-            return self._fresh()
-        try:
-            with self._conn.cursor() as c:
-                c.execute("select 1")
-            return self._conn
-        except psycopg2.Error:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-            return self._fresh()
-
-    def run(self, fn):
-        """fn(cur) -> anything. Committed on success, retried once on a drop."""
-        import psycopg2
-        for attempt in (1, 2):
-            conn = self._live()
-            try:
-                with conn.cursor() as cur:
-                    out = fn(cur)
-                conn.commit()
-                return out
-            except psycopg2.OperationalError:
-                try:
-                    db.close()
-                except Exception:
-                    pass
-                self._conn = None
-                if attempt == 2:
-                    raise
-                log("      (database connection dropped -- reconnecting)")
-            except Exception:
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-                raise
-
-    def close(self):
-        try:
-            if self._conn:
-                self._conn.close()
-        except Exception:
-            pass
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=10)
@@ -613,6 +539,7 @@ def main():
         params.append(args.source)
     params.append(args.limit)
 
+    from dbconn import Db
     db = Db()
     conn = db._live()
     with conn.cursor() as cur:

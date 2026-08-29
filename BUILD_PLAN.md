@@ -109,8 +109,8 @@ n8n is likewise gone and gets rebuilt, but **nothing before P4 touches it** — 
 
 | ID | Prototype | What gets built | Done when | Your time |
 |---|---|---|---|---|
-| **P18** | **Review queue in the browser** | App skeleton + auth + the review queue page: score-ordered cards with `score_breakdown`, contacts, `why_fit`, source badge, review-checklist items as literal checkboxes (rendered from config, so Segment 2 renders free). Approve/reject + reason buttons doing exactly what P3 did in the Table Editor. | You disposition a real batch entirely in the browser; Table Editor retired for review | ~30 min |
-| **P19** | **Dashboard + folders (empty)** | Pipeline funnel counts, approval rate, **per-source yield** (all 5 sources), entity detail view; **positive / negative folder views** (views over the `outreach` table — empty until Phase F, rendered now so triage lands in a finished home). | Dashboard numbers match hand-run SQL | ~20 min |
+| **P18** | ✅ **Review queue in the browser** *(2026-08-29 — FastAPI + 3 static files, no build step; filters, evidence-level detail panel, shortlist/reject with reason and undo, live xlsx export following the current view)* | App skeleton + auth + the review queue page: score-ordered cards with `score_breakdown`, contacts, `why_fit`, source badge, review-checklist items as literal checkboxes (rendered from config, so Segment 2 renders free). Approve/reject + reason buttons doing exactly what P3 did in the Table Editor. | You disposition a real batch entirely in the browser; Table Editor retired for review | ~30 min |
+| **P19** | ✅ **Dashboard** *(2026-08-29 — pool cards, score histogram, per-source yield, and an EVIDENCE COVERAGE panel that is the most diagnostic view in the product. Outreach folders deferred to Phase F, where the table they read exists.)* | Pipeline funnel counts, approval rate, **per-source yield** (all 5 sources), entity detail view; **positive / negative folder views** (views over the `outreach` table — empty until Phase F, rendered now so triage lands in a finished home). | Dashboard numbers match hand-run SQL | ~20 min |
 
 ### Phase F — outreach (the new spine)
 
@@ -301,4 +301,22 @@ It **excludes associate members** — payroll firms, insurers, post houses — w
 
 *Matching improvement shared by both enrichers:* mailbox-to-name matching now handles diminutives (matt@ → Matthew) via prefix-at-length≥4, so named decision-makers stop being demoted to role-inbox tier. 6/6 on the test cases, conservative direction preserved (art@ can never claim Martha).
 
-**Next actions:** (1) **You — re-run P5 and P7 in n8n** (one click each) to harvest with the rebalanced queries and the widened class set; promote + zero-unverified + re-score after. (2) **Terminal:** `python tools/enrich_aicp.py --limit 250` if the background run was interrupted; then `python tools/resolve_domains.py --guess` and `python tools/enrich_sitescrape.py` over the remaining pool. (3) **P11 Checkpoint 1** — the pool now has enough contactable, evidenced rows to make the per-source approval measurement meaningful.
+**P10/B1 COMPLETE, AT SCALE (2026-08-29). The qualification layer went from starved to working, and it was a run rather than a build.**
+
+Three bugs were suppressing the whole pool, none of them in the scorer. B1 only ever visited companies with NO contact, which structurally excluded all 243 AICP rows — the best-contactable part of the pool — from ever being qualified. Python 3.10 does not follow 308 redirects, so `robots.txt` was failing CLOSED on sites that permit us. And reading 552 domains serially measured at 23 hours, which is a fragility problem more than a patience one; it is now parallel across DIFFERENT hosts, so each site still sees one request every 2 seconds.
+
+| | before | after |
+|---|---:|---:|
+| `right_size` (20 pts) | **0** | **167** |
+| `collaboration_openness` (15 pts) | **1** | **28** |
+| `reachable_decision_maker` (10 pts) | 235 | **300** |
+| clears review (25+) | 26 | **77** |
+| reviewable AND contactable | 9 | **51** |
+
+*Team size is counted from the site's own team page and scored TIMIDLY.* A live inspection showed the counter finding real staff alongside credits and place names — about two-thirds precise. Not good enough for 20 points on its own, except that the errors are asymmetric: **noise only ever inflates a count**. So a count of 2–20 proves the true headcount is at most 20, which is exactly what the criterion asks. Inside that band it scores; outside it the count is recorded and NOT scored, because a 54-name page is either a real mid-size company or a boutique with a generous credits page and this cannot tell them apart.
+
+**Data-integrity work the UI forced into the open.** Building a view that draws *unassessed* differently from *scored zero* immediately showed the provenance had eroded: only 58 of 808 rows still carried `unverified_inputs`, so ~439 defaulted zeros were indistinguishable from real judgements (`sql/04c`, restored on 770 rows). Three rows carried somebody else's domain — Platinum Dunes at bloody-disgusting.com, the news site that COVERS them, with a staff writer's address attached (`sql/04d`, plus the blocklist at source in the connector and the resolver). And three companies were split across duplicate rows because the two unique indexes leave a gap between them, stranding 30-point IP evidence on a row that had no domain to contact (`sql/05c`; Angel Studios went 27 → 41 on the merge alone).
+
+**The ceiling, stated honestly.** Top of pool is 50 and `score_threshold_priority` is 60, so the dashboard reads *0 priority* and will keep reading it. That is not a bug in the scorer — 60 needs roughly four criteria proven at once, and only 27 companies have `international_ip_experience` at all, most of them from headlines that never carried a domain. **The threshold is yours to set; it was 60 by your instruction on 2026-08-21.** Either lower it to ~45 so it means something now, or leave it as an aspiration and read the 25+ band as the working queue.
+
+**Next actions:** (1) **You — install Docker Desktop.** It is the only remaining blocker and it needs admin rights plus a reboot; everything else is written and verified (`docs/DEPLOY.md`, `Dockerfile`, `docker-compose.yml`). The app runs without it meanwhile: `python -m uvicorn app.main:app --port 8000`. (2) Re-run P5 and P7 in n8n to harvest with the rebalanced queries and the widened Wikidata class set. (3) **P11 Checkpoint 1** — the pool finally has enough evidenced, contactable rows for the per-source approval measurement to mean something.

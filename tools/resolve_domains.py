@@ -246,7 +246,9 @@ def main():
         params.append(args.source)
     params.append(args.limit)
 
-    conn = psycopg2.connect(load_db_url(), connect_timeout=20)
+    from dbconn import Db
+    db = Db()
+    conn = db._live()
     with conn.cursor() as cur:
         cur.execute("""
             select e.id, e.name, e.source, e.fit_score
@@ -257,7 +259,7 @@ def main():
 
     if not rows:
         log("nothing to resolve -- every entity in scope already has a domain")
-        conn.close(); return 0
+        db.close(); return 0
 
     log("domain resolution -- %d name(s)%s\n"
         % (len(rows), "  [DRY RUN]" if args.dry_run else ""))
@@ -267,12 +269,25 @@ def main():
     wd = wikidata_lookup([r[1] for r in rows])
     log("    matched %d\n" % len(wd))
 
+    # Commit PER HIT, never in one batch at the end. The first version
+    # accumulated everything in `found` and wrote once at the close, so when
+    # the pooler dropped the connection at ~90 names the entire pass was lost.
+    # A per-item write costs one name on failure instead of all of them.
+    def save(eid, dom, method):
+        if args.dry_run:
+            return
+        db.run(lambda cur, _d=dom, _m=method, _e=eid: cur.execute(
+            "update entities set domain = %s,"
+            " metadata = jsonb_set(metadata, '{domain_resolution}', to_jsonb(%s::text))"
+            " where id = %s and domain is null", (_d, _m, _e)))
+
     found = {}
     for eid, name, source, score in rows:
         hit = wd.get(name.lower())
         if hit:
             found[eid] = (hit, "wikidata P856")
             log("  %-34s %-28s wikidata" % (name[:34], hit))
+            save(eid, hit, "wikidata P856")
 
     # --- method 2, only if asked
     if args.guess:
@@ -287,21 +302,11 @@ def main():
                 if why:
                     found[eid] = (cand, "guessed + verified: " + why)
                     log("  %-34s %-28s %s" % (name[:34], cand, why))
+                    save(eid, cand, "guessed + verified: " + why)
                     break
 
     unresolved = [r for r in rows if r[0] not in found]
-    if not args.dry_run and found:
-        with conn.cursor() as cur:
-            for eid, (dom, method) in found.items():
-                cur.execute("""
-                    update entities
-                    set domain = %s,
-                        metadata = jsonb_set(metadata, '{domain_resolution}',
-                                             to_jsonb(%s::text))
-                    where id = %s and domain is null
-                """, (dom, method, eid))
-        conn.commit()
-    conn.close()
+    db.close()
 
     log("\n  resolved   : %d of %d" % (len(found), len(rows)))
     log("  unresolved : %d" % len(unresolved))
