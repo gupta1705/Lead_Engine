@@ -36,6 +36,35 @@ REPO = os.path.dirname(HERE)
 
 app = FastAPI(title="TVF Lead Engine", docs_url="/api/docs")
 
+# ---------------------------------------------------------------- auth wall
+# Everything except the login surface requires a session. The login page is
+# fully self-contained (inline CSS) precisely so nothing else needs to be on
+# the public side of this wall.
+AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup",
+               "/api/health")
+
+
+@app.middleware("http")
+async def auth_wall(request, call_next):
+    from starlette.responses import JSONResponse, RedirectResponse
+    import auth as _auth
+    path = request.url.path
+    request.state.user = None
+    token = request.cookies.get(_auth.COOKIE)
+    if token:
+        def lookup(email):
+            with cursor() as cur:
+                cur.execute("select password_hash from app_users"
+                            " where lower(email) = lower(%s)", (email,))
+                row = cur.fetchone()
+                return row["password_hash"] if row else None
+        request.state.user = _auth.parse_cookie(token, lookup)
+    if path in AUTH_EXEMPT or request.state.user:
+        return await call_next(request)
+    if path.startswith("/api/"):
+        return JSONResponse({"detail": "not signed in"}, status_code=401)
+    return RedirectResponse("/login", status_code=302)
+
 _POOL = None
 
 OPEN_STATUSES = "('discovered','enriched','scored','ready_for_review')"
@@ -296,6 +325,89 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = ""):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+# ------------------------------------------------------------------ outreach
+@app.get("/api/outreach")
+def outreach_list(folder: str = "drafts"):
+    """One folder of the outreach_folders view, newest first."""
+    with cursor() as cur:
+        cur.execute(
+            "select * from outreach_folders where folder = %s"
+            " order by coalesce(sent_at, created_at) desc limit 200", (folder,))
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
+        cur.execute("select folder, count(*) as n from outreach_folders group by folder")
+        counts = {r["folder"]: r["n"] for r in cur.fetchall()}
+    return {"rows": rows, "counts": counts}
+
+
+@app.patch("/api/outreach/{oid}")
+def outreach_edit(oid: str, body: dict = Body(...)):
+    """Edit a draft's subject/body. Approval means a human read THIS text, so
+    editing is only legal while the row is still a draft."""
+    subject = (body or {}).get("subject")
+    text = (body or {}).get("body")
+    with cursor() as cur:
+        cur.execute(
+            "update outreach set subject = coalesce(%s, subject),"
+            " body = coalesce(%s, body), updated_at = now()"
+            " where id = %s and status = 'drafted' returning id",
+            (subject, text, oid))
+        if not cur.fetchone():
+            raise HTTPException(409, "only drafts can be edited")
+    return {"ok": True}
+
+
+@app.post("/api/outreach/{oid}/decision")
+def outreach_decide(oid: str, body: dict = Body(...)):
+    """approve: a human read the draft and stands behind it. cancel: withdraw.
+    mark_positive / mark_negative: the human verdict on a reply -- on positive
+    the company moves to in_conversation, the state the whole engine exists to
+    produce."""
+    action = (body or {}).get("action")
+    with cursor() as cur:
+        if action == "approve":
+            cur.execute("update outreach set status='approved', updated_at=now()"
+                        " where id=%s and status='drafted' returning id", (oid,))
+        elif action == "cancel":
+            cur.execute("update outreach set status='cancelled', updated_at=now()"
+                        " where id=%s and status in ('drafted','approved')"
+                        " returning id", (oid,))
+        elif action in ("mark_positive", "mark_negative"):
+            label = "positive" if action == "mark_positive" else "negative"
+            cur.execute("update outreach set triage=%s, status='triaged',"
+                        " updated_at=now() where id=%s and direction='inbound'"
+                        " returning entity_id", (label, oid))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(409, "not an inbound reply")
+            eid = row["entity_id"]
+            if label == "positive":
+                # promote; report honestly if the entity was in a state the
+                # promotion could not apply to (review finding: silent no-op)
+                cur.execute("update entities set status='in_conversation',"
+                            " status_changed_at=now() where id=%s"
+                            " and status in ('contacted','shortlisted')"
+                            " returning id", (eid,))
+                promoted = cur.fetchone() is not None
+                return {"ok": True, "entity_promoted": promoted}
+            # a correction must be able to walk the promotion back -- but only
+            # when no OTHER reply still stands positive for this company
+            cur.execute("select 1 from outreach where entity_id=%s"
+                        " and direction='inbound' and triage='positive'"
+                        " and id <> %s limit 1", (eid, oid))
+            if cur.fetchone() is None:
+                cur.execute("update entities set status='contacted',"
+                            " status_changed_at=now() where id=%s"
+                            " and status='in_conversation'", (eid,))
+            return {"ok": True}
+        else:
+            raise HTTPException(400, "unknown action")
+        if not cur.fetchone():
+            raise HTTPException(409, "row is not in a state that allows " + action)
+    return {"ok": True}
+
+
 @app.get("/api/health")
 def health():
     try:
@@ -338,6 +450,24 @@ def index():
                 .replace('src="app.js"', 'src="app.js?v=%s"' % v))
     # no-store, not no-cache: the shell is what carries the version stamps,
     # so a stale shell defeats the whole mechanism. It is one small document.
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+import sys as _sys
+_sys.path.insert(0, HERE)
+import auth as _auth_module
+_auth_router, _ = _auth_module.build_router(cursor)
+app.include_router(_auth_router)
+
+import ops as _ops_module
+app.include_router(_ops_module.build_router())
+
+
+@app.get("/login")
+def login_page():
+    from fastapi.responses import HTMLResponse
+    html = io.open(os.path.join(HERE, "static", "login.html"),
+                   encoding="utf-8").read()
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 

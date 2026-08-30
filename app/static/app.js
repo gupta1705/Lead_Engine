@@ -26,6 +26,7 @@ function toast(msg, isErr) {
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
+  if (r.status === 401) { location.href = "/login"; throw new Error("signed out"); }
   if (!r.ok) {
     let detail = r.statusText;
     try { detail = (await r.json()).detail || detail; } catch (e) {}
@@ -43,6 +44,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     $("#view-" + btn.dataset.view).classList.add("active");
     if (btn.dataset.view === "dashboard") loadDashboard();
     if (btn.dataset.view === "shortlist") loadShortlist();
+    if (btn.dataset.view === "outreach") loadOutreach();
     syncExportLink();
   });
 });
@@ -279,6 +281,119 @@ async function loadShortlist() {
       + "</tbody>"
     : `<tbody><tr><td class="muted" style="padding:24px">
          Nothing shortlisted yet. Approve companies in the review queue.</td></tr></tbody>`;
+}
+
+/* ---------------------------------------------------------- outreach */
+const FOLDERS = [
+  ["drafts", "Drafts"], ["outbox", "Approved"], ["sent", "Sent"],
+  ["inbox", "Replies"], ["positive", "Positive"], ["negative", "Negative"],
+  ["attention", "Attention"], ["cancelled", "Cancelled"],
+];
+const oState = { folder: "drafts", rows: [], selected: null, reqToken: 0, busy: false };
+
+async function loadOutreach() {
+  // request token: folder switches can resolve out of order, and the review
+  // found stale responses rendering under the wrong active pill
+  const token = ++oState.reqToken;
+  let d;
+  try { d = await api("/api/outreach?folder=" + oState.folder); }
+  catch (e) { return toast("Could not load outreach: " + e.message, true); }
+  if (token !== oState.reqToken) return;
+  oState.rows = d.rows;
+
+  $("#folderBar").innerHTML = FOLDERS.map(([key, label]) =>
+    `<button class="pill ${key === oState.folder ? "active" : ""}" data-f="${key}">
+       ${label}<span class="n">${d.counts[key] || 0}</span></button>`).join("");
+  $("#folderBar").querySelectorAll(".pill").forEach((b) =>
+    b.addEventListener("click", () => { oState.folder = b.dataset.f; oState.selected = null;
+      $("#outreachDetail").innerHTML = '<div class="empty"><p>Select a message.</p></div>';
+      loadOutreach(); }));
+
+  $("#outreachBody").innerHTML = d.rows.length ? d.rows.map((r) => `
+    <tr data-id="${r.id}" class="${oState.selected === r.id ? "sel" : ""}">
+      <td><div class="nm">${esc(r.company)}</div>
+          <div class="dm">${esc(r.domain || "")}</div></td>
+      <td><div>${esc(r.contact_name || "")}</div>
+          <div class="dm">${esc(r.contact_email || "")}</div></td>
+      <td>${esc(r.subject || "(no subject)")}
+          ${r.triage ? ` <span class="triage-tag ${esc(r.triage)}">${esc(r.triage)}</span>` : ""}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="3" class="muted" style="padding:28px;text-align:center">
+         ${oState.folder === "drafts"
+           ? "No drafts. Run: python tools/outreach.py draft"
+           : "Nothing in this folder yet."}</td></tr>`;
+  $("#outreachBody").querySelectorAll("tr[data-id]").forEach((tr) =>
+    tr.addEventListener("click", () => selectOutreach(tr.dataset.id)));
+}
+
+function selectOutreach(id) {
+  oState.selected = id;
+  $("#outreachBody").querySelectorAll("tr").forEach((tr) =>
+    tr.classList.toggle("sel", tr.dataset.id === id));
+  const r = oState.rows.find((x) => x.id === id);
+  if (!r) return;
+
+  const isDraft = r.status === "drafted";
+  const isReply = r.direction === "inbound";
+
+  $("#outreachDetail").innerHTML = `
+    <div class="d-head">
+      <div class="d-name">${esc(r.company)}</div>
+      <div class="d-meta">${esc(r.contact_name || "")} &middot;
+        ${esc(r.contact_email || "")} &middot;
+        <span class="status-pill">${esc(r.status)}</span>
+        ${r.triage_reason ? `<div class="dm" style="margin-top:4px">${esc(r.triage_reason)}</div>` : ""}
+      </div>
+    </div>
+    ${isDraft
+      ? `<input id="draftSubject" value="${esc(r.subject || "")}">
+         <textarea id="draftBody">${esc(r.body || "")}</textarea>
+         <div class="decide">
+           <button class="btn good" id="oApprove">Approve for sending</button>
+           <button class="btn bad" id="oCancel">Cancel draft</button>
+         </div>
+         <p class="sub" style="margin-top:10px">Approving means: a person read
+         exactly this text and stands behind it. Edits save on approve.</p>`
+      : `<div class="d-sec"><h3>${esc(r.subject || "")}</h3>
+           <div class="mail-body">${esc(r.body || "")}</div></div>
+         ${isReply && r.status !== "cancelled" ? `<div class="decide">
+           <button class="btn good" id="oPos">Mark positive</button>
+           <button class="btn bad" id="oNeg">Mark negative</button>
+         </div>` : ""}
+         ${r.status === "approved" ? `<div class="decide">
+           <button class="btn bad" id="oCancel">Withdraw approval</button></div>
+           <p class="sub" style="margin-top:10px">Sends happen from the terminal:
+           <code>python tools/outreach.py send</code></p>` : ""}`}
+  `;
+
+  const call = async (action, extra) => {
+    if (oState.busy) return;                 // double-click guard (review finding)
+    oState.busy = true;
+    document.querySelectorAll("#outreachDetail .btn").forEach((b) => b.disabled = true);
+    try {
+      if (action === "approve") {
+        await api("/api/outreach/" + id, { method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: $("#draftSubject").value,
+                                 body: $("#draftBody").value }) });
+      }
+      await api("/api/outreach/" + id + "/decision", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: extra }) });
+      toast("done");
+      // the row has changed state: clear the stale panel rather than leave an
+      // editor that silently discards further edits (review finding)
+      oState.selected = null;
+      $("#outreachDetail").innerHTML =
+        '<div class="empty"><p>Select a message.</p></div>';
+      await loadOutreach();
+    } catch (e) { toast(e.message, true); }
+    finally { oState.busy = false; }
+  };
+  const ap = $("#oApprove"); if (ap) ap.addEventListener("click", () => call("approve", "approve"));
+  const cn = $("#oCancel");  if (cn) cn.addEventListener("click", () => call("", "cancel"));
+  const po = $("#oPos");     if (po) po.addEventListener("click", () => call("", "mark_positive"));
+  const ng = $("#oNeg");     if (ng) ng.addEventListener("click", () => call("", "mark_negative"));
 }
 
 /* ------------------------------------------------------------ wiring */

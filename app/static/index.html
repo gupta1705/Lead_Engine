@@ -18,6 +18,7 @@
     <button class="tab active" data-view="review">Review queue</button>
     <button class="tab" data-view="dashboard">Pool overview</button>
     <button class="tab" data-view="shortlist">Shortlist</button>
+    <button class="tab" data-view="outreach">Outreach</button>
   </nav>
   <div class="head-actions">
     <a id="exportBtn" class="btn primary" href="/api/export.xlsx?status=shortlisted">
@@ -99,6 +100,22 @@
     <h2>Shortlisted</h2>
     <p class="sub">Approved for outreach. Export gives you the 17-column sheet.</p>
     <div class="table-wrap"><table id="shortTable"></table></div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------- OUTREACH -->
+<section id="view-outreach" class="view">
+  <div class="filters" id="folderBar"></div>
+  <div class="split">
+    <div class="list-pane">
+      <div class="table-wrap"><table id="outreachTable">
+        <thead><tr><th>Company</th><th>To / From</th><th>Subject</th></tr></thead>
+        <tbody id="outreachBody"></tbody>
+      </table></div>
+    </div>
+    <aside class="detail-pane" id="outreachDetail">
+      <div class="empty"><p>Select a message.</p></div>
+    </aside>
   </div>
 </section>
 

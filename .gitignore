@@ -32,3 +32,4 @@ docs/review_queue.html
 # Generated lead exports -- rebuilt from the live DB by tools/export_leads.py,
 # and they carry real contact data for named companies.
 docs/TVF_leads_*.xlsx
+.gmail_token.json

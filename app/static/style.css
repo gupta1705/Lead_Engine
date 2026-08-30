@@ -222,3 +222,22 @@ tbody tr.sel { background: var(--accent-dk); }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { border-color: #5a2f2f; color: #fca5a5; }
+
+/* ----------------------------------------------------------- outreach */
+.pill { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-dim);
+        padding: 6px 12px; border-radius: 18px; cursor: pointer; font-size: 12.5px;
+        font-family: inherit; }
+.pill.active { background: var(--accent-dk); color: var(--accent); border-color: #2c5540; }
+.pill .n { font-variant-numeric: tabular-nums; margin-left: 5px; opacity: .8; }
+.mail-body { white-space: pre-wrap; background: var(--panel-2); border: 1px solid var(--line);
+             border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.55; }
+#draftSubject { width: 100%; margin-bottom: 8px; background: var(--panel-2);
+                border: 1px solid var(--line); color: var(--ink); border-radius: 7px;
+                padding: 8px 10px; font-family: inherit; font-size: 13px; }
+#draftBody { width: 100%; min-height: 260px; background: var(--panel-2);
+             border: 1px solid var(--line); color: var(--ink); border-radius: 7px;
+             padding: 10px; font-family: inherit; font-size: 13px; line-height: 1.5;
+             resize: vertical; }
+.triage-tag { display:inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+.triage-tag.positive { background: var(--accent-dk); color: var(--accent); }
+.triage-tag.negative { background: #3a1f1f; color: #fca5a5; }
