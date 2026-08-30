@@ -54,7 +54,10 @@ EXPECTED_COUNTS = {
 }
 EXPECTED_WEIGHTS = {"genre_fit": 15, "right_size": 20}
 EXPECTED_PENALTY = {"revenue_above_cap": -20}
-EXPECTED_THRESHOLDS = {"score_threshold_review": 25, "score_threshold_priority": 60}
+# Owner-set thresholds: review 25 / priority 60 set 2026-08-21; priority
+# lowered to 45 on 2026-08-30 (owner decision) -- the verified band tops
+# out at 57, so 60 was an aspiration no lead could meet.
+EXPECTED_THRESHOLDS = {"score_threshold_review": 25, "score_threshold_priority": 45}
 
 failures = []
 notices = []
@@ -179,7 +182,7 @@ def check_v3_shape(cfg):
         if cfg.get(key) != val:
             fail("config.%s: expected %s, found %s" % (key, val, cfg.get(key)))
     if len(failures) == mark:
-        print("  ok    thresh  review=25, priority=60")
+        print("  ok    thresh  review=25, priority=45")
 
 
 def check_structure(cfg):

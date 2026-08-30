@@ -27,7 +27,7 @@ values (
   "weekly_target": 20,
   "batch_size": 30,
   "score_threshold_review": 25,
-  "score_threshold_priority": 60,
+  "score_threshold_priority": 45,
   "target_contact_roles": [
     "Founder", "Co-Founder",
     "Head of Development", "Development Executive",
