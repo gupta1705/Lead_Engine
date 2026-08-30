@@ -68,16 +68,13 @@ command works on a server.
 
 ---
 
-## Why there is no login screen
+## Two layers of protection
 
-Both ports bind to `127.0.0.1`, so neither service is reachable from the
-network even if the host has a public IP. On a laptop that is genuinely safe,
-and it is why the review UI ships without authentication.
-
-**That stops being true the moment a port is opened.** The UI can read every
-lead and every contact in the database. Do not change a port binding to
-`0.0.0.0` and do not put this on a server without doing the next section
-first. This is the single most important line in this document.
+The app has real accounts (see **Authentication** below), and both ports bind
+to `127.0.0.1`. Locally that is belt and braces. For the public step the auth
+stays and a reverse proxy adds HTTPS in front — the two together, never one
+alone. Do not bind a port to `0.0.0.0` directly; put the proxy in front first.
+This is the single most important line in this document.
 
 ---
 
@@ -149,3 +146,43 @@ first; open the browser console. A 503 is the database, not the UI.
 **n8n asks you to create an owner account again.** The named volume was
 removed. `docker compose down` alone never does this; `down -v` does. Re-import
 with `python tools/n8n_setup.py`.
+
+---
+
+## Authentication (added 2026-08-31)
+
+The app now has real accounts, so "public" is safe in a way it was not before.
+
+**First run.** Visit the app and it shows a one-time setup screen: create the
+owner account with your own email and a 10+ character password. That account
+owns the workspace. Nothing ships with a default credential.
+
+**Adding the team.** From the repo (or `docker compose exec app`):
+
+```bash
+python tools/users.py add teammate@theviralfever.com
+```
+
+`users.py list` shows everyone; `passwd` resets a password (which invalidates
+that person's existing sessions); `remove` deletes a member (never the owner).
+
+**How it holds up.** Passwords are bcrypt (cost 12). Sessions are signed
+cookies (HMAC-SHA256) that are httpOnly, SameSite=Lax, and automatically
+Secure over HTTPS. Changing a password invalidates every outstanding session
+for that user. Login is rate-limited to 10 attempts per IP per 5 minutes.
+
+**Still true, and still important:** the container binds to `127.0.0.1`. Auth
+protects the app, but defence in depth means the cloud step STILL puts a
+reverse proxy (Caddy/Cloudflare) with HTTPS in front — auth and TLS together,
+never one alone. The app trusts `X-Forwarded-Proto: https` from that proxy to
+set the Secure cookie flag, so terminate TLS at the proxy and forward that
+header.
+
+## Operations, from the browser
+
+The **Operations** tab runs every pipeline tool as a one-click job: harvests,
+the promote/score/gate chain, all the enrichment passes, and outreach drafting.
+One job runs at a time (they share the database and crawl budgets); logs stream
+live. Harvests (P4–P8) need the n8n CLI, which lives on the host, not in the
+app container — those show as unavailable inside Docker until P25 moves n8n
+fully in. Everything else runs from the container.

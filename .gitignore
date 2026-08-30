@@ -33,3 +33,10 @@ docs/review_queue.html
 # and they carry real contact data for named companies.
 docs/TVF_leads_*.xlsx
 .gmail_token.json
+
+# session scratch
+scratch_*.json
+scratch_*.js
+scratch_*.txt
+logs/
+.gmail_token.json

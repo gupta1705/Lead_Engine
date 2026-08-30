@@ -62,7 +62,14 @@ MAX_CELL = 70
 
 
 def load_db_url():
-    """Read SUPABASE_DB_URL from .env. Never returns it to anything that prints."""
+    """SUPABASE_DB_URL from the environment first, then .env.
+
+    The env-var path is how the Docker container works: .env never enters the
+    image (.dockerignore), the value arrives via compose env_file instead.
+    Never returned to anything that prints."""
+    import os
+    if os.environ.get("SUPABASE_DB_URL"):
+        return os.environ["SUPABASE_DB_URL"]
     if not ENV.exists():
         sys.exit(
             "No .env file found at %s\n"

@@ -236,7 +236,7 @@ where e.id = pairs.entity_id;
 -- STEP 3 -- mark every staging row with what happened to it.
 ----------------------------------------------------------------------
 with pending as (
-    select s.id,
+    select s.id, s.name, s.segment_id,
            coalesce(normalize_domain(s.domain), lower(s.name)) as match_key
     from staging_candidates s
     where s.imported = false

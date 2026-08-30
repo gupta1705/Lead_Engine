@@ -45,6 +45,7 @@ document.querySelectorAll(".tab").forEach((btn) => {
     if (btn.dataset.view === "dashboard") loadDashboard();
     if (btn.dataset.view === "shortlist") loadShortlist();
     if (btn.dataset.view === "outreach") loadOutreach();
+    if (btn.dataset.view === "ops") loadOps();
     syncExportLink();
   });
 });
@@ -395,6 +396,111 @@ function selectOutreach(id) {
   const po = $("#oPos");     if (po) po.addEventListener("click", () => call("", "mark_positive"));
   const ng = $("#oNeg");     if (ng) ng.addEventListener("click", () => call("", "mark_negative"));
 }
+
+/* --------------------------------------------------------------- ops */
+const opsState = { timer: null, watching: null };
+
+async function loadOps() {
+  let d;
+  try { d = await api("/api/ops"); }
+  catch (e) { return toast("Could not load operations: " + e.message, true); }
+
+  const groups = {};
+  d.jobs.forEach((j) => (groups[j.group] = groups[j.group] || []).push(j));
+
+  $("#opsGrid").innerHTML = Object.entries(groups).map(([g, jobs]) => `
+    <div class="ops-group">
+      <h3>${esc(g)}</h3>
+      ${jobs.map((j) => `
+        <div class="ops-card ${j.running ? "running" : ""} ${!j.available ? "off" : ""}">
+          <div class="ops-info">
+            <div class="ops-name">${esc(j.label)}</div>
+            <div class="ops-desc">${esc(j.desc)}</div>
+            ${!j.available ? `<div class="ops-why">${esc(j.unavailable_reason)}</div>` : ""}
+          </div>
+          <div class="ops-side">
+            ${j.running
+              ? `<span class="chip run">running</span>
+                 <button class="btn bad" data-stop="${j.key}">Stop</button>`
+              : `<span class="chip ${j.status === "done" ? "ok" : j.status === "failed" ? "err" : ""}">
+                   ${esc(j.status || "idle")}</span>
+                 <button class="btn good" data-run="${j.key}"
+                   ${(!j.available || d.busy) ? "disabled" : ""}>Run</button>`}
+            <button class="btn" data-log="${j.key}" ${!j.status ? "disabled" : ""}>Log</button>
+          </div>
+        </div>`).join("")}
+    </div>`).join("");
+
+  $("#opsGrid").querySelectorAll("[data-run]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await api("/api/ops/" + b.dataset.run + "/run", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" });
+        toast("started");
+        watchOps(b.dataset.run);
+      } catch (e) { toast(e.message, true); }
+      loadOps();
+    }));
+  $("#opsGrid").querySelectorAll("[data-stop]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        await api("/api/ops/" + b.dataset.stop + "/stop", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" });
+        toast("stopping");
+      } catch (e) { toast(e.message, true); }
+      loadOps();
+    }));
+  $("#opsGrid").querySelectorAll("[data-log]").forEach((b) =>
+    b.addEventListener("click", () => watchOps(b.dataset.log)));
+
+  if (d.busy && !opsState.timer) watchOps(d.busy);
+}
+
+async function watchOps(key) {
+  opsState.watching = key;
+  $("#opsLogPanel").style.display = "";
+  $("#opsLogTitle").textContent = "Log — " + key;
+  clearInterval(opsState.timer);
+  const tick = async () => {
+    try {
+      const d = await api("/api/ops/" + key + "/log?tail=150");
+      const pre = $("#opsLog");
+      pre.textContent = d.lines.join("\n") || "(no output yet)";
+      pre.scrollTop = pre.scrollHeight;
+      if (d.status !== "running") {
+        clearInterval(opsState.timer);
+        opsState.timer = null;
+        loadOps();
+      }
+    } catch (e) { clearInterval(opsState.timer); opsState.timer = null; }
+  };
+  await tick();
+  opsState.timer = setInterval(tick, 3000);
+}
+
+/* ------------------------------------------------------- theme + logout */
+(function themeInit() {
+  let mode = null;
+  try { mode = localStorage.getItem("tvf_theme"); } catch (e) {}
+  if (mode) document.documentElement.dataset.theme = mode;
+  $("#themeBtn").addEventListener("click", () => {
+    const cur = document.documentElement.dataset.theme || "auto";
+    const next = cur === "auto" ? "light" : cur === "light" ? "dark" : "auto";
+    if (next === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = next;
+    try {
+      if (next === "auto") localStorage.removeItem("tvf_theme");
+      else localStorage.setItem("tvf_theme", next);
+    } catch (e) {}
+    toast("theme: " + next);
+  });
+  $("#logoutBtn").addEventListener("click", async () => {
+    try { await api("/api/auth/logout", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: "{}" }); } catch (e) {}
+    location.href = "/login";
+  });
+})();
 
 /* ------------------------------------------------------------ wiring */
 let debounce;
