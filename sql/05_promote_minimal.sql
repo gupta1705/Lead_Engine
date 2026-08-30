@@ -159,6 +159,22 @@ where s.imported = false
                    and lower(e.name) = lower(s.name))
               )
       )
+  -- THE NAME-LEVEL SHIELD (added 2026-08-30 after a live leak). The matching
+  -- above pairs a staging row with an entity by domain, or by name AMONG
+  -- DOMAINLESS rows -- which leaves two ways back in for a company already
+  -- ruled out. Both happened on the first post-gate harvest:
+  --   * archived Nordisk Film HAS a domain, so a fresh DOMAINLESS "Nordisk
+  --     Film" staging row matched nothing and inserted as a second entity;
+  --   * archived Platinum Dunes had its bogus domain stripped, so a fresh row
+  --     carrying that same bogus domain matched nothing and re-imported it.
+  -- An archived or rejected company is out of the segment BY NAME, whatever
+  -- domain a connector attaches to it this week. One company, one verdict.
+  and not exists (
+        select 1 from entities shield
+        where shield.segment_id = s.segment_id
+          and shield.status in ('rejected', 'archived')
+          and lower(shield.name) = lower(s.name)
+      )
 order by coalesce(normalize_domain(s.domain), lower(s.name)), s.created_at
 on conflict do nothing;
 
@@ -231,6 +247,14 @@ outcome as (
     -- correctly an insert rather than a match against itself.
     select p.id,
            case
+             -- the name-level shield in step 2a: a staging row whose NAME
+             -- matches an archived/rejected company was not inserted, whatever
+             -- its domain says. Label it so the audit trail explains the gap.
+             when exists (select 1 from entities sh
+                          where sh.segment_id = p.segment_id
+                            and sh.status in ('rejected','archived')
+                            and lower(sh.name) = lower(p.name))
+                  and x.entity_id is null        then 'skipped_shielded_name'
              when x.entity_id is null            then 'inserted'
              when x.status = 'rejected'          then 'skipped_rejected'
              else                                     'merged_duplicate'

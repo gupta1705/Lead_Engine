@@ -42,11 +42,33 @@ const KNOWN_MAJORS = [
   'miramax', 'legendary', 'blumhouse', 'skydance', 'apple', 'comcast'
 ];
 
+// Wikidata's P856 is usually right and sometimes WRONG: the live entry for
+// Platinum Dunes points at bloody-disgusting.com -- the horror NEWS SITE that
+// covers them -- and that bad value re-imported the company with a stranger's
+// domain straight after the pool had been cleaned (2026-08-30). Same
+// third-party blocklist as the YouTube extractor: platforms and publishers by
+// suffix, builders and databases by EXACT host so a small shop's
+// <name>.wixsite.com still counts as its own site.
+const EXCLUDE_SUFFIX = ['youtube.com', 'youtu.be', 'instagram.com',
+  'twitter.com', 'x.com', 'facebook.com', 'tiktok.com', 'linkedin.com',
+  'linktr.ee', 'bit.ly', 'vimeo.com', 'patreon.com', 'substack.com',
+  'medium.com', 'beacons.ai', 'eventbrite.com', 'mailchimp.com', 'gmail.com'];
+const EXCLUDE_EXACT = ['jotform.com', 'wix.com', 'wixsite.com',
+  'squarespace.com', 'wordpress.com', 'godaddy.com', 'shopify.com',
+  'weebly.com', 'carrd.co', 'imdb.com', 'crunchbase.com', 'variety.com',
+  'deadline.com', 'hollywoodreporter.com', 'indiewire.com', 'wikipedia.org',
+  'productionlist.com', 'zoominfo.com', 'rocketreach.co',
+  'bloody-disgusting.com'];
+
 function hostOf(url) {
   if (!url) return null;
   const m = String(url).match(/^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i);
   if (!m) return null;
-  return m[1].toLowerCase().replace(/^www\./, '') || null;
+  const host = m[1].toLowerCase().replace(/^www\./, '') || null;
+  if (!host) return null;
+  if (EXCLUDE_SUFFIX.some(ex => host === ex || host.endsWith('.' + ex))) return null;
+  if (EXCLUDE_EXACT.includes(host)) return null;
+  return host;
 }
 
 function isMajorName(s) {

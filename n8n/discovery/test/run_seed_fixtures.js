@@ -78,6 +78,8 @@ const sparqlResponse = {
     { company: uri("http://www.wikidata.org/entity/Q6"), companyLabel: b("Q9999999"),
       website: uri("http://nolabel.com") },
     { company: uri("http://www.wikidata.org/entity/Q7"), companyLabel: b("No Website Co") },
+    { company: uri("http://www.wikidata.org/entity/Q8"), companyLabel: b("Bad P856 Co"),
+      website: uri("https://bloody-disgusting.com/") },
   ]}
 };
 
@@ -114,6 +116,9 @@ check("geography_signal = us, guaranteed by the P17 filter",
   wd.every((r) => r.json.raw.scoring_inputs.geography_signal === "us"));
 check("an unlabelled item (bare Q-number) is dropped", !wdBy["Q9999999"]);
 check("a company with no website is dropped", !wdBy["No Website Co"]);
+check("a third-party P856 (news site, form service) is dropped, not adopted",
+  !wdBy["Bad P856 Co"],
+  "live regression: Wikidata lists bloody-disgusting.com as Platinum Dunes' site");
 check("never guesses size, genre, collaboration or IP experience",
   wd.every((r) => {
     const si = r.json.raw.scoring_inputs;
