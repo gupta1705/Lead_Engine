@@ -2,7 +2,7 @@
   "id": "newsrssdiscov01",
   "versionId": "newsrssdiscov02",
   "name": "P5 · Google News RSS",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {},
@@ -162,6 +162,32 @@
           "name": "Supabase — Lead Engine"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 1,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "sched-conn_google_news_rss",
+      "name": "Schedule (unattended)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -140,
+        480
+      ],
+      "notes": "P25 unattended cadence -- see tools/add_schedule_triggers.py"
     }
   ],
   "connections": {
@@ -246,10 +272,22 @@
           }
         ]
       ]
+    },
+    "Schedule (unattended)": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "tvferroralert1"
   },
   "pinData": {}
 }

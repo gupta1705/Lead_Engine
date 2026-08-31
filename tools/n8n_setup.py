@@ -39,7 +39,11 @@ ENV = ROOT / ".env"
 # Every connector workflow in the discovery folder. Adding P6-P8 later means
 # dropping a JSON file in, not editing this list.
 WORKFLOW_DIR = ROOT / "n8n" / "discovery"
-WORKFLOWS = sorted(WORKFLOW_DIR.glob("conn_*.json"))
+# conn_* are the harvest connectors; error_alert.json is the shared error
+# workflow they all point at (P25). Import both so an unattended failure has
+# somewhere to fire.
+WORKFLOWS = (sorted(WORKFLOW_DIR.glob("conn_*.json"))
+             + sorted(WORKFLOW_DIR.glob("error_alert.json")))
 WORKFLOW = WORKFLOWS[0] if WORKFLOWS else WORKFLOW_DIR / "conn_youtube_api.json"
 
 PG_CREDENTIAL_NAME = "Supabase — Lead Engine"

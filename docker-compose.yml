@@ -27,6 +27,10 @@ services:
       - SUPABASE_DB_URL=${SUPABASE_DB_URL}
       - SEGMENT_SLUG=${SEGMENT_SLUG:-us-production-houses}
       - TZ=Asia/Kolkata
+      # P25 scheduler: on by default; the weekly refresh is read/enrich only,
+      # nothing outbound. ALERT_WEBHOOK_URL (Discord/Slack) receives failures.
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-1}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
     env_file:
       - .env
     healthcheck:
@@ -52,6 +56,10 @@ services:
       - N8N_DIAGNOSTICS_ENABLED=false
       # n8n 1.x+ refuses to start without this once permissions are enforced.
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      # The error workflow (error_alert.json) posts failures here -- same
+      # webhook the app scheduler uses. Unset = harvests still run, but a
+      # failure is only visible in n8n's own execution log.
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
     volumes:
       - n8n_data:/home/node/.n8n
 

@@ -2,7 +2,7 @@
   "id": "xintentsignal01",
   "versionId": "xintentsignal01",
   "name": "P6 · X / collaboration intent",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {},
@@ -162,6 +162,32 @@
           "name": "Supabase — Lead Engine"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 1,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "sched-conn_x_intent_signals",
+      "name": "Schedule (unattended)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -140,
+        480
+      ],
+      "notes": "P25 unattended cadence -- see tools/add_schedule_triggers.py"
     }
   ],
   "connections": {
@@ -246,10 +272,22 @@
           }
         ]
       ]
+    },
+    "Schedule (unattended)": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "tvferroralert1"
   },
   "pinData": {}
 }

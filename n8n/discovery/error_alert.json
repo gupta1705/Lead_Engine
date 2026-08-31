@@ -1,0 +1,53 @@
+{
+  "id": "tvferroralert1",
+  "name": "Z — Error alert (all connectors)",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "err-trigger",
+      "name": "On Any Connector Error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-160, 300],
+      "notes": "Fires when any workflow that names this as its Error Workflow fails. P25: built before the first unattended run, not after the first silent failure."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shape the failure into a Discord/Slack-compatible payload. Both\n// platforms accept a JSON body; Discord reads `content`, Slack reads\n// `text`, so we send both keys and either one lights up.\nconst e = $input.first().json || {};\nconst wf = (e.workflow && e.workflow.name) || 'unknown workflow';\nconst exec = e.execution || {};\nconst err = (exec.error && (exec.error.message || exec.error.description)) || 'no message';\nconst node = (exec.lastNodeExecuted) || '(unknown node)';\nconst url = exec.url || '';\nconst when = new Date().toISOString();\nconst msg = `TVF Lead Engine \\u2014 HARVEST FAILED\\nworkflow: ${wf}\\nnode: ${node}\\nerror: ${err}\\ntime: ${when}${url ? '\\n' + url : ''}`;\nreturn [{ json: { content: msg, text: msg } }];"
+      },
+      "id": "err-format",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 300],
+      "notes": "source: (inline) -- no .js file; this node is unique to the error workflow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ALERT_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "err-post",
+      "name": "Ping Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 300],
+      "notes": "Posts to ALERT_WEBHOOK_URL from the n8n container environment. If that env var is unset this node errors -- set it in docker-compose (same webhook the app scheduler uses) before relying on unattended alerts."
+    }
+  ],
+  "connections": {
+    "On Any Connector Error": {
+      "main": [[{ "node": "Format Alert", "type": "main", "index": 0 }]]
+    },
+    "Format Alert": {
+      "main": [[{ "node": "Ping Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {},
+  "pinData": {}
+}

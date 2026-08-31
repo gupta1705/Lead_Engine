@@ -462,6 +462,63 @@ app.include_router(_auth_router)
 import ops as _ops_module
 app.include_router(_ops_module.build_router())
 
+# ---------------------------------------------------------------- scheduler
+import scheduler as _sched_module
+_scheduler = _sched_module.Scheduler(cursor, _ops_module, SEGMENT)
+
+
+@app.on_event("startup")
+def _start_scheduler():
+    _scheduler.start()
+
+
+@app.on_event("shutdown")
+def _stop_scheduler():
+    _scheduler.stop()
+
+
+@app.get("/api/schedule")
+def schedule_state():
+    """The configured schedule plus the most recent pipeline runs -- this is
+    how 'unattended' becomes observable in the Operations tab."""
+    with cursor() as cur:
+        cur.execute(
+            "select id, pipeline, step, trigger, status, detail,"
+            " started_at, finished_at from pipeline_runs"
+            " order by started_at desc limit 40")
+        runs = [dict(r) for r in cur.fetchall()]
+        for r in runs:
+            r["id"] = str(r["id"])
+            r["started_at"] = r["started_at"].isoformat() if r["started_at"] else None
+            r["finished_at"] = r["finished_at"].isoformat() if r["finished_at"] else None
+    return {"schedule": _scheduler.schedule(),
+            "pipelines": list(_sched_module.PIPELINES.keys()),
+            "webhook_configured": bool(_scheduler.alert_webhook()),
+            "runs": runs}
+
+
+@app.post("/api/schedule/run/{pipeline}")
+def schedule_run_now(pipeline: str):
+    """Fire a whole pipeline by hand -- the same sequence the scheduler runs,
+    recorded the same way, for testing unattended behaviour without waiting for
+    the clock. Runs in a background thread so the request returns immediately."""
+    import threading
+    if pipeline not in _sched_module.PIPELINES:
+        raise HTTPException(404, "no such pipeline")
+    threading.Thread(target=_scheduler.run_pipeline,
+                     args=(pipeline,), kwargs={"trigger": "manual"},
+                     daemon=True).start()
+    return {"ok": True, "pipeline": pipeline}
+
+
+@app.post("/api/schedule/test-alert")
+def schedule_test_alert():
+    """Fire the alert webhook on demand -- 'a forced failure pings', proven
+    without breaking anything."""
+    _scheduler.alert("TVF Lead Engine: this is a test alert from the "
+                     "Operations tab. If you can read this, alerting works.")
+    return {"ok": True, "webhook_configured": bool(_scheduler.alert_webhook())}
+
 
 @app.get("/login")
 def login_page():

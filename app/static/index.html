@@ -132,6 +132,23 @@
 <!-- ----------------------------------------------------- OPERATIONS -->
 <section id="view-ops" class="view">
   <div class="panel">
+    <h2>Unattended schedule</h2>
+    <p class="sub">The engine runs itself on a schedule &mdash; the harvests fire
+      in n8n, then this pipeline promotes, enriches, and re-scores the pool.
+      Every run is recorded below, and a failure pings the alert webhook, so a
+      run in the dark still leaves a trail.</p>
+    <div id="schedList" class="sched-list"></div>
+    <div class="sched-actions">
+      <button class="btn" id="runRefresh">Run weekly refresh now</button>
+      <button class="btn" id="runRescore">Run re-score now</button>
+      <button class="btn" id="testAlert">Test alert</button>
+      <span id="webhookState" class="muted"></span>
+    </div>
+    <h3 style="margin-top:16px">Recent runs</h3>
+    <div class="table-wrap"><table id="runsTable"></table></div>
+  </div>
+
+  <div class="panel">
     <h2>Pipeline operations</h2>
     <p class="sub">Every tool in the engine, one click each. One job runs at a
       time &mdash; they share the database and the politeness budget toward the

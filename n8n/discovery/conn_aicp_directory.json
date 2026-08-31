@@ -2,7 +2,7 @@
   "id": "aicpdirectory1",
   "versionId": "aicpdirectory1",
   "name": "P8 · AICP directory",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {},
@@ -141,6 +141,30 @@
           "name": "Supabase — Lead Engine"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "months",
+              "monthsInterval": 1,
+              "triggerAtDayOfMonth": 1,
+              "triggerAtHour": 3,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "sched-conn_aicp_directory",
+      "name": "Schedule (unattended)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -140,
+        480
+      ],
+      "notes": "P25 unattended cadence -- see tools/add_schedule_triggers.py"
     }
   ],
   "connections": {
@@ -203,10 +227,22 @@
           }
         ]
       ]
+    },
+    "Schedule (unattended)": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "tvferroralert1"
   },
   "pinData": {}
 }

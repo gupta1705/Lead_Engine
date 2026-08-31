@@ -2,7 +2,7 @@
   "id": "wikidataseed01",
   "versionId": "wikidataseed01",
   "name": "P7 · Wikidata seed",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {},
@@ -155,6 +155,30 @@
           "name": "Supabase — Lead Engine"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "months",
+              "monthsInterval": 1,
+              "triggerAtDayOfMonth": 1,
+              "triggerAtHour": 3,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "sched-conn_wikidata",
+      "name": "Schedule (unattended)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -140,
+        480
+      ],
+      "notes": "P25 unattended cadence -- see tools/add_schedule_triggers.py"
     }
   ],
   "connections": {
@@ -228,10 +252,22 @@
           }
         ]
       ]
+    },
+    "Schedule (unattended)": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "tvferroralert1"
   },
   "pinData": {}
 }

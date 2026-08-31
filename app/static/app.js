@@ -400,7 +400,49 @@ function selectOutreach(id) {
 /* --------------------------------------------------------------- ops */
 const opsState = { timer: null, watching: null };
 
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+async function loadSchedule() {
+  let d;
+  try { d = await api("/api/schedule"); }
+  catch (e) { return; }   // ops grid still loads even if schedule fails
+
+  $("#schedList").innerHTML = (d.schedule || []).map((s) => {
+    const when = s.dow === "*" || s.dow == null
+      ? `${s.hour}:${String(s.minute).padStart(2, "0")} daily`
+      : `${DOW[s.dow]} ${s.hour}:${String(s.minute).padStart(2, "0")} UTC`;
+    return `<div class="sched-row">
+      <span class="chip ${s.enabled ? "ok" : ""}">${s.enabled ? "on" : "off"}</span>
+      <span class="sched-name">${esc(s.name)}</span>
+      <span class="sched-when">${esc(when)}</span>
+      <span class="sched-pipe">${esc(s.pipeline)}</span>
+    </div>`;
+  }).join("") || '<div class="muted">No schedules configured.</div>';
+
+  $("#webhookState").textContent = d.webhook_configured
+    ? "Alert webhook configured."
+    : "No alert webhook set — failures are logged only (set ALERT_WEBHOOK_URL).";
+
+  const fmt = (t) => t ? new Date(t).toLocaleString() : "";
+  const dur = (r) => (r.started_at && r.finished_at)
+    ? Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000) + "s" : "";
+  $("#runsTable").innerHTML = d.runs.length
+    ? `<thead><tr><th>Pipeline</th><th>Step</th><th>Trigger</th><th>Status</th>
+         <th>When</th><th>Took</th></tr></thead><tbody>`
+      + d.runs.map((r) => `<tr>
+          <td class="nm">${esc(r.pipeline)}</td>
+          <td>${r.step ? esc(r.step) : '<span class="muted">— whole pipeline</span>'}</td>
+          <td class="src">${esc(r.trigger)}</td>
+          <td><span class="chip ${r.status === "ok" ? "ok" : r.status === "failed" ? "err" : ""}">${esc(r.status)}</span></td>
+          <td class="dm">${esc(fmt(r.started_at))}</td>
+          <td class="dm">${esc(dur(r))}</td>
+        </tr>`).join("") + "</tbody>"
+    : `<tbody><tr><td class="muted" style="padding:20px">No runs yet.</td></tr></tbody>`;
+}
+
 async function loadOps() {
+  loadSchedule();
+  bindScheduleActions();
   let d;
   try { d = await api("/api/ops"); }
   catch (e) { return toast("Could not load operations: " + e.message, true); }
@@ -455,6 +497,32 @@ async function loadOps() {
     b.addEventListener("click", () => watchOps(b.dataset.log)));
 
   if (d.busy && !opsState.timer) watchOps(d.busy);
+}
+
+/* schedule action buttons -- bound once, lazily, when the ops view first loads */
+function bindScheduleActions() {
+  if (bindScheduleActions._done) return;
+  bindScheduleActions._done = true;
+  const runPipe = async (name) => {
+    try {
+      await api("/api/schedule/run/" + name, { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: "{}" });
+      toast(name + " started — watch it in Recent runs");
+      setTimeout(loadSchedule, 1500);
+    } catch (e) { toast(e.message, true); }
+  };
+  const rr = $("#runRefresh"); if (rr) rr.addEventListener("click", () => runPipe("weekly_refresh"));
+  const rs = $("#runRescore"); if (rs) rs.addEventListener("click", () => runPipe("rescore"));
+  const ta = $("#testAlert");
+  if (ta) ta.addEventListener("click", async () => {
+    try {
+      const r = await api("/api/schedule/test-alert", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: "{}" });
+      toast(r.webhook_configured
+        ? "Alert sent to the webhook."
+        : "No webhook set — alert was logged server-side.");
+    } catch (e) { toast(e.message, true); }
+  });
 }
 
 async function watchOps(key) {

@@ -124,7 +124,9 @@ def _available(job):
     return True, None
 
 
-def _runner(key, job, logpath):
+def _execute(key, job, logpath):
+    """Run one job's subprocess to completion. Returns its exit code.
+    Assumes the caller already holds the slot (claimed _CURRENT['key']=key)."""
     with io_open(logpath, "w") as logf:
         try:
             proc = subprocess.Popen(
@@ -138,8 +140,66 @@ def _runner(key, job, logpath):
     with _LOCK:
         _STATE[key].update(status="done" if rc == 0 else "failed",
                            finished=time.time(), rc=rc)
+    return rc
+
+
+def _runner(key, job, logpath):
+    """HTTP path: execute then release the slot."""
+    try:
+        _execute(key, job, logpath)
+    finally:
+        with _LOCK:
+            _CURRENT["key"] = None
+            _CURRENT["proc"] = None
+
+
+def _claim(key):
+    """Take the single execution slot for key. Returns a logpath, or None if
+    another job holds it. Shared by the HTTP handler and the scheduler, so the
+    two can never run a job concurrently."""
+    LOGDIR.mkdir(parents=True, exist_ok=True)
+    with _LOCK:
+        if _CURRENT["key"]:
+            return None
+        logpath = LOGDIR / ("%s-%d.log" % (key, int(time.time())))
+        _STATE[key] = {"status": "running", "started": time.time(),
+                       "finished": None, "rc": None, "log": str(logpath)}
+        _CURRENT["key"] = key
+        return logpath
+
+
+def _release():
+    with _LOCK:
         _CURRENT["key"] = None
         _CURRENT["proc"] = None
+
+
+def run_blocking(key, wait_slot=0):
+    """Scheduler path: run one job to completion, respecting the single slot.
+
+    Returns (rc, logpath_str). rc is None if the slot could not be claimed
+    within wait_slot seconds (a manual job was running) or the job is
+    unavailable in this environment. Blocks the CALLING thread, which for the
+    scheduler is its own dedicated thread -- never the web server's.
+    """
+    job = JOBS.get(key)
+    if not job:
+        return None, None
+    ok, _why = _available(job)
+    if not ok:
+        return None, None
+    waited = 0.0
+    logpath = _claim(key)
+    while logpath is None and waited < wait_slot:
+        time.sleep(2); waited += 2
+        logpath = _claim(key)
+    if logpath is None:
+        return None, None
+    try:
+        rc = _execute(key, job, logpath)
+    finally:
+        _release()
+    return rc, str(logpath)
 
 
 def io_open(path, mode):
@@ -175,13 +235,9 @@ def build_router():
         ok, why = _available(job)
         if not ok:
             raise HTTPException(409, why)
-        with _LOCK:
-            if _CURRENT["key"]:
-                raise HTTPException(409, "another job is running: " + _CURRENT["key"])
-            logpath = LOGDIR / ("%s-%d.log" % (key, int(time.time())))
-            _STATE[key] = {"status": "running", "started": time.time(),
-                           "finished": None, "rc": None, "log": str(logpath)}
-            _CURRENT["key"] = key
+        logpath = _claim(key)
+        if logpath is None:
+            raise HTTPException(409, "another job is running: " + (_CURRENT["key"] or "?"))
         threading.Thread(target=_runner, args=(key, job, logpath),
                          daemon=True).start()
         return {"ok": True, "log": str(logpath.name)}
