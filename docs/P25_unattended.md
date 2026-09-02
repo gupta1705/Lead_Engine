@@ -55,7 +55,7 @@ as every runbook says, and a launcher in the per-user Startup folder
 (`TVF Lead Engine n8n.cmd`) restarts it at every logon, so harvests fire
 unattended after a reboot.
 
-**The container n8n is a clean spare on http://localhost:5679.** It starts
+**The container n8n is a clean spare on http://localhost:5680.** (Not 5679 -- n8n's own task broker listens there, and the host instance dies at boot if anything else holds it.) It starts
 with Docker, has no account or credentials, and is the destination for the
 eventual full move. Copying the host credential store into it is deliberately
 a human step (it carries the credential encryption key); when you want to make

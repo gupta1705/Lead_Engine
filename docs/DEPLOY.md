@@ -39,7 +39,8 @@ That builds the review UI and starts n8n beside it.
 | | |
 |---|---|
 | Review UI | <http://localhost:8000> |
-| n8n editor | <http://localhost:5678> |
+| n8n editor (host, live) | <http://localhost:5678> |
+| n8n (container spare) | <http://localhost:5680> |
 
 Useful afterwards:
 

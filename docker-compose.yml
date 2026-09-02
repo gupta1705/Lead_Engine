@@ -44,14 +44,16 @@ services:
     image: docker.n8n.io/n8nio/n8n:latest
     container_name: tvf-lead-engine-n8n
     restart: unless-stopped
-    # 5679 on the host: the LIVE n8n -- the one holding the owner account,
+    # 5680 on the host (NOT 5679: n8n's own task-broker listens on 5679 and
+    # the host instance died at boot when the container took it). The LIVE
+    # n8n -- the one holding the owner account,
     # both credentials and the schedule-armed workflows -- is the npm install
     # on the host at 5678, kept there so every runbook stays true. This
     # container is a clean spare for the eventual full move (see
     # docs/P25_unattended.md); copying the host credential store into it is
     # deliberately a human step.
     ports:
-      - "127.0.0.1:5679:5678"
+      - "127.0.0.1:5680:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
