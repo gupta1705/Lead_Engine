@@ -40,7 +40,7 @@
 update segments
 set config = '{
   "entity_type": "production_company",
-  "weekly_target": 20,
+  "weekly_target": 40,
   "batch_size": 30,
   "score_threshold_review": 25,
   "score_threshold_priority": 45,
@@ -217,6 +217,22 @@ set config = '{
     {
       "query": "\"first-look deal\" independent production company",
       "deal_kind": "output_deal"
+    },
+    {
+      "query": "\"format\" adaptation \"US version\" series producer",
+      "deal_kind": "adaptation"
+    },
+    {
+      "query": "\"co-develop\" OR \"co-development\" series independent producer",
+      "deal_kind": "co_production"
+    },
+    {
+      "query": "\"scripted format\" OR \"unscripted format\" US remake producer",
+      "deal_kind": "format_deal"
+    },
+    {
+      "query": "\"greenlit\" comedy series independent production company",
+      "deal_kind": "output_deal"
     }
   ],
   "x_intent_discovery_queries": [
@@ -251,6 +267,14 @@ set config = '{
     {
       "query": "site:x.com production company \"looking for\" partner",
       "intent": "social_post"
+    },
+    {
+      "query": "\"looking for co-production partners\" series",
+      "intent": "explicit_invitation"
+    },
+    {
+      "query": "\"format available\" OR \"formats available\" for adaptation",
+      "intent": "explicit_invitation"
     }
   ],
   "wikidata_discovery": {

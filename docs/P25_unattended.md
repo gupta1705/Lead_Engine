@@ -45,22 +45,27 @@ shared error workflow (`error_alert.json`) on any harvest failure. If the
 webhook is unset, everything still runs — failures are just logged instead of
 pushed. Prove it from the Operations tab with **Test alert**.
 
-## One-time owner setup (needs the container n8n account)
+## Which n8n is live, and why (settled 2026-09-01)
 
-The containerised n8n is a fresh instance. To arm the harvest schedules there:
+**The host n8n is the live scheduler.** The npm-installed instance on this
+machine holds the owner account, both credentials, and the six workflows
+(five harvests + the error alert) -- all six are **active** with their
+schedule triggers armed. It listens on **http://localhost:5678**, exactly
+as every runbook says, and a launcher in the per-user Startup folder
+(`TVF Lead Engine n8n.cmd`) restarts it at every logon, so harvests fire
+unattended after a reboot.
 
-1. `docker compose up -d` and open http://localhost:5678 — create the n8n
-   owner account (local, thirty seconds; I don't create accounts).
-2. Re-enter the two credentials (Postgres, YouTube) — `docs/P4_runbook.md`
-   Part 2 has the exact names.
-3. `python tools/n8n_setup.py` — imports the 5 connectors (now schedule-armed)
-   and the error workflow, and links credentials.
-4. Put `ALERT_WEBHOOK_URL` in `.env` and `docker compose up -d` to pass it into
-   both containers.
+**The container n8n is a clean spare on http://localhost:5679.** It starts
+with Docker, has no account or credentials, and is the destination for the
+eventual full move. Copying the host credential store into it is deliberately
+a human step (it carries the credential encryption key); when you want to make
+the move, either create the container's owner account and re-enter the two
+credentials, then `python tools/n8n_setup.py` pointed at it -- or simply keep
+the host instance, which is fully working.
 
-The app scheduler needs none of this — it starts with the app and runs the
-enrichment pipeline on its own. Nothing outbound (email) is scheduled; that
-waits on the Gmail credential regardless.
+**Alerting** is armed on both: set `ALERT_WEBHOOK_URL` in `.env` (host n8n reads
+it from the environment it was started in; the container from compose) and
+press **Test alert** in Operations to prove it.
 
 ## Turning it off
 

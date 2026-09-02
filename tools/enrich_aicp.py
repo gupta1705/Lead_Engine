@@ -43,6 +43,7 @@ Usage:
     python tools/enrich_aicp.py --limit 5 --dry-run
     python tools/enrich_aicp.py --limit 50
 """
+import os
 import argparse
 import json
 import re
@@ -54,7 +55,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SEGMENT = "us-production-houses"
+# The segment this run works on. Segment 2 is meant to be "a config row and
+# connectors, nothing else" -- so the slug comes from the environment, and
+# every tool, the app, and the container agree on SEGMENT_SLUG.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 UA = "TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.com)"
 DIRECTORY = ("https://www.aicp.com/membership-information/member-directory/"
              "general-member-directory")

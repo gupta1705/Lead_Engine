@@ -68,6 +68,8 @@ async function loadDashboard() {
     `<div class="card ${hi ? "hi" : ""}"><div class="n">${n}</div><div class="k">${k}</div></div>`
   ).join("");
 
+  loadKpis();
+
   const max = Math.max(1, ...s.histogram.map((h) => h.n));
   $("#histogram").innerHTML = s.histogram.map((h) =>
     `<div class="row">
@@ -105,6 +107,47 @@ async function loadDashboard() {
         <td>${r.avg_score == null ? "&mdash;" : r.avg_score}</td>
         <td><strong>${r.reviewable}</strong></td>
       </tr>`).join("") + "</tbody>";
+}
+
+/* -------------------------------------------------------------- kpis */
+async function loadKpis() {
+  let k;
+  try { k = await api("/api/kpis"); } catch (e) { return; }
+  const f = k.funnel || {}, a = k.approval || {}, en = k.enrichment || {},
+        o = k.outreach || {}, u = k.unattended || {};
+  const pct = (v) => v == null ? "—" : v + "%";
+  const cards = [
+    ["Contacted, last 7d", o.sent_last_7d ?? 0, "target 15–20", true],
+    ["Contacted, last 28d", o.sent_last_28d ?? 0, "", false],
+    ["Approval rate", pct(a.approval_rate_pct), `${a.approved ?? 0} kept / ${a.rejected ?? 0} rejected`, true],
+    ["Contact-find rate", pct(en.contact_find_rate_pct), `${en.with_contact ?? 0} of ${en.sites_known ?? 0} sites`, false],
+    ["Email validity", pct(en.email_validity_pct), `${en.invalid_emails ?? 0} invalid`, false],
+    ["Reply rate", pct(o.reply_rate_pct), `${o.replies ?? 0} replies`, true],
+    ["Positive rate", pct(o.positive_rate_pct), `${o.positive_replies ?? 0} positive`, true],
+    ["Pipeline runs, 28d", u.pipeline_runs_28d ?? 0, `${u.pipeline_failures_28d ?? 0} failed`, false],
+  ];
+  $("#kpiCards").innerHTML = cards.map(([k2, n, sub, hi]) =>
+    `<div class="card ${hi ? "hi" : ""}"><div class="n">${esc(n)}</div>
+       <div class="k">${esc(k2)}</div>${sub ? `<div class="dm">${esc(sub)}</div>` : ""}</div>`
+  ).join("");
+
+  // per-source approval joins the existing source table as a last column
+  const bySrc = {};
+  (k.by_source || []).forEach((r) => { bySrc[r.source] = r; });
+  document.querySelectorAll("#sourceTable tbody tr").forEach((tr) => {
+    const src = tr.querySelector("td.nm") && tr.querySelector("td.nm").textContent;
+    const r = bySrc[src];
+    const td = document.createElement("td");
+    td.innerHTML = r && r.approval_rate_pct != null
+      ? `<strong>${esc(r.approval_rate_pct)}%</strong> <span class="dm">(${r.approved}/${r.approved + r.rejected})</span>`
+      : '<span class="muted">—</span>';
+    tr.appendChild(td);
+  });
+  const th = document.querySelector("#sourceTable thead tr");
+  if (th && !th.querySelector("th[data-appr]")) {
+    const t = document.createElement("th"); t.dataset.appr = "1";
+    t.textContent = "Approval"; th.appendChild(t);
+  }
 }
 
 /* ------------------------------------------------------------ leads */

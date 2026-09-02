@@ -21,6 +21,7 @@ internal verdicts on named companies. Run the script; do not commit the result.
 
 Usage:  python tools/review_artifact.py [-o out.html]
 """
+import os
 import argparse
 import html
 import json
@@ -31,7 +32,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SEGMENT = "us-production-houses"
+# The segment this run works on. Segment 2 is meant to be "a config row and
+# connectors, nothing else" -- so the slug comes from the environment, and
+# every tool, the app, and the container agree on SEGMENT_SLUG.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 DEFAULT_OUT = ROOT / "docs" / "review_queue.html"
 
 CSS = """

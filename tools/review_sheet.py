@@ -13,6 +13,7 @@ Reads the live database through the same .env credential as run_sql.py.
 Usage:  python tools/review_sheet.py            # all queued candidates
         python tools/review_sheet.py --brief    # one line each
 """
+import os
 import argparse
 import json
 import sys
@@ -21,7 +22,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SEGMENT = "us-production-houses"
+# The segment this run works on. Segment 2 is meant to be "a config row and
+# connectors, nothing else" -- so the slug comes from the environment, and
+# every tool, the app, and the container agree on SEGMENT_SLUG.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 
 
 def fetch(sql):

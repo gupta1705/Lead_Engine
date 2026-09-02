@@ -40,6 +40,7 @@ Usage:
     python tools/enrich_sitescrape.py --limit 25
     python tools/enrich_sitescrape.py --source google_news_rss --limit 12
 """
+import os
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import re
@@ -55,7 +56,10 @@ from urllib.parse import urljoin, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SEGMENT = "us-production-houses"
+# The segment this run works on. Segment 2 is meant to be "a config row and
+# connectors, nothing else" -- so the slug comes from the environment, and
+# every tool, the app, and the container agree on SEGMENT_SLUG.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 UA = ("TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.com)")
 TIMEOUT = 15
 DELAY_SECONDS = 2.0          # between requests to the same host

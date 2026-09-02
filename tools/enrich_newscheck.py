@@ -26,6 +26,7 @@ into metadata.news_evidence, so a reviewer can check any credit in one click.
 Durability rules from tools/dbconn.py apply: reconnecting connection, one
 commit per company, a per-row stamp so an interrupted pass resumes.
 """
+import os
 import argparse
 import html
 import re
@@ -38,7 +39,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SEGMENT = "us-production-houses"
+# The segment this run works on. Segment 2 is meant to be "a config row and
+# connectors, nothing else" -- so the slug comes from the environment, and
+# every tool, the app, and the container agree on SEGMENT_SLUG.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 UA = "TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.com)"
 DELAY = 1.2
 TIMEOUT = 20

@@ -23,6 +23,7 @@ agent's deciding fact, so a reviewer can see WHY without leaving the UI.
 
 Never touches shortlisted/rejected/contacted rows: human decisions stand.
 """
+import os
 import argparse
 import io
 import json
@@ -32,7 +33,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-SEGMENT = "us-production-houses"
+# The segment this run works on. Segment 2 is meant to be "a config row and
+# connectors, nothing else" -- so the slug comes from the environment, and
+# every tool, the app, and the container agree on SEGMENT_SLUG.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 DATE = "2026-08-29"
 
 NOT_A_PRODCO = {

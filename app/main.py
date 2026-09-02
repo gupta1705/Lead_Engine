@@ -408,6 +408,44 @@ def outreach_decide(oid: str, body: dict = Body(...)):
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ kpis
+@app.get("/api/kpis")
+def kpis():
+    """The v1 numbers (P26), from sql/kpi_queries.sql -- the same named
+    queries tools/kpis.py prints, so a terminal and the dashboard never
+    disagree about what 'approval rate' means."""
+    import re as _re
+    text = io.open(os.path.join(REPO, "sql", "kpi_queries.sql"),
+                   encoding="utf-8").read()
+    queries, name, buf = {}, None, []
+    for line in text.splitlines():
+        m = _re.match(r"--\s*name:\s*(\w+)", line)
+        if m:
+            if name:
+                queries[name] = "\n".join(buf).strip().rstrip(";")
+            name, buf = m.group(1), []
+        elif name is not None and not line.startswith("--"):
+            buf.append(line)
+    if name:
+        queries[name] = "\n".join(buf).strip().rstrip(";")
+    out = {}
+    with cursor() as cur:
+        # the queries read the segment from a session setting, so the .sql
+        # file is valid PostgreSQL that verify_repo can parse
+        cur.execute("select set_config('tvf.segment', %s, false)", (SEGMENT,))
+        for qname, sql in queries.items():
+            cur.execute(sql)
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                for k, v in list(r.items()):
+                    if hasattr(v, "isoformat"):
+                        r[k] = v.isoformat()
+                    elif v is not None and not isinstance(v, (int, float, str, bool)):
+                        r[k] = float(v)
+            out[qname] = rows if qname == "by_source" else (rows[0] if rows else {})
+    return out
+
+
 @app.get("/api/health")
 def health():
     try:

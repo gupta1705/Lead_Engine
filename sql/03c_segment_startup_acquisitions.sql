@@ -1,0 +1,268 @@
+-- 03C_SEGMENT_STARTUP_ACQUISITIONS.SQL
+-- P28: Segment 2 as a config row. GENERATED from
+-- config/segment.startup-acquisitions.json by the snippet in the P28 notes;
+-- edit the JSON, regenerate, never hand-edit this literal. Idempotent: an
+-- existing row is updated to the file's content, so re-running is a sync.
+insert into segments (slug, name, entity_type, config)
+values (
+  'startup-acquisitions',
+  'Startup Acquisition Targets -- creator tools & media-tech',
+  'startup',
+  '{
+  "entity_type": "startup",
+  "weekly_target": 10,
+  "batch_size": 20,
+  "score_threshold_review": 25,
+  "score_threshold_priority": 45,
+  "target_contact_roles": [
+    "Founder",
+    "Co-Founder",
+    "CEO",
+    "CTO",
+    "Head of Product",
+    "Head of Content"
+  ],
+  "rubric": [
+    {
+      "key": "product_adjacency",
+      "label": "Product sits in TVF''s lanes: creator tools, media-tech, short-form video, audience analytics, localisation",
+      "points": 30,
+      "input": "metadata.scoring_inputs.product_adjacency",
+      "guidance": "Full credit when the product is something TVF''s studio or platform would use or bundle tomorrow; half for adjacent (general video tooling, ad-tech for creators). STRONGEST signal."
+    },
+    {
+      "key": "traction",
+      "label": "Real traction: paying customers, named creator/studio clients, or public usage numbers",
+      "points": 20,
+      "input": "metadata.scoring_inputs.traction",
+      "guidance": "Press-quoted revenue, customer counts, or logo walls of creators/studios. A launch post alone is 0."
+    },
+    {
+      "key": "right_size",
+      "label": "Right size for an acqui-hire or tuck-in: ~3-25 people, pre-Series B",
+      "points": 20,
+      "input": "metadata.scoring_inputs.right_size",
+      "guidance": "Team page headcount plus funding stage. Bigger than 25 or past Series B is a different conversation."
+    },
+    {
+      "key": "acquisition_openness",
+      "label": "Signals of openness: bridge round, ''exploring strategic options'', founder departures, stalled hiring",
+      "points": 15,
+      "input": "metadata.scoring_inputs.acquisition_openness",
+      "guidance": "Full credit for explicit strategic-options language in press or a founder post; half for indirect signals (layoffs, long funding gap)."
+    },
+    {
+      "key": "reachable_decision_maker",
+      "label": "Named founder/CEO identified and reachable",
+      "points": 10,
+      "input": "metadata.scoring_inputs.reachable_decision_maker",
+      "guidance": "1.0 named founder with a real mailbox; 0.5 role inbox; 0 nothing reachable."
+    },
+    {
+      "key": "india_market_relevance",
+      "label": "Relevance to India: Indian market presence, Indic-language support, or a diaspora founder",
+      "points": 15,
+      "input": "metadata.scoring_inputs.india_market_relevance",
+      "guidance": "Full credit for an India office, Indian customers, or Indic localisation; half for a stated India roadmap."
+    }
+  ],
+  "score_modifiers": [
+    {
+      "key": "funding_above_cap",
+      "label": "PENALTY: total raised beyond what a tuck-in can absorb",
+      "max_penalty": -20,
+      "input": "metadata.scoring_inputs.funding_above_cap",
+      "guidance": "Scaled by how far past the cap the last disclosed raise sits. Set only on published funding data."
+    },
+    {
+      "key": "competitor_conflict",
+      "label": "PENALTY: product competes with, rather than complements, TVF''s own platform",
+      "max_penalty": -15,
+      "input": "metadata.scoring_inputs.competitor_conflict",
+      "guidance": "A rival streaming/studio play is a conflict; a tool TVF would buy is not."
+    }
+  ],
+  "gates": [
+    {
+      "key": "target_geography",
+      "label": "HQ in the United States or India",
+      "input": "metadata.scoring_inputs.geography_signal",
+      "exclude_when": "out_of_region",
+      "guidance": "Fires ONLY on confirmed HQ outside US/India. Blank passes."
+    },
+    {
+      "key": "not_a_major_or_oversized",
+      "label": "Exclude public companies, units of majors, and anything clearly past tuck-in size",
+      "input": "metadata.scoring_inputs.major_or_oversized_signal",
+      "exclude_when": true,
+      "guidance": "Public listing, a corporate parent, or a confirmed >100 headcount. Blank passes."
+    },
+    {
+      "key": "usable_first_party_presence",
+      "label": "Must have a website or product page",
+      "input": "metadata.scoring_inputs.has_reachable_presence",
+      "exclude_when": false,
+      "guidance": "Explicit false only."
+    },
+    {
+      "key": "is_active",
+      "label": "Company must be operating, not shut down",
+      "input": "metadata.scoring_inputs.activity_signal",
+      "exclude_when": "confirmed_dormant",
+      "guidance": "Fires ONLY on a confirmed shutdown notice or 12+ months of silence. Blank passes."
+    }
+  ],
+  "review_checklist": [
+    {
+      "key": "is_a_real_product_company",
+      "label": "Is this a product company with its own technology, not an agency, a consultancy, or a media brand?"
+    },
+    {
+      "key": "acquisition_shape_fits",
+      "label": "Would this be a tuck-in or acqui-hire TVF could actually close, not a fundraise-stage negotiation?"
+    },
+    {
+      "key": "founders_are_the_asset",
+      "label": "Are the founders people TVF would want to keep, and is that visible from what they have built?"
+    }
+  ],
+  "youtube_discovery_queries": [
+    {
+      "query": "creator tools startup demo",
+      "genre_hint": null
+    },
+    {
+      "query": "short form video editing startup",
+      "genre_hint": null
+    }
+  ],
+  "news_rss_discovery_queries": [
+    {
+      "query": "\"creator economy\" startup \"raises\" seed OR pre-seed",
+      "deal_kind": "funding"
+    },
+    {
+      "query": "\"video\" startup \"exploring strategic options\" OR \"acqui-hire\"",
+      "deal_kind": "strategic_options"
+    },
+    {
+      "query": "\"media tech\" startup India OR \"Indian founders\" raises",
+      "deal_kind": "funding"
+    },
+    {
+      "query": "\"short-form video\" startup launches creators",
+      "deal_kind": "launch"
+    }
+  ],
+  "x_intent_discovery_queries": [
+    {
+      "query": "\"open to acquisition\" startup founder video",
+      "intent": "explicit_invitation"
+    },
+    {
+      "query": "\"looking for a strategic partner\" creator tools",
+      "intent": "explicit_invitation"
+    }
+  ],
+  "wikidata_discovery": {
+    "entity_classes": [
+      "Q1058914",
+      "Q18388277"
+    ],
+    "country": "Q30",
+    "limit": 400,
+    "guidance": "Q1058914 software company, Q18388277 technology company; US-filtered like Segment 1. Notable-only again, so expect a seed skewed large; the not_a_major gate and right_size do the trimming."
+  },
+  "metadata_fields": [
+    "subtype",
+    "hq_city",
+    "hq_state",
+    "team_size_estimate",
+    "product_category",
+    "funding_stage",
+    "total_raised",
+    "notable_customers",
+    "why_fit",
+    "scoring_inputs"
+  ],
+  "sources": [
+    {
+      "slug": "google_news_rss",
+      "name": "Google News RSS (funding + strategic-options headlines)",
+      "kind": "rss",
+      "phase": 1,
+      "detail": "Same connector as Segment 1, different queries. A funding or strategic-options headline naming the company is the primary discovery path."
+    },
+    {
+      "slug": "wikidata",
+      "name": "Wikidata SPARQL",
+      "kind": "api",
+      "phase": 2,
+      "detail": "US software/technology companies with a website. Seed, not stream."
+    },
+    {
+      "slug": "youtube_api",
+      "name": "YouTube Data API v3",
+      "kind": "api",
+      "phase": 3,
+      "detail": "Product demo channels. Low expected yield; kept for parity."
+    },
+    {
+      "slug": "x_intent_signals",
+      "name": "X intent posts via Google News RSS",
+      "kind": "rss",
+      "phase": 3,
+      "detail": "Founder posts signalling openness. Noisy."
+    }
+  ],
+  "self_exclusion": {
+    "domains": [
+      "theviralfever.com",
+      "tvfplay.com"
+    ],
+    "name_patterns": [
+      "the viral fever",
+      "girliyapa",
+      "contagious online media"
+    ],
+    "guidance": "Same affiliates as Segment 1 must never enter this pool either."
+  },
+  "enrichment": {
+    "provider": "site_scrape",
+    "contact_method": "team_page_then_about_page",
+    "email_verifier": "mx_check",
+    "fallback": "human_confirm",
+    "fallback_enabled": true,
+    "guidance": "Startups publish founders on /team and /about far more reliably than production shops publish EPs, so the site-scrape path is primary here, not a fallback."
+  },
+  "outreach": {
+    "sender": {
+      "name": "SET_ME",
+      "title": "Corporate Development, The Viral Fever",
+      "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
+      "guidance": "Set before the first send. Gmail address comes from GMAIL_SENDER_ADDRESS in .env."
+    },
+    "daily_send_cap": 10,
+    "templates": [
+      {
+        "key": "strategic_intro_v1",
+        "subject": "{{company}} + The Viral Fever — a conversation worth having",
+        "body": "Hi {{greeting_name}},\n\nI lead corporate development at The Viral Fever (TVF) - one of India''s largest independent studios, with a platform reaching tens of millions of viewers.\n\n{{hook}}\n\nWe''re looking at a small number of product companies whose technology would slot straight into how we make and distribute content, and {{company}} is one of them. I''d value 20 minutes to understand where you''re headed and whether there''s a fit - as a customer, a partner, or something more strategic.\n\nOpen to a call?\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+        "guidance": "First touch. Deliberately ambiguous about acquisition - founders hear ''strategic'' and choose how to read it. Human-approved per draft like every template."
+      }
+    ],
+    "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database."
+  }
+}'::jsonb
+)
+on conflict (slug) do update
+  set name = excluded.name,
+      entity_type = excluded.entity_type,
+      config = excluded.config;
+
+select slug, entity_type,
+       jsonb_array_length(config->'rubric')  as rubric_criteria,
+       jsonb_array_length(config->'gates')   as gates,
+       config->>'score_threshold_review'     as review_at,
+       config->>'score_threshold_priority'   as priority_at
+from segments order by slug;
