@@ -1,0 +1,50 @@
+# Production overlay -- apply ON TOP of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What changes versus local:
+#   * the app is NOT published on a host port at all -- Caddy is the only door
+#   * Caddy is added, listening on 80/443, with automatic HTTPS for $DOMAIN
+#   * the container n8n stays internal too (reach its editor over an SSH
+#     tunnel: ssh -L 5680:localhost:5680 user@host, after uncommenting below)
+#   * the scheduler is on, so the server runs the pipeline unattended
+#
+# Required in .env on the server: SUPABASE_DB_URL, SESSION_SECRET, DOMAIN.
+# Optional: ALERT_WEBHOOK_URL, GMAIL_SENDER_ADDRESS, GOOGLE_OAUTH_*,
+# ANTHROPIC_API_KEY.
+
+services:
+  app:
+    ports: !reset []
+    environment:
+      - SCHEDULER_ENABLED=1
+    expose:
+      - "8000"
+
+  n8n:
+    ports: !reset []
+    expose:
+      - "5678"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tvf-lead-engine-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+    name: tvf_lead_engine_caddy_data
+  caddy_config:
+    name: tvf_lead_engine_caddy_config

@@ -79,40 +79,63 @@ This is the single most important line in this document.
 
 ---
 
-## Cloud — the week after
+## Cloud — one command on any server
 
-The containers do not change. Three things go in front of them.
+Everything below is in the repo (`deploy/`, `docker-compose.prod.yml`). The
+only inputs it cannot supply are the two values that are yours: the database
+URL and the domain name.
 
-**1. A host.** Any small VPS does — Hetzner, DigitalOcean, Lightsail, roughly
-$6–12/month for 2GB RAM. Install Docker, clone the repo, copy `.env` across
-(never commit it), `docker compose up -d --build`.
+**1. Get a server and point a domain at it.** Any small VPS (Hetzner,
+DigitalOcean, Lightsail; ~$6–12/month, 2 GB RAM, Ubuntu 22.04/24.04). Create
+a DNS **A record** for the hostname you want (e.g. `leads.theviralfever.com`)
+pointing at its IP. Open ports 80 and 443 in the provider's firewall.
 
-**2. Authentication, before the port opens.** The lightest correct option is a
-reverse proxy doing the auth, so the app itself stays unchanged:
+**2. Bootstrap.** SSH in and run:
 
-- **Caddy** with basic auth is about eight lines of config and gets HTTPS
-  automatically from Let's Encrypt.
-- **Cloudflare Tunnel + Access** is stronger and has no open inbound port at
-  all: the team signs in with their Google accounts and you never manage a
-  password. This is the one I would pick for a BD team.
+```bash
+curl -fsSL https://raw.githubusercontent.com/gupta1705/tvf-lead-engine/main/deploy/bootstrap.sh | bash
+```
 
-Either way the compose binding stays `127.0.0.1` and only the proxy listens
-publicly.
+It installs Docker, clones the repo to `/opt/tvf-lead-engine`, creates `.env`
+with a fresh `SESSION_SECRET`, then stops and tells you to paste two values:
 
-**3. A domain and TLS.** Caddy or Cloudflare handles the certificate. Never
-serve this over plain HTTP once it is off localhost — session cookies and
-contact data would cross the network in clear text.
+```bash
+nano /opt/tvf-lead-engine/.env     # SUPABASE_DB_URL=...   DOMAIN=leads.theviralfever.com
+```
 
-### What to change in the app for cloud
+**3. Deploy.**
 
-Nothing structural. Two small things worth doing:
+```bash
+/opt/tvf-lead-engine/deploy/deploy.sh
+```
 
-- Set `SEGMENT_SLUG` explicitly rather than relying on the default.
-- Add the proxy's host to a CORS allowlist if you ever split the frontend onto
-  a different origin. As long as the UI is served by the same process — which
-  is how it ships — this does not arise.
+That is the "deploy now" button, forever: it pulls the latest `main`, rebuilds,
+and brings the stack up. Caddy obtains a Let's Encrypt certificate for your
+domain automatically and renews it. First visit to `https://<DOMAIN>` shows
+the owner-account setup screen.
 
----
+### What "auth in front" means here
+
+Two layers, both on by default:
+
+- **TLS at the edge.** Caddy terminates HTTPS and forwards
+  `X-Forwarded-Proto`, which makes the app's session cookie `Secure`. Plain
+  HTTP only redirects. The app container is **not published on any host
+  port** in production — Caddy is the only door.
+- **The app's own login** — bcrypt accounts, signed httpOnly cookies,
+  per-visitor rate limiting (proxy-aware via `X-Forwarded-For`).
+
+An optional third layer is one uncomment away in `deploy/Caddyfile`: HTTP
+basic auth in front of the login page itself, so bots never reach the form.
+Generate the hash yourself (`docker run --rm caddy caddy hash-password`) — it
+is your password to choose.
+
+### Day two
+
+- Update: `deploy/deploy.sh` (pulls, rebuilds, zero manual steps).
+- n8n editor on the server: not exposed; tunnel in with
+  `ssh -L 5680:localhost:5680 user@host` if you move the harvests there.
+- Logs: `docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f app`.
 
 ## Backups
 

@@ -1,0 +1,49 @@
+# Caddy in front of the Lead Engine -- the "auth in front" layer for the cloud.
+#
+# What this gives you, in order of importance:
+#   1. HTTPS with an automatically issued and renewed Let's Encrypt certificate
+#      for {$DOMAIN}. Nothing here ever speaks plain HTTP to the internet; port
+#      80 only redirects.
+#   2. The app's own login stays the authentication. Caddy forwards
+#      X-Forwarded-Proto: https, which is what makes the app mark its session
+#      cookie Secure (see app/auth.py), and X-Forwarded-For, which is what
+#      keeps the login rate-limit per-visitor instead of per-proxy.
+#   3. Security headers that cost nothing and close common holes.
+#   4. OPTIONAL second gate (commented below): HTTP basic auth in front of the
+#      login page itself, so bots never even reach the form. Generate the hash
+#      yourself with `docker run --rm caddy caddy hash-password` -- it is your
+#      password, not one this repo should invent.
+#
+# The app container is never published on a host port in production
+# (docker-compose.prod.yml); the only way in is through this file.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# --- optional outer gate: uncomment and paste your own hash ---------------
+	# basic_auth {
+	#     tvf JDJhJDE0JC4uLnlvdXIgY2FkZHkgaGFzaC1wYXNzd29yZCBvdXRwdXQuLi4=
+	# }
+
+	reverse_proxy app:8000 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+	}
+}

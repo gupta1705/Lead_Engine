@@ -141,7 +141,12 @@ def build_router(cursor):
 
     @r.post("/api/auth/login")
     def login(request: Request, body: dict = Body(...)):
-        ip = request.client.host if request.client else "?"
+        # Behind Caddy every request arrives from the proxy's address; the
+        # first hop of X-Forwarded-For is the real visitor, and rate-limiting
+        # on the proxy IP would lock the whole team out after ten bad tries.
+        fwd = request.headers.get("x-forwarded-for", "")
+        ip = (fwd.split(",")[0].strip() if fwd else
+              (request.client.host if request.client else "?"))
         if _rate_limited(ip):
             raise HTTPException(429, "too many attempts -- wait five minutes")
         email = ((body or {}).get("email") or "").strip().lower()
