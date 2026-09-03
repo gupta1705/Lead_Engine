@@ -40,6 +40,20 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_C
 fi
 docker --version
 
+echo "==> Firewall (Oracle Cloud images drop 80/443 in iptables even after the console rule)"
+if command -v iptables >/dev/null 2>&1; then
+  for port in 80 443; do
+    sudo iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null       || sudo iptables -I INPUT 6 -p tcp --dport "$port" -j ACCEPT
+  done
+  sudo iptables -C INPUT -p udp --dport 443 -j ACCEPT 2>/dev/null     || sudo iptables -I INPUT 6 -p udp --dport 443 -j ACCEPT
+  # persist across reboots without an interactive prompt
+  echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
+  echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent >/dev/null 2>&1 || true
+  sudo netfilter-persistent save >/dev/null 2>&1 || true
+  echo "    ports 80/443 open and persisted"
+fi
+
 echo "==> Repository"
 if [ -d "$DIR/.git" ]; then
   sudo git -C "$DIR" pull --ff-only
