@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # bootstrap.sh -- a fresh Ubuntu 22.04/24.04 server to a live Lead Engine.
 #
-#   curl -fsSL https://raw.githubusercontent.com/gupta1705/tvf-lead-engine/main/deploy/bootstrap.sh | bash
+#   The repo is PRIVATE, so clone it first (git will ask for your GitHub
+#   username and a personal access token), then run this script from it:
+#
+#     sudo git clone https://github.com/gupta1705/tvf-lead-engine.git /opt/tvf-lead-engine
+#     sudo chown -R "$USER":"$USER" /opt/tvf-lead-engine
+#     /opt/tvf-lead-engine/deploy/bootstrap.sh
 #
 # What it does, and what it deliberately does NOT:
 #   * installs Docker Engine + compose plugin (official apt repo)

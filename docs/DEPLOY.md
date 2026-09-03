@@ -90,14 +90,20 @@ DigitalOcean, Lightsail; ~$6–12/month, 2 GB RAM, Ubuntu 22.04/24.04). Create
 a DNS **A record** for the hostname you want (e.g. `leads.theviralfever.com`)
 pointing at its IP. Open ports 80 and 443 in the provider's firewall.
 
-**2. Bootstrap.** SSH in and run:
+**2. Bootstrap.** The repo is private, so clone it first — git will ask for
+your GitHub username and a personal access token (GitHub → Settings →
+Developer settings → Fine-grained tokens, read access to this repo is enough):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gupta1705/tvf-lead-engine/main/deploy/bootstrap.sh | bash
+sudo git clone https://github.com/gupta1705/tvf-lead-engine.git /opt/tvf-lead-engine
 ```
 
-It installs Docker, clones the repo to `/opt/tvf-lead-engine`, creates `.env`
-with a fresh `SESSION_SECRET`, then stops and tells you to paste two values:
+```bash
+sudo chown -R "$USER":"$USER" /opt/tvf-lead-engine && /opt/tvf-lead-engine/deploy/bootstrap.sh
+```
+
+It installs Docker, creates `.env` with a fresh `SESSION_SECRET`, then stops
+and tells you to paste two values:
 
 ```bash
 nano /opt/tvf-lead-engine/.env     # SUPABASE_DB_URL=...   DOMAIN=leads.theviralfever.com
