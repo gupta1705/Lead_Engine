@@ -67,6 +67,12 @@ the host instance, which is fully working.
 it from the environment it was started in; the container from compose) and
 press **Test alert** in Operations to prove it.
 
+**In the cloud (Render, `docs/DEPLOY.md`)** the app scheduler runs on the
+server, so the Tuesday refresh no longer depends on the laptop; the harvests
+still do, because they live in the host n8n. A free instance sleeps after 15
+idle minutes and a sleeping scheduler fires nothing -- the uptime ping in the
+deploy doc is what keeps that promise.
+
 ## Turning it off
 
 `SCHEDULER_ENABLED=0` in `.env` stops the app scheduler loop (the manual

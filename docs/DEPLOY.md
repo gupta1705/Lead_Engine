@@ -1,7 +1,119 @@
 # Deploying the Lead Engine
 
-Two steps, in this order: **local Docker for the 3rd**, cloud afterwards. The
-containers are identical; only what sits in front of them changes.
+Three ways to run the same image. The containers are identical; only what sits
+in front of them changes.
+
+| | Cost | Card needed | Always on | Where the harvests run |
+|---|---|---|---|---|
+| **Free cloud on Render** (next section) | free | no | yes, with the keep-awake ping | the laptop's n8n |
+| Local Docker Desktop | free | no | while the laptop is on | the laptop's n8n |
+| Your own server + Caddy (`deploy/`) | the server | usually | yes | server or laptop |
+
+**No server budget and no credit card: use Render.** That section is the one to
+follow. The rest of this file is the same product on the other two hosts.
+
+---
+
+## Free cloud, no credit card: Render
+
+Render's Hobby workspace is free and asks for no payment method. It builds the
+repo's `Dockerfile`, gives the service an `https://<name>.onrender.com`
+address with a certificate, terminates TLS, and forwards `X-Forwarded-Proto`
+and `X-Forwarded-For`, so the app's Secure cookie and per-visitor rate limit
+behave exactly as they do behind Caddy. The two layers of protection this file
+insists on are both present: Render's proxy is the only door, and the app's own
+login is behind it.
+
+`render.yaml` in the repo root is a Render **Blueprint**. It declares the whole
+service (Docker runtime, free plan, Singapore region, health check on
+`/api/health`, scheduler on), so the setup is "connect the repo, paste one
+value".
+
+### Steps (about 20 minutes, most of it waiting for the build)
+
+1. **Account.** <https://render.com>, *Get started*, sign up with GitHub using
+   the account that owns `gupta1705/tvf-lead-engine`. No card is asked for.
+2. **Blueprint.** Dashboard, **New +**, **Blueprint**. Connect GitHub when
+   asked and grant the Render app access to the `tvf-lead-engine` repository
+   (it is private, so it has to be granted explicitly). Select the repo,
+   branch `main`. Render reads `render.yaml` and shows one service,
+   `tvf-lead-engine`.
+3. **The one value.** It asks for `SUPABASE_DB_URL`: the same session-pooler
+   URI that is in the laptop's `.env`. Paste it. `SESSION_SECRET` is generated
+   by Render; nothing else is needed. Click **Apply**.
+4. **Wait for "Live".** The first build takes 5 to 10 minutes. The service
+   page shows the URL, `https://tvf-lead-engine.onrender.com` (Render adds a
+   short suffix if that name is taken elsewhere).
+5. **Owner account.** Open the URL. The first visit is the setup screen:
+   create the owner account with your email and a 10+ character password.
+6. **Keep it awake.** Free services sleep after 15 idle minutes, and a
+   sleeping service cannot fire the Tuesday 02:00 UTC refresh. Sign up at
+   <https://uptimerobot.com> (free, no card), **New monitor**, type HTTP(s),
+   URL `https://<your-service>.onrender.com/api/health`, interval 5 minutes.
+   The same ping keeps the free Supabase project from pausing (it pauses after
+   a week without connections) and emails you if the site ever goes down.
+
+Done. Every push to `main` redeploys automatically; the service page's
+*Manual Deploy* button does it by hand.
+
+### What runs where
+
+- **In the cloud, around the clock:** the review UI, shortlist, outreach
+  folders, KPIs, the Operations tab (promote/score chain, domain resolution,
+  AICP and site enrichment, qualify, news sweep, outreach drafting) and the
+  weekly refresh scheduler.
+- **Still on the laptop:** the five harvests, because they run in the host n8n
+  (Startup-folder launcher, port 5678). They fire on their Monday and
+  first-of-month schedules whenever the laptop is on; the Tuesday refresh in
+  the cloud picks up whatever landed. No lead data lives on the laptop, so the
+  laptop being off only delays new discoveries, never review or outreach.
+
+### Admin tasks without a shell
+
+Free instances have no shell tab and nothing to SSH into. Every admin action
+is a database action, so run it from the repo on the laptop, against the same
+Supabase project:
+
+```bash
+python tools/users.py add superior@theviralfever.com
+```
+
+Sender details for outreach: edit the `outreach` block in
+`config/segment.us-production-houses.json` (the `SET_ME` values), then re-sync
+the config row with `python tools/run_sql.py sql/03b_sync_segment_config_v3.sql`.
+Keys go in Render, the service, **Environment**: `ALERT_WEBHOOK_URL`,
+`GMAIL_SENDER_ADDRESS`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`ANTHROPIC_API_KEY`, and `GMAIL_TOKEN_JSON` (the contents of
+`.gmail_token.json` after `python tools/outreach.py auth` on the laptop, since
+the cloud disk does not persist). The service restarts itself with new values.
+
+### Limits worth knowing
+
+Free instances have 512 MB of RAM and a slice of one CPU: enough for the UI
+and the enrichment jobs, which are network-bound, just slower than the laptop.
+The disk is ephemeral, so `logs/ops/` is lost on redeploy, while the
+`pipeline_runs` audit is in the database and survives. A workspace gets 750
+free instance-hours a month, which is exactly one always-on service. Do not
+add a second free service (n8n, say) to the same workspace: both would be
+stopped when the hours run out.
+
+### Fallback with more room: Hugging Face Spaces
+
+If Render ever fails you (free tier withdrawn, out of memory), a Docker Space
+on Hugging Face is also free with no card, and larger: 2 vCPU and 16 GB of
+RAM. Create a Space (SDK **Docker**, blank template, public, since the app's
+own login is the wall), then from the repo:
+
+```bash
+deploy/hf_push.sh https://huggingface.co/spaces/<you>/tvf-lead-engine
+```
+
+It pushes a single-commit snapshot of `main` with the Space's front matter
+(port 8000) and without the spreadsheets Spaces refuse outside git-lfs. Git
+asks for your Hugging Face username and an access token with *write* scope.
+Then set `SUPABASE_DB_URL`, `SESSION_SECRET` and `SCHEDULER_ENABLED=1` under
+the Space's *Settings, Variables and secrets*. Spaces sleep after 48 idle
+hours; the same UptimeRobot ping keeps one awake.
 
 ---
 
@@ -79,16 +191,18 @@ This is the single most important line in this document.
 
 ---
 
-## Cloud — one command on any server
+## Cloud on your own server — one command
 
-Everything below is in the repo (`deploy/`, `docker-compose.prod.yml`). The
-only inputs it cannot supply are the two values that are yours: the database
-URL and the domain name.
+The paid path, for when TVF has a server. Everything below is in the repo
+(`deploy/`, `docker-compose.prod.yml`). The only inputs it cannot supply are
+the two values that are yours: the database URL and the domain name.
 
 **1. Get a server and point a domain at it.** Any small VPS (Hetzner,
 DigitalOcean, Lightsail; ~$6–12/month, 2 GB RAM, Ubuntu 22.04/24.04). Create
 a DNS **A record** for the hostname you want (e.g. `leads.theviralfever.com`)
-pointing at its IP. Open ports 80 and 443 in the provider's firewall.
+pointing at its IP. Open ports 80 and 443 in the provider's firewall. (Oracle
+Cloud's Always Free tier would do, but it requires a credit card for identity
+verification at signup.)
 
 **2. Bootstrap.** The repo is private, so clone it first — git will ask for
 your GitHub username and a personal access token (GitHub → Settings →

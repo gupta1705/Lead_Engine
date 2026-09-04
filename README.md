@@ -45,6 +45,7 @@ docker compose up -d --build
 
 First visit to the review UI shows a one-time owner-account setup. Full
 deployment, authentication, and cloud notes are in [`docs/DEPLOY.md`](docs/DEPLOY.md).
+The free cloud path (Render, no card, no server; `render.yaml`) is its first section.
 
 ## Where things are
 

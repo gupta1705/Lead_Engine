@@ -194,12 +194,25 @@ def gmail_service():
         from googleapiclient.discovery import build
     except ImportError:
         sys.exit("pip install google-api-python-client google-auth-oauthlib")
-    if not TOKEN_PATH.exists():
-        sys.exit("no Gmail token yet -- run: python tools/outreach.py auth")
-    creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GMAIL_SCOPES)
+    # The token lives in .gmail_token.json on a machine with a disk. A cloud
+    # host with an ephemeral filesystem (Render, Spaces) gets it through the
+    # GMAIL_TOKEN_JSON variable instead: run `auth` once on a laptop, paste
+    # the file's contents into the host's secrets UI. Same token either way.
+    token_json = env("GMAIL_TOKEN_JSON")
+    if TOKEN_PATH.exists():
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GMAIL_SCOPES)
+    elif token_json:
+        creds = Credentials.from_authorized_user_info(json.loads(token_json),
+                                                      GMAIL_SCOPES)
+    else:
+        sys.exit("no Gmail token yet -- run: python tools/outreach.py auth"
+                 " (on a diskless host, set GMAIL_TOKEN_JSON instead)")
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-        TOKEN_PATH.write_text(creds.to_json())
+        try:
+            TOKEN_PATH.write_text(creds.to_json())
+        except OSError:
+            pass    # read-only or ephemeral disk: the refresh token in the env still works
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
@@ -219,7 +232,8 @@ def cmd_auth(args):
                        "redirect_uris": ["http://localhost"]}},
         GMAIL_SCOPES)
     log("A browser window will open. Sign in with the TVF outreach account and")
-    log("approve. The token lands in .gmail_token.json (gitignored).")
+    log("approve. The token lands in .gmail_token.json (gitignored). For a cloud")
+    log("host with no disk, paste that file's contents into GMAIL_TOKEN_JSON.")
     creds = flow.run_local_server(port=0)
     TOKEN_PATH.write_text(creds.to_json())
     log("token saved -- send and pull are now live")

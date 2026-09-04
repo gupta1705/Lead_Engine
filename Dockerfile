@@ -32,14 +32,19 @@ COPY config/ ./config/
 
 # Run as a non-root user. This container talks to a database holding contact
 # details for real people; root is not the identity that should hold that.
-RUN useradd --create-home --uid 10001 tvf && chown -R tvf:tvf /srv
+# uid 1000 specifically: Hugging Face Spaces run containers as that user,
+# and files owned by anyone else are unwritable there (ops logs).
+RUN useradd --create-home --uid 1000 tvf && chown -R tvf:tvf /srv
 USER tvf
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
+  CMD curl -fsS http://127.0.0.1:${PORT:-8000}/api/health || exit 1
 
 # One worker: the workload is a handful of reviewers, and a single process
 # keeps the psycopg2 pool honest. Scale with replicas, not workers, if ever.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form so the port follows $PORT when a platform sets one (Render
+# sets 10000, Hugging Face Spaces 7860 unless told 8000); 8000 otherwise,
+# which is what compose and Caddy expect. exec keeps uvicorn as PID 1.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
