@@ -21,6 +21,7 @@ is read from the environment and never rendered into a response.
 """
 import io
 import os
+import time
 from contextlib import contextmanager
 
 import psycopg2
@@ -66,6 +67,8 @@ async def auth_wall(request, call_next):
     return RedirectResponse("/login", status_code=302)
 
 _POOL = None
+_LAST_USED = {}            # id(conn) -> monotonic time of its last good use
+IDLE_PROBE_AFTER = 30      # seconds idle before a connection is probed first
 
 OPEN_STATUSES = "('discovered','enriched','scored','ready_for_review')"
 
@@ -84,21 +87,66 @@ def db_url():
     raise RuntimeError("SUPABASE_DB_URL is not set")
 
 
-@contextmanager
-def cursor():
+def _pool():
     global _POOL
     if _POOL is None:
-        _POOL = pgpool.ThreadedConnectionPool(1, 8, db_url(), connect_timeout=20)
-    conn = _POOL.getconn()
+        # TCP keepalives, so a NAT or the pooler cannot silently forget an
+        # idle connection: the kernel notices within about a minute and the
+        # next checkout sees a closed socket instead of a hang.
+        _POOL = pgpool.ThreadedConnectionPool(
+            1, 8, db_url(), connect_timeout=20,
+            keepalives=1, keepalives_idle=30, keepalives_interval=10,
+            keepalives_count=3)
+    return _POOL
+
+
+def _checkout():
+    """A connection known to be alive.
+
+    Supabase's session pooler drops idle connections without telling the
+    client, so the first query on a dead one fails -- and whoever asked
+    first (the uptime ping, every five minutes) got a 503 while everyone
+    after it got a fresh connection. Seen live on 2026-09-04, an hour after
+    the Render deploy. A connection idle for a while is now probed with
+    `select 1` and replaced if the probe fails; the probe costs one round
+    trip and only happens after IDLE_PROBE_AFTER seconds of idleness.
+    """
+    pool = _pool()
+    for _ in range(3):
+        conn = pool.getconn()
+        if conn.closed:
+            _LAST_USED.pop(id(conn), None)
+            pool.putconn(conn, close=True)
+            continue
+        if time.monotonic() - _LAST_USED.get(id(conn), 0) > IDLE_PROBE_AFTER:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("select 1")
+                    cur.fetchone()
+            except Exception:
+                _LAST_USED.pop(id(conn), None)
+                pool.putconn(conn, close=True)
+                continue
+        return conn
+    raise RuntimeError("no live database connection after three attempts")
+
+
+@contextmanager
+def cursor():
+    conn = _checkout()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             yield cur
         conn.commit()
+        _LAST_USED[id(conn)] = time.monotonic()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass    # a dead connection cannot roll back; the original error matters
         raise
     finally:
-        _POOL.putconn(conn)
+        _POOL.putconn(conn, close=bool(conn.closed))
 
 
 # --------------------------------------------------------------------- stats
