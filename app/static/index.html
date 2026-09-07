@@ -4,172 +4,334 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TVF Lead Engine</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script>
+/* Apply the saved theme before first paint so the page never flashes. */
+try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 </head>
 <body>
+<div class="app">
 
-<header class="top">
-  <div class="brand">
-    <span class="mark">TVF</span>
-    <span class="title">Lead Engine</span>
-    <span class="seg">US production houses</span>
-  </div>
-  <nav class="tabs">
-    <button class="tab active" data-view="review">Review queue</button>
-    <button class="tab" data-view="dashboard">Pool overview</button>
-    <button class="tab" data-view="shortlist">Shortlist</button>
-    <button class="tab" data-view="outreach">Outreach</button>
-    <button class="tab" data-view="ops">Operations</button>
+<!-- ============================================================ TOP NAV -->
+<header class="topnav" role="banner">
+  <button class="btn icon grid-btn" id="drawerBtn" aria-label="Open navigation" title="Navigation">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg>
+  </button>
+  <a class="logo" href="#board" aria-label="Lead Engine home">
+    <span class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg></span>
+    <span class="word">Lead Engine</span>
+  </a>
+
+  <nav class="primary-nav" aria-label="Primary">
+    <div class="menu-anchor">
+      <button class="nav-item" data-menu="workMenu" aria-haspopup="true" aria-expanded="false">Your work
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="menu" id="workMenu" hidden></div>
+    </div>
+    <div class="menu-anchor">
+      <button class="nav-item" data-menu="projectsMenu" aria-haspopup="true" aria-expanded="false">Projects
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="menu" id="projectsMenu" hidden></div>
+    </div>
+    <div class="menu-anchor">
+      <button class="nav-item" data-menu="filtersMenu" aria-haspopup="true" aria-expanded="false">Filters
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="menu" id="filtersMenu" hidden></div>
+    </div>
+    <button class="nav-item" data-route="reports">Dashboards</button>
   </nav>
-  <div class="head-actions">
-    <a id="exportBtn" class="btn primary" href="/api/export.xlsx?status=shortlisted">
-      Export shortlist
-    </a>
-    <button id="themeBtn" class="btn icon" title="Theme" aria-label="Toggle theme">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></svg>
+
+  <button class="btn primary create-btn" id="createBtn" title="Generate leads or run a pipeline job">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    <span class="label">Create</span>
+  </button>
+
+  <div class="spacer"></div>
+
+  <div class="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="globalSearch" type="search" class="compact" placeholder="Search" aria-label="Search leads" autocomplete="off">
+  </div>
+
+  <div class="actions">
+    <div class="menu-anchor">
+      <button class="btn icon" id="notifBtn" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" title="Notifications">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="badge-dot" id="notifBadge" hidden></span>
+      </button>
+      <div class="menu right" id="notifMenu" hidden></div>
+    </div>
+    <div class="menu-anchor">
+      <button class="btn icon" id="helpBtn" aria-label="Help" aria-haspopup="true" aria-expanded="false" title="Help">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      </button>
+      <div class="menu right" id="helpMenu" hidden></div>
+    </div>
+    <button class="btn icon" id="settingsBtn" aria-label="Operations" title="Operations">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
-    <button id="logoutBtn" class="btn icon" title="Sign out" aria-label="Sign out">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-    </button>
+    <div class="menu-anchor">
+      <button class="btn icon" id="userBtn" aria-label="Your account" aria-haspopup="true" aria-expanded="false" title="Account">
+        <span class="avatar av-1" id="userAvatar">?</span>
+      </button>
+      <div class="menu right" id="userMenu" hidden></div>
+    </div>
   </div>
 </header>
 
-<!-- ------------------------------------------------------- DASHBOARD -->
-<section id="view-dashboard" class="view">
-  <div class="cards" id="statCards"></div>
+<div class="frame" id="frame">
+  <div class="sidebar-scrim" id="sidebarScrim"></div>
 
-  <div class="panel">
-    <h2>v1 KPIs</h2>
-    <p class="sub">The numbers the plan judges v1 by: contacted per week,
-      approval rate (overall and per source), contact-find rate, reply and
-      positive rates, and whether the engine is running itself.</p>
-    <div class="cards" id="kpiCards"></div>
-  </div>
+  <!-- ============================================================ SIDEBAR -->
+  <nav class="sidebar" id="sidebar" aria-label="Project">
+    <button class="collapse-btn" id="collapseBtn" aria-label="Collapse sidebar" title="Collapse">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <div class="sidebar-inner">
+      <div class="project">
+        <span class="project-avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="m3 9 1.4-4.2a1 1 0 0 1 1.2-.7L20 7.6l-1 1.4"/><path d="m8 4.6 2 3.6M12.5 5.5l2 3.6"/></svg></span>
+        <div>
+          <div class="project-name" id="projectName">US Production Houses</div>
+          <div class="project-type">Lead segment</div>
+        </div>
+      </div>
 
-  <div class="panel-grid">
-    <div class="panel">
-      <h2>Score distribution</h2>
-      <p class="sub">Open pool only. A tall bar at zero means the engine has
-         found companies it cannot yet judge &mdash; not that they are bad.</p>
-      <div id="histogram" class="hist"></div>
+      <button class="side-item" data-route="board">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg>
+        Board
+      </button>
+      <button class="side-item" data-route="leads">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        Leads
+      </button>
+      <button class="side-item" data-route="outreach">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+        Outreach
+        <span class="pts count" id="outreachCount" hidden>0</span>
+      </button>
+      <button class="side-item" data-route="reports">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+        Reports
+      </button>
+
+      <div class="side-heading">Pipeline</div>
+      <button class="side-item" data-route="ops">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z" fill="currentColor"/></svg>
+        Operations
+      </button>
+      <button class="side-item" id="createSide">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
+        Generate leads
+      </button>
+
+      <div class="side-heading">Segment</div>
+      <button class="side-item" id="settingsSide">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+        Project settings
+      </button>
     </div>
+    <div class="sidebar-foot">You're in the <strong>US production houses</strong> segment. Harvests run on the office n8n; everything else runs here.</div>
+  </nav>
 
-    <div class="panel">
-      <h2>Evidence coverage</h2>
-      <p class="sub">How many companies the engine can actually score on each
-         criterion. <strong>A criterion nobody scores is points nobody can
-         earn</strong> &mdash; this is the number that moves the whole pool.</p>
-      <div id="coverage" class="coverage"></div>
-    </div>
-  </div>
+  <!-- =============================================================== MAIN -->
+  <main class="page" id="main">
 
-  <div class="panel">
-    <h2>By source</h2>
-    <p class="sub">Which connectors are earning their place.</p>
-    <div class="table-wrap"><table id="sourceTable"></table></div>
-  </div>
-</section>
+    <!-- BOARD -->
+    <section class="view active" id="view-board" aria-labelledby="boardTitle">
+      <header class="page-head">
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <div class="title-row">
+          <h1 id="boardTitle">Lead board</h1>
+          <div class="page-actions">
+            <a class="btn" id="boardExport" href="/api/export.xlsx?status=open&min_score=25">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
+              Export
+            </a>
+            <button class="btn icon" id="boardRefresh" aria-label="Refresh board" title="Refresh">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+      <div class="toolbar">
+        <div class="search" style="width:220px;position:relative">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="position:absolute;left:8px;top:8px;color:var(--icon-subtle);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="boardSearch" type="search" class="compact" placeholder="Search this board" aria-label="Search this board" style="padding-left:32px">
+        </div>
+        <select id="boardScore" class="filter" aria-label="Minimum score">
+          <option value="0">Any score</option>
+          <option value="25" selected>Reviewable · 25+</option>
+          <option value="45">Priority · 45+</option>
+          <option value="60">Top · 60+</option>
+        </select>
+        <select id="boardSource" class="filter" aria-label="Source"><option value="">All sources</option></select>
+        <button class="btn" id="boardContact" aria-pressed="false">Contactable only</button>
+        <span class="result-count" id="boardCount"></span>
+      </div>
+      <div class="board-wrap"><div class="board" id="board" aria-live="polite"></div></div>
+    </section>
 
-<!-- ---------------------------------------------------------- REVIEW -->
-<section id="view-review" class="view active">
-  <div class="filters">
-    <input id="q" type="search" placeholder="Search name or domain&hellip;">
-    <select id="source"><option value="">All sources</option></select>
-    <label class="chk"><input type="checkbox" id="hasContact"> Contactable only</label>
-    <label class="rng">Min score
-      <input type="range" id="minScore" min="0" max="60" step="5" value="0">
-      <output id="minScoreOut">0</output>
-    </label>
-    <span class="count" id="resultCount"></span>
-  </div>
-
-  <div class="split">
-    <div class="list-pane">
+    <!-- LEADS -->
+    <section class="view" id="view-leads" aria-labelledby="leadsTitle">
+      <header class="page-head">
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <div class="title-row">
+          <h1 id="leadsTitle">Leads</h1>
+          <div class="page-actions">
+            <a class="btn" id="leadsExport" href="/api/export.xlsx?status=open">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
+              Export this view
+            </a>
+          </div>
+        </div>
+      </header>
+      <div class="toolbar">
+        <div class="search" style="width:220px;position:relative">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="position:absolute;left:8px;top:8px;color:var(--icon-subtle);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="leadsSearch" type="search" class="compact" placeholder="Search leads" aria-label="Search leads" style="padding-left:32px">
+        </div>
+        <select id="leadsStatus" class="filter" aria-label="Status">
+          <option value="open">Status: To review</option>
+          <option value="shortlisted">Status: Shortlisted</option>
+          <option value="contacted">Status: Contacted</option>
+          <option value="in_conversation">Status: In conversation</option>
+          <option value="rejected">Status: Rejected</option>
+          <option value="archived">Status: Archived</option>
+          <option value="all">Status: All</option>
+        </select>
+        <select id="leadsScore" class="filter" aria-label="Minimum score">
+          <option value="0">Any score</option>
+          <option value="25">Reviewable · 25+</option>
+          <option value="45">Priority · 45+</option>
+          <option value="60">Top · 60+</option>
+        </select>
+        <select id="leadsSource" class="filter" aria-label="Source"><option value="">All sources</option></select>
+        <button class="btn" id="leadsContact" aria-pressed="false">Contactable only</button>
+        <select id="leadsSort" class="filter" aria-label="Sort">
+          <option value="score">Sort: Score</option>
+          <option value="name">Sort: Name</option>
+          <option value="recent">Sort: Recently added</option>
+        </select>
+        <span class="result-count" id="leadsCount"></span>
+      </div>
       <div class="table-wrap">
-        <table id="leadTable">
+        <table class="tbl" id="leadsTable">
           <thead><tr>
-            <th class="c-score">Score</th><th>Company</th>
-            <th>Contact</th><th>Source</th>
+            <th>Key</th><th>Summary</th><th>Status</th><th>Score</th><th>Priority</th>
+            <th>Source</th><th>Contact</th><th>Location</th>
           </tr></thead>
-          <tbody id="leadBody"></tbody>
+          <tbody id="leadsBody"></tbody>
         </table>
       </div>
       <div class="pager">
-        <button id="prevPage" class="btn">Previous</button>
-        <span id="pageInfo"></span>
-        <button id="nextPage" class="btn">Next</button>
+        <span class="info" id="leadsInfo"></span>
+        <button class="btn" id="leadsPrev">Previous</button>
+        <button class="btn" id="leadsNext">Next</button>
       </div>
-    </div>
+    </section>
 
-    <aside class="detail-pane" id="detail">
-      <div class="empty">
-        <p>Select a company to see its evidence.</p>
+    <!-- OUTREACH -->
+    <section class="view" id="view-outreach" aria-labelledby="outreachTitle">
+      <header class="page-head">
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <div class="title-row">
+          <h1 id="outreachTitle">Outreach</h1>
+          <div class="page-actions">
+            <button class="btn" id="draftBtn" title="Draft emails for every shortlisted lead that has none yet">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              Draft emails
+            </button>
+          </div>
+        </div>
+      </header>
+      <div class="tabs" id="folderTabs" role="tablist" aria-label="Outreach folders"></div>
+      <div class="table-wrap">
+        <table class="tbl" id="outreachTable">
+          <thead><tr><th>Key</th><th>Company</th><th>Contact</th><th>Subject</th><th>Status</th><th>When</th></tr></thead>
+          <tbody id="outreachBody"></tbody>
+        </table>
       </div>
-    </aside>
-  </div>
-</section>
+    </section>
 
-<!-- ------------------------------------------------------- SHORTLIST -->
-<section id="view-shortlist" class="view">
-  <div class="panel">
-    <h2>Shortlisted</h2>
-    <p class="sub">Approved for outreach. Export gives you the 17-column sheet.</p>
-    <div class="table-wrap"><table id="shortTable"></table></div>
-  </div>
-</section>
+    <!-- REPORTS -->
+    <section class="view" id="view-reports" aria-labelledby="reportsTitle">
+      <header class="page-head">
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <div class="title-row">
+          <h1 id="reportsTitle">Reports</h1>
+          <div class="page-actions">
+            <button class="btn icon" id="reportsRefresh" aria-label="Refresh reports" title="Refresh">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+      <div class="tiles" id="statTiles"></div>
+      <div class="panel-grid" style="margin-bottom:16px">
+        <div class="panel">
+          <div class="panel-head"><div><h2>Status overview</h2><p class="sub">Every company the engine has ever found for this segment, by where it sits now.</p></div></div>
+          <div class="donut-wrap"><div class="donut" id="donut"></div><ul class="legend" id="donutLegend"></ul></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2>v1 KPIs</h2><p class="sub">The numbers the plan judges v1 by. Target: 15 to 20 companies contacted a week.</p></div></div>
+          <div class="tiles" id="kpiTiles" style="margin:0"></div>
+        </div>
+      </div>
+      <div class="panel-grid" style="margin-bottom:16px">
+        <div class="panel">
+          <div class="panel-head"><div><h2>Score distribution</h2><p class="sub">Open pool only. A tall bar at zero means companies the engine cannot yet judge, not bad companies.</p></div></div>
+          <div class="hist" id="histogram"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2>Evidence coverage</h2><p class="sub">How many open-pool companies the engine can actually score on each criterion. A criterion nobody scores is points nobody can earn.</p></div></div>
+          <div class="coverage" id="coverage"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h2>By source</h2><p class="sub">Which connectors are earning their place.</p></div></div>
+        <div class="table-wrap"><table class="tbl" id="sourceTable"></table></div>
+      </div>
+    </section>
 
-<!-- ------------------------------------------------------- OUTREACH -->
-<section id="view-outreach" class="view">
-  <div class="filters" id="folderBar"></div>
-  <div class="split">
-    <div class="list-pane">
-      <div class="table-wrap"><table id="outreachTable">
-        <thead><tr><th>Company</th><th>To / From</th><th>Subject</th></tr></thead>
-        <tbody id="outreachBody"></tbody>
-      </table></div>
-    </div>
-    <aside class="detail-pane" id="outreachDetail">
-      <div class="empty"><p>Select a message.</p></div>
-    </aside>
-  </div>
-</section>
+    <!-- OPERATIONS -->
+    <section class="view" id="view-ops" aria-labelledby="opsTitle">
+      <header class="page-head">
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <div class="title-row">
+          <h1 id="opsTitle">Operations</h1>
+          <div class="page-actions">
+            <button class="btn" id="runRefresh">Run weekly refresh</button>
+            <button class="btn" id="runRescore">Run re-score</button>
+            <button class="btn" id="testAlert">Test alert</button>
+          </div>
+        </div>
+      </header>
+      <div id="webhookMsg"></div>
+      <div class="ops-cols">
+        <div class="panel">
+          <div class="panel-head"><div><h2>Unattended schedule</h2><p class="sub">Harvests fire in n8n; this pipeline then promotes, enriches and re-scores the pool. Times are UTC.</p></div></div>
+          <div class="table-wrap"><table class="tbl" id="schedTable"></table></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2>Recent runs</h2><p class="sub">Every scheduled or manual pipeline run, with the step that failed if one did.</p></div></div>
+          <div class="table-wrap"><table class="tbl" id="runsTable"></table></div>
+        </div>
+      </div>
+      <div class="panel" id="logPanel" hidden>
+        <div class="panel-head"><div><h2 id="logTitle">Log</h2><p class="sub">Streams while the job runs; the last lines are kept afterwards.</p></div>
+          <button class="btn subtle" id="logClose">Hide</button></div>
+        <pre class="log" id="opsLog"></pre>
+      </div>
+      <div class="ops-cols" id="opsGroups"></div>
+    </section>
 
-<!-- ----------------------------------------------------- OPERATIONS -->
-<section id="view-ops" class="view">
-  <div class="panel">
-    <h2>Unattended schedule</h2>
-    <p class="sub">The engine runs itself on a schedule &mdash; the harvests fire
-      in n8n, then this pipeline promotes, enriches, and re-scores the pool.
-      Every run is recorded below, and a failure pings the alert webhook, so a
-      run in the dark still leaves a trail.</p>
-    <div id="schedList" class="sched-list"></div>
-    <div class="sched-actions">
-      <button class="btn" id="runRefresh">Run weekly refresh now</button>
-      <button class="btn" id="runRescore">Run re-score now</button>
-      <button class="btn" id="testAlert">Test alert</button>
-      <span id="webhookState" class="muted"></span>
-    </div>
-    <h3 style="margin-top:16px">Recent runs</h3>
-    <div class="table-wrap"><table id="runsTable"></table></div>
-  </div>
+  </main>
+</div>
+</div>
 
-  <div class="panel">
-    <h2>Pipeline operations</h2>
-    <p class="sub">Every tool in the engine, one click each. One job runs at a
-      time &mdash; they share the database and the politeness budget toward the
-      sites they visit. Logs stream below the running job.</p>
-  </div>
-  <div id="opsGrid" class="ops-grid"></div>
-  <div class="panel" id="opsLogPanel" style="display:none">
-    <h2 id="opsLogTitle">Log</h2>
-    <pre id="opsLog" class="ops-log"></pre>
-  </div>
-</section>
-
-<div id="toast" class="toast"></div>
+<div id="modalRoot"></div>
+<div class="flags" id="flags" aria-live="polite"></div>
 
 <script src="app.js"></script>
 </body>

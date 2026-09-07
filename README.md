@@ -46,6 +46,7 @@ docker compose up -d --build
 First visit to the review UI shows a one-time owner-account setup. Full
 deployment, authentication, and cloud notes are in [`docs/DEPLOY.md`](docs/DEPLOY.md).
 The free cloud path (Render, no card, no server; `render.yaml`) is its first section.
+The interface is described in [`docs/DESIGN.md`](docs/DESIGN.md); `python tools/ui_preview.py` shows it with snapshot data and no login.
 
 ## Where things are
 
