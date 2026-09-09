@@ -48,6 +48,8 @@ deployment, authentication, and cloud notes are in [`docs/DEPLOY.md`](docs/DEPLO
 The free cloud path (Render, no card, no server; `render.yaml`) is its first section.
 The interface is described in [`docs/DESIGN.md`](docs/DESIGN.md); `python tools/ui_preview.py` shows it with snapshot data and no login.
 
+The engine runs more than one segment from one deployment. Alongside the TVF co-production segment it now carries **LCX clipping**, a sales segment for creators and podcasters with a deep back catalogue and no shorts, discovered through Apple's podcast search and the YouTube Data API and scored on their own numbers. Switch segments from the Projects menu; see [`docs/LCX_clipping.md`](docs/LCX_clipping.md).
+
 ## Where things are
 
 | Path | What |

@@ -93,7 +93,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
         <span class="project-avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="m3 9 1.4-4.2a1 1 0 0 1 1.2-.7L20 7.6l-1 1.4"/><path d="m8 4.6 2 3.6M12.5 5.5l2 3.6"/></svg></span>
         <div>
           <div class="project-name" id="projectName">US Production Houses</div>
-          <div class="project-type">Lead segment</div>
+          <div class="project-type" id="projectType">Lead segment</div>
         </div>
       </div>
 
@@ -131,7 +131,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
         Project settings
       </button>
     </div>
-    <div class="sidebar-foot">You're in the <strong>US production houses</strong> segment. Harvests run on the office n8n; everything else runs here.</div>
+    <div class="sidebar-foot" id="sidebarFoot">You're in the <strong>US production houses</strong> segment. Harvests run on the office n8n; everything else runs here.</div>
   </nav>
 
   <!-- =============================================================== MAIN -->
@@ -140,7 +140,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- BOARD -->
     <section class="view active" id="view-board" aria-labelledby="boardTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="boardTitle">Lead board</h1>
           <div class="page-actions">
@@ -175,7 +175,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- LEADS -->
     <section class="view" id="view-leads" aria-labelledby="leadsTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="leadsTitle">Leads</h1>
           <div class="page-actions">
@@ -219,7 +219,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
         <table class="tbl" id="leadsTable">
           <thead><tr>
             <th>Key</th><th>Summary</th><th>Status</th><th>Score</th><th>Priority</th>
-            <th>Source</th><th>Contact</th><th>Location</th>
+            <th>Source</th><th>Contact</th><th id="leadsLastCol">Location</th>
           </tr></thead>
           <tbody id="leadsBody"></tbody>
         </table>
@@ -234,7 +234,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- OUTREACH -->
     <section class="view" id="view-outreach" aria-labelledby="outreachTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="outreachTitle">Outreach</h1>
           <div class="page-actions">
@@ -257,7 +257,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- REPORTS -->
     <section class="view" id="view-reports" aria-labelledby="reportsTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="reportsTitle">Reports</h1>
           <div class="page-actions">
@@ -297,7 +297,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- OPERATIONS -->
     <section class="view" id="view-ops" aria-labelledby="opsTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board">US Production Houses</a></nav>
+        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="opsTitle">Operations</h1>
           <div class="page-actions">

@@ -1,0 +1,46 @@
+# deploy/render.lcx-clipping.yaml -- a SEPARATE portal for the LCX clipping
+# segment, from the same image.
+#
+#   Render -> New + -> Blueprint -> pick this repo
+#          -> Blueprint Path: deploy/render.lcx-clipping.yaml -> Apply.
+#
+# Identical to the root render.yaml except for two variables: SEGMENT_SLUG
+# makes clipping the default segment, SEGMENTS_ALLOWED hides every other one,
+# so this portal shows only clipping leads, jobs and schedules. Accounts are
+# shared with the main portal (same database); pipelines for the segment run
+# on whichever deployment lists it in its scheduler. Keep ONE of the two
+# deployments scheduling a segment: here SCHEDULER_SEGMENTS pins this portal
+# to clipping, and the main portal's scheduler should then exclude it (set
+# SCHEDULER_SEGMENTS=us-production-houses there) or the weekly refresh runs
+# twice.
+#
+# Free tier: a workspace gets 750 instance-hours a month, one always-on
+# service. A second always-on portal needs a second workspace or account
+# (LCX's own), or the Hugging Face fallback in docs/DEPLOY.md.
+
+services:
+  - type: web
+    name: lcx-clipping-portal
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SCHEDULER_ENABLED
+        value: "1"
+      - key: SEGMENT_SLUG
+        value: lcx-clipping
+      - key: SEGMENTS_ALLOWED
+        value: lcx-clipping
+      - key: SCHEDULER_SEGMENTS
+        value: lcx-clipping
+      - key: TZ
+        value: Asia/Kolkata

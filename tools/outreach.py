@@ -43,6 +43,11 @@ sys.path.insert(0, str(ROOT / "tools"))
 # every tool, the app, and the container agree on SEGMENT_SLUG.
 SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 TOKEN_PATH = ROOT / ".gmail_token.json"          # gitignored, holds the refresh token
+# Segment 3: a segment may name its own sender variable (config outreach.sender
+# .email_env); load_outreach_config then points the token at a per-segment
+# file / variable, so LCX never sends from TVF's mailbox or vice versa.
+SENDER_ENV = "GMAIL_SENDER_ADDRESS"
+TOKEN_ENV = "GMAIL_TOKEN_JSON"
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 
@@ -63,11 +68,16 @@ def env(name):
 
 
 def load_outreach_config(db):
+    global SENDER_ENV, TOKEN_ENV, TOKEN_PATH
     cfg = db.run(lambda cur: (cur.execute(
         "select config->'outreach' from segments where slug = %s", (SEGMENT,)),
         cur.fetchone())[1][0])
     if not cfg:
-        sys.exit("config has no outreach block -- run sql/03b first")
+        sys.exit("config has no outreach block for segment %s" % SEGMENT)
+    SENDER_ENV = (cfg.get("sender") or {}).get("email_env") or "GMAIL_SENDER_ADDRESS"
+    if SENDER_ENV != "GMAIL_SENDER_ADDRESS":
+        TOKEN_PATH = ROOT / (".gmail_token.%s.json" % SEGMENT)
+        TOKEN_ENV = "GMAIL_TOKEN_JSON_" + SEGMENT.upper().replace("-", "_")
     return cfg
 
 
@@ -103,6 +113,36 @@ def hook_for(meta, company):
 
 NEUTRAL_HOOK = ("We've been mapping US independents whose work overlaps with "
                 "TVF's lanes, and {{company}} made our shortlist.")
+
+
+def hook_for_clipping(meta, company):
+    """Segment 3: one sentence of THEIR numbers -- episodes, cadence, length,
+    the shorts count -- from the feed and channel evidence. True by
+    construction; a person still reads it before it goes anywhere."""
+    pf = meta.get("podcast_feed") or {}
+    yc = meta.get("youtube_channel") or {}
+    r = yc.get("recent") or {}
+    bits = []
+    if pf.get("episode_count"):
+        s = "%s has %d episodes" % (company, int(pf["episode_count"]))
+        cad = pf.get("cadence_per_month")
+        if cad and cad >= 4:
+            s += ", publishes weekly"
+        elif cad and cad >= 1:
+            s += ", publishes about %s a month" % ("%g" % cad)
+        if pf.get("avg_duration_min"):
+            s += ", averaging %d minutes an episode" % int(pf["avg_duration_min"])
+        bits.append(s)
+    elif yc.get("video_count"):
+        bits.append("%s has %d videos on YouTube" % (company, int(yc["video_count"])))
+    if r.get("sampled"):
+        bits.append("of your last %d YouTube uploads, %d are long-form and %d are shorts"
+                    % (int(r["sampled"]), int(r.get("long_count") or 0), int(r.get("shorts_count") or 0)))
+    elif pf.get("episode_count"):
+        bits.append("as far as we can see, none of it is being cut into short-form")
+    if not bits:
+        return None
+    return "Quick one: " + "; ".join(bits) + "."
 
 
 def render(template, ctx):
@@ -151,7 +191,8 @@ def cmd_draft(args):
     made = 0
     for eid, company, meta, cid, cname, email in rows:
         meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
-        hook = hook_for(meta, company) or NEUTRAL_HOOK
+        hook = (hook_for_clipping(meta, company) if cfg.get("hook_style") == "clipping"
+                else hook_for(meta, company)) or cfg.get("neutral_hook") or NEUTRAL_HOOK
         ctx = {
             "company": company,
             "greeting_name": greeting_for(cname, email, company),
@@ -198,7 +239,7 @@ def gmail_service():
     # host with an ephemeral filesystem (Render, Spaces) gets it through the
     # GMAIL_TOKEN_JSON variable instead: run `auth` once on a laptop, paste
     # the file's contents into the host's secrets UI. Same token either way.
-    token_json = env("GMAIL_TOKEN_JSON")
+    token_json = env(TOKEN_ENV)
     if TOKEN_PATH.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GMAIL_SCOPES)
     elif token_json:
@@ -217,6 +258,8 @@ def gmail_service():
 
 
 def cmd_auth(args):
+    from dbconn import Db
+    load_outreach_config(Db())            # per-segment token path and variable
     cid = env("GOOGLE_OAUTH_CLIENT_ID")
     csec = env("GOOGLE_OAUTH_CLIENT_SECRET")
     if not cid or not csec:
@@ -231,9 +274,9 @@ def cmd_auth(args):
                        "token_uri": "https://oauth2.googleapis.com/token",
                        "redirect_uris": ["http://localhost"]}},
         GMAIL_SCOPES)
-    log("A browser window will open. Sign in with the TVF outreach account and")
-    log("approve. The token lands in .gmail_token.json (gitignored). For a cloud")
-    log("host with no disk, paste that file's contents into GMAIL_TOKEN_JSON.")
+    log("A browser window will open. Sign in with the %s mailbox (%s) and" % (SEGMENT, env(SENDER_ENV) or SENDER_ENV))
+    log("approve. The token lands in %s (gitignored). For a cloud" % TOKEN_PATH.name)
+    log("host with no disk, paste that file's contents into %s." % TOKEN_ENV)
     creds = flow.run_local_server(port=0)
     TOKEN_PATH.write_text(creds.to_json())
     log("token saved -- send and pull are now live")
@@ -268,16 +311,17 @@ def cmd_send(args):
     from dbconn import Db
     db = Db()
     cfg = load_outreach_config(db)
-    sender_addr = env("GMAIL_SENDER_ADDRESS")
+    sender_addr = env(SENDER_ENV)
     if not sender_addr:
-        sys.exit("GMAIL_SENDER_ADDRESS is not set in .env")
+        sys.exit("%s is not set in .env (the sender mailbox for segment %s)" % (SENDER_ENV, SEGMENT))
     if "SET_ME" in json.dumps(cfg.get("sender", {})):
         sys.exit("refusing to send: config outreach.sender still contains SET_ME")
 
     daily_cap = int(cfg.get("daily_send_cap", 20))
     sent_today = db.run(lambda cur: (cur.execute(
-        "select count(*) as n from outreach where direction='outbound'"
-        " and status='sent' and sent_at::date = current_date"),
+        "select count(*) as n from outreach o join entities e on e.id = o.entity_id"
+        " where o.direction='outbound' and o.status='sent' and o.sent_at::date = current_date"
+        " and e.segment_id = (select id from segments where slug = %s)", (SEGMENT,)),
         cur.fetchone())[1][0])
     budget = min(max(0, daily_cap - sent_today), args.limit)
     if budget <= 0:
@@ -293,8 +337,9 @@ def cmd_send(args):
         left join contacts c on c.id = o.contact_id
         where o.status = 'approved' and o.direction = 'outbound'
           and o.send_error is null
+          and e.segment_id = (select id from segments where slug = %s)
         order by o.created_at limit %s
-    """, (budget * 2,)), cur.fetchall())[1])
+    """, (SEGMENT, budget * 2)), cur.fetchall())[1])
     if not rows:
         log("nothing approved to send"); db.close(); return 0
 
@@ -380,12 +425,15 @@ def cmd_pull(args):
     """
     from dbconn import Db
     db = Db()
-    sender_addr = (env("GMAIL_SENDER_ADDRESS") or "").lower()
+    load_outreach_config(db)              # per-segment sender and token
+    sender_addr = (env(SENDER_ENV) or "").lower()
     svc = gmail_service()
     threads = db.run(lambda cur: (cur.execute("""
         select o.gmail_thread_id, o.entity_id, o.contact_id
-        from outreach o where o.status = 'sent' and o.gmail_thread_id is not null
-    """,), cur.fetchall())[1])
+        from outreach o join entities e on e.id = o.entity_id
+        where o.status = 'sent' and o.gmail_thread_id is not null
+          and e.segment_id = (select id from segments where slug = %s)
+    """, (SEGMENT,)), cur.fetchall())[1])
     if not threads:
         log("no sent threads to poll"); db.close(); return 0
     found = errors = 0

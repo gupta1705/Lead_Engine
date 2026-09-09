@@ -67,12 +67,12 @@ with keys as (
         union all
         select jsonb_array_elements(s.config->'score_modifiers')
     ) x
-    where s.slug = 'us-production-houses'
+    where s.slug = current_setting('tvf.segment', true)
 ),
 target as (
     select e.id, coalesce(e.metadata->'scoring_inputs', '{}'::jsonb) as si
     from entities e
-    where e.segment_id = (select id from segments where slug = 'us-production-houses')
+    where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
       and e.status in ('discovered', 'enriched', 'scored', 'ready_for_review')
 ),
 gaps as (
@@ -116,7 +116,7 @@ select
     min((select count(*) from jsonb_object_keys(e.metadata->'scoring_inputs'))) as min_keys,
     round(avg(jsonb_array_length(e.metadata->'unverified_inputs')), 1) as avg_defaulted
 from entities e
-where e.segment_id = (select id from segments where slug = 'us-production-houses')
+where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
   and e.status in ('discovered', 'enriched', 'scored', 'ready_for_review')
 group by e.source
 order by e.source;

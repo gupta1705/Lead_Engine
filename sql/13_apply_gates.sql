@@ -1,93 +1,81 @@
 -- 13_APPLY_GATES.SQL
 --
--- The half of the design that was missing. The config has carried four gates
--- since P1, each firing only on CONFIRMED disqualifying evidence, and the
--- scorer has always deliberately ignored them (06_score.sql header, note 4:
--- "gate logic lands at P9/P13"). P13 was never built -- so on 2026-08-29 the
--- TOP-SCORED lead in a US-segment pool was Dharma Productions, Mumbai,
--- because a proven non_us signal changed nothing. A pool whose #1 lead fails
--- the segment definition is the purest lead-quality bug there is.
+-- Gates, driven by the segment config -- rewritten 2026-09-09 for Segment 3.
 --
--- WHAT THIS DOES. Rows with confirmed failing gate evidence become
--- `archived`, with a reason naming the gate and the evidence. Archived is the
--- right disposition, not rejected: rejected means a HUMAN said no and is the
--- shield against re-surfacing; archived means the ENGINE ruled it out of
--- scope, is reversible by flipping status back, and equally blocks re-import.
+-- The first version of this file hard-coded the four TVF gates as four update
+-- statements. That was fine for one segment and wrong the moment a second one
+-- existed: the LCX clipping segment gates on country, activity, category and
+-- network ownership, none of which the old file knew. The config has always
+-- carried everything a gate needs -- an input path and the value that fires
+-- it -- so this file now reads config.gates and applies each one generically.
 --
--- WHAT IT REFUSES TO TOUCH:
---   * shortlisted / rejected / contacted rows -- human decisions stand, even
---     when the evidence says the human should reconsider. The row is LISTED
---     at the end instead, for a person to act on.
---   * blank/unknown gate inputs -- per config, absence always passes. Gates
---     fire on evidence, never on missing evidence (Invariant 1).
+-- SEMANTICS, unchanged from the original: a gate fires ONLY on confirmed
+-- disqualifying evidence -- the input equals exclude_when. Blank or unknown
+-- always passes (Invariant 1: absence is not evidence). Rows that fire become
+-- `archived` with a reason naming the gate. Archived is the engine ruling a
+-- row out of scope: reversible, and it blocks re-import exactly as rejected
+-- does. Shortlisted / rejected / contacted rows are never touched -- a human
+-- decision stands; the ones the evidence argues with are listed at the end.
 --
--- Idempotent: already-archived rows are skipped; re-running is a no-op.
+-- The segment comes from the session setting tvf.segment, which
+-- tools/run_sql.py sets from SEGMENT_SLUG (default us-production-houses), so
+-- the same file serves every segment. Idempotent: archived rows are skipped.
 
 do $$
 declare
   seg uuid;
+  slug text := current_setting('tvf.segment', true);
+  g jsonb;
+  key text;
+  input_path text[];
+  exclude_when text;
   n int;
   total int := 0;
 begin
-  select id into seg from segments where slug = 'us-production-houses';
+  select id into seg from segments where segments.slug = current_setting('tvf.segment', true);
+  if seg is null then
+    raise exception 'no segments row for tvf.segment = %', slug;
+  end if;
 
-  -- gate: us_geography (exclude_when 'non_us')
-  update entities
-     set status = 'archived',
-         status_reason = 'Gate us_geography: confirmed non-US ('
-                         || coalesce(metadata->>'verified_country', 'source evidence') || ')',
-         status_changed_at = now(), updated_at = now()
-   where segment_id = seg
-     and status in ('discovered','enriched','scored','ready_for_review')
-     and metadata->'scoring_inputs'->>'geography_signal' = 'non_us';
-  get diagnostics n = row_count; total := total + n;
-  raise notice 'us_geography gate archived % row(s)', n;
+  for g in select jsonb_array_elements(coalesce(config->'gates', '[]'::jsonb))
+             from segments where id = seg
+  loop
+    key := g->>'key';
+    -- "metadata.scoring_inputs.geography_signal" -> path inside metadata
+    input_path := string_to_array(regexp_replace(g->>'input', '^metadata\.', ''), '.');
+    exclude_when := g->>'exclude_when';        -- 'true' / 'false' / 'non_us' ...
+    if key is null or input_path is null or exclude_when is null then
+      raise notice 'gate % skipped: incomplete definition', coalesce(key, '?');
+      continue;
+    end if;
 
-  -- gate: is_active (exclude_when 'confirmed_dormant')
-  update entities
-     set status = 'archived',
-         status_reason = 'Gate is_active: confirmed dormant/defunct',
-         status_changed_at = now(), updated_at = now()
-   where segment_id = seg
-     and status in ('discovered','enriched','scored','ready_for_review')
-     and metadata->'scoring_inputs'->>'activity_signal' = 'confirmed_dormant';
-  get diagnostics n = row_count; total := total + n;
-  raise notice 'is_active gate archived % row(s)', n;
+    update entities e
+       set status = 'archived',
+           status_reason = 'Gate ' || key || ': ' || coalesce(g->>'label', 'confirmed failing evidence')
+                           || ' (' || coalesce(e.metadata #>> input_path, '?') || ')',
+           status_changed_at = now(), updated_at = now()
+     where e.segment_id = seg
+       and e.status in ('discovered','enriched','scored','ready_for_review')
+       and e.metadata #>> input_path is not null
+       and lower(e.metadata #>> input_path) = lower(exclude_when);
+    get diagnostics n = row_count;
+    total := total + n;
+    raise notice 'gate % archived % row(s)', key, n;
+  end loop;
 
-  -- gate: not_a_major_or_oversized (exclude_when true)
-  update entities
-     set status = 'archived',
-         status_reason = 'Gate not_a_major_or_oversized: major, subsidiary of one, '
-                         'or confirmed far beyond the size ceiling',
-         status_changed_at = now(), updated_at = now()
-   where segment_id = seg
-     and status in ('discovered','enriched','scored','ready_for_review')
-     and (metadata->'scoring_inputs'->>'major_or_oversized_signal')::boolean is true;
-  get diagnostics n = row_count; total := total + n;
-  raise notice 'not_a_major_or_oversized gate archived % row(s)', n;
-
-  -- usable_first_party_presence (exclude_when false) fires only on an
-  -- explicit false, which no source writes today; included for completeness.
-  update entities
-     set status = 'archived',
-         status_reason = 'Gate usable_first_party_presence: confirmed no reachable presence',
-         status_changed_at = now(), updated_at = now()
-   where segment_id = seg
-     and status in ('discovered','enriched','scored','ready_for_review')
-     and metadata->'scoring_inputs'->>'has_reachable_presence' = 'false';
-  get diagnostics n = row_count; total := total + n;
-
-  raise notice 'gates archived % row(s) in total', total;
+  raise notice 'gates archived % row(s) in total for %', total, slug;
 end $$;
 
 -- Human decisions the evidence now argues with: surfaced, never overridden.
-select name, status, status_reason as human_decision,
-       metadata->'scoring_inputs'->>'geography_signal' as geo,
-       metadata->'scoring_inputs'->>'activity_signal' as activity,
-       metadata->'scoring_inputs'->>'major_or_oversized_signal' as major
-from entities
-where segment_id = (select id from segments where slug = 'us-production-houses')
-  and status in ('shortlisted','contacted','in_conversation')
-  and (metadata->'scoring_inputs'->>'geography_signal' = 'non_us'
-       or metadata->'scoring_inputs'->>'activity_signal' = 'confirmed_dormant'
-       or (metadata->'scoring_inputs'->>'major_or_oversized_signal')::boolean is true);
+with cfg as (
+  select id as seg, jsonb_array_elements(coalesce(config->'gates', '[]'::jsonb)) as g
+  from segments where slug = current_setting('tvf.segment', true)
+)
+select e.name, e.status, e.status_reason as human_decision,
+       cfg.g->>'key' as gate,
+       e.metadata #>> string_to_array(regexp_replace(cfg.g->>'input', '^metadata\.', ''), '.') as evidence
+from entities e
+join cfg on cfg.seg = e.segment_id
+where e.status in ('shortlisted','contacted','in_conversation')
+  and lower(e.metadata #>> string_to_array(regexp_replace(cfg.g->>'input', '^metadata\.', ''), '.'))
+      = lower(cfg.g->>'exclude_when');

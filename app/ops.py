@@ -30,7 +30,7 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 REPO = Path(__file__).resolve().parent.parent
 LOGDIR = REPO / "logs" / "ops"
@@ -44,6 +44,7 @@ JOBS = {
         "desc": "Run the P5 connector -- deal/format headlines into staging.",
         "cmd": ["n8n", "execute", "--id", "newsrssdiscov01"],
         "needs": "n8n",
+        "segments": ["us-production-houses"],
     },
     "harvest_wikidata": {
         "label": "Harvest: Wikidata",
@@ -51,6 +52,7 @@ JOBS = {
         "desc": "Run the P7 seed -- US film+TV companies, domains attached.",
         "cmd": ["n8n", "execute", "--id", "wikidataseed01"],
         "needs": "n8n",
+        "segments": ["us-production-houses"],
     },
     "harvest_youtube": {
         "label": "Harvest: YouTube",
@@ -58,6 +60,7 @@ JOBS = {
         "desc": "Run the P4 connector (quota ~750 units/run).",
         "cmd": ["n8n", "execute", "--id", "ytdiscovery00001"],
         "needs": "n8n",
+        "segments": ["us-production-houses"],
     },
     "harvest_aicp": {
         "label": "Harvest: AICP directory",
@@ -65,6 +68,31 @@ JOBS = {
         "desc": "Re-scrape the member directory (names refresh).",
         "cmd": ["n8n", "execute", "--id", "aicpdirectory1"],
         "needs": "n8n",
+        "segments": ["us-production-houses"],
+    },
+    "discover_podcasts": {
+        "label": "Harvest: podcasts (Apple search + feeds)",
+        "group": "Discover",
+        "desc": "Keyless. Search terms x store countries, then each new show's own "
+                "feed: catalogue, cadence, contact, YouTube link. Runs here in the cloud.",
+        "cmd": [PY, "tools/discover_podcasts.py", "--max-searches", "60", "--limit-feeds", "300"],
+        "segments": ["lcx-clipping"],
+    },
+    "discover_youtube": {
+        "label": "Harvest: YouTube channels (shorts gap)",
+        "group": "Discover",
+        "desc": "Channel search plus statistics and the last 50 uploads with durations. "
+                "About 2,700 quota units per run.",
+        "cmd": [PY, "tools/discover_youtube_channels.py", "--max-searches", "15", "--limit-channels", "400"],
+        "segments": ["lcx-clipping"],
+    },
+    "enrich_clipping": {
+        "label": "Enrich shows (contact + YouTube evidence)",
+        "group": "Enrich",
+        "desc": "Lift the feed evidence, create the contact from the published address, "
+                "profile linked YouTube channels for the shorts gap.",
+        "cmd": [PY, "tools/enrich_clipping.py", "--limit", "300"],
+        "segments": ["lcx-clipping"],
     },
     "promote_chain": {
         "label": "Promote + score + gates",
@@ -84,6 +112,7 @@ JOBS = {
         "group": "Enrich",
         "desc": "Directory detail API: websites, emails, named people.",
         "cmd": [PY, "tools/enrich_aicp.py", "--limit", "250"],
+        "segments": ["us-production-houses"],
     },
     "enrich_contacts": {
         "label": "Find contacts on sites",
@@ -97,12 +126,14 @@ JOBS = {
         "desc": "Team size, collaboration invitations, genre, platform credits.",
         "cmd": [PY, "tools/enrich_sitescrape.py", "--qualify",
                 "--limit", "300", "--workers", "8"],
+        "segments": ["us-production-houses"],
     },
     "news_sweep": {
         "label": "News evidence sweep",
         "group": "Enrich",
         "desc": "Ask the news archive about each contactable company by name.",
         "cmd": [PY, "tools/enrich_newscheck.py", "--limit", "200"],
+        "segments": ["us-production-houses"],
     },
     "draft_outreach": {
         "label": "Draft outreach emails",
@@ -124,14 +155,16 @@ def _available(job):
     return True, None
 
 
-def _execute(key, job, logpath):
+def _execute(key, job, logpath, env_extra=None):
     """Run one job's subprocess to completion. Returns its exit code.
-    Assumes the caller already holds the slot (claimed _CURRENT['key']=key)."""
+    Assumes the caller already holds the slot (claimed _CURRENT['key']=key).
+    env_extra carries SEGMENT_SLUG, so the same tool serves every segment."""
     with io_open(logpath, "w") as logf:
         try:
+            logf.write("[ops] %s  segment=%s\n" % (key, (env_extra or {}).get("SEGMENT_SLUG", "default")))
             proc = subprocess.Popen(
                 job["cmd"], cwd=str(REPO), stdout=logf, stderr=subprocess.STDOUT,
-                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"})
+                env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", **(env_extra or {})})
             _CURRENT["proc"] = proc
             rc = proc.wait()
         except Exception as e:
@@ -143,10 +176,10 @@ def _execute(key, job, logpath):
     return rc
 
 
-def _runner(key, job, logpath):
+def _runner(key, job, logpath, env_extra=None):
     """HTTP path: execute then release the slot."""
     try:
-        _execute(key, job, logpath)
+        _execute(key, job, logpath, env_extra)
     finally:
         with _LOCK:
             _CURRENT["key"] = None
@@ -174,7 +207,7 @@ def _release():
         _CURRENT["proc"] = None
 
 
-def run_blocking(key, wait_slot=0):
+def run_blocking(key, wait_slot=0, env=None):
     """Scheduler path: run one job to completion, respecting the single slot.
 
     Returns (rc, logpath_str). rc is None if the slot could not be claimed
@@ -196,7 +229,7 @@ def run_blocking(key, wait_slot=0):
     if logpath is None:
         return None, None
     try:
-        rc = _execute(key, job, logpath)
+        rc = _execute(key, job, logpath, env)
     finally:
         _release()
     return rc, str(logpath)
@@ -212,9 +245,12 @@ def build_router():
     LOGDIR.mkdir(parents=True, exist_ok=True)
 
     @r.get("/api/ops")
-    def list_jobs():
+    def list_jobs(request: Request):
+        seg = getattr(request.state, "segment", None)
         out = []
         for key, job in JOBS.items():
+            if seg and job.get("segments") and seg not in job["segments"]:
+                continue
             ok, why = _available(job)
             st = _STATE.get(key, {})
             out.append({
@@ -228,17 +264,21 @@ def build_router():
         return {"jobs": out, "busy": _CURRENT["key"]}
 
     @r.post("/api/ops/{key}/run")
-    def run_job(key: str):
+    def run_job(key: str, request: Request):
         job = JOBS.get(key)
         if not job:
             raise HTTPException(404, "no such job")
+        seg = getattr(request.state, "segment", None)
+        if seg and job.get("segments") and seg not in job["segments"]:
+            raise HTTPException(409, "that job does not apply to this segment")
         ok, why = _available(job)
         if not ok:
             raise HTTPException(409, why)
         logpath = _claim(key)
         if logpath is None:
             raise HTTPException(409, "another job is running: " + (_CURRENT["key"] or "?"))
-        threading.Thread(target=_runner, args=(key, job, logpath),
+        env = {"SEGMENT_SLUG": seg} if seg else None
+        threading.Thread(target=_runner, args=(key, job, logpath, env),
                          daemon=True).start()
         return {"ok": True, "log": str(logpath.name)}
 

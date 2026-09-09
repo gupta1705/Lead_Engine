@@ -21,17 +21,31 @@ is read from the environment and never rendered into a response.
 """
 import io
 import os
+import re
 import time
 from contextlib import contextmanager
 
 import psycopg2
 import psycopg2.extras
 from psycopg2 import pool as pgpool
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+# SEGMENT 3 (2026-09-09): one deployment, many segments. SEGMENT_SLUG is now
+# the DEFAULT segment; a request picks another with the tvf_segment cookie
+# (set by POST /api/segment/select from the Projects menu). SEGMENTS_ALLOWED
+# (comma list) pins a deployment to a subset -- that is how a portal for one
+# segment is made: the same image, one env var.
 SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
+SEGMENTS_ALLOWED = [s.strip() for s in os.environ.get("SEGMENTS_ALLOWED", "").split(",") if s.strip()]
+SEGMENT_COOKIE = "tvf_segment"
+_SEG_CACHE = {"at": 0.0, "rows": []}
+
+
+def current_segment(request: Request) -> str:
+    """FastAPI dependency: the segment this request works on."""
+    return getattr(request.state, "segment", None) or SEGMENT
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
@@ -51,6 +65,7 @@ async def auth_wall(request, call_next):
     import auth as _auth
     path = request.url.path
     request.state.user = None
+    request.state.segment = _segment_for(request)
     token = request.cookies.get(_auth.COOKIE)
     if token:
         def lookup(email):
@@ -149,9 +164,112 @@ def cursor():
         _POOL.putconn(conn, close=bool(conn.closed))
 
 
+# ------------------------------------------------------------------ segments
+UI_DEFAULTS = {
+    "project_name": None, "project_type": "Lead segment", "key_prefix": "TVF",
+    "board_title": "Lead board", "list_title": "Leads", "entity_label": "company",
+    "sidebar_note": None, "card_fields": [], "details": [], "evidence": [],
+}
+
+
+def segment_rows(force=False):
+    """Active segments, cached for five minutes; filtered by SEGMENTS_ALLOWED."""
+    if force or time.monotonic() - _SEG_CACHE["at"] > 300 or not _SEG_CACHE["rows"]:
+        try:
+            with cursor() as cur:
+                cur.execute("select slug, name, entity_type, config->'ui' as ui,"
+                            " config->>'score_threshold_review' as review,"
+                            " config->>'score_threshold_priority' as priority,"
+                            " config->>'weekly_target' as weekly_target"
+                            " from segments where is_active order by slug")
+                rows = [dict(r) for r in cur.fetchall()]
+            if SEGMENTS_ALLOWED:
+                rows = [r for r in rows if r["slug"] in SEGMENTS_ALLOWED]
+            _SEG_CACHE.update(at=time.monotonic(), rows=rows)
+        except Exception:
+            if not _SEG_CACHE["rows"]:
+                _SEG_CACHE["rows"] = [{"slug": SEGMENT, "name": SEGMENT, "entity_type": "",
+                                       "ui": None, "review": "25", "priority": "45", "weekly_target": None}]
+    return _SEG_CACHE["rows"]
+
+
+def _segment_for(request):
+    want = request.cookies.get(SEGMENT_COOKIE)
+    slugs = [r["slug"] for r in segment_rows()]
+    if want and want in slugs:
+        return want
+    if SEGMENT in slugs or not slugs:
+        return SEGMENT
+    return slugs[0]
+
+
+def ui_for(row):
+    ui = dict(UI_DEFAULTS)
+    ui.update({k: v for k, v in (row.get("ui") or {}).items() if v is not None})
+    if not ui["project_name"]:
+        # "US Production Houses -- Co-Pro & Format" / "... \u2014 ..." -> the first clause
+        ui["project_name"] = re.split(r"\s+(?:--|\u2014|\u2013)\s+|\s\(", row["name"])[0].strip()
+    if not ui["sidebar_note"]:
+        ui["sidebar_note"] = ("You're in the <strong>%s</strong> segment. Harvests run on the office n8n;"
+                              " everything else runs here." % ui["project_name"])
+    return ui
+
+
+def segment_info(slug):
+    row = next((r for r in segment_rows() if r["slug"] == slug), None)
+    if not row:
+        raise HTTPException(404, "no such segment")
+    return {"slug": row["slug"], "name": row["name"], "entity_type": row["entity_type"],
+            "ui": ui_for(row),
+            "thresholds": {"review": float(row["review"] or 25), "priority": float(row["priority"] or 45)},
+            "weekly_target": int(row["weekly_target"]) if row["weekly_target"] else None,
+            "config_file": "config/segment.%s.json" % row["slug"]}
+
+
+def segments_list(current):
+    out = []
+    with cursor() as cur:
+        for r in segment_rows():
+            cur.execute(
+                "select count(*) filter (where status in " + OPEN_STATUSES + " and coalesce(fit_score,0) >= %s) as reviewable,"
+                " count(*) filter (where status = 'shortlisted') as shortlisted,"
+                " count(*) as total from entities where segment_id = (select id from segments where slug = %s)",
+                (float(r["review"] or 25), r["slug"]))
+            c = dict(cur.fetchone())
+            ui = ui_for(r)
+            out.append({"slug": r["slug"], "name": r["name"], "entity_type": r["entity_type"],
+                        "project_name": ui["project_name"], "project_type": ui["project_type"],
+                        "key_prefix": ui["key_prefix"], "current": r["slug"] == current,
+                        "counts": {k: int(v) for k, v in c.items()}})
+    return {"current": current, "segments": out}
+
+
+@app.get("/api/segment")
+def api_segment(segment: str = Depends(current_segment)):
+    return segment_info(segment)
+
+
+@app.get("/api/segments")
+def api_segments(segment: str = Depends(current_segment)):
+    return segments_list(segment)
+
+
+@app.post("/api/segment/select")
+def api_segment_select(request: Request, body: dict = Body(...)):
+    slug = ((body or {}).get("slug") or "").strip()
+    if slug not in [r["slug"] for r in segment_rows(force=True)]:
+        raise HTTPException(404, "no such segment on this deployment")
+    from fastapi.responses import JSONResponse
+    resp = JSONResponse({"ok": True, "segment": slug})
+    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    resp.set_cookie(SEGMENT_COOKIE, slug, max_age=365 * 86400, path="/", httponly=True,
+                    samesite="lax", secure=secure)
+    return resp
+
+
 # --------------------------------------------------------------------- stats
 @app.get("/api/stats")
-def stats():
+def stats(segment: str = Depends(current_segment)):
     """Everything the dashboard needs, in one round trip."""
     with cursor() as cur:
         cur.execute(
@@ -166,7 +284,7 @@ def stats():
             " (select count(*) from e where status = 'shortlisted') as shortlisted,"
             " (select count(*) from e where status = 'rejected') as rejected,"
             " (select count(*) from e where status in " + OPEN_STATUSES + ") as open_pool",
-            (SEGMENT,))
+            (segment,))
         s = dict(cur.fetchone())
 
         cur.execute(
@@ -178,7 +296,7 @@ def stats():
             " count(*) filter (where fit_score >= 25) as reviewable"
             " from entities where segment_id ="
             " (select id from segments where slug = %s)"
-            " group by source order by reviewable desc, n desc", (SEGMENT,))
+            " group by source order by reviewable desc, n desc", (segment,))
         s["by_source"] = [dict(r) for r in cur.fetchall()]
 
         cur.execute(
@@ -190,7 +308,7 @@ def stats():
             "            else '60+' end as band, count(*) as n"
             " from entities where segment_id ="
             " (select id from segments where slug = %s)"
-            " and status in " + OPEN_STATUSES + " group by 1", (SEGMENT,))
+            " and status in " + OPEN_STATUSES + " group by 1", (segment,))
         got = {r["band"]: r["n"] for r in cur.fetchall()}
         s["histogram"] = [{"band": b, "n": got.get(b, 0)}
                           for b in ("0", "1-9", "10-24", "25-39", "40-59", "60+")]
@@ -208,11 +326,11 @@ def stats():
             " count(*) filter (where (metadata->'scoring_inputs'->>'collaboration_openness')::numeric > 0) as collaboration_openness"
             " from entities where segment_id ="
             " (select id from segments where slug = %s)"
-            " and status in " + OPEN_STATUSES, (SEGMENT,))
+            " and status in " + OPEN_STATUSES, (segment,))
         s["coverage"] = dict(cur.fetchone())
 
         cur.execute("select config->'rubric' as rubric from segments where slug = %s",
-                    (SEGMENT,))
+                    (segment,))
         s["rubric"] = cur.fetchone()["rubric"]
     return s
 
@@ -221,9 +339,10 @@ def stats():
 @app.get("/api/leads")
 def leads(q: str = "", source: str = "", status: str = "open",
           min_score: float = 0, has_contact: int = 0,
-          sort: str = "score", limit: int = 100, offset: int = 0):
+          sort: str = "score", limit: int = 100, offset: int = 0,
+          segment: str = Depends(current_segment)):
     where = ["e.segment_id = (select id from segments where slug = %s)"]
-    params = [SEGMENT]
+    params = [segment]
 
     if status == "open":
         where.append("e.status in " + OPEN_STATUSES)
@@ -248,11 +367,21 @@ def leads(q: str = "", source: str = "", status: str = "open",
              "recent": "e.created_at desc"}.get(sort, "e.fit_score desc nulls last")
     clause = " and ".join(where)
 
+    # Segment 3: the UI's card_fields are metadata paths the segment config
+    # names; select them as columns so cards never need the whole metadata.
+    import re as _re
+    fields = []
+    for f in (segment_info(segment)["ui"].get("card_fields") or []):
+        path = str(f.get("path", ""))
+        if _re.fullmatch(r"metadata(\.[A-Za-z0-9_]+)+", path):
+            fields.append("{" + ",".join(path.split(".")[1:]) + "}")
+    extra = "".join(" e.metadata #>> '%s' as f%d," % (p, i) for i, p in enumerate(fields))
+
     with cursor() as cur:
         cur.execute(
             "select e.id, e.name, e.domain, e.source, e.status,"
             " round(coalesce(e.fit_score,0)::numeric,1) as fit_score,"
-            " e.metadata->>'why_fit' as why_fit,"
+            " e.metadata->>'why_fit' as why_fit," + extra +
             " e.metadata->>'hq_city' as city, e.metadata->>'hq_state' as state,"
             " (select count(*) from contacts c where c.entity_id = e.id) as n_contacts,"
             " (select c.email from contacts c where c.entity_id = e.id"
@@ -263,6 +392,8 @@ def leads(q: str = "", source: str = "", status: str = "open",
             " order by " + order + " limit %s offset %s",
             params + [min(limit, 500), offset])
         rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            r["fields"] = [r.pop("f%d" % i) for i in range(len(fields))]
         cur.execute("select count(*) as n from entities e where " + clause, params)
         total = cur.fetchone()["n"]
     return {"total": total, "rows": rows}
@@ -345,7 +476,8 @@ def decide(lead_id: str, body: dict = Body(...)):
 
 # -------------------------------------------------------------------- export
 @app.get("/api/export.xlsx")
-def export(status: str = "shortlisted", min_score: float = 0, source: str = ""):
+def export(status: str = "shortlisted", min_score: float = 0, source: str = "",
+           segment: str = Depends(current_segment)):
     """The owner's 17-column sheet, generated live from the current selection.
 
     Takes the same filters the review queue is showing, because a reviewer who
@@ -365,7 +497,8 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = ""):
         cmd += ["--min-score", str(min_score)]
     if source:
         cmd += ["--source", source]
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO)
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO,
+                       env={**os.environ, "SEGMENT_SLUG": segment})
     if not os.path.exists(tmp):
         raise HTTPException(500, "export failed: " + ((r.stderr or r.stdout)[-400:]))
     return FileResponse(
@@ -375,16 +508,20 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = ""):
 
 # ------------------------------------------------------------------ outreach
 @app.get("/api/outreach")
-def outreach_list(folder: str = "drafts"):
-    """One folder of the outreach_folders view, newest first."""
+def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment)):
+    """One folder of the outreach_folders view, newest first, for this segment."""
     with cursor() as cur:
         cur.execute(
-            "select * from outreach_folders where folder = %s"
-            " order by coalesce(sent_at, created_at) desc limit 200", (folder,))
+            "select f.* from outreach_folders f join entities e on e.id = f.entity_id"
+            " where f.folder = %s and e.segment_id = (select id from segments where slug = %s)"
+            " order by coalesce(f.sent_at, f.created_at) desc limit 200", (folder, segment))
         rows = [dict(r) for r in cur.fetchall()]
         for r in rows:
             r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
-        cur.execute("select folder, count(*) as n from outreach_folders group by folder")
+        cur.execute("select f.folder, count(*) as n from outreach_folders f"
+                    " join entities e on e.id = f.entity_id"
+                    " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
+                    (segment,))
         counts = {r["folder"]: r["n"] for r in cur.fetchall()}
     return {"rows": rows, "counts": counts}
 
@@ -458,7 +595,7 @@ def outreach_decide(oid: str, body: dict = Body(...)):
 
 # ------------------------------------------------------------------ kpis
 @app.get("/api/kpis")
-def kpis():
+def kpis(segment: str = Depends(current_segment)):
     """The v1 numbers (P26), from sql/kpi_queries.sql -- the same named
     queries tools/kpis.py prints, so a terminal and the dashboard never
     disagree about what 'approval rate' means."""
@@ -480,7 +617,7 @@ def kpis():
     with cursor() as cur:
         # the queries read the segment from a session setting, so the .sql
         # file is valid PostgreSQL that verify_repo can parse
-        cur.execute("select set_config('tvf.segment', %s, false)", (SEGMENT,))
+        cur.execute("select set_config('tvf.segment', %s, false)", (segment,))
         for qname, sql in queries.items():
             cur.execute(sql)
             rows = [dict(r) for r in cur.fetchall()]
@@ -550,7 +687,8 @@ app.include_router(_ops_module.build_router())
 
 # ---------------------------------------------------------------- scheduler
 import scheduler as _sched_module
-_scheduler = _sched_module.Scheduler(cursor, _ops_module, SEGMENT)
+_scheduler = _sched_module.Scheduler(cursor, _ops_module, SEGMENT,
+                                     allowed=SEGMENTS_ALLOWED or None)
 
 
 @app.on_event("startup")
@@ -564,37 +702,40 @@ def _stop_scheduler():
 
 
 @app.get("/api/schedule")
-def schedule_state():
+def schedule_state(segment: str = Depends(current_segment)):
     """The configured schedule plus the most recent pipeline runs -- this is
-    how 'unattended' becomes observable in the Operations tab."""
+    how 'unattended' becomes observable in the Operations tab. Runs recorded
+    before the segment column existed show under the default segment."""
     with cursor() as cur:
         cur.execute(
             "select id, pipeline, step, trigger, status, detail,"
             " started_at, finished_at from pipeline_runs"
-            " order by started_at desc limit 40")
+            " where coalesce(segment, %s) = %s"
+            " order by started_at desc limit 40", (SEGMENT, segment))
         runs = [dict(r) for r in cur.fetchall()]
         for r in runs:
             r["id"] = str(r["id"])
             r["started_at"] = r["started_at"].isoformat() if r["started_at"] else None
             r["finished_at"] = r["finished_at"].isoformat() if r["finished_at"] else None
-    return {"schedule": _scheduler.schedule(),
-            "pipelines": list(_sched_module.PIPELINES.keys()),
+    return {"schedule": _scheduler.schedule(segment),
+            "pipelines": list(_scheduler.pipelines(segment).keys()),
+            "segment": segment,
             "webhook_configured": bool(_scheduler.alert_webhook()),
             "runs": runs}
 
 
 @app.post("/api/schedule/run/{pipeline}")
-def schedule_run_now(pipeline: str):
+def schedule_run_now(pipeline: str, segment: str = Depends(current_segment)):
     """Fire a whole pipeline by hand -- the same sequence the scheduler runs,
     recorded the same way, for testing unattended behaviour without waiting for
     the clock. Runs in a background thread so the request returns immediately."""
     import threading
-    if pipeline not in _sched_module.PIPELINES:
-        raise HTTPException(404, "no such pipeline")
+    if pipeline not in _scheduler.pipelines(segment):
+        raise HTTPException(404, "no such pipeline for this segment")
     threading.Thread(target=_scheduler.run_pipeline,
-                     args=(pipeline,), kwargs={"trigger": "manual"},
+                     args=(pipeline,), kwargs={"trigger": "manual", "segment": segment},
                      daemon=True).start()
-    return {"ok": True, "pipeline": pipeline}
+    return {"ok": True, "pipeline": pipeline, "segment": segment}
 
 
 @app.post("/api/schedule/test-alert")

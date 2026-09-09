@@ -65,27 +65,58 @@ def _now():
 
 
 class Scheduler:
-    def __init__(self, cursor, ops, segment="us-production-houses"):
+    def __init__(self, cursor, ops, segment="us-production-houses", allowed=None):
         self._cursor = cursor          # app DB contextmanager
         self._ops = ops                # the ops module (run_blocking, JOBS)
-        self._segment = segment
+        self._segment = segment        # the default segment
+        self._allowed = allowed        # SEGMENTS_ALLOWED, or None for every active one
         self._thread = None
         self._stop = threading.Event()
-        self._fired = {}               # name -> last-fired minute-key, dedupe
+        self._fired = {}               # (segment, name) -> last-fired minute-key, dedupe
 
     # ---------------------------------------------------------------- config
-    def schedule(self):
+    def segments(self):
+        """Every active segment this deployment serves (SCHEDULER_SEGMENTS
+        narrows it further). Each gets its own schedule and pipelines."""
+        import os
+        env = [s.strip() for s in os.environ.get("SCHEDULER_SEGMENTS", "").split(",") if s.strip()]
+        if env:
+            return env
         try:
             with self._cursor() as cur:
-                cur.execute("select config->'schedule' from segments where slug=%s",
-                            (self._segment,))
-                row = cur.fetchone()
-            got = row and row[0]
-            if got:
-                return got
+                cur.execute("select slug from segments where is_active order by slug")
+                slugs = [r["slug"] for r in cur.fetchall()]
+            if self._allowed:
+                slugs = [s for s in slugs if s in self._allowed]
+            return slugs or [self._segment]
         except Exception:
-            pass
-        return DEFAULT_SCHEDULE
+            return [self._segment]
+
+    def _config(self, segment, key):
+        """The app cursor is a RealDictCursor: rows are dicts, so the column
+        is aliased and read by name (the original schedule() indexed [0] and
+        silently fell back to the default schedule every time)."""
+        try:
+            with self._cursor() as cur:
+                cur.execute("select config->%s as v from segments where slug=%s", (key, segment))
+                row = cur.fetchone()
+            return row["v"] if row else None
+        except Exception:
+            return None
+
+    def schedule(self, segment=None):
+        """A segment's own schedule block; the built-in default applies only
+        to the deployment's default segment, so a config-only segment with
+        no schedule (startup-acquisitions) never runs the TVF pipeline."""
+        segment = segment or self._segment
+        got = self._config(segment, "schedule")
+        if got:
+            return got
+        return DEFAULT_SCHEDULE if segment == self._segment else []
+
+    def pipelines(self, segment=None):
+        got = self._config(segment or self._segment, "pipelines")
+        return got if isinstance(got, dict) and got else PIPELINES
 
     def alert_webhook(self):
         import os
@@ -107,15 +138,15 @@ class Scheduler:
             print("[scheduler] alert webhook failed: %r -- %s" % (e, text), flush=True)
 
     # ------------------------------------------------------------ audit rows
-    def _open(self, pipeline, step, trigger):
+    def _open(self, pipeline, step, trigger, segment=None):
         """Insert a 'running' row, return its id (the app cursor is a
         RealDictCursor, so rows come back as dicts, not tuples)."""
         try:
             with self._cursor() as cur:
                 cur.execute(
-                    "insert into pipeline_runs (pipeline, step, trigger, status)"
-                    " values (%s,%s,%s,'running') returning id",
-                    (pipeline, step, trigger))
+                    "insert into pipeline_runs (pipeline, step, trigger, status, segment)"
+                    " values (%s,%s,%s,'running',%s) returning id",
+                    (pipeline, step, trigger, segment or self._segment))
                 return str(cur.fetchone()["id"])
         except Exception as e:
             print("[scheduler] could not open pipeline_runs row: %r" % e, flush=True)
@@ -133,15 +164,17 @@ class Scheduler:
             print("[scheduler] could not close pipeline_runs row: %r" % e, flush=True)
 
     # -------------------------------------------------------------- run once
-    def run_pipeline(self, pipeline, trigger="schedule"):
-        steps = PIPELINES.get(pipeline)
+    def run_pipeline(self, pipeline, trigger="schedule", segment=None):
+        segment = segment or self._segment
+        steps = self.pipelines(segment).get(pipeline)
         if not steps:
             return
-        print("[scheduler] pipeline '%s' starting (%s)" % (pipeline, trigger), flush=True)
-        pid = self._open(pipeline, None, trigger)
+        print("[scheduler] pipeline '%s' starting (%s) for %s" % (pipeline, trigger, segment), flush=True)
+        pid = self._open(pipeline, None, trigger, segment)
+        env = {"SEGMENT_SLUG": segment}
         for key in steps:
-            sid = self._open(pipeline, key, trigger)
-            rc, logpath = self._ops.run_blocking(key, wait_slot=600)
+            sid = self._open(pipeline, key, trigger, segment)
+            rc, logpath = self._ops.run_blocking(key, wait_slot=600, env=env)
             if rc is None:
                 # slot never freed, or job unavailable here -- skip, do not fail
                 self._close(sid, "skipped", "unavailable or slot busy")
@@ -151,8 +184,8 @@ class Scheduler:
                 tail = self._logtail(logpath)
                 self._close(sid, "failed", tail)
                 self._close(pid, "failed", "stopped at step '%s'" % key)
-                self.alert("TVF Lead Engine: pipeline '%s' FAILED at step '%s'.\n%s"
-                           % (pipeline, key, tail[-400:]))
+                self.alert("TVF Lead Engine [%s]: pipeline '%s' FAILED at step '%s'.\n%s"
+                           % (segment, pipeline, key, tail[-400:]))
                 print("[scheduler] pipeline '%s' failed at '%s'" % (pipeline, key),
                       flush=True)
                 return
@@ -187,18 +220,19 @@ class Scheduler:
         while not self._stop.is_set():
             now = _now()
             minute_key = now.strftime("%Y-%m-%d %H:%M")
-            for entry in self.schedule():
-                name = entry.get("name", entry.get("pipeline", "?"))
-                if self._fired.get(name) == minute_key:
-                    continue
-                if self._due(entry, now):
-                    self._fired[name] = minute_key
-                    try:
-                        self.run_pipeline(entry["pipeline"])
-                    except Exception as e:
-                        self.alert("TVF Lead Engine: scheduler crashed running "
-                                   "'%s': %r" % (name, e))
-                        print("[scheduler] run_pipeline crashed: %r" % e, flush=True)
+            for segment in self.segments():
+                for entry in self.schedule(segment):
+                    name = entry.get("name", entry.get("pipeline", "?"))
+                    if self._fired.get((segment, name)) == minute_key:
+                        continue
+                    if self._due(entry, now):
+                        self._fired[(segment, name)] = minute_key
+                        try:
+                            self.run_pipeline(entry["pipeline"], segment=segment)
+                        except Exception as e:
+                            self.alert("TVF Lead Engine [%s]: scheduler crashed running "
+                                       "'%s': %r" % (segment, name, e))
+                            print("[scheduler] run_pipeline crashed: %r" % e, flush=True)
             # wake a little under once a minute so no minute is skipped
             self._stop.wait(30)
 

@@ -156,7 +156,15 @@ def main():
                     help="permit DROP / TRUNCATE / DELETE (refused by default)")
     ap.add_argument("--autocommit", action="store_true",
                     help="run each statement outside a transaction")
+    ap.add_argument("--segment", default=None,
+                    help="segment slug for the session (default: SEGMENT_SLUG env, "
+                         "then us-production-houses); the chain SQL reads it as "
+                         "current_setting('tvf.segment')")
     args = ap.parse_args()
+    import os
+    segment = args.segment or os.environ.get("SEGMENT_SLUG") or "us-production-houses"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,60}", segment):
+        sys.exit("bad segment slug: %r" % segment)
 
     if args.command:
         sql_text, label = args.command, "<inline>"
@@ -173,7 +181,7 @@ def main():
     import pglast
     statements = [s for s in pglast.split(sql_text) if s.strip()]
 
-    print("%s -- %d statement(s)\n" % (label, len(statements)))
+    print("%s -- %d statement(s)  [segment: %s]\n" % (label, len(statements), segment))
 
     blocked = []
     plan = []
@@ -218,6 +226,9 @@ def main():
     failed = False
     try:
         with conn.cursor() as cur:
+            # session-level, so it survives the commit at the end of the file;
+            # every chain SQL file reads it as current_setting('tvf.segment')
+            cur.execute("select set_config('tvf.segment', %s, false)", (segment,))
             for i, stmt, kind, _ in plan:
                 first = " ".join(stmt.split())[:90]
                 print("  %2d. [%s] %s%s" % (i, kind, first, "..." if len(first) == 90 else ""))

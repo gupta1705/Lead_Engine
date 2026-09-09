@@ -8,23 +8,33 @@ duplicate-merge must precede scoring (so evidence lands on one row), and
 gates run last against fresh scores. Any step failing stops the chain --
 a half-run chain with a clear error beats a full run with silent damage.
 """
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
+# Segment 3 (2026-09-09): the chain runs for whichever segment it was started
+# for. Every SQL step reads current_setting('tvf.segment'), which run_sql.py
+# sets from the same variable, so one chain serves every segment.
+SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
+if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,60}", SEGMENT):
+    sys.exit("bad SEGMENT_SLUG: %r" % SEGMENT)
+
 STEPS = [
     ("self-exclusion",   ["sql/05a_self_exclusion.sql"]),
     ("promote",          ["sql/05_promote_minimal.sql"]),
     ("merge duplicates", ["sql/05c_merge_name_duplicates.sql"]),
     ("zero unverified",  ["sql/04b_zero_unverified.sql"]),
-    ("score",            ["-c", "select count(*) from score_segment('us-production-houses');"]),
+    ("score",            ["-c", "select count(*) from score_segment('%s');" % SEGMENT]),
     ("apply gates",      ["sql/13_apply_gates.sql"]),
 ]
 
 
 def main():
+    print("segment: %s" % SEGMENT, flush=True)
     for name, args in STEPS:
         print("== %s ==" % name, flush=True)
         rc = subprocess.call(

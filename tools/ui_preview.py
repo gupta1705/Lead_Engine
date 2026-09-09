@@ -30,21 +30,23 @@ FOLDERS = ["drafts", "outbox", "sent", "inbox", "positive", "negative", "attenti
 STATUSES = ["open", "shortlisted", "contacted", "in_conversation", "rejected", "archived"]
 
 
-def generate(out):
+def generate(out, slug):
     sys.path.insert(0, str(ROOT / "app"))
     sys.path.insert(0, str(ROOT))
     import main                                  # the real endpoint functions
     import ops
     fx = {"auth": {"needs_setup": False, "authed": True, "user": None}}
+    fx["segment"] = main.segment_info(slug)
+    fx["segments"] = main.segments_list(slug)
     with main.cursor() as cur:
         cur.execute("select email from app_users where role = 'owner' limit 1")
         row = cur.fetchone()
         fx["auth"]["user"] = row["email"] if row else "owner@example.com"
-    fx["stats"] = main.stats()
-    fx["kpis"] = main.kpis()
+    fx["stats"] = main.stats(segment=slug)
+    fx["kpis"] = main.kpis(segment=slug)
     seen, leads = set(), []
     for st in STATUSES:
-        for r in main.leads(status=st, limit=500)["rows"]:
+        for r in main.leads(status=st, limit=500, segment=slug)["rows"]:
             if r["id"] not in seen:
                 seen.add(r["id"]); leads.append(r)
     fx["leads"] = leads
@@ -61,12 +63,14 @@ def generate(out):
             print("  details %d/%d" % (i, len(detail_ids)), flush=True)
     rows, counts = [], {}
     for f in FOLDERS:
-        d = main.outreach_list(f)
+        d = main.outreach_list(f, segment=slug)
         rows += d["rows"]; counts = d["counts"]
     fx["outreach"] = {"rows": rows, "counts": counts}
-    fx["schedule"] = main.schedule_state()
+    fx["schedule"] = main.schedule_state(segment=slug)
     jobs = []
     for key, job in ops.JOBS.items():
+        if job.get("segments") and slug not in job["segments"]:
+            continue
         ok, why = ops._available(job)
         jobs.append({"key": key, "label": job["label"], "group": job["group"], "desc": job["desc"],
                      "available": ok, "unavailable_reason": why, "status": None, "running": False})
@@ -96,6 +100,9 @@ MOCK_JS = r"""
     const body = opts && opts.body ? JSON.parse(opts.body) : {};
     await new Promise((r) => setTimeout(r, 120));
     if (p === "/api/auth/state") return json(FX.auth);
+    if (p === "/api/segment") return json(FX.segment);
+    if (p === "/api/segments") return json(FX.segments);
+    if (p === "/api/segment/select") return json({ ok: true });
     if (p === "/api/auth/logout") return json({ ok: true });
     if (p === "/api/health") return json({ ok: true });
     if (p === "/api/stats") return json(FX.stats);
@@ -219,10 +226,13 @@ def main():
     ap.add_argument("--generate", action="store_true")
     ap.add_argument("--serve", action="store_true")
     ap.add_argument("--port", type=int, default=8123)
-    ap.add_argument("--fixtures", type=Path, default=DEFAULT_FIXTURES)
+    ap.add_argument("--fixtures", type=Path, default=None)
+    ap.add_argument("--segment", default=os.environ.get("SEGMENT_SLUG", "us-production-houses"))
     a = ap.parse_args()
+    if a.fixtures is None:
+        a.fixtures = ROOT / "logs" / ("ui_fixtures.%s.json" % a.segment)
     if a.generate:
-        generate(a.fixtures)
+        generate(a.fixtures, a.segment)
     if a.serve:
         serve(a.port, a.fixtures)
     if not a.generate and not a.serve:

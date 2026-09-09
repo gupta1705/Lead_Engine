@@ -40,7 +40,7 @@ declare
   merged int := 0;
   r record;
 begin
-  select id into seg from segments where slug = 'us-production-houses';
+  select id into seg from segments where slug = current_setting('tvf.segment', true);
 
   for r in
     select lower(e.name) as nm,
@@ -134,7 +134,7 @@ end $$;
 select 'NEEDS A HUMAN: same name, two domains' as note,
        lower(name) as company, string_agg(domain, ' | ') as domains
 from entities
-where segment_id = (select id from segments where slug = 'us-production-houses')
+where segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
   and status in ('discovered','enriched','scored','ready_for_review')
   and domain is not null
 group by lower(name) having count(*) > 1;

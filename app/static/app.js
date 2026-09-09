@@ -18,7 +18,7 @@ const $ = (s, root) => (root || document).querySelector(s);
 const $$ = (s, root) => Array.from((root || document).querySelectorAll(s));
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const REVIEW_THRESHOLD = 25, PRIORITY_THRESHOLD = 45;
+let REVIEW_THRESHOLD = 25, PRIORITY_THRESHOLD = 45, KEY_PREFIX = "TVF";
 
 function fmtDate(iso) {
   if (!iso) return "";
@@ -38,7 +38,7 @@ function rel(iso) {
   return fmtDate(iso).split(",")[0];
 }
 function fmtScore(n) { n = +n || 0; return Number.isInteger(n) ? String(n) : n.toFixed(1); }
-function leadKey(id) { return "TVF-" + String(id || "").replace(/-/g, "").slice(0, 4).toUpperCase(); }
+function leadKey(id) { return KEY_PREFIX + "-" + String(id || "").replace(/-/g, "").slice(0, 4).toUpperCase(); }
 function hashCode(s) { let h = 0; for (const c of String(s || "")) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
 function initials(name, fallback) {
   // letters and digits only: a scraped address like "%20info@x.com" must not
@@ -139,6 +139,7 @@ function statusLozenge(status) {
 const SOURCES = {
   aicp_directory: ["AICP", ""], google_news_rss: ["News", "inprogress"], wikidata: ["Wikidata", "new"],
   youtube_api: ["YouTube", ""], x_intent: ["X", "new"], manual_p1: ["Manual", "moved"], manual: ["Manual", "moved"],
+  apple_podcasts: ["Podcast", "new"],
 };
 function sourceLabel(src) { return (SOURCES[src] || [String(src || "unknown").replace(/_/g, " "), ""])[0]; }
 function sourceLozenge(src) {
@@ -189,7 +190,7 @@ const post = (path, body) => api(path, { method: "POST",
 
 /* ============================================================== state */
 const state = {
-  route: null, user: null, rubric: [], checklist: [], sources: [],
+  route: null, user: null, rubric: [], checklist: [], sources: [], segment: null, segments: [],
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD, source: "", has_contact: false },
            cols: {}, token: 0 },
   leads: { filters: { q: "", status: "open", min_score: 0, source: "", has_contact: false, sort: "score" },
@@ -257,7 +258,7 @@ document.addEventListener("keydown", (e) => {
 
 /* ============================================================ routing */
 const VIEWS = ["board", "leads", "outreach", "reports", "ops"];
-const TITLES = { board: "Lead board", leads: "Leads", outreach: "Outreach", reports: "Reports", ops: "Operations" };
+let TITLES = { board: "Lead board", leads: "Leads", outreach: "Outreach", reports: "Reports", ops: "Operations" };
 function go(hash) { location.hash = hash; }
 function currentView() { return state.route || "board"; }
 function showView(name) {
@@ -284,6 +285,76 @@ function router() {
   showView(head);
 }
 window.addEventListener("hashchange", router);
+
+/* ============================================================ segment */
+const UI_FALLBACK = { project_name: "US Production Houses", project_type: "Lead segment", key_prefix: "TVF",
+  board_title: "Lead board", list_title: "Leads", entity_label: "company", card_fields: [], details: [], evidence: [] };
+function segUi() { return Object.assign({}, UI_FALLBACK, (state.segment && state.segment.ui) || {}); }
+function getPath(obj, path) {
+  return String(path || "").split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+function fmtField(v, format) {
+  if (v == null || v === "") return "";
+  const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" && !isNaN(+v) ? +v : null);
+  switch (format) {
+    case "number": return n == null ? String(v) : Math.round(n).toLocaleString();
+    case "number1": return n == null ? String(v) : (Math.round(n * 10) / 10).toString();
+    case "compact": return n == null ? String(v) : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "k" : String(Math.round(n));
+    case "percent": return n == null ? String(v) : Math.round(n * 100) + "%";
+    case "date": return fmtDate(v);
+    case "list": return Array.isArray(v) ? v.join(", ") : String(v);
+    case "link": return String(v).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+    default: return Array.isArray(v) ? v.join(", ") : String(v);
+  }
+}
+function fmtFieldHtml(v, format) {
+  if (format === "link" && v) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(fmtField(v, format))}</a>`;
+  if (format === "list" && Array.isArray(v)) return `<span class="pill-list">${v.slice(0, 8).map((x) => `<span class="lozenge">${esc(x)}</span>`).join("")}</span>`;
+  return esc(fmtField(v, format));
+}
+function fieldSummary(r) {
+  const fields = segUi().card_fields || [];
+  if (!fields.length || !Array.isArray(r.fields)) return "";
+  return fields.map((f, i) => ({ f, v: r.fields[i] }))
+    .filter((x) => x.v != null && x.v !== "")
+    .map((x) => esc(fmtField(x.v, x.f.format)) + (x.f.label ? " " + esc(x.f.label) : "")).join(" · ");
+}
+function uiEvidence(d) {
+  return (segUi().evidence || []).map((f) => {
+    const v = getPath(d, f.path);
+    if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "";
+    return `<li>${icon("info", 16)}<span><strong>${esc(f.label)}:</strong> ${fmtFieldHtml(v, f.format)}</span></li>`;
+  }).filter(Boolean);
+}
+function uiDetails(d) {
+  return (segUi().details || []).map((f) => {
+    const v = getPath(d, f.path);
+    if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "";
+    return `<dt>${esc(f.label)}</dt><dd>${fmtFieldHtml(v, f.format)}</dd>`;
+  }).join("");
+}
+function applySegment(seg) {
+  state.segment = seg;
+  const ui = segUi();
+  KEY_PREFIX = ui.key_prefix || "TVF";
+  REVIEW_THRESHOLD = +((seg.thresholds || {}).review) || 25;
+  PRIORITY_THRESHOLD = +((seg.thresholds || {}).priority) || 45;
+  $("#projectName").textContent = ui.project_name;
+  $("#projectType").textContent = ui.project_type;
+  $("#sidebarFoot").innerHTML = ui.sidebar_note || "";      // our own config, not user input
+  $$(".crumb-project").forEach((a) => { a.textContent = ui.project_name; });
+  $("#boardTitle").textContent = ui.board_title;
+  $("#leadsTitle").textContent = ui.list_title;
+  TITLES.board = ui.board_title; TITLES.leads = ui.list_title;
+  $("#leadsLastCol").textContent = (ui.card_fields || []).length ? "Evidence" : "Location";
+  $$("#boardScore, #leadsScore").forEach((sel) => {
+    const opts = sel.querySelectorAll("option");
+    if (opts[1]) { opts[1].value = String(REVIEW_THRESHOLD); opts[1].textContent = "Reviewable · " + REVIEW_THRESHOLD + "+"; }
+    if (opts[2]) { opts[2].value = String(PRIORITY_THRESHOLD); opts[2].textContent = "Priority · " + PRIORITY_THRESHOLD + "+"; }
+  });
+  state.board.filters.min_score = REVIEW_THRESHOLD;
+  document.title = (TITLES[currentView()] || "") + " - " + ui.project_name;
+}
 
 /* ============================================================== board */
 const COLUMNS = [
@@ -315,6 +386,7 @@ function renderCard(r, col) {
        aria-label="${esc(r.name)}, score ${fmtScore(score)}">
     <div class="card-summary">${esc(r.name)}</div>
     ${r.domain ? `<div class="card-sub truncate">${esc(r.domain)}</div>` : ""}
+    ${fieldSummary(r) ? `<div class="card-sub">${fieldSummary(r)}</div>` : ""}
     <div class="card-tags">${sourceLozenge(r.source)}${place ? `<span class="lozenge" title="${esc((r.city || "") + (r.state ? ", " + r.state : ""))}">${esc(place)}</span>` : ""}</div>
     <div class="card-foot">
       <span class="type-key">${typeIcon("lead")}<span class="key">${leadKey(r.id)}</span></span>
@@ -400,7 +472,7 @@ async function loadLeads() {
       <td>${prioIcon(r.fit_score, true)}</td>
       <td>${sourceLozenge(r.source)}</td>
       <td>${r.email ? `<span class="cell-person">${avatar(r.contact_name, r.email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.email)}</div></span></span>` : '<span class="muted">Unassigned</span>'}</td>
-      <td class="secondary">${esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
+      <td class="secondary">${fieldSummary(r) || esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="8">No companies match these filters.</td></tr>`;
   $$("#leadsBody tr[data-id]").forEach((tr) => {
@@ -485,7 +557,7 @@ async function openLead(id) {
         ${c.role_title ? `<div class="role">${esc(c.role_title)}</div>` : ""}
         <div class="mail"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a>${c.email_status && c.email_status !== "unknown" ? ` <span class="lozenge ${c.email_status === "invalid" ? "removed" : c.email_status === "valid" ? "success" : ""}">${esc(c.email_status)}</span>` : ""}</div></div></div>`).join("")
     : `<div class="person">${avatar(null, null, "lg")}<div class="muted">No contact found yet. The site-scrape and AICP passes add one when they find a named person.</div></div>`;
-  const evidence = evidenceItems(m);
+  const evidence = evidenceItems(m).concat(uiEvidence(d));
   const pills = [sourceLozenge(d.source)];
   if (m.subtype) pills.push(`<span class="lozenge new">${esc(String(m.subtype).replace(/_/g, " "))}</span>`);
   if (m.web_verification) pills.push(`<span class="lozenge success">Web-verified</span>`);
@@ -548,7 +620,8 @@ async function openLead(id) {
             <dt>Fit score</dt><dd>${pts(score)} <span class="muted small">of 110</span></dd>
             <dt>Source</dt><dd>${sourceLozenge(d.source)}</dd>
             <dt>Website</dt><dd>${d.domain ? `<a href="https://${esc(d.domain)}" target="_blank" rel="noopener">${esc(d.domain)}</a>` : '<span class="muted">None yet</span>'}</dd>
-            <dt>Location</dt><dd>${[m.hq_city, m.hq_state].filter(Boolean).join(", ") || '<span class="muted">Unknown</span>'}</dd>
+            ${(m.hq_city || m.hq_state) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state].filter(Boolean).join(", "))}</dd>` : ""}
+            ${uiDetails(d)}
             ${m.aicp_detail ? `<dt>Directory</dt><dd>Listed in AICP${m.aicp_detail.chapter ? ", " + esc(m.aicp_detail.chapter) : ""}</dd>` : ""}
             ${m.domain_resolution ? `<dt>Website via</dt><dd class="small">${esc(m.domain_resolution.method || m.domain_resolution.source || "resolver")}</dd>` : ""}
           </dl>
@@ -938,10 +1011,10 @@ async function openSettings() {
   modal.open(`
     ${modalHead(`<span>Project settings</span>`)}
     <div class="modal-body single"><div class="modal-main">
-      <h2 class="modal-title" style="font-size:20px;line-height:24px">US Production Houses</h2>
+      <h2 class="modal-title" style="font-size:20px;line-height:24px">${esc(segUi().project_name)}</h2>
       <div class="section"><h3>Segment</h3><div class="body">
-        <dl class="details"><dt>Slug</dt><dd class="mono">us-production-houses</dd>
-        <dt>Config</dt><dd class="mono">config/segment.us-production-houses.json</dd>
+        <dl class="details"><dt>Slug</dt><dd class="mono">${esc((state.segment || {}).slug || "us-production-houses")}</dd>
+        <dt>Config</dt><dd class="mono">${esc((state.segment || {}).config_file || "config/segment.us-production-houses.json")}</dd>
         <dt>Thresholds</dt><dd>Reviewable at ${REVIEW_THRESHOLD} points, priority at ${PRIORITY_THRESHOLD}. Cards show priority arrows from these.</dd></dl></div></div>
       <div class="section"><h3>Scoring rubric <span class="pts">${total} pts</span></h3><div class="body">
         <table class="tbl"><thead><tr><th>Criterion</th><th>Key</th><th class="r">Points</th></tr></thead><tbody>
@@ -1006,10 +1079,19 @@ function renderWorkMenu(menu) {
   $$("[data-go]", menu).forEach((b) => b.addEventListener("click", () => { closeMenus(); go(b.dataset.go); }));
 }
 function renderProjectsMenu(menu) {
-  menu.innerHTML = `<div class="menu-heading">Lead segments</div>
-    <button class="menu-item selected">${icon("film", 20)}<span>US Production Houses<span class="desc">us-production-houses · live</span></span>${icon("check", 16)}</button>
-    <button class="menu-item disabled" aria-disabled="true">${icon("bookmark", 20)}<span>Startup acquisitions<span class="desc">config exists · not deployed to this instance</span></span></button>
-    <div class="menu-sep"></div><div class="menu-note">A segment is a config row plus connectors. Set SEGMENT_SLUG on a deployment to switch.</div>`;
+  const segs = state.segments.length ? state.segments
+    : [{ slug: "us-production-houses", project_name: "US Production Houses", current: true, counts: {} }];
+  menu.innerHTML = `<div class="menu-heading">Segments on this portal</div>` + segs.map((s) =>
+    `<button class="menu-item ${s.current ? "selected" : ""}" data-seg="${esc(s.slug)}">${icon(s.current ? "film" : "bookmark", 20)}
+       <span style="flex:1">${esc(s.project_name)}<span class="desc">${esc(s.slug)}${s.counts && s.counts.reviewable != null ? ` · ${s.counts.reviewable} to review · ${s.counts.shortlisted} shortlisted` : ""}</span></span>
+       ${s.current ? icon("check", 16) : ""}</button>`).join("") +
+    `<div class="menu-sep"></div><div class="menu-note">A segment is a config row plus connectors. Switching changes every screen.</div>`;
+  $$("[data-seg]", menu).forEach((b) => b.addEventListener("click", async () => {
+    closeMenus();
+    if (state.segment && b.dataset.seg === state.segment.slug) return;
+    try { await post("/api/segment/select", { slug: b.dataset.seg }); location.hash = "#board"; location.reload(); }
+    catch (e) { toast(e.message, true); }
+  }));
 }
 function renderFiltersMenu(menu) {
   const presets = [
@@ -1160,6 +1242,12 @@ function bindFilters() {
   } catch (e) {
     flag("Cannot reach the database", { desc: "Is SUPABASE_DB_URL set? " + e.message, kind: "err", ms: 8000 });
   }
+  try {
+    const [seg, segs] = await Promise.all([api("/api/segment"), api("/api/segments")]);
+    state.segments = segs.segments || [];
+    applySegment(seg);
+    $("#boardScore").value = String(REVIEW_THRESHOLD);
+  } catch (e) { /* older server: TVF defaults stand */ }
   syncLeadControls();
   router();
   refreshNotifications(true);

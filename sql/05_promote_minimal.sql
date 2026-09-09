@@ -76,7 +76,7 @@ with pending as (
     select s.*, normalize_domain(s.domain) as nd
     from staging_candidates s
     where s.imported = false
-      and s.segment_id = (select id from segments where slug = 'us-production-houses')
+      and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 ),
 matched as (
     select p.id,
@@ -120,7 +120,7 @@ select
     e.id   as entity_id,
     e.status
 from entities e
-where e.segment_id = (select id from segments where slug = 'us-production-houses');
+where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true));
 
 ----------------------------------------------------------------------
 -- STEP 2a -- INSERT the genuinely new ones.
@@ -148,7 +148,7 @@ select distinct on (coalesce(normalize_domain(s.domain), lower(s.name)))
     )
 from staging_candidates s
 where s.imported = false
-  and s.segment_id = (select id from segments where slug = 'us-production-houses')
+  and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
   and not exists (
         select 1 from entities e
         where e.segment_id = s.segment_id
@@ -186,7 +186,7 @@ with pending as (
     select s.*, normalize_domain(s.domain) as nd
     from staging_candidates s
     where s.imported = false
-      and s.segment_id = (select id from segments where slug = 'us-production-houses')
+      and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 ),
 pairs as (
     select e.id as entity_id, p.*
@@ -240,7 +240,7 @@ with pending as (
            coalesce(normalize_domain(s.domain), lower(s.name)) as match_key
     from staging_candidates s
     where s.imported = false
-      and s.segment_id = (select id from segments where slug = 'us-production-houses')
+      and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 ),
 outcome as (
     -- Compared against the PRE-RUN snapshot, so an entity this run created is
@@ -273,18 +273,18 @@ where s.id = o.id;
 ----------------------------------------------------------------------
 select source, count(*) as entities, count(domain) as with_domain
 from entities
-where segment_id = (select id from segments where slug = 'us-production-houses')
+where segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 group by source
 order by source;
 
 select import_result, count(*)
 from staging_candidates
-where segment_id = (select id from segments where slug = 'us-production-houses')
+where segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 group by import_result
 order by import_result;
 
 select count(*) as still_unimported
 from staging_candidates
 where imported = false
-  and segment_id = (select id from segments where slug = 'us-production-houses');
+  and segment_id = (select id from segments where slug = current_setting('tvf.segment', true));
 -- Expect 0. Re-running this whole file should then change nothing at all.

@@ -214,7 +214,7 @@ $$ language plpgsql;
 ----------------------------------------------------------------------
 -- RUN IT
 ----------------------------------------------------------------------
-select * from score_segment('us-production-houses');
+select * from score_segment(current_setting('tvf.segment', true));
 
 -- Inspect results, highest fit first:
 select
@@ -225,7 +225,7 @@ select
     score_breakdown->>'criteria_total' as criteria_total,
     score_breakdown
 from entities
-where segment_id = (select id from segments where slug = 'us-production-houses')
+where segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 order by fit_score desc nulls last;
 
 ----------------------------------------------------------------------

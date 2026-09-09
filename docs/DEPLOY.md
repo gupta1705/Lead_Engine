@@ -97,6 +97,27 @@ free instance-hours a month, which is exactly one always-on service. Do not
 add a second free service (n8n, say) to the same workspace: both would be
 stopped when the hours run out.
 
+### A second portal for another segment
+
+One deployment serves every segment: the Projects menu switches, and each
+browser remembers its choice. If LCX wants its own address that shows only the
+clipping segment, deploy the same image a second time with two variables set.
+The file is in the repo:
+
+1. Render, **New +**, **Blueprint**, pick the repo, and set **Blueprint Path**
+   to `deploy/render.lcx-clipping.yaml`.
+2. Paste `SUPABASE_DB_URL` when asked. Apply.
+
+That portal has `SEGMENT_SLUG=lcx-clipping`, `SEGMENTS_ALLOWED=lcx-clipping`
+and `SCHEDULER_SEGMENTS=lcx-clipping`, so it shows only clipping leads, jobs
+and schedules, and its scheduler runs only the clipping refresh. Set
+`SCHEDULER_SEGMENTS=us-production-houses` on the main portal then, so the
+clipping refresh is not run twice. Accounts are shared; the same login works
+on both.
+
+The free tier gives a workspace one always-on service, so a second portal
+needs a second workspace or account, or the fallback below.
+
 ### Fallback with more room: Hugging Face Spaces
 
 If Render ever fails you (free tier withdrawn, out of memory), a Docker Space

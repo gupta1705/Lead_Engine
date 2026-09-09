@@ -36,7 +36,7 @@ alter table staging_candidates add constraint staging_candidates_import_result_c
 ----------------------------------------------------------------------
 with cfg as (
     select config->'self_exclusion' as se
-    from segments where slug = 'us-production-houses'
+    from segments where slug = current_setting('tvf.segment', true)
 ),
 doms as (select jsonb_array_elements_text(se->'domains') as d from cfg),
 pats as (select jsonb_array_elements_text(se->'name_patterns') as p from cfg)
@@ -63,7 +63,7 @@ where sc.imported = false
 ----------------------------------------------------------------------
 with cfg as (
     select config->'self_exclusion' as se
-    from segments where slug = 'us-production-houses'
+    from segments where slug = current_setting('tvf.segment', true)
 ),
 doms as (select jsonb_array_elements_text(se->'domains') as d from cfg),
 pats as (select jsonb_array_elements_text(se->'name_patterns') as p from cfg)
@@ -86,14 +86,14 @@ where sc.imported = false
 ----------------------------------------------------------------------
 with cfg as (
     select config->'self_exclusion' as se
-    from segments where slug = 'us-production-houses'
+    from segments where slug = current_setting('tvf.segment', true)
 ),
 doms as (select jsonb_array_elements_text(se->'domains') as d from cfg),
 pats as (select jsonb_array_elements_text(se->'name_patterns') as p from cfg)
 update entities e
 set status = 'archived',
     status_reason = 'Self-exclusion: TVF or an affiliate. Never a lead.'
-where e.segment_id = (select id from segments where slug = 'us-production-houses')
+where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
   and e.status not in ('archived', 'contacted', 'in_conversation')
   and (
         exists (select 1 from doms
@@ -108,11 +108,11 @@ where e.segment_id = (select id from segments where slug = 'us-production-houses
 ----------------------------------------------------------------------
 select import_result, count(*)
 from staging_candidates
-where segment_id = (select id from segments where slug = 'us-production-houses')
+where segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 group by import_result
 order by import_result;
 
 select name, domain, status, status_reason
 from entities
-where segment_id = (select id from segments where slug = 'us-production-houses')
+where segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
   and status_reason like 'Self-exclusion%';
