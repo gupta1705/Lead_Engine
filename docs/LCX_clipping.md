@@ -98,6 +98,28 @@ screen. A separate clipping-only portal is the same image with two variables,
 `deploy/render.lcx-clipping.yaml` (Blueprint Path on Render). See
 `docs/DEPLOY.md`.
 
+## First live run (2026-09-09)
+
+Two harvests from the laptop, then promote, enrich, promote. Quota spent on
+YouTube: about 2,900 units of the daily 10,000.
+
+| | |
+|---|---|
+| Shows staged | 215 (138 from podcast feeds, 77 YouTube channels) |
+| Ready for review | 119 (73 podcasts, 46 channels) |
+| Priority band, 45+ | 67 |
+| Reviewable band, 25 to 44 | 47 |
+| With a published contact | 62 |
+| Gated out | 86: 32 dormant, 28 disallowed country, 14 oversized, 11 no reachable presence, 1 major network |
+
+What the run taught, already folded back into the config: a twenty-minute
+floor for "long-form" threw away most education and commentary channels
+(now eight minutes); a 53-million-subscriber gaming channel scored 92 because
+audience only withheld points (now a gate above 5M and a penalty above 2M);
+and catalogue plus cadence let a 271-subscriber show outrank the band (audience
+raised to 25 points, catalogue and cadence lowered). The next runs skip every
+feed and channel already known, so they only pay for new ground.
+
 ## Not built yet, by decision
 
 - Follow-up threads (an opener plus two follow-ups, then stop) and batch

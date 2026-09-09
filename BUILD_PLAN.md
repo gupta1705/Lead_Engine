@@ -352,6 +352,6 @@ The first sales segment, and the first proof that a second segment really is a c
 | **C3** | ✅ | **YouTube connector** `tools/discover_youtube_channels.py` + `tools/yt_api.py`: channel search, statistics, last 50 uploads with durations → shorts gap, cadence, audience. |
 | **C4** | ✅ | **Enrichment** `tools/enrich_clipping.py`: lift evidence, create the contact from the published address, profile linked channels, hand back to the chain. |
 | **C5** | ✅ | **Portal.** Segment-aware UI (names, LCX keys, evidence fields on cards, list and dialog), the Projects switcher, and `deploy/render.lcx-clipping.yaml` for a clipping-only portal. |
-| **C6** | ◐ | **First live run** — numbers recorded in `docs/LCX_clipping.md` once the first harvest, chain and enrichment complete. Sender `SET_ME` values and `GMAIL_SENDER_ADDRESS_LCX_CLIPPING` are the owner's. |
+| **C6** | ✅ | **First live run** (2026-09-09): 215 shows staged, 119 ready for review (67 in the priority band), 62 with a published contact, 86 gated out with reasons; three rubric corrections folded back into the config from what the run showed. Numbers in `docs/LCX_clipping.md`. Sender `SET_ME` values and `GMAIL_SENDER_ADDRESS_LCX_CLIPPING` remain the owner's. |
 | **C7** | ⏭️ | **The sales motion**: follow-up threads, batch approval with sampling, mailbox rotation. Each changes a TVF guarantee and waits for the owner's explicit yes. |
 
