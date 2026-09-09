@@ -43,17 +43,18 @@ It runs from the in-app scheduler; nothing in this segment needs the office n8n.
 
 | Criterion | Points | Set by |
 |---|---|---|
-| Deep back catalogue (100+ long items) | 25 | feed or channel |
-| Weekly cadence, active in 90 days | 15 | feed or channel |
+| Deep back catalogue (100+ long items) | 20 | feed or channel |
+| Weekly cadence, active in 90 days | 10 | feed or channel |
 | Shorts gap (under 10% of uploads are shorts) | 25 | channel only; unassessed for audio-only shows |
-| Audience 10k to 1M subscribers | 15 | channel only |
+| Audience 10k to 1M subscribers | 25 | channel only |
 | Budget signals (sponsors, Patreon, merch, courses) | 15 | feed or channel |
 | A business address to write to | 10 | engine |
 | Language LCX edits well | 5 | feed or channel |
 
-Modifiers: network-owned (penalty 20), video-first (bonus 6). Gates: country
-allowed, active, not kids or music, some reachable presence, not a major
-network. Thresholds: reviewable at 25, priority at 45, like TVF.
+Modifiers: network-owned (penalty 20), audience above 2M (penalty 20),
+video-first (bonus 6). Gates: country allowed, active, not kids or music, some
+reachable presence, not a major network, not oversized (above 5M
+subscribers). Thresholds: reviewable at 25, priority at 45, like TVF.
 
 ## Running it
 
