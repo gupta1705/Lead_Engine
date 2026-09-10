@@ -364,6 +364,8 @@ function applySegment(seg) {
   PRIORITY_THRESHOLD = +((seg.thresholds || {}).priority) || 45;
   $("#projectName").textContent = ui.project_name;
   $("#projectType").textContent = ui.project_type;
+  $("#projectSwitch").dataset.prefix = ui.key_prefix || "TVF";          // tints the project icon per segment
+  $("#projectSwitch").setAttribute("aria-label", "Project: " + ui.project_name + ". Switch project");
   $("#sidebarFoot").innerHTML = ui.sidebar_note || "";      // our own config, not user input
   $$(".crumb-project").forEach((a) => { a.textContent = ui.project_name; });
   $("#boardTitle").textContent = ui.board_title;
@@ -1259,7 +1261,7 @@ function renderWorkMenu(menu) {
 function renderProjectsMenu(menu) {
   const segs = state.segments.length ? state.segments
     : [{ slug: "us-production-houses", project_name: "US Production Houses", current: true, counts: {} }];
-  menu.innerHTML = `<div class="menu-heading">Segments on this portal</div>` + segs.map((s) =>
+  menu.innerHTML = `<div class="menu-heading">Projects</div>` + segs.map((s) =>
     `<button class="menu-item ${s.current ? "selected" : ""}" data-seg="${esc(s.slug)}">${icon(s.current ? "film" : "bookmark", 20)}
        <span style="flex:1">${esc(s.project_name)}<span class="desc">${esc(s.slug)}${s.counts && s.counts.reviewable != null ? ` · ${s.counts.reviewable} to review · ${s.counts.shortlisted} shortlisted` : ""}</span></span>
        ${s.current ? icon("check", 16) : ""}</button>`).join("") +
@@ -1321,7 +1323,8 @@ function renderUserMenu(menu) {
 
 function bindShell() {
   const pairs = [["#notifBtn", "#notifMenu", renderNotifMenu], ["#helpBtn", "#helpMenu", renderHelpMenu],
-    ["#userBtn", "#userMenu", renderUserMenu]];
+    ["#userBtn", "#userMenu", renderUserMenu],
+    ["#projectSwitch", "#projectSwitchMenu", renderProjectsMenu]];   // the sidebar switcher: same list as Projects
   pairs.forEach(([b, m, r]) => $(b).addEventListener("click", (e) => { e.stopPropagation(); toggleMenu($(b), $(m), r); }));
   $$(".nav-item[data-menu]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();

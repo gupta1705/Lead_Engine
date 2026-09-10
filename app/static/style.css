@@ -814,3 +814,21 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .sample-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px; }
 .sample-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sample-item .mail-body { margin-top: 12px; }
+
+/* ================================================= sidebar project switcher */
+/* The project block at the top of the sidebar is the switcher, as in Jira:
+   click it and every project on this portal is listed right under it. */
+.project-anchor { margin: 0 0 8px; }
+.project-switch {
+  width: 100%; border: 0; background: transparent; color: var(--text); font: inherit;
+  text-align: left; cursor: pointer; border-radius: var(--radius); padding: 8px;
+  transition: background .15s var(--ease);
+}
+.project-switch:hover, .project-switch[aria-expanded="true"] { background: var(--bg-neutral-subtle-hovered); }
+.project-switch:active { background: var(--bg-neutral-subtle-pressed); }
+.project-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.project-text .project-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-chev { color: var(--icon-subtle); flex: none; }
+.project-switch[data-prefix="LCX"] .project-avatar { background: linear-gradient(135deg, #E56910, #943D73); }
+.project-switch[data-prefix="STA"] .project-avatar { background: linear-gradient(135deg, #1F845A, #2898BD); }
+.project-menu { left: 0; right: auto; min-width: 320px; top: calc(100% + 2px); }
