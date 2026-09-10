@@ -42,6 +42,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 from dbconn import Db
+import personname
+import yt_api
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-clipping")
 SOURCE = "apple_podcasts"
@@ -53,7 +55,6 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 YT_RE = re.compile(r"https?://(?:www\.|m\.)?youtube\.com/(@[\w.\-]+|channel/[\w\-]+|c/[\w.\-]+|user/[\w.\-]+)", re.I)
 TAG_RE = re.compile(r"<[^>]+>")
 NOREPLY = {"noreply", "no-reply", "donotreply", "do-not-reply", "podcasts", "support", "feedback"}
-EU_LANGS = {"de", "fr", "it", "nl", "pl", "sv", "da", "fi", "no", "nb", "cs", "hu", "ro", "el", "pt", "sk", "bg", "hr", "lt", "lv", "et", "sl"}
 INDIA_LANGS = {"hi", "ta", "te", "mr", "bn", "gu", "pa", "kn", "ml", "ur"}
 
 
@@ -254,6 +255,8 @@ def shape(cand, feed, cfg, now):
     lang = feed["language"] or ""
     primary = lang.split("-")[0]
     region = lang.split("-")[1].upper() if "-" in lang else ""
+    if not re.fullmatch(r"[A-Z]{2}", region):          # "zh-hans", "es-419": a script or a UN region, not a country
+        region = ""
     author_blob = (feed["author"] + " " + feed["owner_name"] + " " + (cand.get("artistName") or "")).lower()
     major = any(re.search(r"\b" + re.escape(m) + r"\b", author_blob) for m in majors)
 
@@ -269,9 +272,11 @@ def shape(cand, feed, cfg, now):
     if latest:
         age = (now - latest).days
         si["activity_signal"] = "active" if age <= 90 else "confirmed_dormant" if age > 180 else "quiet"
-    if region in geo.get("disallowed_countries", []) or (primary in EU_LANGS and not region):
-        si["country_signal"] = "disallowed"
-    elif region in geo.get("allowed_countries", []) or primary in INDIA_LANGS:
+    # a language is not a country: only a region suffix ("en-us", "de-at")
+    # is confirmed evidence; a bare language leaves the country unknown
+    if region:
+        si.update(yt_api.country_inputs(region, geo))
+    elif primary in INDIA_LANGS:
         si["country_signal"] = "allowed"
     si["excluded_category_signal"] = False
     si["has_reachable_presence"] = bool(email_ or website or yt)
@@ -303,6 +308,9 @@ def shape(cand, feed, cfg, now):
            "genres": cand.get("genres"), "track_count": cand.get("trackCount"),
            "country_hint": cand.get("_country"), "podcast_feed": podcast_feed,
            "why_fit": why, "scoring_inputs": si}
+    raw["host"] = personname.extract_host(feed["title"] or cand.get("collectionName") or "",
+                                          author=feed["author"], owner_name=feed["owner_name"],
+                                          description=feed["description"], artist=cand.get("artistName"))
     return {"name": (feed["title"] or cand.get("collectionName") or "").strip()[:200],
             "domain": domain, "source_url": cand["feedUrl"], "raw": raw}
 
@@ -344,10 +352,16 @@ def main():
             "insert into source_runs (segment_id, source, status) values (%s,%s,'running') returning id",
             (seg_id, SOURCE)), cur.fetchone()[0])[1])
 
-    # rotate the term list by day so successive runs cover different ground
+    # rotate the term list by day so successive runs cover different ground;
+    # the priority countries (US) get six searches in ten, the rest share the others
+    prio = set(cfg.get("geography", {}).get("priority_countries") or ["US"])
+    rnd = random.Random(now.strftime("%Y-%m-%d"))
     pairs = [(q, c) for q in queries for c in countries]
-    random.Random(now.strftime("%Y-%m-%d")).shuffle(pairs)
-    pairs = pairs[:args.max_searches]
+    rnd.shuffle(pairs)
+    first = [p for p in pairs if p[1] in prio]
+    rest = [p for p in pairs if p[1] not in prio]
+    k = min(len(first), int(round(args.max_searches * 0.6))) if rest else min(len(first), args.max_searches)
+    pairs = (first[:k] + rest[:args.max_searches - k])[:args.max_searches]
 
     cands, seen_names = {}, set()
     for i, (q, country) in enumerate(pairs, 1):

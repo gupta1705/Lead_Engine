@@ -139,6 +139,7 @@ function statusLozenge(status) {
 const SOURCES = {
   aicp_directory: ["AICP", ""], google_news_rss: ["News", "inprogress"], wikidata: ["Wikidata", "new"],
   youtube_api: ["YouTube", ""], x_intent: ["X", "new"], manual_p1: ["Manual", "moved"], manual: ["Manual", "moved"],
+  wikidata_channels: ["Wikidata", "new"], tvf_pool: ["TVF pool", "moved"],
   apple_podcasts: ["Podcast", "new"],
 };
 function sourceLabel(src) { return (SOURCES[src] || [String(src || "unknown").replace(/_/g, " "), ""])[0]; }
@@ -288,7 +289,29 @@ window.addEventListener("hashchange", router);
 
 /* ============================================================ segment */
 const UI_FALLBACK = { project_name: "US Production Houses", project_type: "Lead segment", key_prefix: "TVF",
-  board_title: "Lead board", list_title: "Leads", entity_label: "company", card_fields: [], details: [], evidence: [] };
+  board_title: "Lead board", list_title: "Leads", entity_label: "company", entity_plural: "companies",
+  lead_first: "entity", summary_label: "Summary", card_fields: [], details: [], evidence: [] };
+/* People first (2026-09-09): in a segment whose leads are shows, the card and
+   the row lead with the person the engine found behind the show, and the show
+   sits underneath. The record stays the show; the face is the host. */
+function personFirst() { return segUi().lead_first === "person"; }
+function hostOf(r) {
+  if (r.host_name) return r.host_name;
+  const h = (r.metadata || {}).host;
+  return h && h.name && (h.confidence === "high" || h.confidence === "medium") ? h.name : null;
+}
+function leadTitle(r) {
+  const host = hostOf(r);
+  if (personFirst() && host) {
+    // a show named after its host ("Aswath Damodaran") is not repeated underneath
+    const same = host.trim().toLowerCase() === String(r.name || "").trim().toLowerCase();
+    return { title: host, sub: same ? (r.domain || "") : r.name, avatarName: host, aria: same ? host : host + ", " + r.name, same };
+  }
+  return { title: r.name, sub: r.domain || "", avatarName: r.contact_name, aria: r.name };
+}
+function kindLozenge(r) {
+  return r.kind ? `<span class="lozenge inprogress" title="Kind of lead">${esc(String(r.kind).replace(/_/g, " "))}</span>` : "";
+}
 function segUi() { return Object.assign({}, UI_FALLBACK, (state.segment && state.segment.ui) || {}); }
 function getPath(obj, path) {
   return String(path || "").split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
@@ -347,6 +370,9 @@ function applySegment(seg) {
   $("#leadsTitle").textContent = ui.list_title;
   TITLES.board = ui.board_title; TITLES.leads = ui.list_title;
   $("#leadsLastCol").textContent = (ui.card_fields || []).length ? "Evidence" : "Location";
+  $("#leadsSummaryCol").textContent = ui.summary_label || "Summary";
+  const ent = ui.entity_label || "company";
+  $("#outreachEntityCol").textContent = ent.charAt(0).toUpperCase() + ent.slice(1);
   $$("#boardScore, #leadsScore").forEach((sel) => {
     const opts = sel.querySelectorAll("option");
     if (opts[1]) { opts[1].value = String(REVIEW_THRESHOLD); opts[1].textContent = "Reviewable · " + REVIEW_THRESHOLD + "+"; }
@@ -382,15 +408,16 @@ function boardQuery(col, offset) {
 function renderCard(r, col) {
   const score = +r.fit_score || 0;
   const place = r.state || r.city;
+  const t = leadTitle(r);
   return `<div class="card ${col.done ? "done" : ""}" role="button" tabindex="0" data-id="${esc(r.id)}"
-       aria-label="${esc(r.name)}, score ${fmtScore(score)}">
-    <div class="card-summary">${esc(r.name)}</div>
-    ${r.domain ? `<div class="card-sub truncate">${esc(r.domain)}</div>` : ""}
+       aria-label="${esc(t.aria)}, score ${fmtScore(score)}">
+    <div class="card-summary">${esc(t.title)}</div>
+    ${t.sub ? `<div class="card-sub truncate">${esc(t.sub)}</div>` : ""}
     ${fieldSummary(r) ? `<div class="card-sub">${fieldSummary(r)}</div>` : ""}
-    <div class="card-tags">${sourceLozenge(r.source)}${place ? `<span class="lozenge" title="${esc((r.city || "") + (r.state ? ", " + r.state : ""))}">${esc(place)}</span>` : ""}</div>
+    <div class="card-tags">${sourceLozenge(r.source)}${kindLozenge(r)}${place ? `<span class="lozenge" title="${esc((r.city || "") + (r.state ? ", " + r.state : ""))}">${esc(place)}</span>` : ""}</div>
     <div class="card-foot">
       <span class="type-key">${typeIcon("lead")}<span class="key">${leadKey(r.id)}</span></span>
-      <span class="right">${prioIcon(score)}${pts(score)}${avatar(r.contact_name, r.email, "")}</span>
+      <span class="right">${prioIcon(score)}${pts(score)}${avatar(t.avatarName, r.email, "")}</span>
     </div></div>`;
 }
 
@@ -418,7 +445,7 @@ async function loadBoard() {
   } catch (e) { return toast("Could not load the board: " + e.message, true); }
   board.innerHTML = COLUMNS.map(renderColumn).join("");
   const open = state.board.cols.open.total;
-  $("#boardCount").textContent = open.toLocaleString() + (open === 1 ? " company" : " companies") + " to review";
+  $("#boardCount").textContent = open.toLocaleString() + " " + (open === 1 ? (segUi().entity_label || "company") : (segUi().entity_plural || "companies")) + " to review";
   bindBoard();
   syncExportLinks();
 }
@@ -462,11 +489,13 @@ async function loadLeads() {
   catch (e) { return toast("Could not load leads: " + e.message, true); }
   if (token !== state.leads.token) return;
   state.leads.rows = d.rows; state.leads.total = d.total;
-  $("#leadsCount").textContent = d.total.toLocaleString() + (d.total === 1 ? " company" : " companies");
+  $("#leadsCount").textContent = d.total.toLocaleString() + " " + (d.total === 1 ? (segUi().entity_label || "company") : (segUi().entity_plural || "companies"));
   $("#leadsBody").innerHTML = d.rows.length ? d.rows.map((r) => `
     <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
       <td><span class="cell-key">${typeIcon("lead")}<span class="key">${leadKey(r.id)}</span></span></td>
-      <td><div class="primary-cell">${esc(r.name)}</div><div class="secondary">${esc(r.domain || "no website yet")}</div></td>
+      <td>${(() => { const t = leadTitle(r);
+        const parts = [t.sub || (personFirst() ? (r.domain || "") : "no website yet"), r.kind ? String(r.kind).replace(/_/g, " ") : ""].filter(Boolean);
+        return `<div class="primary-cell">${esc(t.title)}</div><div class="secondary">${esc(parts.join(" · "))}</div>`; })()}</td>
       <td>${statusLozenge(r.status)}</td>
       <td>${pts(r.fit_score)}</td>
       <td>${prioIcon(r.fit_score, true)}</td>
@@ -474,7 +503,7 @@ async function loadLeads() {
       <td>${r.email ? `<span class="cell-person">${avatar(r.contact_name, r.email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.email)}</div></span></span>` : '<span class="muted">Unassigned</span>'}</td>
       <td class="secondary">${fieldSummary(r) || esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
     </tr>`).join("")
-    : `<tr class="empty-row"><td colspan="8">No companies match these filters.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="8">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
   $$("#leadsBody tr[data-id]").forEach((tr) => {
     tr.addEventListener("click", () => go("lead/" + tr.dataset.id));
     tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go("lead/" + tr.dataset.id); });
@@ -569,7 +598,9 @@ async function openLead(id) {
       d.domain ? `<a class="btn subtle" href="https://${esc(d.domain)}" target="_blank" rel="noopener">${icon("external", 16)} Website</a>` : "")}
     <div class="modal-body">
       <div class="modal-main">
-        <h2 class="modal-title">${esc(d.name)}</h2>
+        ${(() => { const t = leadTitle(d); return personFirst() && hostOf(d) && !t.same
+          ? `<h2 class="modal-title" style="margin-bottom:4px">${esc(t.title)}</h2><p class="subtle" style="margin:0 0 16px">Host of <strong>${esc(d.name)}</strong></p>`
+          : `<h2 class="modal-title">${esc(d.name)}</h2>`; })()}
         <div class="pill-list" style="margin:-8px 0 20px">${pills.join("")}</div>
 
         ${m.why_fit ? `<div class="section"><h3>${icon("sparkle", 16)} Why this could fit</h3><div class="body"><p>${esc(m.why_fit)}</p></div></div>` : ""}

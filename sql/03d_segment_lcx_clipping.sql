@@ -24,45 +24,17 @@ values (
     "Marketing"
   ],
   "geography": {
-    "allowed_countries": [
-      "US",
-      "GB",
-      "IN",
-      "AU",
-      "SG",
-      "AE",
-      "NZ",
-      "PH",
-      "ZA"
+    "allowed_countries": [],
+    "priority_countries": [
+      "US"
     ],
     "disallowed_countries": [
       "CA",
       "DE",
-      "FR",
-      "IT",
-      "ES",
-      "NL",
-      "BE",
       "AT",
-      "PT",
-      "SE",
-      "DK",
-      "FI",
-      "NO",
-      "PL",
-      "IE",
-      "CH",
-      "CZ",
-      "GR",
-      "HU",
-      "RO",
-      "BR",
-      "JP",
-      "KR",
-      "CN",
-      "RU"
+      "IT"
     ],
-    "guidance": "Cold business email is lawful and workable in the allowed set. Canada (CASL) and the EU/EEA (GDPR + ePrivacy, Germany especially) are excluded by design. The connectors mark a lead ''disallowed'' only on confirmed evidence -- a channel''s country field, a feed''s language region -- and blank always passes (Invariant 1)."
+    "guidance": "Everywhere on the planet, the United States first (owner, 2026-09-09). An empty allowed list means every country except the disallowed set; the priority list earns the us_priority bonus and gets six searches in ten. Disallowed by design: Canada (CASL requires consent), Germany and Austria (UWG: consent for B2B email), Italy (consent). The connectors mark a lead ''disallowed'' only on confirmed evidence -- a channel''s country field, a feed''s language REGION suffix (a bare language is not a country), Wikidata''s country -- and blank always passes (Invariant 1)."
   },
   "languages": {
     "full": [
@@ -155,6 +127,13 @@ values (
       "max_penalty": -20,
       "input": "metadata.scoring_inputs.oversized_audience",
       "guidance": "1.0 when subscribers are above 2M (the gate takes over above 5M). Keeps big-but-not-huge channels in the pool, ranked below the band where the pitch lands."
+    },
+    {
+      "key": "us_priority",
+      "label": "BONUS: based in the United States, the segment''s first market",
+      "max_bonus": 8,
+      "input": "metadata.scoring_inputs.us_priority",
+      "guidance": "1.0 when the country is confirmed US (channel country, feed language region, Wikidata, or the TVF pool), 0 for any other confirmed country, absent when unknown. Eight points is enough to rank a US show above an otherwise identical one elsewhere, not enough to lift a weak lead into the band."
     }
   ],
   "gates": [
@@ -223,7 +202,19 @@ values (
       "US",
       "GB",
       "IN",
-      "AU"
+      "AU",
+      "NZ",
+      "IE",
+      "SG",
+      "PH",
+      "ZA",
+      "AE",
+      "NG",
+      "MX",
+      "BR",
+      "FR",
+      "NL",
+      "SE"
     ],
     "min_track_count": 40,
     "excluded_genres": [
@@ -494,6 +485,10 @@ values (
         "language": "en"
       },
       {
+        "code": "US",
+        "language": "es"
+      },
+      {
         "code": "GB",
         "language": "en"
       },
@@ -508,6 +503,46 @@ values (
       {
         "code": "AU",
         "language": "en"
+      },
+      {
+        "code": "NZ",
+        "language": "en"
+      },
+      {
+        "code": "IE",
+        "language": "en"
+      },
+      {
+        "code": "SG",
+        "language": "en"
+      },
+      {
+        "code": "PH",
+        "language": "en"
+      },
+      {
+        "code": "ZA",
+        "language": "en"
+      },
+      {
+        "code": "NG",
+        "language": "en"
+      },
+      {
+        "code": "AE",
+        "language": "en"
+      },
+      {
+        "code": "MX",
+        "language": "es"
+      },
+      {
+        "code": "BR",
+        "language": "pt"
+      },
+      {
+        "code": "FR",
+        "language": "fr"
       }
     ],
     "min_subscribers": 3000,
@@ -594,6 +629,46 @@ values (
       },
       {
         "query": "webinar recording",
+        "genre_hint": "b2b"
+      },
+      {
+        "query": "production company showreel",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "production house web series",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "documentary production company",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "video production studio",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "film studio behind the scenes",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "media company original series",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "animation studio series",
+        "genre_hint": "production_house"
+      },
+      {
+        "query": "podcast network",
+        "genre_hint": "network"
+      },
+      {
+        "query": "regional news channel",
+        "genre_hint": "publisher"
+      },
+      {
+        "query": "conference talks channel",
         "genre_hint": "b2b"
       }
     ],
@@ -746,7 +821,9 @@ values (
     "podcast_feed",
     "youtube_channel",
     "why_fit",
-    "scoring_inputs"
+    "scoring_inputs",
+    "host",
+    "kind"
   ],
   "sources": [
     {
@@ -762,6 +839,20 @@ values (
       "kind": "api",
       "phase": 1,
       "detail": "tools/discover_youtube_channels.py and the YouTube half of tools/enrich_clipping.py. Needs YOUTUBE_API_KEY. Shorts gap, cadence, audience, monetization hits."
+    },
+    {
+      "slug": "wikidata_channels",
+      "name": "Wikidata production companies with a YouTube channel",
+      "kind": "api",
+      "phase": 2,
+      "detail": "tools/discover_wikidata_channels.py -- SPARQL per class, then the same 3-unit channel profile. Worldwide, US first. kind=production_house."
+    },
+    {
+      "slug": "tvf_pool",
+      "name": "TVF''s US production-house pool, carried over with contacts",
+      "kind": "import",
+      "phase": 2,
+      "detail": "tools/import_pool.py --from us-production-houses. Name, website, contacts and origin; the enrichment pass finds the YouTube channel from the website."
     }
   ],
   "self_exclusion": {
@@ -787,9 +878,9 @@ values (
     "project_type": "Sales segment",
     "key_prefix": "LCX",
     "board_title": "Clipping leads",
-    "list_title": "Shows",
+    "list_title": "Creators and studios",
     "entity_label": "show",
-    "sidebar_note": "You''re in the <strong>LCX clipping</strong> segment: creators and podcasters with a back catalogue and no shorts. Discovery, enrichment and drafting all run here.",
+    "sidebar_note": "You''re in the <strong>LCX clipping</strong> segment: creators, podcasters and production houses with a back catalogue and no shorts, worldwide, US first. Discovery, enrichment and drafting all run here.",
     "card_fields": [
       {
         "path": "metadata.podcast_feed.episode_count",
@@ -813,6 +904,16 @@ values (
       }
     ],
     "details": [
+      {
+        "path": "host_name",
+        "label": "Host",
+        "format": "text"
+      },
+      {
+        "path": "metadata.kind",
+        "label": "Kind",
+        "format": "text"
+      },
       {
         "path": "metadata.podcast_feed.feed_url",
         "label": "Feed",
@@ -900,7 +1001,10 @@ values (
         "label": "Budget signals on the channel",
         "format": "list"
       }
-    ]
+    ],
+    "lead_first": "person",
+    "summary_label": "Host · show",
+    "entity_plural": "shows"
   },
   "outreach": {
     "sender": {
@@ -918,10 +1022,20 @@ values (
         "key": "clipping_intro_v1",
         "subject": "{{company}}: three shorts from your latest episode?",
         "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long episodes into short vertical clips -- the hook, the captions, the reframing -- and deliver within 48 hours of each new episode, so every release also gets ten shorts working for it on YouTube, Instagram and TikTok. Our editors cut; you approve.\n\nRather than describe it: reply \"yes\" and we''ll clip your latest episode into three shorts, free, so you can judge the quality before anything else is discussed.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-        "guidance": "First touch for the top tier. {{hook}} is one sentence of THEIR numbers -- episodes, cadence, length, shorts count -- built by the draft command from the feed and channel evidence, so it is true by construction. Greeting: named host -> first name; otherwise ''team at {{company}}''."
+        "guidance": "First touch for creators and podcasters. {{hook}} is one sentence of THEIR numbers -- episodes, cadence, length, shorts count -- built by the draft command from the feed and channel evidence, so it is true by construction. Greeting: a person''s first name when the engine found one (metadata.host at high or medium confidence); otherwise ''there''. Never the show''s name."
+      },
+      {
+        "key": "clipping_studio_v1",
+        "when": {
+          "metadata.kind": "production_house"
+        },
+        "subject": "{{company}}: shorts from your archive, three on us",
+        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form -- episodes, trailers, behind-the-scenes, interviews -- into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\nRather than describe it: reply \"yes\" and we''ll clip one piece from your channel into three shorts, free, so you can judge the quality first.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+        "guidance": "Production houses and studios (metadata.kind = production_house, set by the Wikidata connector and the TVF pool import). Same evidence hook, studio wording: ''your archive'', ''your team approves''. Picked automatically by the draft command through the `when` condition."
       }
     ],
-    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. daily_send_cap is a hard ceiling per send run per mailbox. One outbound touch per show is enforced by the database; follow-up threads are a separate, owner-approved change."
+    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. daily_send_cap is a hard ceiling per send run per mailbox. One outbound touch per show is enforced by the database; follow-up threads are a separate, owner-approved change. Templates carry an optional `when` condition on metadata; the first match wins, else the first unconditional template. greeting_fallback is what ''Hi ...'' says when no person is known.",
+    "greeting_fallback": "there"
   },
   "schedule": [
     {
@@ -937,6 +1051,7 @@ values (
     "weekly_refresh": [
       "discover_podcasts",
       "discover_youtube",
+      "discover_wikidata_channels",
       "promote_chain",
       "enrich_clipping",
       "enrich_contacts",
@@ -945,7 +1060,29 @@ values (
     "rescore": [
       "promote_chain"
     ]
-  }
+  },
+  "wikidata_channel_discovery": {
+    "entity_classes": [
+      {
+        "qid": "Q1762059",
+        "label": "film production company"
+      },
+      {
+        "qid": "Q10689397",
+        "label": "television production company"
+      },
+      {
+        "qid": "Q1107679",
+        "label": "animation studio"
+      }
+    ],
+    "per_class_limit": 800,
+    "min_subscribers": 1000,
+    "min_videos": 30,
+    "min_recent_long": 8,
+    "guidance": "tools/discover_wikidata_channels.py. Direct instances of each class that list a YouTube channel (P2397), with website (P856) and country (P17 -> ISO). One query per class; subclass walks time out. Priority countries are profiled first. Floors are lower than for creators because a production house with a modest channel and a deep archive is still a clipping customer."
+  },
+  "video_first_min_recent_long": 8
 }'::jsonb
 )
 on conflict (slug) do update

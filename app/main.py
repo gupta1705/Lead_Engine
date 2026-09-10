@@ -351,8 +351,9 @@ def leads(q: str = "", source: str = "", status: str = "open",
         params.append(status)
 
     if q:
-        where.append("(e.name ilike %s or e.domain ilike %s)")
-        params += ["%" + q + "%", "%" + q + "%"]
+        # the card may be titled by the host, so the host is searchable too
+        where.append("(e.name ilike %s or e.domain ilike %s or e.metadata->'host'->>'name' ilike %s)")
+        params += ["%" + q + "%"] * 3
     if source:
         where.append("e.source = %s")
         params.append(source)
@@ -381,7 +382,9 @@ def leads(q: str = "", source: str = "", status: str = "open",
         cur.execute(
             "select e.id, e.name, e.domain, e.source, e.status,"
             " round(coalesce(e.fit_score,0)::numeric,1) as fit_score,"
-            " e.metadata->>'why_fit' as why_fit," + extra +
+            " e.metadata->>'why_fit' as why_fit, e.metadata->>'kind' as kind,"
+            " case when e.metadata->'host'->>'confidence' in ('high','medium')"
+            "      then e.metadata->'host'->>'name' end as host_name," + extra +
             " e.metadata->>'hq_city' as city, e.metadata->>'hq_state' as state,"
             " (select count(*) from contacts c where c.entity_id = e.id) as n_contacts,"
             " (select c.email from contacts c where c.entity_id = e.id"
@@ -440,6 +443,8 @@ def lead(lead_id: str):
             "guidance": r.get("guidance", ""),
         })
     row["criteria"] = criteria
+    h = meta.get("host") or {}
+    row["host_name"] = h.get("name") if h.get("confidence") in ("high", "medium") else None
     row.pop("rubric", None)
     row["id"] = str(row["id"])
     row["segment_id"] = str(row["segment_id"])

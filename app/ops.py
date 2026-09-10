@@ -94,6 +94,22 @@ JOBS = {
         "cmd": [PY, "tools/enrich_clipping.py", "--limit", "300"],
         "segments": ["lcx-clipping"],
     },
+    "discover_wikidata_channels": {
+        "label": "Harvest: production companies with a YouTube channel (Wikidata)",
+        "group": "Discover",
+        "desc": "Film, TV and animation companies worldwide that list a channel on Wikidata, "
+                "US first; each channel profiled for the shorts gap. About 3 quota units per company.",
+        "cmd": [PY, "tools/discover_wikidata_channels.py", "--limit-channels", "300"],
+        "segments": ["lcx-clipping"],
+    },
+    "import_pool": {
+        "label": "Import the TVF production-house pool",
+        "group": "Discover",
+        "desc": "Copy the US production houses TVF already discovered, contacts included, into this "
+                "segment; the enrichment pass then looks for each one's YouTube channel.",
+        "cmd": [PY, "tools/import_pool.py", "--from", "us-production-houses", "--limit", "1500"],
+        "segments": ["lcx-clipping"],
+    },
     "promote_chain": {
         "label": "Promote + score + gates",
         "group": "Process",

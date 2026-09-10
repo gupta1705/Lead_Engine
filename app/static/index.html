@@ -218,7 +218,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
       <div class="table-wrap">
         <table class="tbl" id="leadsTable">
           <thead><tr>
-            <th>Key</th><th>Summary</th><th>Status</th><th>Score</th><th>Priority</th>
+            <th>Key</th><th id="leadsSummaryCol">Summary</th><th>Status</th><th>Score</th><th>Priority</th>
             <th>Source</th><th>Contact</th><th id="leadsLastCol">Location</th>
           </tr></thead>
           <tbody id="leadsBody"></tbody>
@@ -248,7 +248,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
       <div class="tabs" id="folderTabs" role="tablist" aria-label="Outreach folders"></div>
       <div class="table-wrap">
         <table class="tbl" id="outreachTable">
-          <thead><tr><th>Key</th><th>Company</th><th>Contact</th><th>Subject</th><th>Status</th><th>When</th></tr></thead>
+          <thead><tr><th>Key</th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th>Status</th><th>When</th></tr></thead>
           <tbody id="outreachBody"></tbody>
         </table>
       </div>

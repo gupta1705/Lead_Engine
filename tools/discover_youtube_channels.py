@@ -26,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 from dbconn import Db
+import personname
 import yt_api
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-clipping")
@@ -75,8 +76,12 @@ def main():
             (seg_id, SOURCE)), cur.fetchone()[0])[1])
 
     pairs = [(q, r) for q in ycfg.get("queries", []) for r in ycfg.get("regions", [{"code": "US", "language": "en"}])]
+    prio = set(cfg.get("geography", {}).get("priority_countries") or ["US"])
     random.Random(now.strftime("%Y-%m-%d")).shuffle(pairs)
-    pairs = pairs[:args.max_searches]
+    first = [p for p in pairs if p[1]["code"] in prio]
+    rest = [p for p in pairs if p[1]["code"] not in prio]
+    k = min(len(first), int(round(args.max_searches * 0.6))) if rest else min(len(first), args.max_searches)
+    pairs = (first[:k] + rest[:args.max_searches - k])[:args.max_searches]
 
     found = []
     try:
@@ -116,7 +121,8 @@ def main():
             row = {"name": (yc["title"] or "")[:200], "domain": yc.get("website_domain"),
                    "source_url": "https://www.youtube.com/channel/" + yc["channel_id"],
                    "raw": {"genre_hint": hints.get(item["id"], (None, None))[0], "region": hints.get(item["id"], (None, None))[1],
-                           "youtube_channel": yc, "why_fit": why, "scoring_inputs": si}}
+                           "youtube_channel": yc, "why_fit": why, "scoring_inputs": si,
+                           "host": personname.extract_host(yc.get("title") or "", description=yc.get("description"))}}
             log("  %3d. %-36s subs=%-8s long=%-2d shorts=%-2d share=%-5s %s" % (
                 n, row["name"][:36], f"{subs:,}", yc["recent"]["long_count"], yc["recent"]["shorts_count"],
                 yc["recent"]["shorts_share"], si.get("activity_signal", "")))

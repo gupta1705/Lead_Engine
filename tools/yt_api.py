@@ -175,6 +175,23 @@ def profile(item, uploads, cfg):
     }
 
 
+def country_inputs(iso, geo):
+    """country_signal / us_priority from an ISO code. An empty allowed list
+    means everywhere except the disallowed set (the owner's 'everywhere on
+    this planet, primarily USA'); an unknown country stays absent (Invariant 1)."""
+    out = {}
+    iso = (iso or "").upper()
+    if not iso:
+        return out
+    allowed = geo.get("allowed_countries") or []
+    if iso in geo.get("disallowed_countries", []):
+        out["country_signal"] = "disallowed"
+    elif not allowed or iso in allowed:
+        out["country_signal"] = "allowed"
+    out["us_priority"] = 1.0 if iso in (geo.get("priority_countries") or ["US"]) else 0.0
+    return out
+
+
 def inputs_from_channel(yc, cfg, now):
     """scoring_inputs a channel profile can settle. Absent keys stay absent
     (Invariant 1); the caller merges these over what discovery already knew."""
@@ -190,7 +207,8 @@ def inputs_from_channel(yc, cfg, now):
         si["archive_size"] = 1.0 if est_long >= 100 else 0.5 if est_long >= 40 else 0.0
         if r["shorts_share"] is not None:
             si["shorts_gap"] = 1.0 if r["shorts_share"] < 0.10 else 0.5 if r["shorts_share"] < 0.30 else 0.0
-        si["video_first"] = 1.0 if r["long_count"] >= int(ycfg.get("min_recent_long", 10)) else 0.0
+        # the modifier has its own floor: a connector's admission floor is not a verdict on video-first
+        si["video_first"] = 1.0 if r["long_count"] >= int(cfg.get("video_first_min_recent_long", ycfg.get("min_recent_long", 10))) else 0.0
     if r["uploads_per_month"] is not None:
         si["cadence"] = 1.0 if r["uploads_per_month"] >= 4 else 0.5 if r["uploads_per_month"] >= 2 else 0.0
     subs = yc["subscribers"]
@@ -206,10 +224,7 @@ def inputs_from_channel(yc, cfg, now):
         age = (now - dt.datetime.fromisoformat(r["last_upload_at"].replace("Z", "+00:00"))).days
         si["activity_signal"] = "active" if age <= 90 else "confirmed_dormant" if age > 180 else "quiet"
     c = (yc.get("country") or "").upper()
-    if c in geo.get("disallowed_countries", []):
-        si["country_signal"] = "disallowed"
-    elif c in geo.get("allowed_countries", []):
-        si["country_signal"] = "allowed"
+    si.update(country_inputs(c, geo))
     lang = (yc.get("language") or "").lower().split("-")[0]
     if lang:
         si["language_match"] = 1.0 if lang in langs.get("full", []) else 0.5 if lang in langs.get("partial", []) else 0.0

@@ -82,13 +82,43 @@ def load_outreach_config(db):
 
 
 # ------------------------------------------------------------------ draft
-def greeting_for(full_name, email, company):
-    """Named person -> first name. Role inbox -> the team. Never a blank."""
-    if full_name:
-        first = full_name.split()[0].strip()
-        if len(first) >= 2:
-            return first
-    return "team at " + company
+def greeting_for(full_name, email, company, fallback=None):
+    """A person -> first name. Anything else -> the segment's fallback.
+
+    The contact's name is only used when it reads as a person: a feed that
+    published its address under the show's name must never produce
+    "Hi Tech Talk". The fallback comes from config outreach.greeting_fallback
+    ("there" for the clipping segment, "team at {{company}}" by default)."""
+    import personname
+    first = personname.greeting_name(full_name)
+    if first:
+        return first
+    return (fallback or "team at {{company}}").replace("{{company}}", company)
+
+
+def pick_template(cfg, meta):
+    """The first template whose `when` conditions match the lead's metadata
+    (e.g. {"metadata.kind": "production_house"}), else the first template
+    with no conditions."""
+    tpls = cfg["templates"]
+    for t in tpls:
+        w = t.get("when") or {}
+        if not w:
+            continue
+        ok = True
+        for path, want in w.items():
+            parts = path.split(".")
+            if parts and parts[0] == "metadata":
+                parts = parts[1:]
+            v = meta
+            for part in parts:
+                v = v.get(part) if isinstance(v, dict) else None
+            if v != want:
+                ok = False
+                break
+        if ok:
+            return t
+    return next((t for t in tpls if not t.get("when")), tpls[0])
 
 
 def hook_for(meta, company):
@@ -159,8 +189,13 @@ def cmd_draft(args):
     from dbconn import Db
     db = Db()
     cfg = load_outreach_config(db)
-    tpl = next((t for t in cfg["templates"] if t["key"] == args.template),
-               cfg["templates"][0])
+    requested = None
+    if getattr(args, "template", None):
+        requested = next((t for t in cfg["templates"] if t["key"] == args.template), None)
+        if not requested:
+            sys.exit("unknown template %r; segment %s has: %s"
+                     % (args.template, SEGMENT, [t["key"] for t in cfg["templates"]]))
+    tpl = requested or next((t for t in cfg["templates"] if not t.get("when")), cfg["templates"][0])
     sender = cfg["sender"]
     if "SET_ME" in json.dumps(sender) and not args.dry_run:
         log("NOTE: sender.name / postal_address still say SET_ME in config.")
@@ -186,16 +221,24 @@ def cmd_draft(args):
         db.close(); return 0
 
     log("drafting %d email(s) from template %s%s\n"
-        % (len(rows), tpl["key"], "  [DRY RUN]" if args.dry_run else ""))
+        % (len(rows), requested["key"] if requested else "auto (per-lead when-conditions)",
+           "  [DRY RUN]" if args.dry_run else ""))
 
     made = 0
+    import personname
     for eid, company, meta, cid, cname, email in rows:
         meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
+        tpl = requested or pick_template(cfg, meta)
         hook = (hook_for_clipping(meta, company) if cfg.get("hook_style") == "clipping"
                 else hook_for(meta, company)) or cfg.get("neutral_hook") or NEUTRAL_HOOK
         ctx = {
             "company": company,
-            "greeting_name": greeting_for(cname, email, company),
+            # the contact's own name when it is a person; else the host the engine
+            # found (high/medium only); else the segment's fallback. Never a show name.
+            "greeting_name": (personname.greeting_name(cname)
+                              or ((meta.get("host") or {}).get("first_name")
+                                  if (meta.get("host") or {}).get("confidence") in ("high", "medium") else None)
+                              or greeting_for(None, email, company, cfg.get("greeting_fallback"))),
             "hook": hook.replace("{{company}}", company),
             "sender_name": sender.get("name", ""),
             "sender_title": sender.get("title", ""),
@@ -203,7 +246,7 @@ def cmd_draft(args):
         }
         subject = render(tpl["subject"], ctx)
         body = render(tpl["body"], ctx)
-        log("  %-32s -> %-34s %s" % (company[:32], email, subject[:40]))
+        log("  %-32s -> %-34s [%s] %s" % (company[:32], email, tpl["key"], subject[:40]))
         if args.dry_run:
             continue
         db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body: cur.execute(
@@ -541,7 +584,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     sub = ap.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("draft"); d.add_argument("--limit", type=int, default=20)
-    d.add_argument("--template", default="copro_intro_v1")
+    d.add_argument("--template", default=None, help="template key; omit to pick by the segment when-conditions")
     d.add_argument("--dry-run", action="store_true")
     sub.add_parser("auth")
     s = sub.add_parser("send"); s.add_argument("--limit", type=int, default=20)

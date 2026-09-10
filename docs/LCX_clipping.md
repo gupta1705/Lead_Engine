@@ -29,14 +29,16 @@ to the database by `sql/03d_segment_lcx_clipping.sql` (regenerate with
 | Step | Tool | What it does |
 |---|---|---|
 | Discover | `tools/discover_podcasts.py` | Keyless. Search terms x store countries against Apple's public podcast search, then each new show's RSS feed: catalogue size, cadence, episode length, categories, language, the published business address, budget signals in the show notes, a YouTube link. Computes the scoring inputs it can settle. |
+| Discover | `tools/discover_wikidata_channels.py` | Production companies worldwide with a YouTube channel on Wikidata, US first; the same 3-unit profile. |
+| Discover | `tools/import_pool.py` | Carries TVF's production houses and contacts into this segment; one-off. |
 | Discover | `tools/discover_youtube_channels.py` | Channel search (100 quota units each), then statistics and the last 50 uploads with durations (3 units per channel). Shorts gap, cadence, audience band, video-first. |
 | Promote | `tools/run_chain.py` with `SEGMENT_SLUG=lcx-clipping` | The same self-exclusion, promote, dedupe, zero-unverified, score and gate chain as TVF. The chain SQL now reads its segment from the session. |
-| Enrich | `tools/enrich_clipping.py` | Lifts the feed and channel evidence to the top level of metadata, creates the contact from the published address, profiles YouTube channels linked from podcast feeds, then re-runs the chain to score the new evidence. |
+| Enrich | `tools/enrich_clipping.py` | Lifts the evidence, finds the person behind the show (`metadata.host`), creates the contact, corrects contacts that carried the show's name, reads the website's front page for a YouTube link, profiles the channel. |
 | Enrich | `tools/enrich_sitescrape.py` (Find contacts on sites) | For shows with a website and no address. |
 | Draft | `tools/outreach.py draft` | The clipping template with a hook built from the show's own numbers. |
 
 The weekly refresh for the segment (Wednesday 02:00 UTC) is
-`discover_podcasts, discover_youtube, promote_chain, enrich_clipping, enrich_contacts, promote_chain`.
+`discover_podcasts, discover_youtube, discover_wikidata_channels, promote_chain, enrich_clipping, enrich_contacts, promote_chain`.
 It runs from the in-app scheduler; nothing in this segment needs the office n8n.
 
 ## The rubric
@@ -52,7 +54,8 @@ It runs from the in-app scheduler; nothing in this segment needs the office n8n.
 | Language LCX edits well | 5 | feed or channel |
 
 Modifiers: network-owned (penalty 20), audience above 2M (penalty 20),
-video-first (bonus 6). Gates: country allowed, active, not kids or music, some
+video-first (bonus 6, eight or more long uploads among the last fifty),
+US-based (bonus 8). Gates: country allowed, active, not kids or music, some
 reachable presence, not a major network, not oversized (above 5M
 subscribers). Thresholds: reviewable at 25, priority at 45, like TVF.
 
@@ -120,6 +123,48 @@ audience only withheld points (now a gate above 5M and a penalty above 2M);
 and catalogue plus cadence let a 271-subscriber show outrank the band (audience
 raised to 25 points, catalogue and cadence lowered). The next runs skip every
 feed and channel already known, so they only pay for new ground.
+
+## People first, and production houses everywhere (2026-09-09, second pass)
+
+The owner's reaction to the first pool was "why are there shows in the
+software". The show is the record because it carries the evidence; the person
+is who the email goes to; and the portal was showing the show twice. Three
+changes, all agreed:
+
+- **The person is pulled out.** `tools/personname.py` reads the feed's author
+  and owner fields, the title ("with Doug Smith", "The Joe Rogan Experience",
+  "Dr. Shawn Baker Podcast", "Rahul Jain - Business coaching") and the
+  description ("hosted by ..."), and stores `metadata.host` with a confidence.
+  Only high or medium confidence names a contact or a greeting; words that name
+  things (podcast, studio, leadership, finance, healthcare, hoy, hablamos) rule a
+  candidate out, and a single first name counts only when it is a known one.
+  An existing contact that carried the show's name is corrected by the
+  enrichment pass; a real person's name is never touched.
+- **The portal leads with the person.** In this segment the card title is the
+  host, the show sits underneath, the list's first column is "Host · show",
+  the dialog says "Doug Smith, host of The L3 Leadership Podcast". Segments
+  without a person-first flag render exactly as before.
+- **No greeting ever uses a show name.** `greeting_for` greets by first name
+  only when the contact reads as a person; otherwise the segment's
+  `greeting_fallback` ("there"). The TVF segment keeps "team at {{company}}".
+- **The rules are a regression table.** `python tools/test_personname.py`
+  holds every case the live pool and a hostile review (2026-09-10) produced:
+  "Dr. Phil", glued "Dr.Thema", initials, co-host pairs, sponsors behind "by",
+  brands like "Bob Industries". Change a rule, run the table. Weak cues ("by",
+  "I'm") only accept a known first name; production houses never have a
+  person mined from the company name.
+
+And the targeting widened to **creators plus production houses, worldwide,
+United States first**:
+
+| | |
+|---|---|
+| Geography | Everywhere except Canada, Germany, Austria and Italy (consent laws). `priority_countries: ["US"]` earns an 8-point `us_priority` bonus and six searches in ten. |
+| Wikidata | `tools/discover_wikidata_channels.py`: film, TV and animation companies that list a YouTube channel (P2397), with country and website; each channel profiled for the shorts gap. `kind = production_house`. |
+| TVF pool | `tools/import_pool.py --from us-production-houses`: TVF's US production houses with their contacts, carried over; the enrichment pass reads each website's front page for a YouTube link (robots honoured) and profiles the channel. |
+| Studio template | `clipping_studio_v1`, chosen automatically when `metadata.kind` is `production_house`. |
+| Weekly refresh | now runs the Wikidata harvest as well. The pool import is a one-off from the Create button; `import_pool.py --repair` re-derives a carried row's country and reachability from its origin if the rules change. |
+| Revisiting rows | `enrich_clipping.py` stamps `clipping_enrich_version`; bumping the constant makes the weekly refresh revisit every row under new host and contact rules without repeating any network call. Transient site or channel failures are retried after a week; only definitive answers are final. |
 
 ## Not built yet, by decision
 
