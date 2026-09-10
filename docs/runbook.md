@@ -57,6 +57,10 @@ python tools/outreach.py send
   and land in Drafts like any other email. Sending and pulling work the same,
   with `SEGMENT_SLUG=lcx-clipping` in front of the command. Pull pauses a
   thread as soon as a reply arrives.
+- **Several mailboxes.** Send spreads openers across every connected LCX
+  mailbox and keeps each follow-up on its opener's mailbox. Before sending,
+  `SEGMENT_SLUG=lcx-clipping python tools/outreach.py mailboxes` shows what
+  each can send today. A new mailbox starts at ten a day and grows on its own.
 
 ## Friday — triage and KPIs (~30 min)
 

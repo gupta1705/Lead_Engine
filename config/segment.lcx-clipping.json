@@ -1003,9 +1003,9 @@
    "title": "Clipping desk, LCX",
    "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
    "email_env": "GMAIL_SENDER_ADDRESS_LCX_CLIPPING",
-   "guidance": "sender.name and postal_address MUST be set before the first send. The Gmail address for this segment comes from the environment variable named in email_env, so LCX sends from its own mailbox, never TVF's."
+   "guidance": "sender.name and postal_address MUST be set before the first send. The sending addresses come from the environment variables named in outreach.mailboxes, never from config."
   },
-  "daily_send_cap": 40,
+  "daily_send_cap": 120,
   "hook_style": "clipping",
   "neutral_hook": "We've been mapping shows with a deep back catalogue and almost no short-form, and {{company}} came up.",
   "templates": [
@@ -1063,7 +1063,40 @@
    "sample_fraction": 0.1,
    "max_batch": 100,
    "guidance": "Owner decision 2026-09-10. Templated drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company). The approver's name, the batch and the sample are recorded."
-  }
+  },
+  "mailboxes": [
+   {
+    "key": "main",
+    "email_env": "GMAIL_SENDER_ADDRESS_LCX_CLIPPING",
+    "daily_cap": 40,
+    "warmup": {
+     "start_cap": 10,
+     "step": 5,
+     "every_days": 2
+    }
+   },
+   {
+    "key": "second",
+    "email_env": "GMAIL_SENDER_ADDRESS_LCX_2",
+    "daily_cap": 40,
+    "warmup": {
+     "start_cap": 10,
+     "step": 5,
+     "every_days": 2
+    }
+   },
+   {
+    "key": "third",
+    "email_env": "GMAIL_SENDER_ADDRESS_LCX_3",
+    "daily_cap": 40,
+    "warmup": {
+     "start_cap": 10,
+     "step": 5,
+     "every_days": 2
+    }
+   }
+  ],
+  "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them."
  },
  "schedule": [
   {

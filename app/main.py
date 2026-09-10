@@ -696,6 +696,31 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
     return {"batch_id": batch_id, "approved": approved, "skipped": skipped}
 
 
+@app.get("/api/mailboxes")
+def mailboxes_state(segment: str = Depends(current_segment)):
+    """The segment's sending mailboxes: cap for today (warm-up included), sends
+    today, room left. Addresses are the ones recorded on sent email; the
+    credentials themselves live on the laptop and are never shown here."""
+    import datetime as _dt
+    pol = _policy()
+    with cursor() as cur:
+        cfg = pol.outreach_config(cur, segment)
+        try:
+            boxes = pol.mailbox_list(cfg, segment)
+        except ValueError as e:
+            raise HTTPException(500, "config outreach.mailboxes is invalid: %s" % e)
+        status = pol.mailbox_status(cur, segment, boxes, _dt.datetime.now(_dt.timezone.utc).date())
+    keep = ("key", "email_env", "daily_cap", "warmup", "enabled", "cap_today", "sent_today",
+            "remaining", "last_address", "warmup_day")
+    out = []
+    for st in status:
+        row = {k: st.get(k) for k in keep}
+        row["first_sent"] = st["first_sent"].isoformat() if st.get("first_sent") else None
+        out.append(row)
+    return {"segment_cap": int(cfg.get("daily_send_cap", 20)), "rotation": bool(cfg.get("mailboxes")),
+            "mailboxes": out}
+
+
 # ------------------------------------------------------------------ kpis
 @app.get("/api/kpis")
 def kpis(segment: str = Depends(current_segment)):

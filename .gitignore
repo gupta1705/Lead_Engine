@@ -40,3 +40,6 @@ scratch_*.js
 scratch_*.txt
 logs/
 .gmail_token.json
+
+# every Gmail token: per segment and per mailbox (.gmail_token.<segment>.<mailbox>.json)
+.gmail_token*.json

@@ -313,6 +313,10 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
         </div>
       </header>
       <div id="webhookMsg"></div>
+      <div class="panel" id="mailboxPanel" hidden>
+        <div class="panel-head"><div><h2>Mailboxes</h2><p class="sub" id="mailboxSub"></p></div></div>
+        <div class="table-wrap"><table class="tbl" id="mailboxTable"></table></div>
+      </div>
       <div class="ops-cols">
         <div class="panel">
           <div class="panel-head"><div><h2>Unattended schedule</h2><p class="sub">Harvests fire in n8n; this pipeline then promotes, enriches and re-scores the pool. Times are UTC.</p></div></div>

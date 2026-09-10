@@ -88,10 +88,15 @@ SEGMENT_SLUG=lcx-clipping python tools/outreach.py draft
 
 ## Sending as LCX
 
-The segment sends from its own mailbox. Set `GMAIL_SENDER_ADDRESS_LCX_CLIPPING`
-in `.env`, run `SEGMENT_SLUG=lcx-clipping python tools/outreach.py auth` once
-(the token lands in `.gmail_token.lcx-clipping.json`), and fill the `SET_ME`
-sender name and postal address in the config. Send and pull are the same
+The segment sends from its own mailboxes, never TVF's: `main`, `second` and
+`third` in the config. For each one you want to use, put its address in `.env`
+(`GMAIL_SENDER_ADDRESS_LCX_CLIPPING`, `GMAIL_SENDER_ADDRESS_LCX_2`,
+`GMAIL_SENDER_ADDRESS_LCX_3`) and run
+`SEGMENT_SLUG=lcx-clipping python tools/outreach.py auth --mailbox main` (then
+`second`, `third`) once; the token lands in `.gmail_token.lcx-clipping.<key>.json`,
+which git ignores. One mailbox is enough to start. Fill the `SET_ME` sender
+name and postal address in the config. `outreach.py mailboxes` shows what is
+connected and how much each can send today. Send and pull are the same
 commands with `SEGMENT_SLUG=lcx-clipping`; each only touches this segment's
 rows and its own daily cap.
 
@@ -199,8 +204,25 @@ reply and positive rates are per company, so follow-ups cannot inflate them.
 `python tools/test_outreach_policy.py` exercises every rule above against
 the live database inside a transaction it rolls back.
 
+## Mailbox rotation (2026-09-10)
+
+Openers are spread across the connected mailboxes: each goes to the one with
+the most room left today. A follow-up always leaves from the mailbox that
+sent its opener, because a Gmail thread belongs to one mailbox; the database
+enforces that at the moment of sending (`sql/24`), and reply pulls read each
+thread through its own mailbox.
+
+Each mailbox warms up from its first send: ten emails a day, five more every
+two days, up to forty. Three warm mailboxes give 120 a day, which is also the
+segment's ceiling. A bounce (a mailer-daemon reply) marks the address invalid
+and ends that thread, so no mailbox writes to it again. The Mailboxes panel in
+Operations shows each mailbox's cap, sends and room left today.
+
+Use addresses on a sending domain that belongs to LCX alone, not the main
+company domain, so a bad week never touches everyday mail. The signature
+name is shared, so the mailboxes should belong to the same person or desk.
+
 ## Not built yet, by decision
-- Mailbox rotation and warm-up. Needed above roughly forty sends a day.
 - Sample-first outreach: a "needs sample" state where the draft waits until
   three clips are attached. Cheap to add once the production side exists.
 - Podcast Index as a second directory (needs a free key). Apple alone gives

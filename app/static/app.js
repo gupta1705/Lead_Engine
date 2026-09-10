@@ -872,6 +872,7 @@ function openMessage(id) {
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
             <dt>Status</dt><dd><span class="lozenge ${stCls}">${esc(stLabel)}</span></dd>
             <dt>Direction</dt><dd>${isReply ? "Inbound reply" : step ? "Follow-up " + step + ", same thread" : "Opener"}</dd>
+            ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
             ${r.approved_by ? `<dt>Approved</dt><dd>${esc(r.approved_by)}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
             ${r.triage ? `<dt>Triage</dt><dd><span class="lozenge ${r.triage === "positive" ? "success bold" : r.triage === "negative" ? "removed" : "moved"}">${esc(r.triage.replace(/_/g, " "))}</span></dd>` : ""}
@@ -1029,8 +1030,32 @@ async function loadSchedule() {
       : `<tr class="empty-row"><td colspan="6">No runs yet. The first scheduled refresh is Tuesday 02:00 UTC.</td></tr>`) + "</tbody>";
 }
 
+async function loadMailboxes() {
+  let d;
+  try { d = await api("/api/mailboxes"); } catch (e) { $("#mailboxPanel").hidden = true; return; }
+  $("#mailboxPanel").hidden = false;
+  const today = d.mailboxes.reduce((a, m) => a + (m.cap_today || 0), 0);
+  $("#mailboxSub").textContent = d.rotation
+    ? `Openers go to the mailbox with the most room left today; follow-ups always leave from the mailbox that sent the opener. New mailboxes warm up slowly. Up to ${Math.min(today, d.segment_cap)} emails today (segment ceiling ${d.segment_cap}). Bounced addresses are never written to again.`
+    : `One mailbox, up to ${d.segment_cap} emails a day.`;
+  $("#mailboxTable").innerHTML = `<thead><tr><th>Mailbox</th><th>Address</th><th>Warm-up</th><th class="r">Cap today</th><th class="r">Sent today</th><th>Room left</th></tr></thead><tbody>` +
+    d.mailboxes.map((m) => {
+      const warm = !m.enabled ? `<span class="lozenge">Disabled</span>`
+        : !m.warmup ? `<span class="lozenge success">Warm</span>`
+        : m.warmup_day ? (m.cap_today >= m.daily_cap ? `<span class="lozenge success">Warm</span>` : `<span class="lozenge inprogress">Day ${m.warmup_day}</span>`)
+        : `<span class="lozenge moved">Not started</span>`;
+      const pct = m.cap_today ? Math.round(100 * m.remaining / m.cap_today) : 0;
+      return `<tr><td class="mono primary-cell">${esc(m.key)}</td>
+        <td>${m.last_address ? esc(m.last_address) : `<span class="muted small">set <span class="mono">${esc(m.email_env)}</span> on the laptop</span>`}</td>
+        <td>${warm}${m.warmup ? `<div class="secondary">${m.warmup.start_cap} a day, +${m.warmup.step} every ${m.warmup.every_days} days, up to ${m.daily_cap}</div>` : ""}</td>
+        <td class="r num">${m.cap_today}</td><td class="r num">${m.sent_today}</td>
+        <td><div class="bar-cell"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="num small">${m.remaining}</span></div></td></tr>`;
+    }).join("") + "</tbody>";
+}
+
 async function loadOps() {
   loadSchedule();
+  loadMailboxes();
   let d;
   try { d = await api("/api/ops"); }
   catch (e) { return toast("Could not load operations: " + e.message, true); }

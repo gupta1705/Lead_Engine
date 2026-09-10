@@ -48,6 +48,7 @@ TOKEN_PATH = ROOT / ".gmail_token.json"          # gitignored, holds the refresh
 # file / variable, so LCX never sends from TVF's mailbox or vice versa.
 SENDER_ENV = "GMAIL_SENDER_ADDRESS"
 TOKEN_ENV = "GMAIL_TOKEN_JSON"
+MAILBOXES = []                                   # filled by load_outreach_config (outreach_policy.mailbox_list)
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 
@@ -68,17 +69,37 @@ def env(name):
 
 
 def load_outreach_config(db):
-    global SENDER_ENV, TOKEN_ENV, TOKEN_PATH
+    """The segment's outreach block, and its mailboxes. SENDER_ENV / TOKEN_*
+    keep describing the first mailbox, which for a segment without rotation
+    is exactly the single sender it always had."""
+    global SENDER_ENV, TOKEN_ENV, TOKEN_PATH, MAILBOXES
+    import outreach_policy as pol
     cfg = db.run(lambda cur: (cur.execute(
         "select config->'outreach' from segments where slug = %s", (SEGMENT,)),
         cur.fetchone())[1][0])
     if not cfg:
         sys.exit("config has no outreach block for segment %s" % SEGMENT)
-    SENDER_ENV = (cfg.get("sender") or {}).get("email_env") or "GMAIL_SENDER_ADDRESS"
-    if SENDER_ENV != "GMAIL_SENDER_ADDRESS":
-        TOKEN_PATH = ROOT / (".gmail_token.%s.json" % SEGMENT)
-        TOKEN_ENV = "GMAIL_TOKEN_JSON_" + SEGMENT.upper().replace("-", "_")
+    try:
+        MAILBOXES = pol.mailbox_list(cfg, SEGMENT)
+    except ValueError as e:
+        sys.exit("config outreach.mailboxes is invalid: %s" % e)
+    first = MAILBOXES[0]
+    SENDER_ENV, TOKEN_ENV, TOKEN_PATH = first["email_env"], first["token_env"], ROOT / first["token_file"]
     return cfg
+
+
+def mailbox_by_key(key):
+    if not key:
+        return MAILBOXES[0]
+    for mb in MAILBOXES:
+        if mb["key"] == key:
+            return mb
+    sys.exit("no mailbox %r in segment %s; it has: %s" % (key, SEGMENT, ", ".join(m["key"] for m in MAILBOXES)))
+
+
+def mailbox_connected(mb):
+    """Its address is set and its Gmail token is on this machine (file or variable)."""
+    return bool(env(mb["email_env"])) and ((ROOT / mb["token_file"]).exists() or bool(env(mb["token_env"])))
 
 
 # ------------------------------------------------------------------ draft
@@ -324,7 +345,8 @@ def cmd_followups(args):
 
 
 # ------------------------------------------------------------------- gmail
-def gmail_service():
+def gmail_service(mb=None):
+    """A Gmail client for one mailbox (the first one when none is named)."""
     cid = env("GOOGLE_OAUTH_CLIENT_ID")
     csec = env("GOOGLE_OAUTH_CLIENT_SECRET")
     if not cid or not csec:
@@ -333,42 +355,51 @@ def gmail_service():
             "  1. console.cloud.google.com -> APIs & Services -> enable Gmail API\n"
             "  2. Credentials -> Create OAuth client ID -> Desktop app\n"
             "  3. put GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env\n"
-            "  4. run: python tools/outreach.py auth   (one-time browser consent)")
+            "  4. run: python tools/outreach.py auth --mailbox <key>   (one-time browser consent per mailbox)")
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
     except ImportError:
         sys.exit("pip install google-api-python-client google-auth-oauthlib")
-    # The token lives in .gmail_token.json on a machine with a disk. A cloud
-    # host with an ephemeral filesystem (Render, Spaces) gets it through the
-    # GMAIL_TOKEN_JSON variable instead: run `auth` once on a laptop, paste
-    # the file's contents into the host's secrets UI. Same token either way.
-    token_json = env(TOKEN_ENV)
-    if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), GMAIL_SCOPES)
+    # The token lives in a file on a machine with a disk. A cloud host with an
+    # ephemeral filesystem gets it through the mailbox's token variable
+    # instead: run `auth` once on a laptop, paste the file's contents there.
+    token_path = (ROOT / mb["token_file"]) if mb else TOKEN_PATH
+    token_env = mb["token_env"] if mb else TOKEN_ENV
+    token_json = env(token_env)
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), GMAIL_SCOPES)
     elif token_json:
-        creds = Credentials.from_authorized_user_info(json.loads(token_json),
-                                                      GMAIL_SCOPES)
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), GMAIL_SCOPES)
     else:
-        sys.exit("no Gmail token yet -- run: python tools/outreach.py auth"
-                 " (on a diskless host, set GMAIL_TOKEN_JSON instead)")
+        sys.exit("no Gmail token for mailbox %s yet -- run: SEGMENT_SLUG=%s python tools/outreach.py auth --mailbox %s"
+                 " (on a diskless host, set %s instead)"
+                 % ((mb or MAILBOXES[0])["key"] if (mb or MAILBOXES) else "default", SEGMENT,
+                    (mb or MAILBOXES[0])["key"] if (mb or MAILBOXES) else "default", token_env))
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
         try:
-            TOKEN_PATH.write_text(creds.to_json())
+            token_path.write_text(creds.to_json())
         except OSError:
             pass    # read-only or ephemeral disk: the refresh token in the env still works
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
 def cmd_auth(args):
+    """One-time browser consent for one mailbox of the segment."""
     from dbconn import Db
-    load_outreach_config(Db())            # per-segment token path and variable
+    db = Db()
+    load_outreach_config(db)
+    db.close()
+    mb = mailbox_by_key(getattr(args, "mailbox", None))
     cid = env("GOOGLE_OAUTH_CLIENT_ID")
     csec = env("GOOGLE_OAUTH_CLIENT_SECRET")
     if not cid or not csec:
-        return gmail_service()          # prints the setup instructions and exits
+        return gmail_service(mb)          # prints the setup instructions and exits
+    addr = env(mb["email_env"])
+    if not addr:
+        sys.exit("set %s in .env to the address of mailbox %s first" % (mb["email_env"], mb["key"]))
     try:
         from google_auth_oauthlib.flow import InstalledAppFlow
     except ImportError:
@@ -379,61 +410,99 @@ def cmd_auth(args):
                        "token_uri": "https://oauth2.googleapis.com/token",
                        "redirect_uris": ["http://localhost"]}},
         GMAIL_SCOPES)
-    log("A browser window will open. Sign in with the %s mailbox (%s) and" % (SEGMENT, env(SENDER_ENV) or SENDER_ENV))
-    log("approve. The token lands in %s (gitignored). For a cloud" % TOKEN_PATH.name)
-    log("host with no disk, paste that file's contents into %s." % TOKEN_ENV)
+    token_path = ROOT / mb["token_file"]
+    log("A browser window will open. Sign in as %s (mailbox %s of segment %s) and" % (addr, mb["key"], SEGMENT))
+    log("approve. The token lands in %s (gitignored). For a cloud host with" % token_path.name)
+    log("no disk, paste that file's contents into %s." % mb["token_env"])
     creds = flow.run_local_server(port=0)
-    TOKEN_PATH.write_text(creds.to_json())
-    log("token saved -- send and pull are now live")
+    token_path.write_text(creds.to_json())
+    log("token saved -- mailbox %s now takes part in sending and reply pulls" % mb["key"])
+    return 0
+
+
+def cmd_mailboxes(args):
+    """Each mailbox: address, token, warm-up, today's cap, sends, room left."""
+    import datetime as dt
+    import outreach_policy as pol
+    from dbconn import Db
+    db = Db()
+    cfg = load_outreach_config(db)
+    today = dt.datetime.now(dt.timezone.utc).date()
+    status = db.run(lambda cur: pol.mailbox_status(cur, SEGMENT, MAILBOXES, today))
+    db.close()
+    log("segment %s: %d mailbox(es), segment ceiling %d emails a day%s\n"
+        % (SEGMENT, len(status), int(cfg.get("daily_send_cap", 20)),
+           "" if cfg.get("mailboxes") else " (single mailbox, no rotation)"))
+    log("  %-10s %-42s %-6s %-14s %5s %5s %5s" % ("mailbox", "address", "token", "warm-up", "cap", "sent", "left"))
+    for st in status:
+        addr = env(st["email_env"]) or "(set %s)" % st["email_env"]
+        tok = "yes" if ((ROOT / st["token_file"]).exists() or env(st["token_env"])) else "no"
+        if not st["enabled"]:
+            warm = "disabled"
+        elif not st["warmup"]:
+            warm = "none"
+        elif st["warmup_day"]:
+            warm = "day %d" % st["warmup_day"]
+        else:
+            warm = "not started"
+        log("  %-10s %-42s %-6s %-14s %5d %5d %5d" % (st["key"], addr[:42], tok, warm,
+                                                    st["cap_today"], st["sent_today"], st["remaining"]))
     return 0
 
 
 def cmd_send(args):
-    """Send approved drafts. Rewritten after the hostile review (2026-08-31);
-    follow-up aware since 2026-09-10.
+    """Send approved drafts, spread across the segment's mailboxes.
 
     THE PROTOCOL, in order, per row:
-      1. CLAIM  update ... set status='sending' where id=%s and status='approved'
-                -- atomic and committed BEFORE Gmail is touched. A concurrent
-                run cannot claim the same row; a withdrawal that lands first
-                wins (the claim simply fails); a crash leaves 'sending', which
-                is visible and NOT re-sendable. For a follow-up the database
-                itself refuses the claim if the company has replied or the
-                thread was stopped (sql/23 trigger), so nothing above this
-                layer can send a follow-up after a reply.
-      2. SEND   the Gmail call. A follow-up goes into the opener's thread
-                (threadId) with In-Reply-To / References set to the previous
-                message, so it threads for the recipient too.
-      3. RECORD success -> 'sent' (guarded on status='sending').
-                ANY exception -> 'send_unknown', because a timeout after
-                Gmail accepted is indistinguishable from a failure here.
+      1. PICK   an opener goes to the connected mailbox with the most room left
+                today (each mailbox has its own cap and warm-up ramp); a
+                follow-up waits for the mailbox that sent its opener.
+      2. CLAIM  update ... set status='sending', sender_mailbox=... where
+                status='approved' -- atomic, committed BEFORE Gmail is
+                touched. For a follow-up the database refuses the claim after
+                a reply or a stop, and overwrites the mailbox with the
+                opener's (sql/23, sql/24); the send uses the mailbox the claim
+                RETURNS, so a follow-up can only leave from its thread's mailbox.
+      3. SEND   the Gmail call from that mailbox. A follow-up goes into the
+                opener's thread with In-Reply-To / References set.
+      4. RECORD success -> 'sent'. ANY exception -> 'send_unknown': a timeout
+                after Gmail accepted is indistinguishable from a failure.
 
-    THE CAP is daily and counts every email, openers and follow-ups alike.
+    CAPS: each mailbox's cap for today (warm-up included), and the segment's
+    daily_send_cap across all of them. Emails sent today count against both.
 
     VALIDATION before claiming: one well-formed recipient, no unfilled
     {{placeholders}}, company still sendable. A follow-up whose company has
-    replied, moved on, or whose thread was stopped is CANCELLED with the
-    reason, not parked: it must never be sent, and it must not wedge the queue.
+    replied, moved on, or whose thread was stopped is CANCELLED with the reason.
     """
+    import datetime as dt
+    import outreach_policy as pol
     from dbconn import Db
     db = Db()
     cfg = load_outreach_config(db)
-    sender_addr = env(SENDER_ENV)
-    if not sender_addr:
-        sys.exit("%s is not set in .env (the sender mailbox for segment %s)" % (SENDER_ENV, SEGMENT))
     if "SET_ME" in json.dumps(cfg.get("sender", {})):
         sys.exit("refusing to send: config outreach.sender still contains SET_ME")
+    connected = {mb["key"]: env(mb["email_env"]).strip() for mb in MAILBOXES
+                 if mb["enabled"] and mailbox_connected(mb)}
+    if not connected:
+        sys.exit("no mailbox is connected for segment %s. For each mailbox, set its address in .env (%s)\n"
+                 "and run: SEGMENT_SLUG=%s python tools/outreach.py auth --mailbox <key>"
+                 % (SEGMENT, ", ".join(mb["email_env"] for mb in MAILBOXES), SEGMENT))
+    mbmap = {mb["key"]: mb for mb in MAILBOXES}
+    today = dt.datetime.now(dt.timezone.utc).date()
+    status = db.run(lambda cur: pol.mailbox_status(cur, SEGMENT, MAILBOXES, today))
+    order = [st["key"] for st in status]
+    remaining = {st["key"]: (st["remaining"] if st["key"] in connected else 0) for st in status}
+    for st in status:
+        log("  mailbox %-10s %-5s cap %3d today, %3d sent, %3d left" % (
+            st["key"], "on" if st["key"] in connected else "off", st["cap_today"], st["sent_today"], remaining[st["key"]]))
 
     daily_cap = int(cfg.get("daily_send_cap", 20))
-    sent_today = db.run(lambda cur: (cur.execute(
-        "select count(*) as n from outreach o join entities e on e.id = o.entity_id"
-        " where o.direction='outbound' and o.status='sent' and o.sent_at::date = current_date"
-        " and e.segment_id = (select id from segments where slug = %s)", (SEGMENT,)),
-        cur.fetchone())[1][0])
-    budget = min(max(0, daily_cap - sent_today), args.limit)
+    sent_today = sum(st["sent_today"] for st in status)
+    budget = min(max(0, daily_cap - sent_today), sum(remaining.values()), args.limit)
     if budget <= 0:
-        log("daily cap reached: %d already sent today (cap %d)"
-            % (sent_today, daily_cap))
+        log("nothing can go today: segment %d/%d sent, connected mailboxes have %d left"
+            % (sent_today, daily_cap, sum(remaining.values())))
         db.close(); return 0
 
     rows = db.run(lambda cur: (cur.execute("""
@@ -446,7 +515,8 @@ def cmd_send(args):
                    and s.sequence_step < o.sequence_step
                  order by s.sequence_step desc limit 1) as prev_message_id,
                exists (select 1 from outreach r where r.entity_id = o.entity_id
-                        and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied
+                        and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
+               p.sender_mailbox as parent_mailbox
         from outreach o
         join entities e on e.id = o.entity_id
         left join contacts c on c.id = o.contact_id
@@ -454,14 +524,13 @@ def cmd_send(args):
         where o.status = 'approved' and o.direction = 'outbound'
           and o.send_error is null
           and e.segment_id = (select id from segments where slug = %s)
-        order by o.created_at limit %s
-    """, (SEGMENT, budget * 2)), cur.fetchall())[1])
+        order by (o.sequence_step > 0) desc, o.created_at limit %s
+    """, (SEGMENT, budget * 3)), cur.fetchall())[1])
     if not rows:
         log("nothing approved to send"); db.close(); return 0
 
-    svc = gmail_service()
     email_re = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", re.I)
-    sent = 0
+    services, sent, by_box = {}, 0, {}
 
     def park(oid, why):
         """Take the row out of the sendable set, visibly, without burning cap."""
@@ -476,7 +545,7 @@ def cmd_send(args):
             " where id=%s and status='approved'", (_w, _o)))
 
     for (oid, eid, subject, body, email, estatus, company, ent_status,
-         step, thread_id, stopped, prev_mid, replied) in rows:
+         step, thread_id, stopped, prev_mid, replied, parent_mb) in rows:
         if sent >= budget:
             break
         step = int(step or 0)
@@ -508,19 +577,46 @@ def cmd_send(args):
             park(oid, problem)
             continue
 
-        claimed = db.run(lambda cur, _o=oid: (cur.execute(
-            "update outreach set status='sending', updated_at=now()"
-            " where id=%s and status='approved' returning id", (_o,)),
+        # 1. pick the mailbox
+        if step > 0:
+            mb_key = parent_mb or order[0]
+            if mb_key not in connected:
+                log("  %-32s follow-up %d waits: mailbox %s is not connected on this machine" % (company[:32], step, mb_key))
+                continue
+            if remaining.get(mb_key, 0) <= 0:
+                log("  %-32s follow-up %d waits: mailbox %s is at today's cap" % (company[:32], step, mb_key))
+                continue
+        else:
+            mb_key = pol.pick_mailbox([(k, remaining.get(k, 0)) for k in order], set(connected))
+            if not mb_key:
+                log("  every connected mailbox is at today's cap")
+                break
+
+        # 2. claim, and take the mailbox the database settled on
+        claimed = db.run(lambda cur, _o=oid, _k=mb_key, _a=connected[mb_key]: (cur.execute(
+            "update outreach set status='sending', sender_mailbox=%s, sender_address=%s, updated_at=now()"
+            " where id=%s and status='approved' returning sender_mailbox", (_k, _a, _o)),
             cur.fetchone())[1])
         if not claimed:
             if step > 0:
-                # the database guard refused it: a reply or a stopped thread
                 log("  %-32s follow-up %d refused by the database guard" % (company[:32], step))
                 cancel(oid, "blocked at send: reply received or thread stopped")
             else:
                 log("  %-32s skipped: no longer approved" % company[:32])
             continue
+        mb_key = claimed[0]
+        if mb_key not in connected:
+            log("  %-32s waits: its thread's mailbox %s is not connected on this machine" % (company[:32], mb_key))
+            db.run(lambda cur, _o=oid: cur.execute(
+                "update outreach set status='approved', sender_mailbox=null, sender_address=null,"
+                " updated_at=now() where id=%s and status='sending'", (_o,)))
+            continue
+        sender_addr = connected[mb_key]
+        if mb_key not in services:
+            services[mb_key] = gmail_service(mbmap[mb_key])
+        svc = services[mb_key]
 
+        # 3. send
         msg = MIMEText(body)
         msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
         request_body = {}
@@ -540,17 +636,16 @@ def cmd_send(args):
                     log("  %-32s (could not read the previous message id: %s; sending in the thread anyway)"
                         % (company[:32], type(e).__name__))
         request_body["raw"] = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        remaining[mb_key] = remaining.get(mb_key, 0) - 1      # an unknown outcome still used the slot
         try:
             resp = svc.users().messages().send(userId="me", body=request_body).execute()
         except Exception as e:
-            # The message MAY have been delivered -- a timeout after accept
-            # looks exactly like this. Never auto-mark 'failed': that would
-            # free the slot for a company that might have the email already.
-            log("  %-32s UNKNOWN OUTCOME: %s" % (company[:32], str(e)[:70]))
+            log("  %-32s UNKNOWN OUTCOME via %s: %s" % (company[:32], mb_key, str(e)[:70]))
             db.run(lambda cur, _o=oid, _err=str(e)[:400]: cur.execute(
                 "update outreach set status='send_unknown', send_error=%s,"
                 " updated_at=now() where id=%s and status='sending'", (_err, _o)))
             continue
+        # 4. record
         db.run(lambda cur, _o=oid, _e=eid, _m=resp: (
             cur.execute(
                 "update outreach set status='sent', sent_at=now(),"
@@ -561,79 +656,102 @@ def cmd_send(args):
                 "update entities set status='contacted', status_changed_at=now(),"
                 " updated_at=now() where id=%s and status='shortlisted'", (_e,))))
         sent += 1
-        log("  %-32s SENT%s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", email))
+        by_box[mb_key] = by_box.get(mb_key, 0) + 1
+        log("  %-32s SENT%s via %-8s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", mb_key, email))
     db.close()
-    log("\n%d sent this run; %d sent today total (cap %d)"
-        % (sent, sent_today + sent, daily_cap))
+    log("\n%d sent this run (%s); %d sent today in the segment (ceiling %d)"
+        % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none", sent_today + sent, daily_cap))
     return 0
 
 
 def cmd_pull(args):
-    """Fetch replies to sent threads. Hardened per the review:
+    """Fetch replies to sent threads, mailbox by mailbox.
 
-    * OUR OWN messages in a thread are never ingested as prospect replies --
-      anything sent by the segment's mailbox or carrying the SENT/DRAFT label
-      is skipped.
-    * idempotent by unique index on gmail_message_id + on conflict do nothing.
-    * one thread failing to fetch no longer aborts the run.
-    * a new reply PAUSES the thread: any pending follow-up draft for that
-      company is cancelled at once. If the reply turns out to be an
-      auto-reply (triaged neutral), the next follow-up run drafts it again;
-      anything else stops the thread for good.
+    * each thread is read through the mailbox that sent it; a mailbox not
+      connected on this machine is skipped and reported, never guessed.
+    * OUR OWN messages are never ingested as replies: anything sent by any of
+      the segment's mailboxes or carrying the SENT/DRAFT label is skipped.
+    * idempotent by unique index on gmail_message_id.
+    * a new reply PAUSES the thread (pending follow-ups cancelled); an
+      auto-reply triaged neutral lets it resume, anything else ends it.
+    * a BOUNCE (mailer-daemon, "Delivery Status Notification (Failure)") marks
+      the address invalid and ends the thread, so no mailbox writes to it again.
     """
     import outreach_policy as pol
     from dbconn import Db
     db = Db()
-    load_outreach_config(db)              # per-segment sender and token
-    sender_addr = (env(SENDER_ENV) or "").lower()
-    svc = gmail_service()
+    load_outreach_config(db)
+    mbmap = {mb["key"]: mb for mb in MAILBOXES}
+    own = [a.strip().lower() for a in (env(mb["email_env"]) for mb in MAILBOXES) if a]
     threads = db.run(lambda cur: (cur.execute("""
-        select distinct o.gmail_thread_id, o.entity_id, o.contact_id
+        select distinct o.gmail_thread_id, o.entity_id, o.contact_id, coalesce(o.sender_mailbox, %s)
         from outreach o join entities e on e.id = o.entity_id
         where o.status = 'sent' and o.direction = 'outbound' and o.gmail_thread_id is not null
           and e.segment_id = (select id from segments where slug = %s)
-    """, (SEGMENT,)), cur.fetchall())[1])
+    """, (MAILBOXES[0]["key"], SEGMENT)), cur.fetchall())[1])
     if not threads:
         log("no sent threads to poll"); db.close(); return 0
-    found = errors = paused = 0
-    for tid, eid, cid in threads:
-        try:
-            t = svc.users().threads().get(userId="me", id=tid,
-                                          format="full").execute()
-        except Exception as e:
-            errors += 1
-            log("  thread %s: fetch failed (%s) -- continuing" % (tid, type(e).__name__))
+    by_box = {}
+    for tid, eid, cid, mbk in threads:
+        by_box.setdefault(mbk, []).append((tid, eid, cid))
+    found = errors = paused = bounced = skipped = 0
+    for mbk, items in by_box.items():
+        mb = mbmap.get(mbk)
+        if not mb or not mailbox_connected(mb):
+            skipped += len(items)
+            log("  mailbox %s: %d thread(s) skipped -- not connected on this machine" % (mbk, len(items)))
             continue
-        for m in t.get("messages", []):
-            labels = set(m.get("labelIds") or [])
-            if "SENT" in labels or "DRAFT" in labels:
-                continue                      # ours, or not yet sent by anyone
-            headers = {h["name"].lower(): h["value"]
-                       for h in m.get("payload", {}).get("headers", [])}
-            if sender_addr and sender_addr in (headers.get("from") or "").lower():
-                continue                      # ours, sent from another client
-            mid = m["id"]
-            body = _plain_body(m.get("payload", {}))
+        svc = gmail_service(mb)
+        for tid, eid, cid in items:
+            try:
+                t = svc.users().threads().get(userId="me", id=tid, format="full").execute()
+            except Exception as e:
+                errors += 1
+                log("  %s thread %s: fetch failed (%s) -- continuing" % (mbk, tid, type(e).__name__))
+                continue
+            for m in t.get("messages", []):
+                labels = set(m.get("labelIds") or [])
+                if "SENT" in labels or "DRAFT" in labels:
+                    continue                      # ours, or not yet sent by anyone
+                headers = {h["name"].lower(): h["value"]
+                           for h in m.get("payload", {}).get("headers", [])}
+                frm = (headers.get("from") or "").lower()
+                if any(a in frm for a in own):
+                    continue                      # ours, sent from another client
+                subj = headers.get("subject", "")
+                bounce = pol.is_bounce(frm, subj)
+                mid = m["id"]
+                body = _plain_body(m.get("payload", {}))
 
-            def _ingest(cur, _t=tid, _e=eid, _c=cid, _m=mid, _s=headers.get("subject", ""), _b=body[:8000]):
-                cur.execute(
-                    "insert into outreach (entity_id, contact_id, direction,"
-                    " subject, body, status, gmail_message_id, gmail_thread_id)"
-                    " values (%s,%s,'inbound',%s,%s,'received',%s,%s)"
-                    " on conflict (gmail_message_id) where gmail_message_id"
-                    " is not null do nothing returning id",
-                    (_e, _c, _s, _b, _m, _t))
-                got = cur.fetchone()
-                return (got, pol.pause_on_reply(cur, _e)) if got else (None, 0)
+                def _ingest(cur, _t=tid, _e=eid, _c=cid, _m=mid, _s=subj, _b=body[:8000], _bn=bounce):
+                    cur.execute(
+                        "insert into outreach (entity_id, contact_id, direction, subject, body, status,"
+                        " triage, triage_reason, gmail_message_id, gmail_thread_id)"
+                        " values (%s,%s,'inbound',%s,%s,%s,%s,%s,%s,%s)"
+                        " on conflict (gmail_message_id) where gmail_message_id"
+                        " is not null do nothing returning id",
+                        (_e, _c, _s, _b, "triaged" if _bn else "received", "neutral" if _bn else None,
+                         "bounce: the address rejected the email" if _bn else None, _m, _t))
+                    got = cur.fetchone()
+                    if not got:
+                        return None, 0
+                    if _bn:
+                        return got, pol.mark_bounce(cur, _e, _c)
+                    return got, pol.pause_on_reply(cur, _e)
 
-            inserted, n_paused = db.run(_ingest)
-            if inserted:
-                found += 1
-                paused += n_paused
-                log("  new reply on thread %s%s" % (tid, ("; %d pending follow-up(s) paused" % n_paused) if n_paused else ""))
+                inserted, n = db.run(_ingest)
+                if not inserted:
+                    continue
+                if bounce:
+                    bounced += 1
+                    log("  %s thread %s: BOUNCE -- address marked invalid, thread ended" % (mbk, tid))
+                else:
+                    found += 1
+                    paused += n
+                    log("  %s thread %s: new reply%s" % (mbk, tid, ("; %d pending follow-up(s) paused" % n) if n else ""))
     db.close()
-    log("\n%d new repl(ies); %d follow-up(s) paused; %d thread error(s). Next: python tools/outreach.py triage"
-        % (found, paused, errors))
+    log("\n%d new repl(ies), %d bounce(s), %d follow-up(s) paused; %d thread error(s); %d thread(s) on"
+        " unconnected mailboxes. Next: python tools/outreach.py triage" % (found, bounced, paused, errors, skipped))
     return 0
 
 
@@ -712,15 +830,18 @@ def main():
     d = sub.add_parser("draft"); d.add_argument("--limit", type=int, default=20)
     d.add_argument("--template", default=None, help="template key; omit to pick by the segment when-conditions")
     d.add_argument("--dry-run", action="store_true")
-    sub.add_parser("auth")
-    s = sub.add_parser("send"); s.add_argument("--limit", type=int, default=20)
+    a = sub.add_parser("auth"); a.add_argument("--mailbox", default=None, help="mailbox key; the first one when omitted")
+    sub.add_parser("mailboxes")
+    s = sub.add_parser("send"); s.add_argument("--limit", type=int, default=500,
+                                               help="most emails this run; the mailbox and segment caps still apply")
     sub.add_parser("pull")
     t = sub.add_parser("triage"); t.add_argument("--limit", type=int, default=50)
     f = sub.add_parser("followups"); f.add_argument("--limit", type=int, default=60)
     f.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     return {"draft": cmd_draft, "auth": cmd_auth, "send": cmd_send,
-            "pull": cmd_pull, "triage": cmd_triage, "followups": cmd_followups}[args.cmd](args)
+            "pull": cmd_pull, "triage": cmd_triage, "followups": cmd_followups,
+            "mailboxes": cmd_mailboxes}[args.cmd](args)
 
 
 if __name__ == "__main__":
