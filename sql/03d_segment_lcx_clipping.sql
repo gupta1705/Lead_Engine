@@ -1032,10 +1032,47 @@ values (
         "subject": "{{company}}: shorts from your archive, three on us",
         "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form -- episodes, trailers, behind-the-scenes, interviews -- into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\nRather than describe it: reply \"yes\" and we''ll clip one piece from your channel into three shorts, free, so you can judge the quality first.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
         "guidance": "Production houses and studios (metadata.kind = production_house, set by the Wikidata connector and the TVF pool import). Same evidence hook, studio wording: ''your archive'', ''your team approves''. Picked automatically by the draft command through the `when` condition."
+      },
+      {
+        "key": "clipping_followup_1",
+        "kind": "follow_up",
+        "subject": "Re: {{opener_subject}}",
+        "body": "Hi {{greeting_name}},\n\nFloating this back up in case it got buried. The offer stands: reply \"yes\" and we''ll cut three shorts from one of your recent long videos or episodes, free, so you can judge the quality before anything else is discussed.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+        "guidance": "Follow-up 1, sent in the opener''s thread four days after it if nobody replied. Short on purpose."
+      },
+      {
+        "key": "clipping_followup_2",
+        "kind": "follow_up",
+        "subject": "Re: {{opener_subject}}",
+        "body": "Hi {{greeting_name}},\n\nLast note from me on this. If short-form from your back catalogue is ever on the list, reply here and the three free shorts are yours. Otherwise I''ll leave you be.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+        "guidance": "Follow-up 2, the last one: seven days after follow-up 1. After this the thread is closed for good."
       }
     ],
-    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. daily_send_cap is a hard ceiling per send run per mailbox. One outbound touch per show is enforced by the database; follow-up threads are a separate, owner-approved change. Templates carry an optional `when` condition on metadata; the first match wins, else the first unconditional template. greeting_fallback is what ''Hi ...'' says when no person is known.",
-    "greeting_fallback": "there"
+    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. Approval may be one draft at a time or a spot-checked batch (batch_approval). daily_send_cap is a hard daily ceiling per mailbox and counts follow-ups. One thread per company, enforced by the database: an opener, then at most the follow_ups steps, stopped by any reply. Templates carry an optional `when` condition on metadata; follow-up templates are marked kind=follow_up and are never used as openers. greeting_fallback is what ''Hi ...'' says when no person is known.",
+    "greeting_fallback": "there",
+    "follow_ups": {
+      "enabled": true,
+      "steps": [
+        {
+          "step": 1,
+          "after_days": 4,
+          "template": "clipping_followup_1"
+        },
+        {
+          "step": 2,
+          "after_days": 7,
+          "template": "clipping_followup_2"
+        }
+      ],
+      "guidance": "Owner decision 2026-09-10. One thread per company: the opener plus these steps, in the same Gmail thread, each counted from the previous email''s send. Any reply pauses the thread at once; a reply triaged as an auto-reply lets it resume, anything else ends it. A person can stop a thread from the message dialog. Follow-ups are drafts and need approval like any email. The database caps a thread at three follow-ups and refuses to send one after a reply (sql/23)."
+    },
+    "batch_approval": {
+      "enabled": true,
+      "sample_min": 3,
+      "sample_fraction": 0.1,
+      "max_batch": 100,
+      "guidance": "Owner decision 2026-09-10. Templated drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company). The approver''s name, the batch and the sample are recorded."
+    }
   },
   "schedule": [
     {
@@ -1044,6 +1081,14 @@ values (
       "dow": 2,
       "hour": 2,
       "minute": 0,
+      "enabled": true
+    },
+    {
+      "name": "daily follow-ups",
+      "pipeline": "followups",
+      "dow": "*",
+      "hour": 3,
+      "minute": 30,
       "enabled": true
     }
   ],
@@ -1059,6 +1104,9 @@ values (
     ],
     "rescore": [
       "promote_chain"
+    ],
+    "followups": [
+      "draft_followups"
     ]
   },
   "wikidata_channel_discovery": {

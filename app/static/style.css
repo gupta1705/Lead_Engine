@@ -805,3 +805,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .view.active { display: block; }
 .kbd { display: inline-block; padding: 0 5px; border-radius: 3px; border: 1px solid var(--border-bold);
   font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--text-subtle); }
+
+/* ======================================================= batch approval */
+.sel-col { display: none; width: 36px; }
+.tbl.batch .sel-col { display: table-cell; }
+.batch-bar { padding: 8px 12px; margin: 0 0 8px; border-radius: var(--radius); background: var(--bg-selected); }
+.batch-bar .grow { flex: 1; }
+.sample-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px; }
+.sample-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sample-item .mail-body { margin-top: 12px; }

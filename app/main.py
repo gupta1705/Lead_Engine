@@ -180,7 +180,9 @@ def segment_rows(force=False):
                 cur.execute("select slug, name, entity_type, config->'ui' as ui,"
                             " config->>'score_threshold_review' as review,"
                             " config->>'score_threshold_priority' as priority,"
-                            " config->>'weekly_target' as weekly_target"
+                            " config->>'weekly_target' as weekly_target,"
+                            " config->'outreach'->'follow_ups' as follow_ups,"
+                            " config->'outreach'->'batch_approval' as batch_approval"
                             " from segments where is_active order by slug")
                 rows = [dict(r) for r in cur.fetchall()]
             if SEGMENTS_ALLOWED:
@@ -189,7 +191,8 @@ def segment_rows(force=False):
         except Exception:
             if not _SEG_CACHE["rows"]:
                 _SEG_CACHE["rows"] = [{"slug": SEGMENT, "name": SEGMENT, "entity_type": "",
-                                       "ui": None, "review": "25", "priority": "45", "weekly_target": None}]
+                                       "ui": None, "review": "25", "priority": "45", "weekly_target": None,
+                                       "follow_ups": None, "batch_approval": None}]
     return _SEG_CACHE["rows"]
 
 
@@ -223,7 +226,29 @@ def segment_info(slug):
             "ui": ui_for(row),
             "thresholds": {"review": float(row["review"] or 25), "priority": float(row["priority"] or 45)},
             "weekly_target": int(row["weekly_target"]) if row["weekly_target"] else None,
-            "config_file": "config/segment.%s.json" % row["slug"]}
+            "config_file": "config/segment.%s.json" % row["slug"],
+            "outreach_policy": outreach_policy_info(row)}
+
+
+def _policy():
+    """tools/outreach_policy.py -- the follow-up and batch-approval rules the
+    command line and this API share."""
+    import sys
+    p = os.path.join(REPO, "tools")
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import outreach_policy
+    return outreach_policy
+
+
+def outreach_policy_info(row):
+    fu = row.get("follow_ups") or {}
+    return {
+        "follow_ups": ({"enabled": True,
+                        "steps": [{"step": s.get("step"), "after_days": s.get("after_days")}
+                                  for s in (fu.get("steps") or [])]} if fu.get("enabled") else None),
+        "batch_approval": _policy().batch_policy({"batch_approval": row.get("batch_approval")}),
+    }
 
 
 def segments_list(current):
@@ -549,20 +574,42 @@ def outreach_edit(oid: str, body: dict = Body(...)):
 
 
 @app.post("/api/outreach/{oid}/decision")
-def outreach_decide(oid: str, body: dict = Body(...)):
-    """approve: a human read the draft and stands behind it. cancel: withdraw.
-    mark_positive / mark_negative: the human verdict on a reply -- on positive
-    the company moves to in_conversation, the state the whole engine exists to
-    produce."""
+def outreach_decide(oid: str, request: Request, body: dict = Body(...),
+                    segment: str = Depends(current_segment)):
+    """approve: a human read the draft and stands behind it (checked first, and
+    recorded against their name). cancel: withdraw; cancelling a follow-up
+    also stops the thread. stop_sequence: no further follow-ups for this
+    company. mark_positive / mark_negative: the human verdict on a reply; on
+    positive the company moves to in_conversation. Both verdicts stop the
+    thread."""
+    pol = _policy()
     action = (body or {}).get("action")
+    user = getattr(request.state, "user", None) or "unknown"
     with cursor() as cur:
+        cur.execute("select entity_id, direction, sequence_step from outreach where id=%s", (oid,))
+        msg = cur.fetchone()
+        if not msg:
+            raise HTTPException(404, "no such message")
+        eid = msg["entity_id"]
         if action == "approve":
-            cur.execute("update outreach set status='approved', updated_at=now()"
-                        " where id=%s and status='drafted' returning id", (oid,))
+            ok, skipped = pol.check_drafts(cur, [oid], segment)
+            if skipped:
+                raise HTTPException(409, "cannot approve: " + skipped[0]["reason"])
+            cur.execute("update outreach set status='approved', approved_at=now(), approved_by=%s,"
+                        " approval_mode='single', spot_checked=true, updated_at=now()"
+                        " where id=%s and status='drafted' returning id", (user, oid))
         elif action == "cancel":
             cur.execute("update outreach set status='cancelled', updated_at=now()"
                         " where id=%s and status in ('drafted','approved')"
                         " returning id", (oid,))
+            if not cur.fetchone():
+                raise HTTPException(409, "row is not in a state that allows cancel")
+            if (msg["sequence_step"] or 0) > 0:
+                pol.stop_thread(cur, eid, "stopped: follow-up cancelled by %s" % user)
+            return {"ok": True}
+        elif action == "stop_sequence":
+            n = pol.stop_thread(cur, eid, "stopped by %s" % user)
+            return {"ok": True, "cancelled": n}
         elif action in ("mark_positive", "mark_negative"):
             label = "positive" if action == "mark_positive" else "negative"
             cur.execute("update outreach set triage=%s, status='triaged',"
@@ -571,7 +618,7 @@ def outreach_decide(oid: str, body: dict = Body(...)):
             row = cur.fetchone()
             if not row:
                 raise HTTPException(409, "not an inbound reply")
-            eid = row["entity_id"]
+            pol.stop_thread(cur, eid, "reply: %s" % label)
             if label == "positive":
                 # promote; report honestly if the entity was in a state the
                 # promotion could not apply to (review finding: silent no-op)
@@ -596,6 +643,57 @@ def outreach_decide(oid: str, body: dict = Body(...)):
         if not cur.fetchone():
             raise HTTPException(409, "row is not in a state that allows " + action)
     return {"ok": True}
+
+
+@app.post("/api/outreach/batch/sample")
+def outreach_batch_sample(request: Request, body: dict = Body(...),
+                          segment: str = Depends(current_segment)):
+    """Step 1 of batch approval: check the selected drafts, draw a random
+    spot-check sample on the server, and sign batch + sample together."""
+    import auth as _a
+    pol = _policy()
+    ids = sorted({str(i) for i in ((body or {}).get("ids") or [])})
+    with cursor() as cur:
+        policy = pol.batch_policy(pol.outreach_config(cur, segment))
+        if not policy:
+            raise HTTPException(403, "batch approval is off for this segment")
+        if not ids:
+            raise HTTPException(400, "select at least one draft")
+        if len(ids) > policy["max_batch"]:
+            raise HTTPException(400, "a batch is at most %d drafts" % policy["max_batch"])
+        ok, skipped = pol.check_drafts(cur, ids, segment)
+    if not ok:
+        raise HTTPException(400, "none of the selected drafts can be approved: "
+                            + "; ".join(sorted({s["reason"] for s in skipped})))
+    sample, token = pol.draw_sample(ok, policy, _a._secret(), getattr(request.state, "user", None), segment)
+    return {"approvable": sorted(ok), "skipped": skipped, "sample": sample, "token": token}
+
+
+@app.post("/api/outreach/batch/approve")
+def outreach_batch_approve(request: Request, body: dict = Body(...),
+                           segment: str = Depends(current_segment)):
+    """Step 2: approve the batch the sample was drawn for. The signature proves
+    the sample came from the server for exactly this batch and this person;
+    every draft is re-checked, because anything may have changed since."""
+    import auth as _a
+    pol = _policy()
+    b = body or {}
+    ids = sorted({str(i) for i in (b.get("ids") or [])})
+    sample = sorted({str(i) for i in (b.get("sample") or [])})
+    user = getattr(request.state, "user", None)
+    if not ids or not set(sample) <= set(ids):
+        raise HTTPException(400, "the sample must be drawn from the batch")
+    if not pol.verify_sample(ids, sample, b.get("token"), _a._secret(), user, segment):
+        raise HTTPException(409, "the spot-check does not match this batch any more; select and check again")
+    with cursor() as cur:
+        policy = pol.batch_policy(pol.outreach_config(cur, segment))
+        if not policy:
+            raise HTTPException(403, "batch approval is off for this segment")
+        if len(sample) < pol.required_sample(len(ids), policy):
+            raise HTTPException(400, "the spot-check sample is too small for this batch")
+        ok, skipped = pol.check_drafts(cur, ids, segment)
+        batch_id, approved = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
+    return {"batch_id": batch_id, "approved": approved, "skipped": skipped}
 
 
 # ------------------------------------------------------------------ kpis

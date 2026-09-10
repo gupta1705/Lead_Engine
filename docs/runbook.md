@@ -48,6 +48,16 @@ python tools/outreach.py send
    config is a hard ceiling. Anything the send refuses lands in *Attention*
    with the reason.
 
+### LCX clipping differs in two ways
+
+- **Batch approval.** In Drafts, tick the drafts and press Approve selected.
+  Read the random sample the portal shows, tick each one, approve. Drafts
+  that fail a check are listed and left as drafts.
+- **Follow-ups.** They are drafted every morning for threads with no reply,
+  and land in Drafts like any other email. Sending and pulling work the same,
+  with `SEGMENT_SLUG=lcx-clipping` in front of the command. Pull pauses a
+  thread as soon as a reply arrives.
+
 ## Friday — triage and KPIs (~30 min)
 
 1. **Outreach** → *Replies*. The classifier has labelled each; confirm or

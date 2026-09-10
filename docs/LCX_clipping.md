@@ -166,11 +166,40 @@ United States first**:
 | Weekly refresh | now runs the Wikidata harvest as well. The pool import is a one-off from the Create button; `import_pool.py --repair` re-derives a carried row's country and reachability from its origin if the rules change. |
 | Revisiting rows | `enrich_clipping.py` stamps `clipping_enrich_version`; bumping the constant makes the weekly refresh revisit every row under new host and contact rules without repeating any network call. Transient site or channel failures are retried after a week; only definitive answers are final. |
 
-## Not built yet, by decision
+## Follow-ups and batch approval (2026-09-10)
 
-- Follow-up threads (an opener plus two follow-ups, then stop) and batch
-  approval of templated mail. Both change a guarantee the owner set for TVF
-  and need an explicit yes.
+The owner said yes to both. They are on for this segment only; TVF keeps one
+email per company and one approval per draft, because its config enables
+neither.
+
+**One thread per company.** The opener, then follow-up 1 four days later and
+follow-up 2 seven days after that, both as replies in the opener's Gmail
+thread, then nothing, ever. The database enforces it (`sql/23`): an opener
+is unique per company, each step at most once, no more than three steps, a
+follow-up must point at its own company's opener, and a follow-up can never
+be claimed for sending once the company has replied or the thread was
+stopped. `outreach.py pull` pauses a thread the moment a reply lands; an
+auto-reply (triaged neutral) lets it resume, a real answer ends it. Anyone
+can press **Stop follow-ups** on a message. Follow-ups are drafted daily at
+03:30 UTC (or with **Draft follow-ups** in Outreach) and approved like any
+other email. The daily send cap counts them.
+
+**Batch approval.** In Drafts, tick the drafts and press **Approve
+selected**. The server draws a random spot-check sample (at least three, or
+a tenth of the batch), and the approval stays locked until each sampled
+draft has been opened and ticked. The sample is signed with the batch, so it
+cannot be swapped for hand-picked drafts. Every draft is checked first (no
+unfilled placeholder, no SET_ME, a valid address, a company still in a
+sendable state) and the failures are listed, not approved. Each approved row
+records who approved it, when, whether in a batch and whether it was in the
+sample; each batch is a row in `outreach_approval_batches`.
+
+Reports now count companies contacted and follow-ups separately, and the
+reply and positive rates are per company, so follow-ups cannot inflate them.
+`python tools/test_outreach_policy.py` exercises every rule above against
+the live database inside a transaction it rolls back.
+
+## Not built yet, by decision
 - Mailbox rotation and warm-up. Needed above roughly forty sends a day.
 - Sample-first outreach: a "needs sample" state where the draft waits until
   three clips are attached. Cheap to add once the production side exists.

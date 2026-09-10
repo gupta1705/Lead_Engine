@@ -88,22 +88,29 @@ where e.segment_id = (select id from segments where slug = current_setting('tvf.
 -- The v1 clause that matters most: contacted per week, replies, positives.
 -- name: outreach
 select
+  -- every email sent, then companies contacted (openers) and follow-ups
+  -- separately: "contacted per week" means companies, not emails (2026-09-10)
   count(*) filter (where o.direction = 'outbound' and o.status = 'sent')            as sent_total,
   count(*) filter (where o.direction = 'outbound' and o.status = 'sent'
-                     and o.sent_at >= now() - interval '7 days')                  as sent_last_7d,
+                     and o.sequence_step = 0)                                     as openers_sent,
   count(*) filter (where o.direction = 'outbound' and o.status = 'sent'
+                     and o.sequence_step > 0)                                     as followups_sent,
+  count(*) filter (where o.direction = 'outbound' and o.status = 'sent' and o.sequence_step = 0
+                     and o.sent_at >= now() - interval '7 days')                  as sent_last_7d,
+  count(*) filter (where o.direction = 'outbound' and o.status = 'sent' and o.sequence_step = 0
                      and o.sent_at >= now() - interval '28 days')                 as sent_last_28d,
   count(*) filter (where o.direction = 'outbound' and o.status = 'drafted')         as drafts_waiting,
   count(*) filter (where o.direction = 'outbound' and o.status = 'approved')        as approved_waiting,
   count(*) filter (where o.direction = 'inbound')                                   as replies,
   count(*) filter (where o.direction = 'inbound' and o.triage = 'positive')         as positive_replies,
   count(*) filter (where o.direction = 'inbound' and o.triage = 'needs_human')      as replies_needing_human,
-  round(100.0 * count(*) filter (where o.direction = 'inbound')
-        / nullif(count(*) filter (where o.direction = 'outbound' and o.status = 'sent'), 0), 1)
-                                                                                    as reply_rate_pct,
-  round(100.0 * count(*) filter (where o.direction = 'inbound' and o.triage = 'positive')
-        / nullif(count(*) filter (where o.direction = 'outbound' and o.status = 'sent'), 0), 1)
-                                                                                    as positive_rate_pct
+  -- rates per COMPANY contacted, so follow-ups cannot inflate or deflate them
+  round(100.0 * count(distinct o.entity_id) filter (where o.direction = 'inbound')
+        / nullif(count(*) filter (where o.direction = 'outbound' and o.status = 'sent'
+                                    and o.sequence_step = 0), 0), 1)               as reply_rate_pct,
+  round(100.0 * count(distinct o.entity_id) filter (where o.direction = 'inbound' and o.triage = 'positive')
+        / nullif(count(*) filter (where o.direction = 'outbound' and o.status = 'sent'
+                                    and o.sequence_step = 0), 0), 1)               as positive_rate_pct
 from outreach o
 join entities e on e.id = o.entity_id
 where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true));

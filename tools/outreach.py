@@ -100,7 +100,7 @@ def pick_template(cfg, meta):
     """The first template whose `when` conditions match the lead's metadata
     (e.g. {"metadata.kind": "production_house"}), else the first template
     with no conditions."""
-    tpls = cfg["templates"]
+    tpls = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]   # follow-ups are never openers
     for t in tpls:
         w = t.get("when") or {}
         if not w:
@@ -119,6 +119,22 @@ def pick_template(cfg, meta):
         if ok:
             return t
     return next((t for t in tpls if not t.get("when")), tpls[0])
+
+
+def pick_greeting(cname, email, company, meta, cfg):
+    """The contact's own first name when it is a person; else the host the
+    engine found (high/medium confidence only); else the segment fallback.
+    Never a show name."""
+    import personname
+    host = meta.get("host") or {}
+    return (personname.greeting_name(cname)
+            or (host.get("first_name") if host.get("confidence") in ("high", "medium") else None)
+            or greeting_for(None, email, company, cfg.get("greeting_fallback")))
+
+
+def hook_line(meta, company, cfg):
+    return ((hook_for_clipping(meta, company) if cfg.get("hook_style") == "clipping"
+             else hook_for(meta, company)) or cfg.get("neutral_hook") or NEUTRAL_HOOK).replace("{{company}}", company)
 
 
 def hook_for(meta, company):
@@ -195,7 +211,8 @@ def cmd_draft(args):
         if not requested:
             sys.exit("unknown template %r; segment %s has: %s"
                      % (args.template, SEGMENT, [t["key"] for t in cfg["templates"]]))
-    tpl = requested or next((t for t in cfg["templates"] if not t.get("when")), cfg["templates"][0])
+    openers = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]
+    tpl = requested or next((t for t in openers if not t.get("when")), openers[0])
     sender = cfg["sender"]
     if "SET_ME" in json.dumps(sender) and not args.dry_run:
         log("NOTE: sender.name / postal_address still say SET_ME in config.")
@@ -233,12 +250,7 @@ def cmd_draft(args):
                 else hook_for(meta, company)) or cfg.get("neutral_hook") or NEUTRAL_HOOK
         ctx = {
             "company": company,
-            # the contact's own name when it is a person; else the host the engine
-            # found (high/medium only); else the segment's fallback. Never a show name.
-            "greeting_name": (personname.greeting_name(cname)
-                              or ((meta.get("host") or {}).get("first_name")
-                                  if (meta.get("host") or {}).get("confidence") in ("high", "medium") else None)
-                              or greeting_for(None, email, company, cfg.get("greeting_fallback"))),
+            "greeting_name": pick_greeting(cname, email, company, meta, cfg),
             "hook": hook.replace("{{company}}", company),
             "sender_name": sender.get("name", ""),
             "sender_title": sender.get("title", ""),
@@ -258,6 +270,56 @@ def cmd_draft(args):
     db.close()
     log("\n%d draft(s) created. Review and approve them in the UI (Outreach tab)"
         % made)
+    return 0
+
+
+def cmd_followups(args):
+    """Draft the follow-ups that are due, for segments with outreach.follow_ups
+    on. Rules in tools/outreach_policy.py; the drafts go through approval like
+    any other email, and the database refuses to send one after a reply."""
+    import datetime as dt
+    import outreach_policy as pol
+    from dbconn import Db
+    db = Db()
+    cfg = load_outreach_config(db)
+    try:
+        steps = pol.followup_steps(cfg)
+    except ValueError as e:
+        sys.exit("config outreach.follow_ups is invalid: %s" % e)
+    if not steps:
+        log("follow-ups are off for segment %s (config outreach.follow_ups)" % SEGMENT)
+        db.close(); return 0
+    tpls = {t["key"]: t for t in cfg["templates"]}
+    sender = cfg["sender"]
+    now = dt.datetime.now(dt.timezone.utc)
+    due = db.run(lambda cur: pol.due_followups(cur, SEGMENT, steps, now))
+    if not due:
+        log("no follow-ups due"); db.close(); return 0
+    log("%d follow-up(s) due%s\n" % (len(due), "  [DRY RUN]" if args.dry_run else ""))
+    made = 0
+    for row, step in due[:args.limit]:
+        meta = row["metadata"] if isinstance(row["metadata"], dict) else json.loads(row["metadata"] or "{}")
+        company = row["company"]
+        tpl = tpls[step["template"]]
+        ctx = {
+            "company": company,
+            "greeting_name": pick_greeting(row["full_name"], row["email"], company, meta, cfg),
+            "hook": hook_line(meta, company, cfg),
+            "opener_subject": (row["opener_subject"] or "").strip(),
+            "sender_name": sender.get("name", ""),
+            "sender_title": sender.get("title", ""),
+            "postal_address": sender.get("postal_address", ""),
+        }
+        subject = render(tpl["subject"], ctx)
+        body = render(tpl["body"], ctx)
+        log("  %-32s step %d -> %-34s %s" % (company[:32], step["step"], row["email"], subject[:40]))
+        if args.dry_run:
+            continue
+        new = db.run(lambda cur, _r=row, _s=step, _k=tpl["key"], _sub=subject, _b=body:
+                     pol.insert_followup(cur, _r, _s["step"], _k, _sub, _b))
+        made += 1 if new else 0
+    db.close()
+    log("\n%d follow-up draft(s) created. Approve them in the Outreach tab (Drafts)." % made)
     return 0
 
 
@@ -327,29 +389,31 @@ def cmd_auth(args):
 
 
 def cmd_send(args):
-    """Send approved drafts. Rewritten after the hostile review (2026-08-31).
+    """Send approved drafts. Rewritten after the hostile review (2026-08-31);
+    follow-up aware since 2026-09-10.
 
     THE PROTOCOL, in order, per row:
       1. CLAIM  update ... set status='sending' where id=%s and status='approved'
                 -- atomic and committed BEFORE Gmail is touched. A concurrent
                 run cannot claim the same row; a withdrawal that lands first
                 wins (the claim simply fails); a crash leaves 'sending', which
-                is visible and NOT re-sendable.
-      2. SEND   the Gmail call.
+                is visible and NOT re-sendable. For a follow-up the database
+                itself refuses the claim if the company has replied or the
+                thread was stopped (sql/23 trigger), so nothing above this
+                layer can send a follow-up after a reply.
+      2. SEND   the Gmail call. A follow-up goes into the opener's thread
+                (threadId) with In-Reply-To / References set to the previous
+                message, so it threads for the recipient too.
       3. RECORD success -> 'sent' (guarded on status='sending').
                 ANY exception -> 'send_unknown', because a timeout after
                 Gmail accepted is indistinguishable from a failure here.
-                The one-touch slot stays occupied either way; a human settles
-                'send_unknown' against the Gmail Sent folder.
 
-    THE CAP is genuinely daily now: rows already sent today count against it,
-    so three invocations in a day still send at most daily_send_cap emails.
+    THE CAP is daily and counts every email, openers and follow-ups alike.
 
-    VALIDATION before claiming: exactly one well-formed recipient address, no
-    unfilled {{placeholders}} (an edit in the UI can introduce one), entity
-    still in a sendable status (a company rejected after approval is skipped).
-    Skipped rows get send_error set and are excluded from future selection,
-    so they cannot wedge the queue -- they surface in the Attention folder.
+    VALIDATION before claiming: one well-formed recipient, no unfilled
+    {{placeholders}}, company still sendable. A follow-up whose company has
+    replied, moved on, or whose thread was stopped is CANCELLED with the
+    reason, not parked: it must never be sent, and it must not wedge the queue.
     """
     from dbconn import Db
     db = Db()
@@ -374,10 +438,19 @@ def cmd_send(args):
 
     rows = db.run(lambda cur: (cur.execute("""
         select o.id, o.entity_id, o.subject, o.body,
-               c.email, c.email_status, e.name, e.status
+               c.email, c.email_status, e.name, e.status,
+               o.sequence_step, p.gmail_thread_id, p.stopped_reason,
+               (select s.gmail_message_id from outreach s
+                 where (s.id = o.parent_id or s.parent_id = o.parent_id)
+                   and s.direction = 'outbound' and s.status = 'sent'
+                   and s.sequence_step < o.sequence_step
+                 order by s.sequence_step desc limit 1) as prev_message_id,
+               exists (select 1 from outreach r where r.entity_id = o.entity_id
+                        and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied
         from outreach o
         join entities e on e.id = o.entity_id
         left join contacts c on c.id = o.contact_id
+        left join outreach p on p.id = o.parent_id
         where o.status = 'approved' and o.direction = 'outbound'
           and o.send_error is null
           and e.segment_id = (select id from segments where slug = %s)
@@ -396,9 +469,29 @@ def cmd_send(args):
             "update outreach set send_error=%s, updated_at=now()"
             " where id=%s and status='approved'", (_w, _o)))
 
-    for oid, eid, subject, body, email, estatus, company, ent_status in rows:
+    def cancel(oid, why):
+        """A follow-up that must never go out: cancelled with the reason."""
+        db.run(lambda cur, _o=oid, _w=why: cur.execute(
+            "update outreach set status='cancelled', stopped_reason=%s, updated_at=now()"
+            " where id=%s and status='approved'", (_w, _o)))
+
+    for (oid, eid, subject, body, email, estatus, company, ent_status,
+         step, thread_id, stopped, prev_mid, replied) in rows:
         if sent >= budget:
             break
+        step = int(step or 0)
+        if step > 0:
+            why = None
+            if replied:
+                why = "paused: reply received"
+            elif stopped:
+                why = "thread stopped: %s" % stopped
+            elif ent_status != "contacted":
+                why = "company is now '%s'" % ent_status
+            if why:
+                log("  %-32s follow-up %d CANCELLED: %s" % (company[:32], step, why))
+                cancel(oid, why)
+                continue
         problem = None
         if not email or not email_re.match(email.strip()):
             problem = "recipient address missing or malformed: %r" % (email,)
@@ -406,8 +499,10 @@ def cmd_send(args):
             problem = "recipient failed verification"
         elif re.search(r"{{\w+}}", (subject or "") + (body or "")):
             problem = "unfilled {{placeholder}} in subject or body"
-        elif ent_status not in ("shortlisted", "contacted"):
+        elif step == 0 and ent_status not in ("shortlisted", "contacted"):
             problem = "entity is now '%s' -- approval predates that decision" % ent_status
+        elif step > 0 and not thread_id:
+            problem = "the opener has no Gmail thread to follow up in"
         if problem:
             log("  %-32s PARKED: %s" % (company[:32], problem))
             park(oid, problem)
@@ -418,20 +513,39 @@ def cmd_send(args):
             " where id=%s and status='approved' returning id", (_o,)),
             cur.fetchone())[1])
         if not claimed:
-            log("  %-32s skipped: no longer approved" % company[:32])
+            if step > 0:
+                # the database guard refused it: a reply or a stopped thread
+                log("  %-32s follow-up %d refused by the database guard" % (company[:32], step))
+                cancel(oid, "blocked at send: reply received or thread stopped")
+            else:
+                log("  %-32s skipped: no longer approved" % company[:32])
             continue
 
         msg = MIMEText(body)
         msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        request_body = {}
+        if step > 0:
+            request_body["threadId"] = thread_id
+            if prev_mid:
+                try:
+                    prev = svc.users().messages().get(
+                        userId="me", id=prev_mid, format="metadata",
+                        metadataHeaders=["Message-ID"]).execute()
+                    hdrs = {h["name"].lower(): h["value"]
+                            for h in prev.get("payload", {}).get("headers", [])}
+                    if hdrs.get("message-id"):
+                        msg["In-Reply-To"] = hdrs["message-id"]
+                        msg["References"] = hdrs["message-id"]
+                except Exception as e:
+                    log("  %-32s (could not read the previous message id: %s; sending in the thread anyway)"
+                        % (company[:32], type(e).__name__))
+        request_body["raw"] = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         try:
-            resp = svc.users().messages().send(
-                userId="me", body={"raw": raw}).execute()
+            resp = svc.users().messages().send(userId="me", body=request_body).execute()
         except Exception as e:
             # The message MAY have been delivered -- a timeout after accept
             # looks exactly like this. Never auto-mark 'failed': that would
-            # free the one-touch slot for a company that might have the email
-            # in its inbox already.
+            # free the slot for a company that might have the email already.
             log("  %-32s UNKNOWN OUTCOME: %s" % (company[:32], str(e)[:70]))
             db.run(lambda cur, _o=oid, _err=str(e)[:400]: cur.execute(
                 "update outreach set status='send_unknown', send_error=%s,"
@@ -447,7 +561,7 @@ def cmd_send(args):
                 "update entities set status='contacted', status_changed_at=now(),"
                 " updated_at=now() where id=%s and status='shortlisted'", (_e,))))
         sent += 1
-        log("  %-32s SENT -> %s" % (company[:32], email))
+        log("  %-32s SENT%s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", email))
     db.close()
     log("\n%d sent this run; %d sent today total (cap %d)"
         % (sent, sent_today + sent, daily_cap))
@@ -458,28 +572,30 @@ def cmd_pull(args):
     """Fetch replies to sent threads. Hardened per the review:
 
     * OUR OWN messages in a thread are never ingested as prospect replies --
-      anything sent by GMAIL_SENDER_ADDRESS or carrying the SENT/DRAFT label
-      is skipped. Before this, the owner's own follow-up became a 'reply'
-      and the triage classifier scored our own email.
-    * idempotent by unique index on gmail_message_id + on conflict do nothing,
-      so a retried commit (dbconn's reconnect path) cannot duplicate a row.
-    * one thread failing to fetch no longer aborts the run -- later threads
-      still get their replies; errors are reported at the end.
+      anything sent by the segment's mailbox or carrying the SENT/DRAFT label
+      is skipped.
+    * idempotent by unique index on gmail_message_id + on conflict do nothing.
+    * one thread failing to fetch no longer aborts the run.
+    * a new reply PAUSES the thread: any pending follow-up draft for that
+      company is cancelled at once. If the reply turns out to be an
+      auto-reply (triaged neutral), the next follow-up run drafts it again;
+      anything else stops the thread for good.
     """
+    import outreach_policy as pol
     from dbconn import Db
     db = Db()
     load_outreach_config(db)              # per-segment sender and token
     sender_addr = (env(SENDER_ENV) or "").lower()
     svc = gmail_service()
     threads = db.run(lambda cur: (cur.execute("""
-        select o.gmail_thread_id, o.entity_id, o.contact_id
+        select distinct o.gmail_thread_id, o.entity_id, o.contact_id
         from outreach o join entities e on e.id = o.entity_id
-        where o.status = 'sent' and o.gmail_thread_id is not null
+        where o.status = 'sent' and o.direction = 'outbound' and o.gmail_thread_id is not null
           and e.segment_id = (select id from segments where slug = %s)
     """, (SEGMENT,)), cur.fetchall())[1])
     if not threads:
         log("no sent threads to poll"); db.close(); return 0
-    found = errors = 0
+    found = errors = paused = 0
     for tid, eid, cid in threads:
         try:
             t = svc.users().threads().get(userId="me", id=tid,
@@ -498,22 +614,26 @@ def cmd_pull(args):
                 continue                      # ours, sent from another client
             mid = m["id"]
             body = _plain_body(m.get("payload", {}))
-            inserted = db.run(lambda cur, _t=tid, _e=eid, _c=cid, _m=mid,
-                              _s=headers.get("subject", ""), _b=body[:8000]: (
+
+            def _ingest(cur, _t=tid, _e=eid, _c=cid, _m=mid, _s=headers.get("subject", ""), _b=body[:8000]):
                 cur.execute(
                     "insert into outreach (entity_id, contact_id, direction,"
                     " subject, body, status, gmail_message_id, gmail_thread_id)"
                     " values (%s,%s,'inbound',%s,%s,'received',%s,%s)"
                     " on conflict (gmail_message_id) where gmail_message_id"
                     " is not null do nothing returning id",
-                    (_e, _c, _s, _b, _m, _t)),
-                cur.fetchone())[1])
+                    (_e, _c, _s, _b, _m, _t))
+                got = cur.fetchone()
+                return (got, pol.pause_on_reply(cur, _e)) if got else (None, 0)
+
+            inserted, n_paused = db.run(_ingest)
             if inserted:
                 found += 1
-                log("  new reply on thread %s" % tid)
+                paused += n_paused
+                log("  new reply on thread %s%s" % (tid, ("; %d pending follow-up(s) paused" % n_paused) if n_paused else ""))
     db.close()
-    log("\n%d new repl(ies); %d thread error(s). Next: python tools/outreach.py triage"
-        % (found, errors))
+    log("\n%d new repl(ies); %d follow-up(s) paused; %d thread error(s). Next: python tools/outreach.py triage"
+        % (found, paused, errors))
     return 0
 
 
@@ -528,9 +648,8 @@ def _plain_body(payload):
 
 
 # ------------------------------------------------------------------ triage
-TRIAGE_PROMPT = """You triage replies to a B2B partnership email from TVF (an
-Indian studio proposing co-production/format licensing to US production
-companies). Classify the reply below.
+TRIAGE_PROMPT = """You triage replies to a B2B outreach email (a studio offering a
+partnership or a service to a company or a creator). Classify the reply below.
 
 positive  = any genuine interest: wants a call, asks questions, asks for the
             deck, refers us to the right person
@@ -552,15 +671,16 @@ def cmd_triage(args):
         import anthropic
     except ImportError:
         sys.exit("pip install anthropic")
+    import outreach_policy as pol
     from dbconn import Db
     db = Db()
     rows = db.run(lambda cur: (cur.execute(
-        "select id, body from outreach where direction='inbound'"
+        "select id, entity_id, body from outreach where direction='inbound'"
         " and status='received' limit %s", (args.limit,)), cur.fetchall())[1])
     if not rows:
         log("no untriaged replies"); db.close(); return 0
     client = anthropic.Anthropic(api_key=key)
-    for oid, body in rows:
+    for oid, eid, body in rows:
         try:
             resp = client.messages.create(
                 model="claude-haiku-4-5-20251001", max_tokens=200,
@@ -572,9 +692,15 @@ def cmd_triage(args):
             reason = (data.get("reason") or "")[:400]
         except Exception as e:
             label, reason = "needs_human", "classifier error: " + type(e).__name__
-        db.run(lambda cur, _o=oid, _l=label, _r=reason: cur.execute(
-            "update outreach set status='triaged', triage=%s, triage_reason=%s,"
-            " updated_at=now() where id=%s", (_l, _r, _o)))
+
+        def _label(cur, _o=oid, _e=eid, _l=label, _r=reason):
+            cur.execute("update outreach set status='triaged', triage=%s, triage_reason=%s,"
+                        " updated_at=now() where id=%s", (_l, _r, _o))
+            # a real answer ends the thread; an auto-reply (neutral) lets it resume
+            if _l in ("positive", "negative"):
+                pol.stop_thread(cur, _e, "reply: %s" % _l)
+
+        db.run(_label)
         log("  %s  %s" % (label.ljust(12), reason[:70]))
     db.close()
     return 0
@@ -590,9 +716,11 @@ def main():
     s = sub.add_parser("send"); s.add_argument("--limit", type=int, default=20)
     sub.add_parser("pull")
     t = sub.add_parser("triage"); t.add_argument("--limit", type=int, default=50)
+    f = sub.add_parser("followups"); f.add_argument("--limit", type=int, default=60)
+    f.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     return {"draft": cmd_draft, "auth": cmd_auth, "send": cmd_send,
-            "pull": cmd_pull, "triage": cmd_triage}[args.cmd](args)
+            "pull": cmd_pull, "triage": cmd_triage, "followups": cmd_followups}[args.cmd](args)
 
 
 if __name__ == "__main__":

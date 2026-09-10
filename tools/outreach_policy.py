@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""outreach_policy.py -- follow-up sequences and batch approval.
+
+The owner approved both on 2026-09-10 for sales segments. A segment turns
+them on in its config (outreach.follow_ups, outreach.batch_approval); a
+segment that says nothing keeps the original rules: one email per company,
+a person reads and approves every draft. TVF says nothing.
+
+Every function takes a cursor and never commits, so the same code serves the
+command line (tools/outreach.py), the web API (app/main.py) and the test
+(tools/test_outreach_policy.py, which runs inside a transaction it rolls back).
+
+FOLLOW-UPS
+  An opener that was sent, to a company still 'contacted', gets follow-up
+  step k once step k-1 has been sent at least `after_days` ago, when:
+    * the company has not replied (an auto-reply triaged 'neutral' does not
+      count; an untriaged reply does, until someone looks at it),
+    * nothing is pending or wedged in the thread (a draft, an approved row,
+      an unknown send outcome, a failure, a parked send error),
+    * the thread has not been stopped (a person pressed Stop, cancelled a
+      follow-up, or marked a reply positive or negative),
+    * the contact's address did not fail verification,
+    * the segment's sequence has a step k.
+  Follow-ups are DRAFTS. They go through approval like any other email.
+  The database refuses to send one after a reply (sql/23 trigger).
+
+BATCH APPROVAL
+  A person selects drafts; the server draws a random spot-check sample
+  (at least sample_min, or sample_fraction of the batch, whichever is more)
+  and signs the batch and the sample together. Approval requires that
+  signature, so the sample cannot be hand-picked or swapped. Every draft is
+  checked before it is approved (no unfilled {{placeholders}}, no SET_ME, a
+  valid address, a company still in a sendable state); failures are skipped
+  and reported. Every approved row records who approved it, when, how, and
+  whether it was in the sample.
+"""
+import hashlib
+import hmac
+import json
+import math
+import re
+import secrets
+import time
+import uuid
+
+PLACEHOLDER_RE = re.compile(r"{{\w+}}")
+EMAIL_RE = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", re.I)
+PENDING = ("drafted", "approved", "sending")
+WEDGED = ("send_unknown", "failed")
+MAX_STEPS = 3                                   # mirrors the CHECK in sql/23
+
+
+# ------------------------------------------------------------------ config
+def followup_steps(outreach_cfg):
+    """The segment's follow-up steps, validated, or [] when off."""
+    f = (outreach_cfg or {}).get("follow_ups") or {}
+    if not f.get("enabled"):
+        return []
+    steps = sorted(f.get("steps") or [], key=lambda s: int(s.get("step", 0)))
+    keys = {t["key"] for t in (outreach_cfg or {}).get("templates") or []}
+    for i, s in enumerate(steps, 1):
+        if int(s.get("step", 0)) != i:
+            raise ValueError("follow_ups.steps must be numbered 1..n without gaps")
+        if int(s.get("after_days", 0)) < 1:
+            raise ValueError("follow_ups step %d: after_days must be at least 1" % i)
+        if s.get("template") not in keys:
+            raise ValueError("follow_ups step %d: unknown template %r" % (i, s.get("template")))
+    if len(steps) > MAX_STEPS:
+        raise ValueError("at most %d follow-up steps (database CHECK)" % MAX_STEPS)
+    return steps
+
+
+def batch_policy(outreach_cfg):
+    """{'sample_min', 'sample_fraction', 'max_batch'} or None when off."""
+    b = (outreach_cfg or {}).get("batch_approval") or {}
+    if not b.get("enabled"):
+        return None
+    return {"sample_min": max(1, int(b.get("sample_min", 3))),
+            "sample_fraction": min(1.0, max(0.0, float(b.get("sample_fraction", 0.1)))),
+            "max_batch": max(1, int(b.get("max_batch", 100)))}
+
+
+def required_sample(n, policy):
+    return min(n, max(policy["sample_min"], math.ceil(n * policy["sample_fraction"])))
+
+
+def outreach_config(cur, segment):
+    cur.execute("select config->'outreach' from segments where slug = %s", (segment,))
+    row = cur.fetchone()
+    cfg = (row[0] if not isinstance(row, dict) else list(row.values())[0]) if row else None
+    return cfg if isinstance(cfg, dict) else json.loads(cfg or "{}")
+
+
+# --------------------------------------------------------------- follow-ups
+CANDIDATES_SQL = """
+with openers as (
+    select o0.id, o0.entity_id, o0.contact_id, o0.subject
+    from outreach o0
+    join entities e on e.id = o0.entity_id
+    where o0.direction = 'outbound' and o0.sequence_step = 0 and o0.status = 'sent'
+      and o0.stopped_reason is null
+      and e.status = 'contacted'
+      and e.segment_id = (select id from segments where slug = %(segment)s)
+),
+chain as (
+    select op.id as opener_id,
+           max(x.sequence_step) filter (where x.status = 'sent') as last_step,
+           bool_or(x.status in ('drafted', 'approved', 'sending')) as pending,
+           bool_or(x.status in ('send_unknown', 'failed')
+                   or (x.status = 'approved' and x.send_error is not null)) as wedged
+    from openers op
+    join outreach x on (x.id = op.id or x.parent_id = op.id) and x.direction = 'outbound'
+    group by op.id
+)
+select op.id as opener_id, op.entity_id, op.contact_id, op.subject as opener_subject,
+       e.name as company, e.metadata, c.full_name, c.email, c.email_status,
+       ch.last_step,
+       (select s.sent_at from outreach s
+         where (s.id = op.id or s.parent_id = op.id) and s.direction = 'outbound'
+           and s.sequence_step = ch.last_step and s.status = 'sent'
+         order by s.sent_at desc limit 1) as last_sent_at
+from openers op
+join chain ch on ch.opener_id = op.id
+join entities e on e.id = op.entity_id
+left join contacts c on c.id = op.contact_id
+where not ch.pending and not ch.wedged
+  and not exists (select 1 from outreach r
+                  where r.entity_id = op.entity_id and r.direction = 'inbound'
+                    and r.triage is distinct from 'neutral')
+  and c.email is not null
+  and c.email_status is distinct from 'invalid'
+"""
+
+
+def due_followups(cur, segment, steps, now):
+    """[(candidate_row_dict, step_dict)] for every thread whose next step is due."""
+    if not steps:
+        return []
+    cur.execute(CANDIDATES_SQL, {"segment": segment})
+    cols = [d[0] for d in cur.description]
+    out = []
+    for r in cur.fetchall():
+        row = dict(zip(cols, r)) if not isinstance(r, dict) else dict(r)
+        nxt = int(row["last_step"] or 0) + 1
+        if nxt > len(steps) or not row["last_sent_at"]:
+            continue
+        step = steps[nxt - 1]
+        if (now - row["last_sent_at"]).total_seconds() >= int(step["after_days"]) * 86400:
+            out.append((row, step))
+    return out
+
+
+def insert_followup(cur, row, step_no, template_key, subject, body):
+    """Insert a follow-up draft; None if the step already exists (unique index)."""
+    cur.execute(
+        "insert into outreach (entity_id, contact_id, template_key, subject, body, sequence_step, parent_id)"
+        " values (%s, %s, %s, %s, %s, %s, %s) on conflict do nothing returning id",
+        (row["entity_id"], row["contact_id"], template_key, subject, body, step_no, row["opener_id"]))
+    got = cur.fetchone()
+    return (got[0] if not isinstance(got, dict) else got["id"]) if got else None
+
+
+def opener_id_for(cur, entity_id):
+    cur.execute("select id from outreach where entity_id = %s and direction = 'outbound'"
+                " and sequence_step = 0 and status not in ('cancelled', 'failed')"
+                " order by created_at desc limit 1", (entity_id,))
+    got = cur.fetchone()
+    return (got[0] if not isinstance(got, dict) else got["id"]) if got else None
+
+
+def stop_thread(cur, entity_id, reason):
+    """Permanent: no further follow-ups for this company; pending ones cancelled.
+    Returns the number of pending follow-ups cancelled."""
+    oid = opener_id_for(cur, entity_id)
+    if not oid:
+        return 0
+    cur.execute("update outreach set stopped_reason = %s, updated_at = now()"
+                " where id = %s and stopped_reason is null", (reason[:200], oid))
+    cur.execute("update outreach set status = 'cancelled', stopped_reason = %s, updated_at = now()"
+                " where parent_id = %s and status in ('drafted', 'approved')", (reason[:200], oid))
+    return cur.rowcount
+
+
+def pause_on_reply(cur, entity_id):
+    """A reply arrived: cancel pending follow-ups, but do not stop the thread.
+    If the reply turns out to be an auto-reply (triaged neutral), the next
+    follow-up run drafts the step again."""
+    cur.execute("update outreach set status = 'cancelled', stopped_reason = 'paused: reply received',"
+                " updated_at = now()"
+                " where entity_id = %s and direction = 'outbound' and sequence_step > 0"
+                " and status in ('drafted', 'approved')", (entity_id,))
+    return cur.rowcount
+
+
+# ---------------------------------------------------------- batch approval
+def _payload(user, segment, ids, sample, exp):
+    return "|".join([user or "", segment, ",".join(sorted(ids)), ",".join(sorted(sample)), str(exp)])
+
+
+def draw_sample(ids, policy, secret, user, segment, ttl=3600):
+    """Server-drawn random sample plus a signature over batch + sample."""
+    ids = sorted({str(i) for i in ids})
+    if not ids:
+        raise ValueError("select at least one draft")
+    if len(ids) > policy["max_batch"]:
+        raise ValueError("a batch is at most %d drafts" % policy["max_batch"])
+    k = required_sample(len(ids), policy)
+    sample = sorted(secrets.SystemRandom().sample(ids, k))
+    exp = int(time.time()) + ttl
+    sig = hmac.new(secret, _payload(user, segment, ids, sample, exp).encode(), hashlib.sha256).hexdigest()
+    return sample, "%d.%s" % (exp, sig)
+
+
+def verify_sample(ids, sample, token, secret, user, segment):
+    try:
+        exp_s, sig = str(token).split(".", 1)
+        exp = int(exp_s)
+    except (ValueError, AttributeError):
+        return False
+    if time.time() > exp:
+        return False
+    ids = sorted({str(i) for i in ids})
+    sample = sorted({str(i) for i in sample})
+    want = hmac.new(secret, _payload(user, segment, ids, sample, exp).encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, want)
+
+
+CHECK_SQL = """
+select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
+       c.email, c.email_status, e.status as entity_status, s.slug
+from outreach o
+join entities e on e.id = o.entity_id
+join segments s on s.id = e.segment_id
+left join contacts c on c.id = o.contact_id
+where o.id = any(%s::uuid[])
+"""
+
+
+def check_drafts(cur, ids, segment):
+    """-> (approvable_ids, [{"id", "reason"}]) for the given draft ids."""
+    ids = [str(i) for i in ids]
+    cur.execute(CHECK_SQL, (ids,))
+    cols = [d[0] for d in cur.description]
+    found = {}
+    for r in cur.fetchall():
+        row = dict(zip(cols, r)) if not isinstance(r, dict) else dict(r)
+        found[str(row["id"])] = row
+    ok, skipped = [], []
+    for i in ids:
+        r = found.get(i)
+        reason = None
+        if not r:
+            reason = "no such draft"
+        elif r["slug"] != segment:
+            reason = "belongs to another segment"
+        elif r["direction"] != "outbound" or r["status"] != "drafted":
+            reason = "not a draft any more (%s)" % r["status"]
+        elif not (r["subject"] or "").strip():
+            reason = "empty subject"
+        elif PLACEHOLDER_RE.search((r["subject"] or "") + (r["body"] or "")):
+            reason = "unfilled {{placeholder}}"
+        elif "SET_ME" in (r["subject"] or "") + (r["body"] or ""):
+            reason = "sender details still say SET_ME"
+        elif not r["email"] or not EMAIL_RE.match(r["email"].strip()):
+            reason = "recipient address missing or malformed"
+        elif r["email_status"] == "invalid":
+            reason = "recipient failed verification"
+        elif r["sequence_step"] == 0 and r["entity_status"] not in ("shortlisted", "contacted"):
+            reason = "company is now '%s'" % r["entity_status"]
+        elif r["sequence_step"] > 0 and r["entity_status"] != "contacted":
+            reason = "company is now '%s'" % r["entity_status"]
+        if reason:
+            skipped.append({"id": i, "reason": reason})
+        else:
+            ok.append(i)
+    return ok, skipped
+
+
+def apply_batch(cur, approve_ids, sample_ids, user, segment, requested, skipped):
+    """Approve the checked drafts and record the batch. Returns (batch_id, approved)."""
+    batch_id = str(uuid.uuid4())
+    approved = 0
+    if approve_ids:
+        cur.execute(
+            "update outreach set status = 'approved', approved_at = now(), approved_by = %s,"
+            " approval_mode = 'batch', approval_batch = %s, spot_checked = (id = any(%s::uuid[])),"
+            " updated_at = now()"
+            " where id = any(%s::uuid[]) and status = 'drafted' and direction = 'outbound'",
+            (user, batch_id, [str(s) for s in sample_ids], [str(a) for a in approve_ids]))
+        approved = cur.rowcount
+    cur.execute(
+        "insert into outreach_approval_batches (id, segment_slug, approved_by, requested, approved, sample_ids, skipped)"
+        " values (%s, %s, %s, %s, %s, %s::uuid[], %s::jsonb)",
+        (batch_id, segment, user or "unknown", requested, approved, [str(s) for s in sample_ids], json.dumps(skipped)))
+    return batch_id, approved

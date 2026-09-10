@@ -167,6 +167,16 @@ MOCK_JS = r"""
       const r = FX.outreach.rows.find((x) => x.id === m[1]); if (r) { if (body.subject != null) r.subject = body.subject; if (body.body != null) r.body = body.body; }
       return json({ ok: true });
     }
+    if (p === "/api/outreach/batch/sample") {
+      const ids = body.ids || [], k = Math.min(ids.length, Math.max(3, Math.ceil(ids.length * 0.1)));
+      return json({ approvable: ids, skipped: [], sample: ids.slice(0, k), token: "preview" });
+    }
+    if (p === "/api/outreach/batch/approve") {
+      (body.ids || []).forEach((id) => { const r = FX.outreach.rows.find((x) => x.id === id);
+        if (r) { r.status = "approved"; r.approved_by = FX.auth.user; r.approval_mode = "batch";
+                 r.approved_at = new Date().toISOString(); r.spot_checked = (body.sample || []).includes(id); } });
+      return json({ batch_id: "preview", approved: (body.ids || []).length, skipped: [] });
+    }
     return json({ detail: "preview mock: no route for " + method + " " + p }, 404);
   };
   addEventListener("DOMContentLoaded", () => {

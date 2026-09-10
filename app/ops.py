@@ -158,6 +158,14 @@ JOBS = {
                 "until you approve each one in the Outreach tab.",
         "cmd": [PY, "tools/outreach.py", "draft"],
     },
+    "draft_followups": {
+        "label": "Draft follow-ups",
+        "group": "Outreach",
+        "desc": "Follow-ups that are due, in the opener's thread. Stopped by any reply. "
+                "Drafts still need approval in the Outreach tab.",
+        "cmd": [PY, "tools/outreach.py", "followups"],
+        "segments": ["lcx-clipping"],
+    },
 }
 
 _LOCK = threading.Lock()
