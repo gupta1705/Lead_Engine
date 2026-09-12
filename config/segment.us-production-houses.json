@@ -327,10 +327,14 @@
       {
         "key": "copro_intro_v1",
         "subject": "Co-production idea: {{company}} x The Viral Fever",
-        "body": "Hi {{greeting_name}},\n\nI run business development at The Viral Fever (TVF) - one of India's largest independent studios, ~40M subscribers across platforms, best known for premium comedy and slice-of-life series (Panchayat, Kota Factory, Pitchers).\n\n{{hook}}\n\nWe're looking for a small number of US production partners for format licensing and co-development - adapting proven TVF originals for US audiences, and the reverse. Given {{company}}'s work, I think there's a genuinely good fit worth a 20-minute call.\n\nWorth exploring? Happy to send a two-page format deck first.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+        "body": "Hi {{greeting_name}},\n\nI run business development at The Viral Fever (TVF) - one of India's largest independent studios, ~40M subscribers across platforms, best known for premium comedy and slice-of-life series (Panchayat, Kota Factory, Pitchers).\n\n{{hook}}\n\nWe're looking for a small number of US production partners for format licensing and co-development - adapting proven TVF originals for US audiences, and the reverse. Given {{company}}'s work, I think there's a genuinely good fit worth a 20-minute call.\n\nWorth exploring? Happy to send a two-page format deck first.\n\n{{footer}}",
         "guidance": "The default first-touch. {{hook}} is one sentence built from the lead's own evidence (why_fit, a news headline, their site's genre language) - the draft command fills it and a human reads every draft before approval. Greeting: named contact -> first name; role inbox -> 'team at {{company}}'."
       }
     ],
-    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config."
+    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
+    "footer": {
+      "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+    }
   }
 }

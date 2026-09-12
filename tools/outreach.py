@@ -103,123 +103,10 @@ def mailbox_connected(mb):
 
 
 # ------------------------------------------------------------------ draft
-def greeting_for(full_name, email, company, fallback=None):
-    """A person -> first name. Anything else -> the segment's fallback.
-
-    The contact's name is only used when it reads as a person: a feed that
-    published its address under the show's name must never produce
-    "Hi Tech Talk". The fallback comes from config outreach.greeting_fallback
-    ("there" for the clipping segment, "team at {{company}}" by default)."""
-    import personname
-    first = personname.greeting_name(full_name)
-    if first:
-        return first
-    return (fallback or "team at {{company}}").replace("{{company}}", company)
-
-
-def pick_template(cfg, meta):
-    """The first template whose `when` conditions match the lead's metadata
-    (e.g. {"metadata.kind": "production_house"}), else the first template
-    with no conditions."""
-    tpls = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]   # follow-ups are never openers
-    for t in tpls:
-        w = t.get("when") or {}
-        if not w:
-            continue
-        ok = True
-        for path, want in w.items():
-            parts = path.split(".")
-            if parts and parts[0] == "metadata":
-                parts = parts[1:]
-            v = meta
-            for part in parts:
-                v = v.get(part) if isinstance(v, dict) else None
-            if v != want:
-                ok = False
-                break
-        if ok:
-            return t
-    return next((t for t in tpls if not t.get("when")), tpls[0])
-
-
-def pick_greeting(cname, email, company, meta, cfg):
-    """The contact's own first name when it is a person; else the host the
-    engine found (high/medium confidence only); else the segment fallback.
-    Never a show name."""
-    import personname
-    host = meta.get("host") or {}
-    return (personname.greeting_name(cname)
-            or (host.get("first_name") if host.get("confidence") in ("high", "medium") else None)
-            or greeting_for(None, email, company, cfg.get("greeting_fallback")))
-
-
-def hook_line(meta, company, cfg):
-    return ((hook_for_clipping(meta, company) if cfg.get("hook_style") == "clipping"
-             else hook_for(meta, company)) or cfg.get("neutral_hook") or NEUTRAL_HOOK).replace("{{company}}", company)
-
-
-def hook_for(meta, company):
-    """One sentence of THEIR evidence, so the email reads researched, not
-    blasted. Priority: news evidence > research why_fit > site genre language.
-    Returns None when nothing defensible exists -- the template then uses a
-    neutral line, and the human approving the draft sees exactly that."""
-    for ev in (meta.get("news_evidence") or []):
-        h = (ev.get("headline") or "").strip()
-        if h:
-            return ('Saw the news -- "%s" -- which is exactly the kind of '
-                    'cross-border thinking we look for in a partner.' % h[:120])
-    why = (meta.get("why_fit") or "").strip()
-    if why:
-        return why.split(". ")[0].rstrip(".") + "."
-    genres = meta.get("site_genre_evidence") or []
-    if genres:
-        return ("Your work in %s sits squarely in the lanes TVF's formats "
-                "live in." % ", ".join(genres[:3]))
-    return None
-
-
-NEUTRAL_HOOK = ("We've been mapping US independents whose work overlaps with "
-                "TVF's lanes, and {{company}} made our shortlist.")
-
-
-def hook_for_clipping(meta, company):
-    """Segment 3: one sentence of THEIR numbers -- episodes, cadence, length,
-    the shorts count -- from the feed and channel evidence. True by
-    construction; a person still reads it before it goes anywhere."""
-    pf = meta.get("podcast_feed") or {}
-    yc = meta.get("youtube_channel") or {}
-    r = yc.get("recent") or {}
-    bits = []
-    if pf.get("episode_count"):
-        s = "%s has %d episodes" % (company, int(pf["episode_count"]))
-        cad = pf.get("cadence_per_month")
-        if cad and cad >= 4:
-            s += ", publishes weekly"
-        elif cad and cad >= 1:
-            s += ", publishes about %s a month" % ("%g" % cad)
-        if pf.get("avg_duration_min"):
-            s += ", averaging %d minutes an episode" % int(pf["avg_duration_min"])
-        bits.append(s)
-    elif yc.get("video_count"):
-        bits.append("%s has %d videos on YouTube" % (company, int(yc["video_count"])))
-    if r.get("sampled"):
-        bits.append("of your last %d YouTube uploads, %d are long-form and %d are shorts"
-                    % (int(r["sampled"]), int(r.get("long_count") or 0), int(r.get("shorts_count") or 0)))
-    elif pf.get("episode_count"):
-        bits.append("as far as we can see, none of it is being cut into short-form")
-    if not bits:
-        return None
-    return "Quick one: " + "; ".join(bits) + "."
-
-
-def render(template, ctx):
-    out = template
-    for k, v in ctx.items():
-        out = out.replace("{{%s}}" % k, v)
-    leftover = re.findall(r"{{\w+}}", out)
-    if leftover:
-        raise ValueError("unfilled placeholders: %s" % leftover)
-    return out
+# How an email is personalised and how its footer is built now live in
+# tools/draft_render.py, because the app renders the same emails when the
+# footer changes. Importing the names keeps this file reading as it did.
+from draft_render import build_context, pick_template, render_message  # noqa: E402
 
 
 def cmd_draft(args):
@@ -267,18 +154,8 @@ def cmd_draft(args):
     for eid, company, meta, cid, cname, email in rows:
         meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
         tpl = requested or pick_template(cfg, meta)
-        hook = (hook_for_clipping(meta, company) if cfg.get("hook_style") == "clipping"
-                else hook_for(meta, company)) or cfg.get("neutral_hook") or NEUTRAL_HOOK
-        ctx = {
-            "company": company,
-            "greeting_name": pick_greeting(cname, email, company, meta, cfg),
-            "hook": hook.replace("{{company}}", company),
-            "sender_name": sender.get("name", ""),
-            "sender_title": sender.get("title", ""),
-            "postal_address": sender.get("postal_address", ""),
-        }
-        subject = render(tpl["subject"], ctx)
-        body = render(tpl["body"], ctx)
+        ctx = build_context(cfg, company, meta, cname, email, seed=eid)
+        subject, body = render_message(tpl, ctx)
         log("  %-32s -> %-34s [%s] %s" % (company[:32], email, tpl["key"], subject[:40]))
         if args.dry_run:
             continue
@@ -311,7 +188,6 @@ def cmd_followups(args):
         log("follow-ups are off for segment %s (config outreach.follow_ups)" % SEGMENT)
         db.close(); return 0
     tpls = {t["key"]: t for t in cfg["templates"]}
-    sender = cfg["sender"]
     now = dt.datetime.now(dt.timezone.utc)
     due = db.run(lambda cur: pol.due_followups(cur, SEGMENT, steps, now))
     if not due:
@@ -322,17 +198,9 @@ def cmd_followups(args):
         meta = row["metadata"] if isinstance(row["metadata"], dict) else json.loads(row["metadata"] or "{}")
         company = row["company"]
         tpl = tpls[step["template"]]
-        ctx = {
-            "company": company,
-            "greeting_name": pick_greeting(row["full_name"], row["email"], company, meta, cfg),
-            "hook": hook_line(meta, company, cfg),
-            "opener_subject": (row["opener_subject"] or "").strip(),
-            "sender_name": sender.get("name", ""),
-            "sender_title": sender.get("title", ""),
-            "postal_address": sender.get("postal_address", ""),
-        }
-        subject = render(tpl["subject"], ctx)
-        body = render(tpl["body"], ctx)
+        ctx = build_context(cfg, company, meta, row["full_name"], row["email"],
+                            seed=row["entity_id"], opener_subject=row["opener_subject"])
+        subject, body = render_message(tpl, ctx)
         log("  %-32s step %d -> %-34s %s" % (company[:32], step["step"], row["email"], subject[:40]))
         if args.dry_run:
             continue

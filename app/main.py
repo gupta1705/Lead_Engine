@@ -696,6 +696,134 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
     return {"batch_id": batch_id, "approved": approved, "skipped": skipped}
 
 
+def _render():
+    """tools/draft_render.py -- the renderer the command line and this API
+    share, so a draft rebuilt here is byte-identical to one drafted there."""
+    import sys
+    p = os.path.join(REPO, "tools")
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import draft_render
+    return draft_render
+
+
+@app.get("/api/outreach/footer")
+def footer_get(segment: str = Depends(current_segment)):
+    """The block every email in this segment ends with, and what it resolves
+    to right now."""
+    dr, pol = _render(), _policy()
+    with cursor() as cur:
+        cfg = pol.outreach_config(cur, segment)
+        cur.execute("select count(*) as n from outreach o"
+                    " join entities e on e.id = o.entity_id"
+                    " where e.segment_id = (select id from segments where slug = %s)"
+                    "   and o.direction = 'outbound' and o.status = 'drafted'", (segment,))
+        pending = cur.fetchone()["n"]
+    sender = cfg.get("sender") or {}
+    text = dr.footer_text(cfg)
+    return {"text": text, "default": dr.DEFAULT_FOOTER, "fields": list(dr.FOOTER_FIELDS),
+            "sender": {"name": sender.get("name", "") or "",
+                       "title": sender.get("title", "") or "",
+                       "postal_address": sender.get("postal_address", "") or ""},
+            "preview": dr.resolve_footer(text, sender),
+            "problems": dr.validate_footer(text, sender),
+            "drafts_pending": pending}
+
+
+@app.post("/api/outreach/footer")
+def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
+    """Save the footer and the sender it names.
+
+    It is refused unless what comes out carries a postal address and a way off
+    the list. That is the whole reason this is one setting instead of four
+    lines copied into every template: the part that has to be right on EVERY
+    email should be impossible to get wrong on one of them.
+
+    Drafts already written keep the text they were written with unless
+    apply_to_drafts says otherwise -- and even then, a draft somebody edited by
+    hand is left exactly as they left it. Rebuilding it would throw their
+    words away."""
+    dr, pol = _render(), _policy()
+    b = body or {}
+    text = (b.get("text") or "").strip()
+    given = b.get("sender") or {}
+    with cursor() as cur:
+        old = pol.outreach_config(cur, segment)
+        sender = dict(old.get("sender") or {})
+        for k in ("name", "title", "postal_address"):
+            if k in given:
+                sender[k] = (given.get(k) or "").strip()
+        problems = dr.validate_footer(text, sender)
+        if problems:
+            # one problem per line: each is a separate thing to fix, and the
+            # dialog lists them as such
+            raise HTTPException(400, "\n".join(problems))
+        footer = dict(old.get("footer") or {})
+        footer["text"] = text
+        cur.execute("update segments set config = jsonb_set(jsonb_set(config,"
+                    " '{outreach,sender}', %s), '{outreach,footer}', %s)"
+                    " where slug = %s returning 1",
+                    (psycopg2.extras.Json(sender), psycopg2.extras.Json(footer), segment))
+        if not cur.fetchone():
+            raise HTTPException(404, "no such segment")
+        out = {"ok": True, "preview": dr.resolve_footer(text, sender),
+               "rebuilt": 0, "unchanged": 0, "left_alone": 0}
+        if b.get("apply_to_drafts"):
+            out.update(_rebuild_drafts(cur, segment, old, pol.outreach_config(cur, segment), dr))
+    return out
+
+
+REBUILD_SQL = """
+select o.id, o.template_key, o.subject, o.body, o.entity_id,
+       e.name as company, e.metadata, c.full_name, c.email,
+       p.subject as opener_subject
+from outreach o
+join entities e on e.id = o.entity_id
+left join contacts c on c.id = o.contact_id
+left join outreach p on p.id = o.parent_id
+where e.segment_id = (select id from segments where slug = %s)
+  and o.direction = 'outbound' and o.status = 'drafted'
+"""
+
+
+def _rebuild_drafts(cur, segment, old_cfg, new_cfg, dr):
+    """Swap the footer on every draft still waiting for approval.
+
+    ONLY the footer. Everything above it is left exactly as it stands, so a
+    draft somebody rewrote by hand keeps their words and still ends with the
+    right address. The swap is by suffix, not by re-rendering the whole email:
+    re-rendering would also silently apply every change the engine has made to
+    greetings and hooks since the draft was written, which is not what saving
+    a footer asked for. A draft that does not end with the old footer is left
+    untouched and reported -- we cannot tell where its footer starts, and
+    guessing would eat somebody's text."""
+    cur.execute(REBUILD_SQL, (segment,))
+    rows = [dict(r) for r in cur.fetchall()]
+    swapped = unchanged = left = 0
+    for r in rows:
+        meta = r["metadata"] if isinstance(r["metadata"], dict) else {}
+        args = dict(contact_name=r["full_name"], contact_email=r["email"],
+                    seed=r["entity_id"], opener_subject=r["opener_subject"])
+        try:
+            was = dr.build_context(old_cfg, r["company"], meta, **args)["footer"]
+            now = dr.build_context(new_cfg, r["company"], meta, **args)["footer"]
+        except (ValueError, KeyError, TypeError):
+            left += 1
+            continue
+        body = r["body"] or ""
+        if was == now:
+            unchanged += 1
+            continue
+        if not body.endswith(was):
+            left += 1
+            continue
+        cur.execute("update outreach set body = %s, updated_at = now()"
+                    " where id = %s and status = 'drafted'",
+                    (body[:-len(was)] + now, r["id"]))
+        swapped += cur.rowcount
+    return {"rebuilt": swapped, "unchanged": unchanged, "left_alone": left}
+
+
 @app.get("/api/mailboxes")
 def mailboxes_state(segment: str = Depends(current_segment)):
     """The segment's sending mailboxes: cap for today (warm-up included), sends

@@ -222,6 +222,44 @@ Use addresses on a sending domain that belongs to LCX alone, not the main
 company domain, so a bad week never touches everyday mail. The signature
 name is shared, so the mailboxes should belong to the same person or desk.
 
+## The footer, and what makes each email personal (2026-09-12)
+
+**The footer is one setting for the whole segment.** Sign-off, postal address
+and the line that lets someone out used to be four lines copied into every
+template. They are now `outreach.footer.text`, edited in the app under
+**Outreach -> Footer**; every template ends with `{{footer}}`. Saving it also
+offers to put the new footer on the drafts already waiting for approval --
+only the footer is swapped, so anything written by hand above it survives
+untouched. The save is refused unless what comes out carries a postal address
+and a way off the list: both are required of commercial email, and both are
+what keep a sending domain alive. `sql/25_outreach_footer.sql` lifted the
+first version of the text out of the templates verbatim, so nothing about
+what goes out changed when it was applied.
+
+**Every email is built from that lead's own row.** Nothing is invented and no
+model writes prose, so a draft cannot claim something the row does not
+support. What it can say, from `tools/draft_render.py`:
+
+| Field | What it says | Where it comes from |
+|---|---|---|
+| `{{greeting_name}}` | Their first name, never the show's | `metadata.host` at high or medium confidence, else the contact's own name, else `there` |
+| `{{hook}}` | One or two sentences of their numbers: archive size, subscribers, cadence, average length, then the shorts gap | `podcast_feed` and `youtube_channel.recent` |
+| `{{latest_work}}` | Their most recent episode **by name** | `recent.latest_title` / `podcast_feed.latest_title`, only within 120 days, screened for links and emoji, cut at 78 characters |
+| `{{clip_math}}` | Their own average length turned into a number of shorts | `avg_long_minutes` or `avg_duration_min` |
+
+Two rules keep it honest. A sentence is dropped rather than softened when the
+evidence is missing -- a channel that already clips gets no shorts-gap line,
+because that line would not be true of it. And a title is quoted only when it
+is recent enough that calling it recent is still true; otherwise the email
+says "one of your recent episodes" and names nothing.
+
+The **phrasing** varies per lead, chosen by a hash of the lead's id: four
+openings and four ways into the second sentence. Six hundred identical
+sentences read as a blast to a person and to a spam filter. Because the choice
+is a hash and not a random number, the same lead always renders the same way,
+so redrafting never quietly changes text somebody already read.
+`tools/test_draft_render.py` is the regression table for all of it.
+
 ## Not built yet, by decision
 - Sample-first outreach: a "needs sample" state where the draft waits until
   three clips are attached. Cheap to add once the production side exists.

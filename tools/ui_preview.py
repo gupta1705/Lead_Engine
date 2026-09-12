@@ -66,6 +66,7 @@ def generate(out, slug):
         d = main.outreach_list(f, segment=slug)
         rows += d["rows"]; counts = d["counts"]
     fx["outreach"] = {"rows": rows, "counts": counts}
+    fx["footer"] = main.footer_get(segment=slug)
     fx["schedule"] = main.schedule_state(segment=slug)
     jobs = []
     for key, job in ops.JOBS.items():
@@ -166,6 +167,24 @@ MOCK_JS = r"""
     if ((m = p.match(/^\/api\/outreach\/([^/]+)$/)) && method === "PATCH") {
       const r = FX.outreach.rows.find((x) => x.id === m[1]); if (r) { if (body.subject != null) r.subject = body.subject; if (body.body != null) r.body = body.body; }
       return json({ ok: true });
+    }
+    if (p === "/api/outreach/footer" && method === "GET") return json(FX.footer);
+    if (p === "/api/outreach/footer") {
+      // the same shape of refusal the server gives, so the error path is real here
+      const sd = body.sender || {}, t = (body.text || "").trim();
+      const resolved = t.split("{{sender_name}}").join(sd.name || "").split("{{sender_title}}").join(sd.title || "")
+        .split("{{postal_address}}").join(sd.postal_address || "").split("{{sender_email}}").join("");
+      const probs = [];
+      if (!t) probs.push("The footer is empty. Every email needs a sign-off, a postal address and a way out of the list.");
+      if (resolved.includes("SET_ME")) probs.push("The footer still says SET_ME. Fill in the name and the postal address.");
+      if (!resolved.split(/\r?\n/).some((l) => l.trim().length >= 8 && /\d/.test(l)))
+        probs.push("No postal address in the footer. Commercial email has to carry a real postal address, and a missing one is what gets a sending domain blocked.");
+      if (!/unsubscribe|opt out|opt-out|no thanks|hear from me|remove you/i.test(resolved))
+        probs.push("No way out. Keep a line telling the recipient how to stop hearing from you -- it is both the law and the difference between a reply and a spam report.");
+      if (probs.length) return json({ detail: probs.join("\n") }, 400);
+      FX.footer.text = t; FX.footer.sender = sd; FX.footer.preview = resolved; FX.footer.problems = [];
+      return json({ ok: true, preview: resolved, rebuilt: body.apply_to_drafts ? FX.footer.drafts_pending : 0,
+                    hand_edited: 0, failed: 0 });
     }
     if (p === "/api/mailboxes") return json(FX.mailboxes || { segment_cap: 20, rotation: false, mailboxes: [
       { key: "default", email_env: "GMAIL_SENDER_ADDRESS", daily_cap: 20, warmup: null, enabled: true,

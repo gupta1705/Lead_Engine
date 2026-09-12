@@ -1012,7 +1012,7 @@
    {
     "key": "clipping_intro_v1",
     "subject": "{{company}}: three shorts from your latest episode?",
-    "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long episodes into short vertical clips -- the hook, the captions, the reframing -- and deliver within 48 hours of each new episode, so every release also gets ten shorts working for it on YouTube, Instagram and TikTok. Our editors cut; you approve.\n\nRather than describe it: reply \"yes\" and we'll clip your latest episode into three shorts, free, so you can judge the quality before anything else is discussed.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+    "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long episodes into short vertical clips -- the hook, the captions, the reframing -- and deliver within 48 hours of each new episode, so every release also gets ten shorts working for it on YouTube, Instagram and TikTok. Our editors cut; you approve.\n\nRather than describe it: reply \"yes\" and we'll cut three shorts out of {{latest_work}}, free, so you can judge the quality before anything else is discussed.\n\n{{footer}}",
     "guidance": "First touch for creators and podcasters. {{hook}} is one sentence of THEIR numbers -- episodes, cadence, length, shorts count -- built by the draft command from the feed and channel evidence, so it is true by construction. Greeting: a person's first name when the engine found one (metadata.host at high or medium confidence); otherwise 'there'. Never the show's name."
    },
    {
@@ -1021,25 +1021,25 @@
      "metadata.kind": "production_house"
     },
     "subject": "{{company}}: shorts from your archive, three on us",
-    "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form -- episodes, trailers, behind-the-scenes, interviews -- into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\nRather than describe it: reply \"yes\" and we'll clip one piece from your channel into three shorts, free, so you can judge the quality first.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+    "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form -- episodes, trailers, behind-the-scenes, interviews -- into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\nRather than describe it: reply \"yes\" and we'll cut three shorts out of {{latest_work}}, free, so you can judge the quality first.\n\n{{footer}}",
     "guidance": "Production houses and studios (metadata.kind = production_house, set by the Wikidata connector and the TVF pool import). Same evidence hook, studio wording: 'your archive', 'your team approves'. Picked automatically by the draft command through the `when` condition."
    },
    {
     "key": "clipping_followup_1",
     "kind": "follow_up",
     "subject": "Re: {{opener_subject}}",
-    "body": "Hi {{greeting_name}},\n\nFloating this back up in case it got buried. The offer stands: reply \"yes\" and we'll cut three shorts from one of your recent long videos or episodes, free, so you can judge the quality before anything else is discussed.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+    "body": "Hi {{greeting_name}},\n\nFloating this back up in case it got buried. To put a number on it: {{clip_math}}. The offer stands -- reply \"yes\" and we'll cut three out of {{latest_work}}, free, so you can judge the quality before anything else is discussed.\n\n{{footer}}",
     "guidance": "Follow-up 1, sent in the opener's thread four days after it if nobody replied. Short on purpose."
    },
    {
     "key": "clipping_followup_2",
     "kind": "follow_up",
     "subject": "Re: {{opener_subject}}",
-    "body": "Hi {{greeting_name}},\n\nLast note from me on this. If short-form from your back catalogue is ever on the list, reply here and the three free shorts are yours. Otherwise I'll leave you be.\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+    "body": "Hi {{greeting_name}},\n\nLast note from me on this. If short-form from your back catalogue is ever on the list, reply here and the three free shorts are yours. Otherwise I'll leave you be.\n\n{{footer}}",
     "guidance": "Follow-up 2, the last one: seven days after follow-up 1. After this the thread is closed for good."
    }
   ],
-  "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. Approval may be one draft at a time or a spot-checked batch (batch_approval). daily_send_cap is a hard daily ceiling per mailbox and counts follow-ups. One thread per company, enforced by the database: an opener, then at most the follow_ups steps, stopped by any reply. Templates carry an optional `when` condition on metadata; follow-up templates are marked kind=follow_up and are never used as openers. greeting_fallback is what 'Hi ...' says when no person is known.",
+  "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. Approval may be one draft at a time or a spot-checked batch (batch_approval). daily_send_cap is a hard daily ceiling per mailbox and counts follow-ups. One thread per company, enforced by the database: an opener, then at most the follow_ups steps, stopped by any reply. Templates carry an optional `when` condition on metadata; follow-up templates are marked kind=follow_up and are never used as openers. greeting_fallback is what 'Hi ...' says when no person is known. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
   "greeting_fallback": "there",
   "follow_ups": {
    "enabled": true,
@@ -1096,7 +1096,11 @@
     }
    }
   ],
-  "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them."
+  "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them.",
+  "footer": {
+   "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+   "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+  }
  },
  "schedule": [
   {

@@ -832,3 +832,27 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .project-switch[data-prefix="LCX"] .project-avatar { background: linear-gradient(135deg, #E56910, #943D73); }
 .project-switch[data-prefix="STA"] .project-avatar { background: linear-gradient(135deg, #1F845A, #2898BD); }
 .project-menu { left: 0; right: auto; min-width: 320px; top: calc(100% + 2px); }
+
+/* ============================================================ email footer */
+/* The block every outbound email ends with. It is edited in one dialog, so
+   the dialog has to show what it will actually read like -- the preview is
+   the point, not decoration. */
+.footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field .help code {
+  font-family: var(--mono); font-size: 11px; padding: 1px 4px; border-radius: 3px;
+  background: var(--surface-sunken); color: var(--text-subtle);
+}
+.footer-apply {
+  display: block; margin-top: 20px; padding: 12px; border-radius: var(--radius);
+  background: var(--surface-sunken); font-size: 14px; cursor: pointer;
+}
+.footer-apply input { margin-right: 8px; }
+.footer-apply .help { margin: 4px 0 0 24px; font-size: 12px; line-height: 16px; color: var(--text-subtlest); }
+.footer-problems {
+  display: flex; gap: 8px; margin-top: 16px; padding: 12px; border-radius: var(--radius);
+  background: var(--bg-danger, rgba(222, 53, 11, .08)); color: var(--text-danger);
+  font-size: 13px; line-height: 18px;
+}
+.footer-problems svg { flex: none; margin-top: 1px; }
+.footer-problems > div > div + div { margin-top: 6px; }
+@media (max-width: 640px) { .footer-grid { grid-template-columns: 1fr; } }

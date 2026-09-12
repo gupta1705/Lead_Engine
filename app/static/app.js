@@ -873,6 +873,89 @@ async function startBatch() {
   });
 }
 
+/* ---------------------------------------------------------------- footer
+   The sign-off, the postal address and the opt-out are the same on every
+   email this project sends, so they are one setting rather than four lines
+   repeated in each template. The server refuses a footer with no address or
+   no way out -- both are required of commercial email, and both are what
+   keep a sending domain alive. */
+const FOOTER_SAMPLE = { company: "Example Productions", greeting_name: "there" };
+
+function footerPreview(text, sender) {
+  const vals = Object.assign({ sender_name: sender.name, sender_title: sender.title,
+    sender_email: sender.email || "", postal_address: sender.postal_address }, FOOTER_SAMPLE);
+  let out = text || "";
+  Object.keys(vals).forEach((k) => { out = out.split("{{" + k + "}}").join(vals[k] || ""); });
+  return out;
+}
+
+async function openFooter() {
+  let d;
+  try { d = await api("/api/outreach/footer"); }
+  catch (e) { return toast("Could not load the footer: " + e.message, true); }
+  const pending = d.drafts_pending || 0;
+  modal.open(`
+    ${modalHead(`${typeIcon("mail")}<span class="key">Footer</span>`)}
+    <div class="modal-body single"><div class="modal-main">
+      <h2 class="modal-title" style="font-size:20px;line-height:24px;margin-bottom:4px">The end of every email</h2>
+      <p class="sub" style="margin-bottom:20px">Your sign-off, your postal address and the line that lets someone out. It goes on the opener and on every follow-up, so it is set once here rather than inside each template.</p>
+      <div class="footer-grid">
+        <div class="field"><label for="fName">Your name</label><input id="fName" type="text" value="${esc(d.sender.name)}" autofocus></div>
+        <div class="field"><label for="fTitle">Your title</label><input id="fTitle" type="text" value="${esc(d.sender.title)}"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="fPostal">Postal address</label>
+        <input id="fPostal" type="text" value="${esc(d.sender.postal_address)}" placeholder="Street, city, postcode, country">
+        <div class="help">Commercial email has to carry a real postal address. A missing one is what gets a sending domain blocked.</div></div>
+      <div class="field" style="margin-top:16px"><label for="fText">Footer</label>
+        <textarea id="fText" style="min-height:140px">${esc(d.text)}</textarea>
+        <div class="help">Fields: ${d.fields.map((f) => `<code>{{${esc(f)}}}</code>`).join(" ")} &nbsp;<a href="#" id="fReset">restore the standard footer</a></div></div>
+      <div class="field" style="margin-top:16px"><label>How it will read</label><div class="mail-body" id="fPreview"></div></div>
+      <div id="fProblems"></div>
+      ${pending ? `<label class="footer-apply"><input type="checkbox" id="fApply" checked> Put this footer on the ${pending} draft${pending === 1 ? "" : "s"} waiting for approval<div class="help">Only the footer is replaced. Anything you wrote above it stays exactly as you wrote it.</div></label>` : ""}
+    </div></div>
+    <div class="modal-foot">
+      <span class="left">Emails already sent are not touched.</span>
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn primary" id="fSave">${icon("check", 16)} Save footer</button>
+    </div>`, { label: "Email footer" });
+
+  const root = $("#modalRoot");
+  const sender = () => ({ name: $("#fName", root).value.trim(), title: $("#fTitle", root).value.trim(),
+                          postal_address: $("#fPostal", root).value.trim() });
+  const paint = () => { $("#fPreview", root).textContent = footerPreview($("#fText", root).value, sender()); };
+  ["fName", "fTitle", "fPostal", "fText"].forEach((id) =>
+    $("#" + id, root).addEventListener("input", paint));
+  paint();
+  if (d.problems && d.problems.length) showFooterProblems(root, d.problems);
+  $("#fReset", root).addEventListener("click", (e) => {
+    e.preventDefault(); $("#fText", root).value = d.default; paint();
+  });
+  $("#fSave", root).addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    b.classList.add("loading"); $$("#modalRoot .btn").forEach((x) => x.disabled = true);
+    $("#fProblems", root).innerHTML = "";
+    try {
+      const apply = !!($("#fApply", root) || {}).checked;
+      const res = await post("/api/outreach/footer",
+        { text: $("#fText", root).value, sender: sender(), apply_to_drafts: apply });
+      const bits = [];
+      if (res.rebuilt) bits.push(res.rebuilt + " draft" + (res.rebuilt === 1 ? "" : "s") + " rewritten");
+      if (res.left_alone) bits.push(res.left_alone + " left alone (they do not end with the old footer)");
+      flag("Footer saved", { desc: bits.join(", ") || "Every email from now on ends with it." });
+      modal.close(true);
+      if (currentView() === "outreach") await loadOutreach();
+    } catch (err) {
+      showFooterProblems(root, String(err.message).split("\n").filter(Boolean));
+      $$("#modalRoot .btn").forEach((x) => x.disabled = false); b.classList.remove("loading");
+    }
+  });
+}
+
+function showFooterProblems(root, problems) {
+  $("#fProblems", root).innerHTML = `<div class="footer-problems">${icon("alert", 16)}<div>${
+    problems.map((p) => `<div>${esc(p)}</div>`).join("")}</div></div>`;
+}
+
 function openMessage(id) {
   const o = state.outreach, r = o.rows.find((x) => x.id === id);
   if (!r) return;
@@ -1173,6 +1256,7 @@ function bindOps() {
   $("#logClose").addEventListener("click", () => { $("#logPanel").hidden = true; });
   $("#draftBtn").addEventListener("click", () => runJob("draft_outreach", { onDone: () => { if (currentView() === "outreach") loadOutreach(); } }));
   $("#followupsBtn").addEventListener("click", () => runJob("draft_followups", { onDone: () => { if (currentView() === "outreach") loadOutreach(); } }));
+  $("#footerBtn").addEventListener("click", openFooter);
   $("#outreachSelAll").addEventListener("change", (e) => {
     const o = state.outreach;
     if (e.target.checked) o.rows.forEach((r) => o.selected.add(r.id)); else o.selected.clear();

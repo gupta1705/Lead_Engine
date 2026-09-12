@@ -181,21 +181,23 @@ def main():
         check("a big batch needs a bigger sample", pol.required_sample(80, policy) == 8)
 
         # ------------------------------------------------------------ templates
-        import outreach
+        import draft_render
         fu_tpl = {t["key"]: t for t in cfg["templates"]}
-        ctx = {"company": "Acme", "greeting_name": "Pat", "hook": "h", "opener_subject": "Opener subject",
-               "sender_name": "S", "sender_title": "T", "postal_address": "P"}
+        # through the real context builder, so a template that grows a new
+        # field is caught here rather than at send time
+        ctx = draft_render.build_context(cfg, "Acme", {"host": {"first_name": "Pat", "confidence": "high"}},
+                                         seed="test", opener_subject="Opener subject")
         for st in steps:
             t = fu_tpl[st["template"]]
             try:
-                outreach.render(t["subject"], ctx); outreach.render(t["body"], ctx)
+                draft_render.render(t["subject"], ctx); draft_render.render(t["body"], ctx)
                 check("template %s renders with no leftover placeholder" % t["key"], True)
             except ValueError as e:
                 check("template %s renders with no leftover placeholder" % t["key"], False, e)
         check("a follow-up template is never picked as an opener",
-              outreach.pick_template(cfg, {"kind": "creator_show"})["key"] == "clipping_intro_v1")
+              draft_render.pick_template(cfg, {"kind": "creator_show"})["key"] == "clipping_intro_v1")
         check("studio opener still picked for production houses",
-              outreach.pick_template(cfg, {"kind": "production_house"})["key"] == "clipping_studio_v1")
+              draft_render.pick_template(cfg, {"kind": "production_house"})["key"] == "clipping_studio_v1")
     finally:
         conn.rollback()
         conn.close()

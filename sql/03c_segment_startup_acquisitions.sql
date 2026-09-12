@@ -1,8 +1,7 @@
 -- 03C_SEGMENT_STARTUP_ACQUISITIONS.SQL
--- P28: Segment 2 as a config row. GENERATED from
--- config/segment.startup-acquisitions.json by the snippet in the P28 notes;
--- edit the JSON, regenerate, never hand-edit this literal. Idempotent: an
--- existing row is updated to the file's content, so re-running is a sync.
+-- Segment config row for 'startup-acquisitions'. GENERATED from config/segment.startup-acquisitions.json
+-- by tools/gen_segment_sql.py; edit the JSON, regenerate, never hand-edit this
+-- literal. Idempotent: an existing row is updated to the file's content.
 insert into segments (slug, name, entity_type, config)
 values (
   'startup-acquisitions',
@@ -247,18 +246,23 @@ values (
       {
         "key": "strategic_intro_v1",
         "subject": "{{company}} + The Viral Fever — a conversation worth having",
-        "body": "Hi {{greeting_name}},\n\nI lead corporate development at The Viral Fever (TVF) - one of India''s largest independent studios, with a platform reaching tens of millions of viewers.\n\n{{hook}}\n\nWe''re looking at a small number of product companies whose technology would slot straight into how we make and distribute content, and {{company}} is one of them. I''d value 20 minutes to understand where you''re headed and whether there''s a fit - as a customer, a partner, or something more strategic.\n\nOpen to a call?\n\n{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+        "body": "Hi {{greeting_name}},\n\nI lead corporate development at The Viral Fever (TVF) - one of India''s largest independent studios, with a platform reaching tens of millions of viewers.\n\n{{hook}}\n\nWe''re looking at a small number of product companies whose technology would slot straight into how we make and distribute content, and {{company}} is one of them. I''d value 20 minutes to understand where you''re headed and whether there''s a fit - as a customer, a partner, or something more strategic.\n\nOpen to a call?\n\n{{footer}}",
         "guidance": "First touch. Deliberately ambiguous about acquisition - founders hear ''strategic'' and choose how to read it. Human-approved per draft like every template."
       }
     ],
-    "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database."
+    "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
+    "footer": {
+      "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+    }
   }
 }'::jsonb
 )
 on conflict (slug) do update
   set name = excluded.name,
       entity_type = excluded.entity_type,
-      config = excluded.config;
+      config = excluded.config,
+      updated_at = now();
 
 select slug, entity_type,
        jsonb_array_length(config->'rubric')  as rubric_criteria,
