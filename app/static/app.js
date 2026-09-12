@@ -453,12 +453,31 @@ async function loadBoard() {
   syncExportLinks();
 }
 
+/* Opening a lead or a message is a click ANYWHERE on its row or card, not on
+   the key. One delegated listener per list does that, and unlike a listener
+   per row it survives every re-render, so a row can never end up dead. Real
+   controls inside a row (a checkbox, a link, a button) still do their own job. */
+function delegateOpen(containerSel, open, skipSel) {
+  const el = $(containerSel);
+  if (!el || el.dataset.delegated) return;
+  el.dataset.delegated = "1";
+  const idFrom = (e) => {
+    if (skipSel && e.target.closest(skipSel)) return null;
+    if (e.target.closest("a, button, input, textarea, select, label")) return null;
+    const row = e.target.closest("[data-id]");
+    return row && el.contains(row) ? row.dataset.id : null;
+  };
+  el.addEventListener("click", (e) => { const id = idFrom(e); if (id) open(id); });
+  el.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const id = idFrom(e);
+    if (id) { e.preventDefault(); open(id); }
+  });
+}
+
 function bindBoard() {
   const board = $("#board");
-  $$(".card", board).forEach((c) => {
-    c.addEventListener("click", () => go("lead/" + c.dataset.id));
-    c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("lead/" + c.dataset.id); } });
-  });
+  delegateOpen("#board", (id) => go("lead/" + id), "[data-more]");
   $$("[data-more]", board).forEach((b) => b.addEventListener("click", async () => {
     const col = COLUMNS.find((x) => x.key === b.dataset.more), c = state.board.cols[col.key];
     b.classList.add("loading");
@@ -507,10 +526,7 @@ async function loadLeads() {
       <td class="secondary">${fieldSummary(r) || esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="8">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
-  $$("#leadsBody tr[data-id]").forEach((tr) => {
-    tr.addEventListener("click", () => go("lead/" + tr.dataset.id));
-    tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go("lead/" + tr.dataset.id); });
-  });
+  delegateOpen("#leadsBody", (id) => go("lead/" + id));
   const from = d.total ? state.leads.page * state.leads.perPage + 1 : 0;
   const to = Math.min((state.leads.page + 1) * state.leads.perPage, d.total);
   $("#leadsInfo").textContent = `${from}–${to} of ${d.total.toLocaleString()}`;
@@ -576,10 +592,23 @@ function evidenceItems(m) {
   return out;
 }
 
-async function openLead(id) {
+async function openLead(id, opts) {
+  // The dialog opens on the click, not when the server answers: on a cold
+  // cloud instance the fetch can take seconds, and a click that shows nothing
+  // reads as a click that did nothing.
+  const quiet = !!(opts && opts.quiet);
+  if (!quiet) {
+    modal.open(`${modalHead(`${typeIcon("lead")}<span class="key">${leadKey(id)}</span>`)}
+      <div class="modal-body single"><div class="modal-main"><div class="empty-state">
+        <div class="spin" style="margin: 0 auto 12px"></div><p>Opening the lead</p></div></div></div>`,
+      { label: "Opening the lead" });
+  }
   let d;
   try { d = await api("/api/leads/" + id); }
-  catch (e) { return toast("Could not load company: " + e.message, true); }
+  catch (e) {
+    if (!quiet) modal.close(true);
+    return toast("Could not load company: " + e.message, true);
+  }
   const m = d.metadata || {}, research = m.p1_research || {};
   const st = leadStatus(d.status), score = +d.fit_score || 0, prio = prioFor(score);
   const decided = d.status === "shortlisted" || d.status === "rejected";
@@ -690,7 +719,7 @@ async function decide(id, decision, reason) {
     const r = await post("/api/leads/" + id + "/decision", { decision, reason: reason || "" });
     const s = leadStatus(r.status);
     flag(r.name, { desc: "Moved to " + s.label + (decision === "reset" ? " (decision undone)" : "") });
-    await openLead(id);                 // re-render with the new status; Undo stays reachable
+    await openLead(id, { quiet: true }); // re-render with the new status; Undo stays reachable
     refreshCurrentView();
     refreshNotifications(true);
   } catch (e) {
@@ -756,10 +785,7 @@ async function loadOutreach() {
     : `<tr class="empty-row"><td colspan="7">${o.folder === "drafts"
         ? "No drafts waiting. Shortlist companies on the board, then press Draft emails."
         : "Nothing in this folder yet."}</td></tr>`;
-  $$("#outreachBody tr[data-id]").forEach((tr) => {
-    tr.addEventListener("click", (e) => { if (e.target.closest(".sel-col")) return; openMessage(tr.dataset.id); });
-    tr.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.target.closest(".sel-col")) openMessage(tr.dataset.id); });
-  });
+  delegateOpen("#outreachBody", openMessage, ".sel-col");
   $$("#outreachBody [data-sel]").forEach((c) => c.addEventListener("change", () => {
     if (c.checked) o.selected.add(c.dataset.sel); else o.selected.delete(c.dataset.sel);
     renderBatchBar();
