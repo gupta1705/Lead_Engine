@@ -212,6 +212,12 @@ name. The opening sentence is their own numbers. The offer names their actual
 most recent episode. None of that was invented; all of it came from the evidence
 on the lead.
 
+Some drafts carry a **Written** mark: a model wrote the opening sentence from
+that same evidence and nothing else, with every number in it checked against
+the evidence before it was kept. A written draft is approved on its own, never
+in a batch, because a random sample cannot stand for a sentence written once
+for one company.
+
 **Approve for sending** records your name against the email and moves it to
 Approved.
 

@@ -190,8 +190,13 @@ MOCK_JS = r"""
       { key: "default", email_env: "GMAIL_SENDER_ADDRESS", daily_cap: 20, warmup: null, enabled: true,
         cap_today: 20, sent_today: 0, remaining: 20, last_address: null, warmup_day: 0, first_sent: null }] });
     if (p === "/api/outreach/batch/sample") {
-      const ids = body.ids || [], k = Math.min(ids.length, Math.max(3, Math.ceil(ids.length * 0.1)));
-      return json({ approvable: ids, skipped: [], sample: ids.slice(0, k), token: "preview" });
+      const all = body.ids || [];
+      const gen = new Set(all.filter((id) => (FX.outreach.rows.find((r) => r.id === id) || {}).generated));
+      const ids = all.filter((id) => !gen.has(id));
+      const frac = gen.size ? 0.25 : 0.1;
+      const k = Math.min(ids.length, Math.max(3, Math.ceil(ids.length * frac)));
+      return json({ approvable: ids, sample: ids.slice(0, k), token: "preview", generated: false,
+        skipped: [...gen].map((id) => ({ id, reason: "its opening line was written by a model; approve it on its own" })) });
     }
     if (p === "/api/outreach/batch/approve") {
       (body.ids || []).forEach((id) => { const r = FX.outreach.rows.find((x) => x.id === id);

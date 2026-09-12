@@ -260,6 +260,63 @@ is a hash and not a random number, the same lead always renders the same way,
 so redrafting never quietly changes text somebody already read.
 `tools/test_draft_render.py` is the regression table for all of it.
 
+## The opening line, written by a model (2026-09-12)
+
+Owner's brief: "go ahead and build the groq personalisation". The first
+sentence of a clipping draft may now be **written** from that lead's facts
+rather than assembled from them. Everything else is unchanged: the same
+template, the same footer, the same approval.
+
+**Groq, not Gemini's free tier.** Google's API terms say content sent to the
+unpaid tier is used to improve their products, with human reviewers, and tell
+you not to send confidential information through it. What we would be sending
+is the prospect list. Groq's documented default is no retention (30-day logs
+for abuse and reliability only, with a zero-retention switch) and its services
+agreement says inputs and outputs are not used for training. Volume never
+decided it: the segment's ceiling is 120 emails a day against a free plan of
+roughly a thousand requests.
+
+**What the model is given** is a whitelist, not a filtered row --
+`draft_render.facts_for()`: company name, creator or production company,
+episode and video counts, cadence, average length, the long/short split of the
+last uploads, subscriber count, one recent title, topics, country. No email
+address, no contact name, no scraped page text, no URLs.
+
+**What is done with what comes back**, all in `tools/llm.py`:
+
+| Check | Why |
+|---|---|
+| Every number must appear in the facts, unrounded | "over 2,000 videos" for 2,185 is a claim we did not verify |
+| No link, address, markdown or emoji | it is a sentence, not a page |
+| One or two sentences, a word cap | a model asked for a line will write an essay |
+| A small list of sales words is banned | "guarantee", "viral", "10x" |
+| Anything rejected falls back | the deterministic hook is always there |
+
+The title in the facts is text the lead published, so it is untrusted: it is
+screened for links before it goes anywhere near a prompt, the prompt labels the
+JSON as data and not instructions, and nothing that comes back is used without
+the checks above. A rejected answer is never retried into something weaker.
+
+**It cannot break drafting.** No key, no network, a bad answer -- each ends in
+the hook the engine writes itself, with a line in the log and a count at the
+end of the run. `python tools/llm.py --check` proves a key works;
+`--try 5` prints the built-in and the written hook side by side for five real
+leads.
+
+**The approval rule that follows.** A spot check stands for a batch because
+every draft in it came from one template. A sentence written once, for one
+lead, can be wrong on its own, so a written draft is **not eligible for batch
+approval** (`batch_approval.allow_generated: false`) and must be approved
+individually. Set that flag to true once enough of them have been read; batches
+carrying written drafts then draw `generated_sample_fraction` (0.25) instead of
+`sample_fraction` (0.1). The rule is enforced from `outreach.generated_hook` on
+the row, which also stores the exact sentence for audit. `sql/26`.
+
+`tools/test_generated_hook.py` is the regression table: a whitelist check, a
+hostile set of model answers (rounding, links, arithmetic, markdown, refusals,
+an instruction smuggled in through a title), the fallback paths, and the batch
+rule end to end against the database.
+
 ## Not built yet, by decision
 - Sample-first outreach: a "needs sample" state where the draft waits until
   three clips are attached. Cheap to add once the production side exists.

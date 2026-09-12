@@ -151,17 +151,16 @@ def _age_days(stamp, now):
     return (now - d).days
 
 
-def latest_work(meta, now=None, fresh_days=120):
-    """Their most recent piece, by name -- 'your recent episode "Ep 219: ..."'.
+def latest_title(meta, now=None, fresh_days=120):
+    """-> (title, noun) for their most recent piece, or (None, noun).
 
     Only when we know the title AND it is recent enough that calling it recent
-    is still true; otherwise a phrase that names nothing, never a guess. This
-    is the line that makes an email unmistakably about them."""
+    is still true. Never a guess."""
     now = now or dt.datetime.now(dt.timezone.utc)
     pf = meta.get("podcast_feed") or {}
     yc = meta.get("youtube_channel") or {}
     r = yc.get("recent") or {}
-    best, best_age, best_noun = None, None, "upload"
+    best, best_age, best_noun = None, None, "episode" if pf else "upload"
     for title, stamp, noun in ((r.get("latest_title"), r.get("last_upload_at"), "upload"),
                                (pf.get("latest_title"), pf.get("latest_at"), "episode")):
         t = clean_title(title)
@@ -170,9 +169,19 @@ def latest_work(meta, now=None, fresh_days=120):
             continue
         if best_age is None or age < best_age:
             best, best_age, best_noun = t, age, noun
-    if best:
-        return 'your recent %s, "%s"' % (best_noun, best)
-    return "one of your recent episodes" if pf else "one of your recent uploads"
+    return best, best_noun
+
+
+def latest_work(meta, now=None, fresh_days=120):
+    """Their most recent piece, by name -- 'your recent episode "Ep 219: ..."'.
+
+    Falls back to a phrase that names nothing rather than to a guess. This is
+    the line that makes an email unmistakably about them."""
+    title, noun = latest_title(meta, now, fresh_days)
+    if title:
+        return 'your recent %s, "%s"' % (noun, title)
+    return "one of your recent episodes" if (meta.get("podcast_feed") or {}) else \
+           "one of your recent uploads"
 
 
 def clip_math(meta):
@@ -296,6 +305,57 @@ NEUTRAL_HOOK = ("We've been mapping US independents whose work overlaps with "
                 "TVF's lanes, and {{company}} made our shortlist.")
 
 
+def _short(s, limit=60):
+    """A value from somebody else's feed, trimmed to a size that cannot carry
+    an argument."""
+    s = _CTRL.sub(" ", str(s or "")).strip()
+    s = re.sub(r"\s+", " ", s)
+    if "http" in s.lower() or "@" in s:
+        return None
+    return s[:limit] or None
+
+
+def facts_for(company, meta, now=None):
+    """Exactly what a model is allowed to see about a lead.
+
+    A whitelist, not a filter: public counts, and one title they published
+    themselves. No email address, no contact name, no scraped page text, no
+    URLs. A sentence about their back catalogue does not need any of that, and
+    it is not ours to hand to a third party."""
+    meta = meta or {}
+    pf = meta.get("podcast_feed") or {}
+    yc = meta.get("youtube_channel") or {}
+    r = yc.get("recent") or {}
+    f = {"company": company,
+         "they_are": ("a production company" if meta.get("kind") == "production_house"
+                      else "a creator or podcaster")}
+    if pf.get("episode_count"):
+        f["episodes_published"] = int(pf["episode_count"])
+    if pf.get("cadence_per_month"):
+        f["episodes_per_month"] = float(pf["cadence_per_month"])
+    if pf.get("avg_duration_min"):
+        f["average_episode_minutes"] = int(pf["avg_duration_min"])
+    if yc.get("video_count"):
+        f["youtube_videos"] = int(yc["video_count"])
+    if yc.get("subscribers"):
+        f["youtube_subscribers"] = int(yc["subscribers"])
+    if r.get("sampled"):
+        f["recent_uploads_checked"] = int(r["sampled"])
+        f["long_form_among_them"] = int(r.get("long_count") or 0)
+        f["shorts_among_them"] = int(r.get("shorts_count") or 0)
+    if r.get("avg_long_minutes"):
+        f["average_long_video_minutes"] = int(r["avg_long_minutes"])
+    title, noun = latest_title(meta, now)
+    if title:
+        f["most_recent_%s_title" % noun] = title
+    topics = [t for t in ((pf.get("categories") or yc.get("topics") or [])[:3]) if _short(t)]
+    if topics:
+        f["topics"] = [_short(t) for t in topics]
+    if yc.get("country"):
+        f["country"] = _short(yc["country"], 4)
+    return f
+
+
 def hook_line(meta, company, cfg, seed=None):
     hook = (hook_for_clipping(meta, company, seed) if cfg.get("hook_style") == "clipping"
             else hook_for(meta, company))
@@ -361,16 +421,30 @@ def render(template, ctx):
 
 
 def build_context(cfg, company, meta, contact_name=None, contact_email=None,
-                  seed=None, opener_subject=None, now=None):
+                  seed=None, opener_subject=None, now=None, generator=None):
     """Every field a template may use, for one lead. {{footer}} is rendered
-    first, so a template only ever has to end with it."""
+    first, so a template only ever has to end with it.
+
+    `generator` is the optional model (tools/llm.py). It is handed the facts
+    whitelist and nothing else, its answer is checked before it is used, and
+    any failure at all means the deterministic hook. The sentence it wrote is
+    returned in ctx["generated_hook"] so the caller can record which drafts
+    were written by a model -- those are not eligible for spot-checked batch
+    approval unless the segment says so."""
     sender = cfg.get("sender") or {}
     company = company or ""
     meta = meta or {}
+    written = None
+    if generator is not None:
+        try:
+            written = generator(facts_for(company, meta, now), seed)
+        except Exception:                    # a model must never fail a draft run
+            written = None
     ctx = {
         "company": company,
         "greeting_name": pick_greeting(contact_name, contact_email, company, meta, cfg),
-        "hook": hook_line(meta, company, cfg, seed),
+        "hook": written or hook_line(meta, company, cfg, seed),
+        "generated_hook": written or "",
         "latest_work": latest_work(meta, now),
         "clip_math": clip_math(meta),
         "sender_name": sender.get("name", "") or "",

@@ -5,7 +5,7 @@ THE ONE RULE THAT SHAPES EVERYTHING HERE: no email leaves this system without
 a human having read THAT exact text and clicked approve. The commands are
 deliberately separated so the dangerous one is small and auditable:
 
-    draft    render personalised drafts for shortlisted leads   (no network)
+    draft    render personalised drafts for shortlisted leads   (see below)
     auth     one-time Gmail OAuth consent, done BY THE OWNER    (browser)
     send     send APPROVED drafts only, capped per run          (Gmail API)
     pull     fetch replies to sent threads                      (Gmail API)
@@ -18,6 +18,13 @@ WHAT MAKES A SEND SAFE, layer by layer:
   * the address:  refuses to send when the contact email failed verification
   * the identity: GMAIL_SENDER_ADDRESS comes from .env, never from config,
                   so a config typo cannot impersonate anyone
+
+THE ONE NETWORK CALL IN `draft`. A segment with outreach.generated_hook on lets
+a model write the opening sentence from that lead's own facts (tools/llm.py).
+It is the only outbound call the draft step makes, it needs GROQ_API_KEY, and
+every way it can fail -- no key, no network, an answer that does not survive
+the checks -- ends in the sentence the engine assembles itself. Drafting never
+stops because a model had a bad day.
 
 CREDENTIALS, and what happens without them. Gmail needs an OAuth client
 (credentials in .env as GOOGLE_OAUTH_CLIENT_ID/SECRET) plus a one-time consent
@@ -149,23 +156,42 @@ def cmd_draft(args):
         % (len(rows), requested["key"] if requested else "auto (per-lead when-conditions)",
            "  [DRY RUN]" if args.dry_run else ""))
 
+    import llm
+    gen = llm.make_generator(cfg, log=log)
+    if gen:
+        log("  the opening sentence is written by %s from each lead's own facts;"
+            % gen.policy["model"])
+        log("  one that fails the checks falls back to the built-in hook\n")
+    elif llm.policy(cfg):
+        log("  GROQ_API_KEY is not set, so every hook is the built-in one\n")
+
     made = 0
-    import personname
     for eid, company, meta, cid, cname, email in rows:
         meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
         tpl = requested or pick_template(cfg, meta)
-        ctx = build_context(cfg, company, meta, cname, email, seed=eid)
+        # only a template that actually uses {{hook}} is worth a model call
+        use_gen = gen if "{{hook}}" in (tpl.get("body") or "") else None
+        ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen)
         subject, body = render_message(tpl, ctx)
-        log("  %-32s -> %-34s [%s] %s" % (company[:32], email, tpl["key"], subject[:40]))
+        written = ctx.get("generated_hook") or None
+        log("  %-32s -> %-34s [%s]%s" % (company[:32], email, tpl["key"],
+                                         "  written" if written else ""))
         if args.dry_run:
             continue
-        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body: cur.execute(
-            "insert into outreach (entity_id, contact_id, template_key, subject, body)"
-            " values (%s, %s, %s, %s, %s) on conflict do nothing",
-            (_e, _c, tpl["key"], _s, _b)))
+        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body, _g=written: cur.execute(
+            "insert into outreach (entity_id, contact_id, template_key, subject, body,"
+            " generated_hook) values (%s, %s, %s, %s, %s, %s) on conflict do nothing",
+            (_e, _c, tpl["key"], _s, _b, _g)))
         made += 1
 
     db.close()
+    if gen:
+        st = gen.stats
+        log("\n  model: %d written, %d rejected, %d unavailable"
+            % (st["ok"], st["rejected"], st["failed"]))
+        if st["ok"]:
+            log("  written drafts are approved one at a time unless the segment's"
+                " batch_approval.allow_generated says otherwise")
     log("\n%d draft(s) created. Review and approve them in the UI (Outreach tab)"
         % made)
     return 0

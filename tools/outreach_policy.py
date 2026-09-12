@@ -80,17 +80,26 @@ def followup_steps(outreach_cfg):
 
 
 def batch_policy(outreach_cfg):
-    """{'sample_min', 'sample_fraction', 'max_batch'} or None when off."""
+    """{'sample_min', 'sample_fraction', 'max_batch', 'allow_generated',
+    'generated_sample_fraction'} or None when off."""
     b = (outreach_cfg or {}).get("batch_approval") or {}
     if not b.get("enabled"):
         return None
+    frac = min(1.0, max(0.0, float(b.get("sample_fraction", 0.1))))
     return {"sample_min": max(1, int(b.get("sample_min", 3))),
-            "sample_fraction": min(1.0, max(0.0, float(b.get("sample_fraction", 0.1)))),
-            "max_batch": max(1, int(b.get("max_batch", 100)))}
+            "sample_fraction": frac,
+            "max_batch": max(1, int(b.get("max_batch", 100))),
+            # A spot check stands for a batch because every draft in it came
+            # from one template. A sentence a model wrote for one lead can be
+            # wrong on its own, so by default those are approved one at a time.
+            "allow_generated": bool(b.get("allow_generated", False)),
+            "generated_sample_fraction": min(1.0, max(
+                frac, float(b.get("generated_sample_fraction", 0.25))))}
 
 
-def required_sample(n, policy):
-    return min(n, max(policy["sample_min"], math.ceil(n * policy["sample_fraction"])))
+def required_sample(n, policy, has_generated=False):
+    frac = policy["generated_sample_fraction"] if has_generated else policy["sample_fraction"]
+    return min(n, max(policy["sample_min"], math.ceil(n * frac)))
 
 
 def outreach_config(cur, segment):
@@ -206,14 +215,15 @@ def _payload(user, segment, ids, sample, exp):
     return "|".join([user or "", segment, ",".join(sorted(ids)), ",".join(sorted(sample)), str(exp)])
 
 
-def draw_sample(ids, policy, secret, user, segment, ttl=3600):
-    """Server-drawn random sample plus a signature over batch + sample."""
+def draw_sample(ids, policy, secret, user, segment, has_generated=False, ttl=3600):
+    """Server-drawn random sample plus a signature over batch + sample. A batch
+    carrying model-written openers draws the bigger fraction."""
     ids = sorted({str(i) for i in ids})
     if not ids:
         raise ValueError("select at least one draft")
     if len(ids) > policy["max_batch"]:
         raise ValueError("a batch is at most %d drafts" % policy["max_batch"])
-    k = required_sample(len(ids), policy)
+    k = required_sample(len(ids), policy, has_generated)
     sample = sorted(secrets.SystemRandom().sample(ids, k))
     exp = int(time.time()) + ttl
     sig = hmac.new(secret, _payload(user, segment, ids, sample, exp).encode(), hashlib.sha256).hexdigest()
@@ -236,7 +246,8 @@ def verify_sample(ids, sample, token, secret, user, segment):
 
 CHECK_SQL = """
 select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
-       c.email, c.email_status, e.status as entity_status, s.slug
+       o.generated_hook, c.email, c.email_status,
+       e.status as entity_status, s.slug
 from outreach o
 join entities e on e.id = o.entity_id
 join segments s on s.id = e.segment_id
@@ -245,8 +256,14 @@ where o.id = any(%s::uuid[])
 """
 
 
-def check_drafts(cur, ids, segment):
-    """-> (approvable_ids, [{"id", "reason"}]) for the given draft ids."""
+def check_drafts(cur, ids, segment, policy=None):
+    """-> (approvable_ids, [{"id", "reason"}]) for the given draft ids.
+
+    `policy` is passed only on the BATCH path. With it, a draft whose opening
+    sentence a model wrote is held back unless the segment allows generated
+    drafts in a batch -- a random few cannot stand for text that was written
+    once, for one lead. Approving that same draft on its own is unaffected,
+    which is the whole point: it is still approvable, just not in bulk."""
     ids = [str(i) for i in ids]
     cur.execute(CHECK_SQL, (ids,))
     cols = [d[0] for d in cur.description]
@@ -278,11 +295,23 @@ def check_drafts(cur, ids, segment):
             reason = "company is now '%s'" % r["entity_status"]
         elif r["sequence_step"] > 0 and r["entity_status"] != "contacted":
             reason = "company is now '%s'" % r["entity_status"]
+        elif policy and not policy["allow_generated"] and r["generated_hook"]:
+            reason = "its opening line was written by a model; approve it on its own"
         if reason:
             skipped.append({"id": i, "reason": reason})
         else:
             ok.append(i)
     return ok, skipped
+
+
+def generated_among(cur, ids):
+    """Which of these drafts had their opening sentence written by a model.
+    A batch containing any of them needs a bigger sample."""
+    if not ids:
+        return set()
+    cur.execute("select id from outreach where id = any(%s::uuid[])"
+                " and generated_hook is not null", ([str(i) for i in ids],))
+    return {str(r["id"] if isinstance(r, dict) else r[0]) for r in cur.fetchall()}
 
 
 def apply_batch(cur, approve_ids, sample_ids, user, segment, requested, skipped):

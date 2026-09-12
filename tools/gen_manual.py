@@ -99,6 +99,10 @@ def build_outreach(fx):
              "sender_mailbox": "main" if status != "drafted" else None,
              "sender_address": "clipping@lcx.example.com" if status != "drafted" else None,
              "folder": {"drafted": "drafts", "approved": "outbox", "sent": "sent"}[status]}
+        # one draft shows what a model-written opening line looks like in the UI
+        if i == 1:
+            r["generated_hook"] = ctx["hook"]
+        r["generated"] = bool(r.get("generated_hook"))
         out.append(r)
         if i == len(rows) - 1:                      # a reply on the last thread
             out.append({**r, "id": str(uuid.uuid4()), "direction": "inbound",

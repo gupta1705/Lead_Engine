@@ -1071,7 +1071,10 @@ values (
       "sample_min": 3,
       "sample_fraction": 0.1,
       "max_batch": 100,
-      "guidance": "Owner decision 2026-09-10. Templated drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company). The approver''s name, the batch and the sample are recorded."
+      "guidance": "Owner decision 2026-09-10. Templated drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company). The approver''s name, the batch and the sample are recorded.",
+      "allow_generated": false,
+      "generated_guidance": "A spot check stands for a batch because every draft in it came from one template. A model-written sentence can be wrong on its own, so those drafts are approved one at a time. Set allow_generated to true once you have read enough of them to trust it; batches containing them then draw generated_sample_fraction instead of sample_fraction.",
+      "generated_sample_fraction": 0.25
     },
     "mailboxes": [
       {
@@ -1109,6 +1112,15 @@ values (
     "footer": {
       "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
       "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+    },
+    "generated_hook": {
+      "model": "openai/gpt-oss-120b",
+      "enabled": true,
+      "guidance": "The opening sentence of a draft, written by a model from the facts whitelist in tools/draft_render.facts_for() -- public counts and one title the lead published, never an address, a contact name or page text. Every number the model writes must appear in those facts or the sentence is thrown away and the deterministic hook is used instead; so is anything with a link, markup, a sales word, or more than two sentences. No GROQ_API_KEY means no calls and no change. The sentence is stored on the outreach row, so what a person approved is what is sent. See tools/llm.py.",
+      "provider": "groq",
+      "max_words": 45,
+      "max_calls_per_run": 200,
+      "requests_per_minute": 25
     }
   },
   "schedule": [

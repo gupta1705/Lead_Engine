@@ -743,6 +743,12 @@ const FOLDERS = [
 function outreachPolicy() { return (state.segment && state.segment.outreach_policy) || {}; }
 function batchOn() { return !!outreachPolicy().batch_approval; }
 function followUpsOn() { return !!(outreachPolicy().follow_ups || {}).enabled; }
+/* A draft whose opening line a model wrote is marked wherever it appears.
+   It is approved one at a time unless the segment allows it into a batch, so
+   the mark is not decoration: it is the reason the checkbox may be refused. */
+function writtenLozenge(r) {
+  return r.generated ? `<span class="lozenge moved" title="A model wrote the opening line from this lead's own evidence">Written</span> ` : "";
+}
 function stepLozenge(r) {
   const n = +r.sequence_step || 0;
   return n > 0 ? `<span class="lozenge new" title="Follow-up in the same thread">Follow-up ${n}</span> ` : "";
@@ -778,7 +784,7 @@ async function loadOutreach() {
       <td><span class="cell-key">${typeIcon("mail")}<span class="key">${leadKey(r.entity_id)}</span></span></td>
       <td><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
-      <td><div class="truncate" style="max-width:360px">${stepLozenge(r)}${esc(r.subject || "(no subject)")}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}${r.stopped_reason && r.status === "cancelled" ? `<div class="secondary">${esc(r.stopped_reason)}</div>` : ""}</td>
+      <td><div class="truncate" style="max-width:360px">${stepLozenge(r)}${writtenLozenge(r)}${esc(r.subject || "(no subject)")}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}${r.stopped_reason && r.status === "cancelled" ? `<div class="secondary">${esc(r.stopped_reason)}</div>` : ""}</td>
       <td>${mailLozenge(r)}</td>
       <td class="secondary nowrap" title="${esc(fmtDate(r.sent_at || r.created_at))}">${rel(r.sent_at || r.created_at)}</td>
     </tr>`).join("")
@@ -828,7 +834,7 @@ async function startBatch() {
     ${modalHead(`${icon("check", 16)}<span>Approve ${n} draft${n === 1 ? "" : "s"}</span>`)}
     <div class="modal-body single"><div class="modal-main">
       <div class="section-msg">${icon("info", 24)}<div><div class="title">Read these ${sample.length} first</div>
-        <div class="text">The server picked them at random from your selection. Approval unlocks when every one is ticked. Everything approved is sent exactly as written, and your name is recorded against the batch.</div></div></div>
+        <div class="text">The server picked them at random from your selection. Approval unlocks when every one is ticked. Everything approved is sent exactly as written, and your name is recorded against the batch.${s.generated ? " This batch contains drafts whose opening line a model wrote, so the sample is larger." : ""}</div></div></div>
       ${s.skipped.length ? `<div class="section-msg warning">${icon("warn", 24)}<div><div class="title">${s.skipped.length} will not be approved</div>
         <div class="text">${s.skipped.map((x) => esc((byId[x.id] || {}).company || x.id) + ": " + esc(x.reason)).join("<br>")}</div></div></div>` : ""}
       ${sample.map((r, i) => `<div class="sample-item">
@@ -989,6 +995,7 @@ function openMessage(id) {
             ${r.triage ? `<dt>Triage</dt><dd><span class="lozenge ${r.triage === "positive" ? "success bold" : r.triage === "negative" ? "removed" : "moved"}">${esc(r.triage.replace(/_/g, " "))}</span></dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
             ${r.template_key ? `<dt>Template</dt><dd class="mono">${esc(r.template_key)}</dd>` : ""}
+            ${r.generated_hook ? `<dt>Opening line</dt><dd><span class="lozenge moved">Written by a model</span><div class="small muted" style="margin-top:6px">From this lead's own evidence. Every number in it was checked against that evidence before it was kept.</div></dd>` : ""}
             ${r.gmail_thread_id ? `<dt>Gmail thread</dt><dd class="mono">${esc(r.gmail_thread_id)}</dd>` : ""}
           </dl></div></div>
         <div class="timestamps">${r.sent_at ? "Sent " + fmtDate(r.sent_at) + "<br>" : ""}Created ${fmtDate(r.created_at)}</div>

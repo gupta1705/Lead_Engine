@@ -661,12 +661,16 @@ def outreach_batch_sample(request: Request, body: dict = Body(...),
             raise HTTPException(400, "select at least one draft")
         if len(ids) > policy["max_batch"]:
             raise HTTPException(400, "a batch is at most %d drafts" % policy["max_batch"])
-        ok, skipped = pol.check_drafts(cur, ids, segment)
+        ok, skipped = pol.check_drafts(cur, ids, segment, policy)
+        has_generated = bool(pol.generated_among(cur, ok))
     if not ok:
         raise HTTPException(400, "none of the selected drafts can be approved: "
                             + "; ".join(sorted({s["reason"] for s in skipped})))
-    sample, token = pol.draw_sample(ok, policy, _a._secret(), getattr(request.state, "user", None), segment)
-    return {"approvable": sorted(ok), "skipped": skipped, "sample": sample, "token": token}
+    sample, token = pol.draw_sample(ok, policy, _a._secret(),
+                                    getattr(request.state, "user", None), segment,
+                                    has_generated)
+    return {"approvable": sorted(ok), "skipped": skipped, "sample": sample,
+            "token": token, "generated": has_generated}
 
 
 @app.post("/api/outreach/batch/approve")
@@ -689,9 +693,12 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         policy = pol.batch_policy(pol.outreach_config(cur, segment))
         if not policy:
             raise HTTPException(403, "batch approval is off for this segment")
-        if len(sample) < pol.required_sample(len(ids), policy):
+        ok, skipped = pol.check_drafts(cur, ids, segment, policy)
+        # re-checked here, not trusted from step 1: the rule is about what is
+        # being approved now, and a draft may have been redrafted since
+        if len(sample) < pol.required_sample(len(ids), policy,
+                                             bool(pol.generated_among(cur, ok))):
             raise HTTPException(400, "the spot-check sample is too small for this batch")
-        ok, skipped = pol.check_drafts(cur, ids, segment)
         batch_id, approved = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
     return {"batch_id": batch_id, "approved": approved, "skipped": skipped}
 
