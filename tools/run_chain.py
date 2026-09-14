@@ -30,6 +30,9 @@ STEPS = [
     ("zero unverified",  ["sql/04b_zero_unverified.sql"]),
     ("score",            ["-c", "select count(*) from score_segment('%s');" % SEGMENT]),
     ("apply gates",      ["sql/13_apply_gates.sql"]),
+    # last, so it only ever sees rows the gates have passed; a no-op for any
+    # segment whose config does not turn auto_shortlist on (2026-09-14)
+    ("auto shortlist",   ["sql/14_auto_shortlist.sql"]),
 ]
 
 

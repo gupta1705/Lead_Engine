@@ -340,6 +340,37 @@ hostile set of model answers (rounding, links, arithmetic, markdown, refusals,
 an instruction smuggled in through a title), the fallback paths, and the batch
 rule end to end against the database.
 
+## Automatic shortlisting (2026-09-14)
+
+Owner's brief: "Instead of shortlisting i want you to automatically shortlist
+anyone with score above 20." Every lead in review with a fit score strictly
+above 20 is shortlisted by the last step of the promote chain
+(`sql/14_auto_shortlist.sql`), so it happens after every refresh and every
+re-score without anyone pressing anything. The rule is config
+(`auto_shortlist`: `enabled`, `min_score`) and is on for this segment only;
+the TVF segments still shortlist by hand.
+
+What it will not do: touch a rejected, archived or contacted lead; shortlist a
+score of exactly 20; or shortlist a lead again after a person has moved it back
+to review. Every lead it shortlists carries `metadata.auto_shortlisted_at`, and
+a stamped lead that is back in review is left there. Its status reason reads
+"auto-shortlisted: score N is above 20". Turned on without a threshold, it
+stops the chain rather than guess.
+
+Shortlisting sends nothing. It makes a lead eligible for a draft, and every
+draft still needs a person's approval.
+
+**First run:** 451 leads shortlisted -- 317 in the priority band (45+), 16
+between 20 and 25, 83 production houses. 255 have an email address and can be
+drafted now; the other 196 wait for a contact. None of the 591 left in review
+scores above 20.
+
+**What follows from it.** **Draft emails** drafts up to 20 per press, and a
+draft whose opening line Groq wrote is approved on its own, never in a batch.
+255 contactable leads are therefore up to 255 individual approvals unless
+`batch_approval.allow_generated` is turned on. `tools/test_auto_shortlist.py`
+covers the rule (13 checks, rolled back).
+
 ## Not built yet, by decision
 - Sample-first outreach: a "needs sample" state where the draft waits until
   three clips are attached. Cheap to add once the production side exists.

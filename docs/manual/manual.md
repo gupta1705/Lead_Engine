@@ -96,7 +96,8 @@ Four columns, left to right. A lead only ever moves forward.
 **To review** — the engine found it and scored it. Nobody has decided yet. This
 is your inbox.
 
-**Shortlisted** — you said yes. The engine will write it an email.
+**Shortlisted** — you said yes, or in LCX Clipping it scored above 20. It gets
+an email.
 
 **Contacted** — an email has been sent. The engine will not start a second
 thread with this company, ever.
@@ -115,10 +116,8 @@ made it interesting: subscribers, how much short-form it publishes, how many
 episodes, how often.
 
 On the bottom row: the lead's key (like `LCX-CCAB`, the name you can quote to a
-colleague), a priority arrow, and the fit score.
-
-**The score is out of 110** and is explained in full inside the lead. Anything
-at or above 25 is worth a look; 45 and up is the priority band.
+colleague), a priority arrow, and the fit score, **out of 110** and explained in
+full inside the lead. 25 and up is worth a look; 45 and up is the priority band.
 
 
 # The leads list
@@ -167,7 +166,10 @@ Thirty seconds there beats any rubric.
 
 Then press one of two buttons at the bottom:
 
-**Shortlist** — the engine will write this one an email.
+**Shortlist** — the engine will write this one an email. In LCX Clipping you
+will rarely need it: every lead scoring above 20 is shortlisted automatically
+after each refresh, and its dialog says so. If you move one back to review,
+that stands; the rule never shortlists it again.
 
 **Reject** — it leaves the pipeline. A rejected lead is shielded permanently: no
 later harvest, re-import or reset will bring it back. If you reject something by
@@ -228,15 +230,15 @@ will ever be drafted for them.
 
 ## Approving does not send
 
-This is worth saying plainly. Approving marks an email as ready. The actual send
-happens when someone runs the send command in a terminal:
+Approving marks an email as ready. The send happens when someone runs this in a
+terminal:
 
 ```
 SEGMENT_SLUG=lcx-clipping python tools/outreach.py send
 ```
 
-It sends only approved emails, never more than the daily cap, and refuses any
-address that failed verification. Nothing on any screen can send an email.
+It sends only approved emails, within the daily cap, never to an address that
+failed verification. Nothing on any screen can send an email.
 
 
 # Approving many at once
@@ -446,8 +448,10 @@ SEGMENT_SLUG=lcx-clipping python tools/outreach.py auth --mailbox main
 Use addresses on a sending domain that belongs to LCX alone, not the main company
 domain, so a bad week never touches everyday mail.
 
-**3. Shortlist some leads.** The engine drafts emails for shortlisted leads.
-Nothing is shortlisted until you do it.
+**3. Draft the emails.** In LCX Clipping every lead scoring above 20 is
+shortlisted automatically, so go to Outreach and press **Draft emails**. Each
+press drafts up to 20, and a draft whose opening line Groq wrote is approved
+on its own. In the TVF projects, shortlist leads by hand first.
 
 Optional, and worth having later: an Anthropic key for reply triage, and an alert
 webhook so a failed overnight run reaches you.
