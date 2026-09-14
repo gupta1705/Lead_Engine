@@ -1107,7 +1107,7 @@
   "generated_hook": {
    "model": "openai/gpt-oss-120b",
    "enabled": true,
-   "guidance": "The opening sentence of a draft, written by a model from the facts whitelist in tools/draft_render.facts_for() -- public counts and one title the lead published, never an address, a contact name or page text. Every number the model writes must appear in those facts or the sentence is thrown away and the deterministic hook is used instead; so is anything with a link, markup, a sales word, or more than two sentences. No GROQ_API_KEY means no calls and no change. The sentence is stored on the outreach row, so what a person approved is what is sent. See tools/llm.py.",
+   "guidance": "The opening sentence of a draft, written by a model from the facts whitelist in tools/draft_render.facts_for(): public counts grouped by what each one measures, never an address, a contact name, page text, a URL, the channel country or an episode title. Every number the model writes must appear in those facts or the sentence is thrown away and the deterministic hook is used instead; so is anything with no number at all, a link, markup, emoji, a sales or proportion word, an average stated as a length, or more than two sentences. A lead with no counts is not sent. No GROQ_API_KEY means no calls and no change. The sentence is stored on the outreach row, so what a person approved is what is sent. See tools/llm.py and docs/LCX_clipping.md.",
    "provider": "groq",
    "max_words": 45,
    "max_calls_per_run": 200,

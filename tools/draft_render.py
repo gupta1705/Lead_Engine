@@ -318,10 +318,22 @@ def _short(s, limit=60):
 def facts_for(company, meta, now=None):
     """Exactly what a model is allowed to see about a lead.
 
-    A whitelist, not a filter: public counts, and one title they published
-    themselves. No email address, no contact name, no scraped page text, no
-    URLs. A sentence about their back catalogue does not need any of that, and
-    it is not ours to hand to a third party."""
+    A whitelist, not a filter, and GROUPED BY WHAT EACH NUMBER DESCRIBES. The
+    first live run (2026-09-14) took the average length of a channel's recent
+    long videos and applied it to "each" of its 2,185 videos. Putting every
+    number under the thing it measures is what stops that, more reliably than
+    another sentence in the prompt.
+
+    Deliberately absent, each for a reason the live run gave:
+      * email address, contact name, scraped page text, URLs -- a sentence
+        about a back catalogue needs none of it, and it is not ours to hand on
+      * the channel's country -- it says where a channel is registered, and it
+        came back as "19,400 US subscribers", a claim about an audience
+      * the title of their latest episode -- the template already names it in
+        the offer line, so a hook that mentions it says it twice; and a title
+        is text the lead controls, so leaving it out also closes the one route
+        by which somebody else's words reached the prompt
+    `now` is accepted and unused, so callers need not change."""
     meta = meta or {}
     pf = meta.get("podcast_feed") or {}
     yc = meta.get("youtube_channel") or {}
@@ -329,30 +341,32 @@ def facts_for(company, meta, now=None):
     f = {"company": company,
          "they_are": ("a production company" if meta.get("kind") == "production_house"
                       else "a creator or podcaster")}
+    feed = {}
     if pf.get("episode_count"):
-        f["episodes_published"] = int(pf["episode_count"])
+        feed["episodes_published"] = int(pf["episode_count"])
     if pf.get("cadence_per_month"):
-        f["episodes_per_month"] = float(pf["cadence_per_month"])
+        feed["new_episodes_per_month"] = float(pf["cadence_per_month"])
     if pf.get("avg_duration_min"):
-        f["average_episode_minutes"] = int(pf["avg_duration_min"])
+        feed["average_episode_minutes"] = int(pf["avg_duration_min"])
+    if feed:
+        f["podcast_feed"] = feed
+    channel = {}
     if yc.get("video_count"):
-        f["youtube_videos"] = int(yc["video_count"])
+        channel["videos"] = int(yc["video_count"])
     if yc.get("subscribers"):
-        f["youtube_subscribers"] = int(yc["subscribers"])
+        channel["subscribers"] = int(yc["subscribers"])
+    if channel:
+        f["whole_youtube_channel"] = channel
     if r.get("sampled"):
-        f["recent_uploads_checked"] = int(r["sampled"])
-        f["long_form_among_them"] = int(r.get("long_count") or 0)
-        f["shorts_among_them"] = int(r.get("shorts_count") or 0)
-    if r.get("avg_long_minutes"):
-        f["average_long_video_minutes"] = int(r["avg_long_minutes"])
-    title, noun = latest_title(meta, now)
-    if title:
-        f["most_recent_%s_title" % noun] = title
+        recent = {"uploads_checked": int(r["sampled"]),
+                  "long_form": int(r.get("long_count") or 0),
+                  "shorts": int(r.get("shorts_count") or 0)}
+        if r.get("avg_long_minutes"):
+            recent["average_minutes_of_the_long_form_ones"] = int(r["avg_long_minutes"])
+        f["most_recent_youtube_uploads"] = recent
     topics = [t for t in ((pf.get("categories") or yc.get("topics") or [])[:3]) if _short(t)]
     if topics:
         f["topics"] = [_short(t) for t in topics]
-    if yc.get("country"):
-        f["country"] = _short(yc["country"], 4)
     return f
 
 

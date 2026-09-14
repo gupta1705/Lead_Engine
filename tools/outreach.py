@@ -187,8 +187,8 @@ def cmd_draft(args):
     db.close()
     if gen:
         st = gen.stats
-        log("\n  model: %d written, %d rejected, %d unavailable"
-            % (st["ok"], st["rejected"], st["failed"]))
+        log("\n  model: %d written, %d rejected, %d unavailable, %d with nothing specific to say"
+            % (st["ok"], st["rejected"], st["failed"], st["skipped"]))
         if st["ok"]:
             log("  written drafts are approved one at a time unless the segment's"
                 " batch_approval.allow_generated says otherwise")

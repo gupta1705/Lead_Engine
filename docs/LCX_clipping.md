@@ -277,25 +277,48 @@ decided it: the segment's ceiling is 120 emails a day against a free plan of
 roughly a thousand requests.
 
 **What the model is given** is a whitelist, not a filtered row --
-`draft_render.facts_for()`: company name, creator or production company,
-episode and video counts, cadence, average length, the long/short split of the
-last uploads, subscriber count, one recent title, topics, country. No email
-address, no contact name, no scraped page text, no URLs.
+`draft_render.facts_for()` -- and every number sits under the thing it
+measures: `whole_youtube_channel` (videos, subscribers),
+`most_recent_youtube_uploads` (how many were checked, long-form, shorts, and
+the average length of the long-form ones), `podcast_feed` (episodes, cadence,
+average length), plus the company name and topics from the platform's own
+category list. No email address, no contact name, no scraped page text, no
+URLs -- and, since the first live run, no country and no episode title (below).
+A lead with no counts at all is not sent: there is nothing specific to say, and
+the segment's neutral hook is the more honest line.
 
 **What is done with what comes back**, all in `tools/llm.py`:
 
 | Check | Why |
 |---|---|
 | Every number must appear in the facts, unrounded | "over 2,000 videos" for 2,185 is a claim we did not verify |
-| No link, address, markdown or emoji | it is a sentence, not a page |
+| At least one number | "creates documentary-style content" is true of anyone |
+| An average may not be stated as a length | "all 60-minute pieces", "at 42 minutes each" |
+| No link, address, markdown, emoji or symbols | it is a sentence, not a page |
 | One or two sentences, a word cap | a model asked for a line will write an essay |
-| A small list of sales words is banned | "guarantee", "viral", "10x" |
+| Banned words: sales, and proportion | "guarantee", "viral", "10x"; "mostly", "majority" |
 | Anything rejected falls back | the deterministic hook is always there |
 
-The title in the facts is text the lead published, so it is untrusted: it is
-screened for links before it goes anywhere near a prompt, the prompt labels the
-JSON as data and not instructions, and nothing that comes back is used without
-the checks above. A rejected answer is never retried into something weaker.
+A rejected answer is never retried into something weaker.
+
+**What the first live run changed (2026-09-14).** Five of the model's sentences
+had every number right and a claim wrong, and each was closed where it
+started. The average length of a channel's recent long videos came back applied
+to "each" of its 2,185 videos -- so the facts are now grouped by scope instead
+of flat. A channel's registration country came back as "19,400 US
+subscribers" -- so the country is no longer sent. The latest episode title was
+mentioned in six of seven sentences, but the template already names it in the
+offer line, so those emails said it twice; three also quoted a cut-off title
+and one carried its emoji -- so the title is no longer sent, which also means
+no text the lead controls reaches the prompt at all. "24 of 50" became
+"mostly", and an average became "all 60-minute pieces" -- so both are refused.
+The checks themselves had two bugs the run exposed: the m of "42 minutes" was
+read as a million, and a reasoning model's token budget ran out before it
+answered. Both fixed, and every case is now a row in the regression table.
+
+What the checks still cannot catch is a claim whose numbers are all right --
+"your most recent 22 long-form uploads" when the 22 are among the last 50. That
+is why a written draft is approved on its own.
 
 **It cannot break drafting.** No key, no network, a bad answer -- each ends in
 the hook the engine writes itself, with a line in the log and a count at the
