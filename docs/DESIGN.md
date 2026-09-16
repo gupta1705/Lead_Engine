@@ -38,6 +38,9 @@ themes.
 
 ## Rules that are not negotiable
 
+- **One navigation.** The left sidebar holds every page, the project switcher
+  and Generate leads. The top bar holds only search, notifications, help and
+  the account menu, and never repeats a sidebar item (owner, 2026-09-16).
 - **Not assessed is not zero.** A criterion nobody has looked at renders as
   "Not assessed" with a warning lozenge, never as `0`.
 - **One primary action per dialog.** Shortlist or Approve is the blue button;

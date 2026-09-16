@@ -61,7 +61,7 @@ subscribers). Thresholds: reviewable at 25, priority at 45, like TVF.
 
 ## Running it
 
-From the portal: pick **LCX Clipping** in the Projects menu, then Create runs
+From the portal: pick **LCX Clipping** in the Projects menu, then Generate leads runs
 any job, or Operations shows them all. From a terminal:
 
 ```bash
@@ -168,7 +168,7 @@ United States first**:
 | Wikidata | `tools/discover_wikidata_channels.py`: film, TV and animation companies that list a YouTube channel (P2397), with country and website; each channel profiled for the shorts gap. `kind = production_house`. |
 | TVF pool | `tools/import_pool.py --from us-production-houses`: TVF's US production houses with their contacts, carried over; the enrichment pass reads each website's front page for a YouTube link (robots honoured) and profiles the channel. |
 | Studio template | `clipping_studio_v1`, chosen automatically when `metadata.kind` is `production_house`. |
-| Weekly refresh | now runs the Wikidata harvest as well. The pool import is a one-off from the Create button; `import_pool.py --repair` re-derives a carried row's country and reachability from its origin if the rules change. |
+| Weekly refresh | now runs the Wikidata harvest as well. The pool import is a one-off from Generate leads; `import_pool.py --repair` re-derives a carried row's country and reachability from its origin if the rules change. |
 | Revisiting rows | `enrich_clipping.py` stamps `clipping_enrich_version`; bumping the constant makes the weekly refresh revisit every row under new host and contact rules without repeating any network call. Transient site or channel failures are retried after a week; only definitive answers are final. |
 
 ## Follow-ups and batch approval (2026-09-10)

@@ -229,7 +229,8 @@ svg { flex-shrink: 0; }
   padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 100;
 }
-.topnav .grid-btn { margin-right: 4px; }
+/* One navigation: the sidebar. This button only opens it where it is a drawer. */
+.topnav .grid-btn { margin-right: 4px; display: none; }
 .logo {
   display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px;
   border-radius: var(--radius); color: var(--text); font-weight: 600; font-size: 15px;
@@ -241,22 +242,6 @@ svg { flex-shrink: 0; }
   align-items: center; justify-content: center; color: #FFFFFF;
   background: linear-gradient(135deg, #0C66E4, #1D7AFC);
 }
-.primary-nav { display: flex; align-items: center; gap: 4px; height: 100%; }
-.nav-item {
-  position: relative; height: 32px; padding: 0 8px; border: 0; border-radius: var(--radius);
-  background: transparent; color: var(--text-subtle); font-size: 14px; font-weight: 500;
-  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
-  transition: background .15s var(--ease), color .15s var(--ease);
-}
-.nav-item:hover { background: var(--bg-neutral-subtle-hovered); color: var(--text); }
-.nav-item[aria-expanded="true"] { background: var(--bg-selected); color: var(--text-selected); }
-.nav-item.active { color: var(--text-selected); }
-.nav-item.active::after {
-  content: ""; position: absolute; left: 8px; right: 8px; bottom: -12px;
-  height: 3px; border-radius: 2px 2px 0 0; background: var(--bg-brand-bold);
-}
-.nav-item svg { color: currentColor; }
-.topnav .create-btn { margin-left: 8px; }
 .topnav .spacer { flex: 1; }
 .topnav .search {
   position: relative; width: 220px; transition: width .2s var(--ease);
@@ -272,14 +257,13 @@ svg { flex-shrink: 0; }
   color: #FFFFFF; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
 }
 @media (max-width: 1024px) {
-  .primary-nav { display: none; }
+  .topnav .grid-btn { display: inline-flex; }
   .topnav .search { width: 160px; }
   .topnav .search:focus-within { width: 220px; }
 }
 @media (max-width: 640px) {
   .logo span.word { display: none; }
   .topnav .search { display: none; }
-  .create-btn .label { display: none; }
 }
 
 /* ============================================================ sidebar */
@@ -831,7 +815,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .project-chev { color: var(--icon-subtle); flex: none; }
 .project-switch[data-prefix="LCX"] .project-avatar { background: linear-gradient(135deg, #E56910, #943D73); }
 .project-switch[data-prefix="STA"] .project-avatar { background: linear-gradient(135deg, #1F845A, #2898BD); }
-.project-menu { left: 0; right: auto; min-width: 320px; top: calc(100% + 2px); }
+/* as wide as the sidebar and no wider: the sidebar scrolls, so anything wider is cut off */
+.project-menu { left: 0; right: 0; min-width: 0; top: calc(100% + 2px); }
 
 /* ============================================================ email footer */
 /* The block every outbound email ends with. It is edited in one dialog, so

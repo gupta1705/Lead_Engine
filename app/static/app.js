@@ -267,7 +267,6 @@ function showView(name) {
   state.route = name;
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
   $$(".side-item[data-route]").forEach((b) => b.classList.toggle("active", b.dataset.route === name));
-  $$(".nav-item[data-route]").forEach((b) => b.classList.toggle("active", b.dataset.route === name));
   document.title = TITLES[name] + " - TVF Lead Engine";
   $("#frame").classList.remove("drawer-open");
   if (name === "board") loadBoard();
@@ -1367,14 +1366,6 @@ function renderNotifMenu(menu) {
     (rows.every((r) => !r[2]) ? `<div class="menu-note">All quiet. Nothing is waiting on a person.</div>` : "");
   $$("[data-folder]", menu).forEach((b) => b.addEventListener("click", () => { closeMenus(); state.outreach.folder = b.dataset.folder; go("outreach/" + b.dataset.folder); if (currentView() === "outreach") loadOutreach(); }));
 }
-function renderWorkMenu(menu) {
-  menu.innerHTML = `<div class="menu-heading">Your work</div>
-    <button class="menu-item" data-go="board">${icon("board", 20)}<span>Lead board<span class="desc">Review the band, column by column</span></span></button>
-    <button class="menu-item" data-go="leads">${icon("list", 20)}<span>Leads list<span class="desc">Every company, filterable, exportable</span></span></button>
-    <button class="menu-item" data-go="outreach/drafts">${icon("mail", 20)}<span>Outreach drafts<span class="desc">Read, edit, approve</span></span></button>
-    <button class="menu-item" data-go="ops">${icon("play", 20)}<span>Operations<span class="desc">Run and watch the pipeline</span></span></button>`;
-  $$("[data-go]", menu).forEach((b) => b.addEventListener("click", () => { closeMenus(); go(b.dataset.go); }));
-}
 function renderProjectsMenu(menu) {
   const segs = state.segments.length ? state.segments
     : [{ slug: "us-production-houses", project_name: "US Production Houses", current: true, counts: {} }];
@@ -1388,25 +1379,6 @@ function renderProjectsMenu(menu) {
     if (state.segment && b.dataset.seg === state.segment.slug) return;
     try { await post("/api/segment/select", { slug: b.dataset.seg }); location.hash = "#board"; location.reload(); }
     catch (e) { toast(e.message, true); }
-  }));
-}
-function renderFiltersMenu(menu) {
-  const presets = [
-    ["Reviewable band (25+)", { status: "open", min_score: 25, has_contact: false }],
-    ["Priority (45+)", { status: "open", min_score: 45, has_contact: false }],
-    ["Contactable, not yet reviewed", { status: "open", min_score: 0, has_contact: true }],
-    ["Shortlisted", { status: "shortlisted", min_score: 0, has_contact: false }],
-    ["In conversation", { status: "in_conversation", min_score: 0, has_contact: false }],
-    ["Rejected", { status: "rejected", min_score: 0, has_contact: false }],
-    ["Everything", { status: "all", min_score: 0, has_contact: false }],
-  ];
-  menu.innerHTML = `<div class="menu-heading">Saved filters</div>` + presets.map(([label, f], i) =>
-    `<button class="menu-item" data-preset="${i}">${icon("list", 20)}<span>${label}</span></button>`).join("");
-  $$("[data-preset]", menu).forEach((b) => b.addEventListener("click", () => {
-    closeMenus();
-    Object.assign(state.leads.filters, presets[+b.dataset.preset][1], { q: "" });
-    state.leads.page = 0; syncLeadControls();
-    if (currentView() === "leads") loadLeads(); else go("leads");
   }));
 }
 function renderHelpMenu(menu) {
@@ -1441,17 +1413,9 @@ function renderUserMenu(menu) {
 function bindShell() {
   const pairs = [["#notifBtn", "#notifMenu", renderNotifMenu], ["#helpBtn", "#helpMenu", renderHelpMenu],
     ["#userBtn", "#userMenu", renderUserMenu],
-    ["#projectSwitch", "#projectSwitchMenu", renderProjectsMenu]];   // the sidebar switcher: same list as Projects
+    ["#projectSwitch", "#projectSwitchMenu", renderProjectsMenu]];   // the project switcher at the top of the sidebar
   pairs.forEach(([b, m, r]) => $(b).addEventListener("click", (e) => { e.stopPropagation(); toggleMenu($(b), $(m), r); }));
-  $$(".nav-item[data-menu]").forEach((b) => b.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const m = $("#" + b.dataset.menu);
-    const r = { workMenu: renderWorkMenu, projectsMenu: renderProjectsMenu, filtersMenu: renderFiltersMenu }[b.dataset.menu];
-    toggleMenu(b, m, r);
-  }));
   $$("[data-route]").forEach((b) => b.addEventListener("click", () => go(b.dataset.route)));
-  $("#settingsBtn").addEventListener("click", () => go("ops"));
-  $("#createBtn").addEventListener("click", openCreate);
   $("#createSide").addEventListener("click", openCreate);
   $("#settingsSide").addEventListener("click", openSettings);
   $("#notifBtn").addEventListener("click", () => refreshNotifications(true));

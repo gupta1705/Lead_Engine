@@ -23,30 +23,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <span class="word">Lead Engine</span>
   </a>
 
-  <nav class="primary-nav" aria-label="Primary">
-    <div class="menu-anchor">
-      <button class="nav-item" data-menu="workMenu" aria-haspopup="true" aria-expanded="false">Your work
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
-      <div class="menu" id="workMenu" hidden></div>
-    </div>
-    <div class="menu-anchor">
-      <button class="nav-item" data-menu="projectsMenu" aria-haspopup="true" aria-expanded="false">Projects
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
-      <div class="menu" id="projectsMenu" hidden></div>
-    </div>
-    <div class="menu-anchor">
-      <button class="nav-item" data-menu="filtersMenu" aria-haspopup="true" aria-expanded="false">Filters
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
-      <div class="menu" id="filtersMenu" hidden></div>
-    </div>
-    <button class="nav-item" data-route="reports">Dashboards</button>
-  </nav>
-
-  <button class="btn primary create-btn" id="createBtn" title="Generate leads or run a pipeline job">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-    <span class="label">Create</span>
-  </button>
-
   <div class="spacer"></div>
 
   <div class="search">
@@ -68,9 +44,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
       </button>
       <div class="menu right" id="helpMenu" hidden></div>
     </div>
-    <button class="btn icon" id="settingsBtn" aria-label="Operations" title="Operations">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
     <div class="menu-anchor">
       <button class="btn icon" id="userBtn" aria-label="Your account" aria-haspopup="true" aria-expanded="false" title="Account">
         <span class="avatar av-1" id="userAvatar">?</span>
