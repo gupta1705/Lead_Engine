@@ -229,6 +229,8 @@ def contact_routes(lead):
     result = m.get("enrichment_result")
     if result == "domain_dead":
         tried.append("Their website does not resolve, so it could not be read.")
+    elif site.get("blocked"):
+        tried.append("Their website could not be read for contacts: %s." % site["blocked"])
     elif site.get("read_at") and not lead.usable():
         found = [x for x in ("a phone number" if site.get("phones") else "", "a contact form" if site.get("contact_form") else "",
                              "social profiles" if site.get("socials") else "") if x]

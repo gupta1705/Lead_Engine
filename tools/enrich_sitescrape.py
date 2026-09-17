@@ -579,6 +579,8 @@ def write_routes(cur, eid, found):
     routes = {"phones": (found.get("phones") or [])[:3], "contact_page": found.get("contact_page"),
               "contact_form": bool(found.get("contact_form")), "socials": found.get("socials") or {},
               "pages_read": found.get("pages") or 0, "read_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    if found.get("blocked"):
+        routes["blocked"] = found["blocked"]          # robots.txt said no, or the domain is gone
     cur.execute("update entities set metadata = metadata || jsonb_build_object('site_contact_routes', %s::jsonb)"
                 " where id = %s", (_json.dumps(routes), eid))
 
@@ -813,6 +815,8 @@ def main():
                         "update entities set metadata ="
                         " jsonb_set(metadata,'{enrichment_result}','\"domain_dead\"')"
                         " where id = %s", (_e,)))
+                    # tried, so contact-finding does not come back to it every run
+                    db.run(lambda cur, _e=eid: write_routes(cur, _e, {"blocked": "the domain does not resolve"}))
                 continue
 
             if found is None:
@@ -829,6 +833,8 @@ def main():
             if found["blocked"]:
                 log("      %s -- not fetched" % found["blocked"])
                 stats["blocked"] += 1
+                if not args.dry_run:
+                    db.run(lambda cur, _e=eid, _f=found: write_routes(cur, _e, _f))
                 continue
 
             emails = found["emails"]
