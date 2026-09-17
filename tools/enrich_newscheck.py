@@ -229,6 +229,9 @@ def main():
     ap.add_argument("--rejudge", action="store_true",
                     help="re-apply the headline rules to credits already written: retract the ones "
                          "about somebody else, date the ones that stand, re-score")
+    ap.add_argument("--shortlisted", action="store_true",
+                    help="also sweep shortlisted companies: a reviewer reading one should see the news "
+                         "checked, not 'not checked yet'. Their status never changes here")
     args = ap.parse_args()
 
     from dbconn import Db
@@ -237,11 +240,12 @@ def main():
     if args.rejudge:
         return rejudge(db, args.dry_run)
 
+    statuses = ["discovered", "enriched", "scored", "ready_for_review"] + (["shortlisted"] if args.shortlisted else [])
     rows = db.run(lambda cur: (cur.execute("""
         select e.id, e.name
         from entities e join segments s on s.id = e.segment_id
         where s.slug = %s
-          and e.status in ('discovered','enriched','scored','ready_for_review')
+          and e.status = any(%s)
           and coalesce(e.metadata->>'news_checked','') <> %s
           and coalesce((e.metadata->'scoring_inputs'->>'international_ip_experience')::numeric, 0) = 0
           and coalesce(e.metadata->'scoring_inputs'->>'geography_signal','') <> 'non_us'
@@ -249,7 +253,7 @@ def main():
           and coalesce(e.fit_score, 0) >= %s
         order by e.fit_score desc nulls last, e.name
         limit %s
-    """, (SEGMENT, STAMP, args.min_score, args.limit)), cur.fetchall())[1])
+    """, (SEGMENT, statuses, STAMP, args.min_score, args.limit)), cur.fetchall())[1])
 
     if not rows:
         log("nothing to check -- every eligible company already swept")

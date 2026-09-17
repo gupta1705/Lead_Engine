@@ -171,8 +171,8 @@ JOBS = {
     "news_sweep": {
         "label": "News evidence sweep",
         "group": "Enrich",
-        "desc": "Ask the news archive about each contactable company by name.",
-        "cmd": [PY, "tools/enrich_newscheck.py", "--limit", "200"],
+        "desc": "Ask the news archive about each contactable company by name, shortlisted ones included.",
+        "cmd": [PY, "tools/enrich_newscheck.py", "--limit", "200", "--shortlisted"],
         "segments": ["us-production-houses"],
     },
     "draft_outreach": {

@@ -32,6 +32,12 @@ CASES = [
     ("Taste In Motion, Inc.", "Taste In Motion Lands Series Order - Variety", True),  # legal form dropped
     ("Neon Zoo", "neon zoo lands series order", True),                              # case does not matter
     ("Neon Zoo", "Neon Zookeepers get a series order", False),                      # whole words only
+    ("Indie Film", "Indie Film Producer Low Spark Launches TV Division With First-Look Deal At CBS Television "
+                   "Studios - deadline.com", False),                                # a description, not a name
+    ("Indie Film", "Indie Film Signs First-Look Deal With Hulu - Variety", True),   # generic name, used as a name
+    ("Dirty Films", "Searchlight Pictures Signs First-Look Deal With Cate Blanchett’s Dirty Films - Variety", True),
+    ("Tomorrow Studios", "‘Snowpiercer’ Producer Tomorrow Studios Strikes First-Look Deal With ‘Medici’ Outfit "
+                         "Big Light Productions (EXCLUSIVE) - Variety", True),
 ]
 
 DISPLAY = [
@@ -67,6 +73,9 @@ def main():
         ("undated: never", nm.usable_news("Angel Studios", [dict(ev, published=None)], now), None),
         ("over a year old: never", nm.usable_news("Angel Studios", [dict(ev, published="Mon, 04 Jan 2016 10:00:00 GMT")],
                                                   now), None),
+        ("a publisher's domain becomes its name", nm.usable_news("Premeditated Productions", [dict(
+            ev, headline="Premeditated Productions Lands Five-Year Extension Of First-Look Deal At Amazon MGM Studios "
+                         "- deadline.com")], now)[:2], ("first-look deal", "Deadline")),
         ("somebody else's news: never", nm.usable_news("Chelsea", [dict(
             ev, headline="Chelsea Handler Inks First-Look Deal With NBCUniversal - The Hollywood Reporter")], now), None),
     ]

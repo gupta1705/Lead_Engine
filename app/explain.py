@@ -272,7 +272,8 @@ def news_items(lead, criterion=None):
         if criterion and crit != criterion:
             return
         seen.add(key)
-        out.append({"headline": head, "publisher": publisher or pub, "published": published,
+        out.append({"headline": head, "publisher": newsmatch.publication(publisher or pub) or publisher or pub,
+                    "published": published,
                     "phrase": phrase, "criterion": crit, "link": link})
 
     for e in m.get("news_evidence") or []:

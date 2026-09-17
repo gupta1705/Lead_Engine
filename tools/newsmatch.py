@@ -23,6 +23,9 @@ an email either:
     "Debbie Liebling" and "Highway to Heaven" are all a longer name that
     happens to contain it, and "Tomorrow Studios" is a different company
     from Tomorrow.
+  * a name made only of generic words ("Indie Film") is held to the same
+    rule: "Indie Film Producer Low Spark Launches ..." describes somebody
+    else (found by the first sweep under these rules, 2026-09-17).
 """
 import datetime as dt
 import re
@@ -46,6 +49,11 @@ DEAL_VERBS = {"ink", "inks", "sign", "signs", "land", "lands", "strike", "strike
               "develops", "produce", "produces", "co-produce", "co-produces", "to", "is", "has", "gets", "get",
               "debuts", "unveils", "announces", "adapts", "remakes", "boards", "joins", "and", "&", "x", "for"}
 CLAUSE_OPENERS = {"and", "&", "with", "from", "by", "between", "at", "for", "x", "as", "via"}
+# words a trade headline uses to describe a company rather than to name one
+GENERIC_WORDS = {"indie", "independent", "studio", "studios", "film", "films", "pictures", "productions", "production",
+                 "media", "entertainment", "content", "creative", "digital", "company", "group", "new", "big", "little",
+                 "good", "the", "tv", "television", "animation", "documentary", "documentaries", "producer", "producers",
+                 "american", "hollywood", "global", "international", "national", "original", "originals"}
 
 
 def display_name(name):
@@ -90,19 +98,41 @@ def names_company(company, title):
     n = len(want)
     if n == 1 and want[0] in personname.FIRST_NAMES:
         return False                              # "Chelsea" is somebody's name before it is a company's
+    generic = all(w in GENERIC_WORDS for w in want)
     for i in range(len(low) - n + 1):
         if low[i:i + n] != want:
             continue
-        if n >= 2:
+        if n >= 2 and not generic:
             return True
         if words[i].endswith(("'s", "’s")):
             continue                              # "Heaven's Gate"
         prev = low[i - 1] if i > 0 else None
-        nxt = low[i + 1] if i + 1 < len(low) else None
+        nxt = low[i + n] if i + n < len(low) else None
         opens = prev is None or prev in CLAUSE_OPENERS
         if opens and nxt in DEAL_VERBS:
             return True
     return False
+
+
+# Google News sometimes gives the publisher as its domain. An email names the publication.
+PUBLICATION = {"deadline.com": "Deadline", "variety.com": "Variety", "hollywoodreporter.com": "The Hollywood Reporter",
+               "indiewire.com": "IndieWire", "thewrap.com": "TheWrap", "screendaily.com": "Screen Daily",
+               "kidscreen.com": "Kidscreen", "tvline.com": "TVLine", "worldscreen.com": "World Screen",
+               "c21media.net": "C21Media", "realscreen.com": "Realscreen", "cartoonbrew.com": "Cartoon Brew",
+               "animationmagazine.net": "Animation Magazine", "nextbigwhat.com": "NextBigWhat"}
+
+
+def publication(publisher):
+    """The publisher as an email may name it, or None: 'deadline.com' is Deadline; an unknown domain is not named."""
+    p = (publisher or "").strip()
+    low = p.lower()
+    if low.startswith("www."):
+        low = low[4:]
+    if low in PUBLICATION:
+        return PUBLICATION[low]
+    if re.fullmatch(r"[a-z0-9.\-]+\.[a-z]{2,}", low):
+        return None
+    return p or None
 
 
 def published_at(pub):
@@ -163,5 +193,5 @@ def usable_news(company, evidence, now=None, max_age_days=365):
         if age < -2 or age > max_age_days:
             continue
         if best is None or when > best[2]:
-            best = (noun, split_publisher(title)[1], when)
+            best = (noun, publication(split_publisher(title)[1]), when)
     return best
