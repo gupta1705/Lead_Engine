@@ -4,160 +4,762 @@
   "batch_size": 20,
   "score_threshold_review": 25,
   "score_threshold_priority": 45,
+  "brief": "Owner, 2026-09-17: find startups based in Mumbai that are currently struggling, which TVF could acquire for little to no resources or back with its support. Every lead is a startup with public evidence of trouble, confirmed to be in the Mumbai region, small enough to be cheap, ranked by how much TVF's content, audience and distribution could change its trajectory. Sector is not a filter: it is the tvf_fit criterion, so narrowing to media-only later is a weight or a gate in this file, not a new harvest.",
   "target_contact_roles": [
     "Founder",
     "Co-Founder",
     "CEO",
-    "CTO",
-    "Head of Product",
-    "Head of Content"
+    "Director",
+    "Managing Director"
   ],
+  "geography": {
+    "home_region": "Mumbai Metropolitan Region",
+    "guidance": "Mumbai, Navi Mumbai and Thane, which is how Indian startup coverage uses 'Mumbai-based'. A lead is placed in Mumbai by, in order of trust: an address or a 400xxx/401xxx PIN on its own website; a headline that says 'Mumbai-based X' or 'Mumbai's X'; its news coverage placing it in Mumbai more often than anywhere else. Placed elsewhere on the same evidence, the mumbai_region gate archives it. Unplaced passes the gate (Invariant 1) but earns nothing on mumbai_confirmed, so it sinks below the review band until something places it."
+  },
   "rubric": [
     {
-      "key": "product_adjacency",
-      "label": "Product sits in TVF's lanes: creator tools, media-tech, short-form video, audience analytics, localisation",
+      "key": "distress_evidence",
+      "label": "Public evidence the startup is struggling",
       "points": 30,
-      "input": "metadata.scoring_inputs.product_adjacency",
-      "guidance": "Full credit when the product is something TVF's studio or platform would use or bundle tomorrow; half for adjacent (general video tooling, ad-tech for creators). STRONGEST signal."
+      "input": "metadata.scoring_inputs.distress_evidence",
+      "guidance": "1.0: a headline that the company itself shut down, laid people off, delayed salaries, went into insolvency, raised a down or rescue round, or sold in a distress sale, or its own website saying it has closed. 0.5: a softer sign -- a bridge round, sale talks, a founder exit, a pivot, closing one unit -- or the quiet version: a small round two and a half years ago, nothing since, and its website going dark. 0: checked, nothing."
     },
     {
-      "key": "traction",
-      "label": "Real traction: paying customers, named creator/studio clients, or public usage numbers",
-      "points": 20,
-      "input": "metadata.scoring_inputs.traction",
-      "guidance": "Press-quoted revenue, customer counts, or logo walls of creators/studios. A launch post alone is 0."
+      "key": "distress_recency",
+      "label": "How recent that evidence is",
+      "points": 10,
+      "input": "metadata.scoring_inputs.distress_recency",
+      "guidance": "1.0 within six months, 0.5 within twelve, 0 older. 'Currently struggling' is the brief; a 2024 layoff at a company that has since recovered is history."
     },
     {
-      "key": "right_size",
-      "label": "Right size for an acqui-hire or tuck-in: ~3-25 people, pre-Series B",
-      "points": 20,
-      "input": "metadata.scoring_inputs.right_size",
-      "guidance": "Team page headcount plus funding stage. Bigger than 25 or past Series B is a different conversation."
-    },
-    {
-      "key": "acquisition_openness",
-      "label": "Signals of openness: bridge round, 'exploring strategic options', founder departures, stalled hiring",
+      "key": "mumbai_confirmed",
+      "label": "Confirmed to be based in Mumbai",
       "points": 15,
-      "input": "metadata.scoring_inputs.acquisition_openness",
-      "guidance": "Full credit for explicit strategic-options language in press or a founder post; half for indirect signals (layoffs, long funding gap)."
+      "input": "metadata.scoring_inputs.mumbai_confirmed",
+      "guidance": "1.0 when its own website carries a Mumbai-region address or PIN, or a headline says it is Mumbai-based; 0.5 when its coverage places it in Mumbai but also elsewhere; 0 when nothing places it."
+    },
+    {
+      "key": "small_deal",
+      "label": "Small enough to acquire or back for little",
+      "points": 15,
+      "input": "metadata.scoring_inputs.small_deal",
+      "guidance": "From the largest round its headlines state: up to $5M is 1.0, up to $20M is 0.5, beyond that 0. No stated round is not assessed; the zero-unverified rule then scores it 0 and records that nobody knows."
+    },
+    {
+      "key": "tvf_fit",
+      "label": "TVF's content, audience or distribution would change its trajectory",
+      "points": 20,
+      "input": "metadata.scoring_inputs.tvf_fit",
+      "guidance": "From the words its coverage and its own site use to describe it, against startup_discovery.sector_tiers: media, content, entertainment, gaming, audio, edtech, community and youth products 1.0; consumer brands and consumer apps TVF's reach helps sell 0.5; fintech, SaaS, logistics, health and other businesses TVF's audience does not move 0."
+    },
+    {
+      "key": "something_to_keep",
+      "label": "Something worth having: a live product, an app people use, a brand",
+      "points": 10,
+      "input": "metadata.scoring_inputs.something_to_keep",
+      "guidance": "1.0 when its website is up or its App Store app carries at least 1,000 ratings; 0.5 when the site is gone but an app or a body of coverage remains; 0 when nothing does."
     },
     {
       "key": "reachable_decision_maker",
-      "label": "Named founder/CEO identified and reachable",
+      "label": "A founder or director we can write to",
       "points": 10,
       "input": "metadata.scoring_inputs.reachable_decision_maker",
-      "guidance": "1.0 named founder with a real mailbox; 0.5 role inbox; 0 nothing reachable."
-    },
-    {
-      "key": "india_market_relevance",
-      "label": "Relevance to India: Indian market presence, Indic-language support, or a diaspora founder",
-      "points": 15,
-      "input": "metadata.scoring_inputs.india_market_relevance",
-      "guidance": "Full credit for an India office, Indian customers, or Indic localisation; half for a stated India roadmap."
+      "guidance": "Set by the site-scrape pass (Find contacts on sites): 1.0 a named person's own address, 0.5 a role inbox, 0 nothing."
     }
   ],
   "score_modifiers": [
     {
-      "key": "funding_above_cap",
-      "label": "PENALTY: total raised beyond what a tuck-in can absorb",
+      "key": "recently_funded",
+      "label": "PENALTY: raised an ordinary round in the last twelve months",
       "max_penalty": -20,
-      "input": "metadata.scoring_inputs.funding_above_cap",
-      "guidance": "Scaled by how far past the cap the last disclosed raise sits. Set only on published funding data."
+      "input": "metadata.scoring_inputs.recently_funded",
+      "guidance": "A company that closed a normal round in the last year is not out of runway, whatever else a headline says. Bridge and down rounds do not count here; they are distress."
     },
     {
-      "key": "competitor_conflict",
-      "label": "PENALTY: product competes with, rather than complements, TVF's own platform",
+      "key": "long_dead",
+      "label": "PENALTY: shut down more than a year ago",
       "max_penalty": -15,
-      "input": "metadata.scoring_inputs.competitor_conflict",
-      "guidance": "A rival streaming/studio play is a conflict; a tool TVF would buy is not."
+      "input": "metadata.scoring_inputs.long_dead",
+      "guidance": "A company that closed a year or more ago has usually lost its team and its users. Its brand or code may still be worth a conversation, so this lowers the score rather than ruling it out."
+    },
+    {
+      "key": "no_struggle_signal",
+      "label": "PENALTY: no public sign of struggle",
+      "max_penalty": -40,
+      "input": "metadata.scoring_inputs.no_struggle_signal",
+      "guidance": "Its coverage and its website were read and nothing shows struggle: no shutdown, layoffs, salary delays, down or rescue round, sale talks, pivot, and it has not gone quiet. The brief is startups that are struggling, so a healthy Mumbai startup is ranked below the review line instead of riding its fit and a small round into it. Added 2026-09-17 after the first list: 57 of 59 Mumbai-confirmed leads showed no sign of struggle. Weekly harvests keep reading its news; the day a headline shows trouble, the penalty lifts."
     }
   ],
   "gates": [
     {
-      "key": "target_geography",
-      "label": "HQ in the United States or India",
+      "key": "mumbai_region",
+      "label": "Based in the Mumbai region",
       "input": "metadata.scoring_inputs.geography_signal",
-      "exclude_when": "out_of_region",
-      "guidance": "Fires ONLY on confirmed HQ outside US/India. Blank passes."
+      "exclude_when": "outside_mumbai",
+      "guidance": "Fires only when the evidence places the company somewhere else. Unplaced passes."
     },
     {
-      "key": "not_a_major_or_oversized",
-      "label": "Exclude public companies, units of majors, and anything clearly past tuck-in size",
+      "key": "not_oversized",
+      "label": "Not a unicorn, a listed company or a big group's unit",
       "input": "metadata.scoring_inputs.major_or_oversized_signal",
       "exclude_when": true,
-      "guidance": "Public listing, a corporate parent, or a confirmed >100 headcount. Blank passes."
+      "guidance": "A round of $50M or more in its headlines, 'unicorn' or a listing in them, or a name in startup_discovery.major_companies. Those are not acquisitions for little to no resources."
     },
     {
-      "key": "usable_first_party_presence",
-      "label": "Must have a website or product page",
-      "input": "metadata.scoring_inputs.has_reachable_presence",
-      "exclude_when": false,
-      "guidance": "Explicit false only."
+      "key": "not_already_acquired",
+      "label": "Not already sold",
+      "input": "metadata.scoring_inputs.acquired_signal",
+      "exclude_when": true,
+      "guidance": "A headline that another company acquired it. The sale is history, not an opportunity."
     },
     {
-      "key": "is_active",
-      "label": "Company must be operating, not shut down",
+      "key": "is_active_or_recent",
+      "label": "Not long gone",
       "input": "metadata.scoring_inputs.activity_signal",
       "exclude_when": "confirmed_dormant",
-      "guidance": "Fires ONLY on a confirmed shutdown notice or 12+ months of silence. Blank passes."
+      "guidance": "Fires when the newest sign of life -- a headline, a working website -- is more than three years old."
     }
   ],
   "review_checklist": [
     {
-      "key": "is_a_real_product_company",
-      "label": "Is this a product company with its own technology, not an agency, a consultancy, or a media brand?"
+      "key": "trouble_is_real",
+      "label": "Is the trouble real and current: the company itself, not one unit of a healthy parent, and not an old story it has recovered from?",
+      "guidance": "Open the story. A layoff at a company that raised last month is a restructure, not distress."
     },
     {
-      "key": "acquisition_shape_fits",
-      "label": "Would this be a tuck-in or acqui-hire TVF could actually close, not a fundraise-stage negotiation?"
+      "key": "worth_having",
+      "label": "Is there something worth having: a product people use, a brand, an audience, IP, or a team TVF would want to keep?",
+      "guidance": "The website, the app's ratings and the founders' own posts usually settle it in two minutes."
     },
     {
-      "key": "founders_are_the_asset",
-      "label": "Are the founders people TVF would want to keep, and is that visible from what they have built?"
+      "key": "tvf_changes_it",
+      "label": "Would TVF's content, audience or distribution change its trajectory, or is it small enough that owning it outright is realistic?",
+      "guidance": "Support means TVF's reach doing something the startup could not buy; acquisition means a price its situation makes small."
     }
   ],
-  "youtube_discovery_queries": [
-    { "query": "creator tools startup demo", "genre_hint": null },
-    { "query": "short form video editing startup", "genre_hint": null }
-  ],
-  "news_rss_discovery_queries": [
-    { "query": "\"creator economy\" startup \"raises\" seed OR pre-seed", "deal_kind": "funding" },
-    { "query": "\"video\" startup \"exploring strategic options\" OR \"acqui-hire\"", "deal_kind": "strategic_options" },
-    { "query": "\"media tech\" startup India OR \"Indian founders\" raises", "deal_kind": "funding" },
-    { "query": "\"short-form video\" startup launches creators", "deal_kind": "launch" }
-  ],
-  "x_intent_discovery_queries": [
-    { "query": "\"open to acquisition\" startup founder video", "intent": "explicit_invitation" },
-    { "query": "\"looking for a strategic partner\" creator tools", "intent": "explicit_invitation" }
-  ],
-  "wikidata_discovery": {
-    "entity_classes": ["Q1058914", "Q18388277"],
-    "country": "Q30",
-    "limit": 400,
-    "guidance": "Q1058914 software company, Q18388277 technology company; US-filtered like Segment 1. Notable-only again, so expect a seed skewed large; the not_a_major gate and right_size do the trimming."
+  "startup_discovery": {
+    "guidance": "tools/discover_startup_news.py. Google News RSS headlines only: the trade publications' terms forbid crawling their pages, so no article is ever fetched, and a row carries the headline, the publisher and the link for a person to read. Distress queries run India-wide (a headline rarely says where a company is; enrichment places it); funding queries find Mumbai startups that raised a small round in 2021-24, the cohort whose runway has since run out. Windows are quarters, because one search returns at most 100 items. Only publishers listed here count, which keeps foreign startup news out.",
+    "distress_months": 24,
+    "incremental_days": 40,
+    "funding_from": "2021-01-01",
+    "funding_to": "2024-07-01",
+    "inr_per_usd": 85,
+    "distress_queries": [
+      {
+        "key": "layoffs",
+        "query": "startup India (\"lays off\" OR \"laid off\" OR layoffs OR \"job cuts\" OR \"cuts jobs\")"
+      },
+      {
+        "key": "shutdown",
+        "query": "startup (\"shuts down\" OR \"shut down\" OR \"shuts shop\" OR \"winds down\" OR \"ceases operations\" OR \"halts operations\")"
+      },
+      {
+        "key": "salaries",
+        "query": "startup (\"salary delays\" OR \"delayed salaries\" OR \"unpaid salaries\" OR \"salaries unpaid\" OR \"delays salaries\")"
+      },
+      {
+        "key": "insolvency",
+        "query": "startup India (insolvency OR NCLT OR \"insolvency plea\" OR bankruptcy)"
+      },
+      {
+        "key": "rescue",
+        "query": "startup India (\"down round\" OR \"valuation cut\" OR \"rescue funding\" OR \"distress sale\" OR \"fire sale\" OR \"bridge round\")"
+      },
+      {
+        "key": "sale_talks",
+        "query": "startup India (\"acqui-hire\" OR acquihire OR \"in talks to be acquired\" OR \"explores sale\")"
+      },
+      {
+        "key": "mumbai",
+        "query": "Mumbai startup (layoffs OR \"lays off\" OR \"shuts down\" OR \"shut down\" OR insolvency OR \"salary delays\" OR \"winds down\")"
+      }
+    ],
+    "funding_queries": [
+      {
+        "key": "mumbai_seed",
+        "query": "\"Mumbai-based\" startup raises (seed OR \"pre-seed\" OR angel OR \"pre-Series A\")"
+      },
+      {
+        "key": "mumbai_round",
+        "query": "Mumbai startup raises \"seed round\""
+      },
+      {
+        "key": "mumbai_consumer",
+        "query": "\"Mumbai-based\" (D2C OR brand OR app OR platform) raises (seed OR angel OR \"pre-Series A\" OR \"Series A\")"
+      },
+      {
+        "key": "mumbai_media",
+        "query": "\"Mumbai-based\" (media OR content OR gaming OR edtech OR creator OR entertainment OR audio) startup raises"
+      }
+    ],
+    "publishers": [
+      "inc42.com",
+      "entrackr.com",
+      "yourstory.com",
+      "moneycontrol.com",
+      "livemint.com",
+      "business-standard.com",
+      "indiatimes.com",
+      "hindustantimes.com",
+      "indianexpress.com",
+      "ndtv.com",
+      "financialexpress.com",
+      "vccircle.com",
+      "businessworld.in",
+      "startupstorymedia.com",
+      "upstox.com",
+      "dnaindia.com",
+      "news18.com",
+      "storyboard18.com",
+      "bestmediainfo.com",
+      "themorningcontext.com",
+      "the-ken.com",
+      "equitypandit.com",
+      "cnbctv18.com",
+      "scroll.in",
+      "theprint.in",
+      "thebetterindia.com",
+      "outlookbusiness.com",
+      "fortuneindia.com",
+      "thehindubusinessline.com",
+      "newindianexpress.com",
+      "deccanherald.com",
+      "thehindu.com",
+      "medianama.com",
+      "afaqs.com",
+      "exchange4media.com",
+      "analyticsindiamag.com",
+      "entrepreneur.com",
+      "officechai.com",
+      "indianstartupnews.com",
+      "startupnews.fyi",
+      "insolvencytracker.in",
+      "finshots.in",
+      "freepressjournal.in",
+      "mid-day.com",
+      "zeebiz.com",
+      "zeenews.india.com",
+      "timesnownews.com",
+      "businesstoday.in",
+      "indiatoday.in",
+      "republicworld.com",
+      "firstpost.com",
+      "wionews.com",
+      "gadgets360.com",
+      "techcircle.in",
+      "peoplematters.in",
+      "startuppedia.in",
+      "ascendants.in",
+      "lapaasvoice.com",
+      "indianretailer.com",
+      "startuptalky.com",
+      "entrepreneurindia.com",
+      "aninews.in",
+      "ptinews.com",
+      "telegraphindia.com",
+      "bizzbuzz.news",
+      "trak.in"
+    ],
+    "sector_tiers": {
+      "1": {
+        "label": "Media, content and consumer attention",
+        "words": [
+          "media",
+          "content",
+          "entertainment",
+          "creator",
+          "creators",
+          "influencer",
+          "ott",
+          "streaming",
+          "video",
+          "short video",
+          "audio",
+          "audiotech",
+          "podcast",
+          "music",
+          "gaming",
+          "games",
+          "esports",
+          "social",
+          "community",
+          "dating",
+          "matchmaking",
+          "comics",
+          "animation",
+          "film",
+          "films",
+          "publishing",
+          "news",
+          "edtech",
+          "learning",
+          "education",
+          "upskilling",
+          "kids",
+          "parenting",
+          "astrology",
+          "devotional",
+          "spiritual",
+          "fandom",
+          "celebrity",
+          "events",
+          "ticketing",
+          "comedy",
+          "storytelling",
+          "vernacular",
+          "meme",
+          "memes",
+          "youth",
+          "fan",
+          "fans",
+          "microdrama",
+          "web series",
+          "digital media",
+          "creator economy",
+          "live streaming",
+          "quiz",
+          "trivia"
+        ]
+      },
+      "0.5": {
+        "label": "Consumer brands and consumer apps",
+        "words": [
+          "d2c",
+          "dtc",
+          "consumer",
+          "brand",
+          "beauty",
+          "cosmetics",
+          "skincare",
+          "personal care",
+          "fashion",
+          "apparel",
+          "jeans",
+          "footwear",
+          "jewellery",
+          "food",
+          "beverage",
+          "beverages",
+          "snacks",
+          "ice cream",
+          "coffee",
+          "tea",
+          "nutrition",
+          "fitness",
+          "wellness",
+          "travel",
+          "hospitality",
+          "lifestyle",
+          "home decor",
+          "furniture",
+          "quick commerce",
+          "e-commerce",
+          "ecommerce",
+          "marketplace",
+          "food delivery",
+          "restaurant",
+          "cloud kitchen",
+          "pet",
+          "grooming",
+          "toys",
+          "gifting",
+          "social commerce",
+          "house-help",
+          "home services",
+          "grocery",
+          "e-grocery",
+          "luggage",
+          "eyewear",
+          "sleep",
+          "mattress",
+          "perfume",
+          "fragrance",
+          "haircare",
+          "ayurvedic",
+          "wedding",
+          "rental",
+          "coworking",
+          "coliving",
+          "salon"
+        ]
+      },
+      "0": {
+        "label": "Businesses TVF's audience does not move",
+        "words": [
+          "fintech",
+          "lending",
+          "lender",
+          "credit",
+          "insurance",
+          "insurtech",
+          "bnpl",
+          "payments",
+          "wealth",
+          "investment",
+          "saas",
+          "b2b",
+          "enterprise",
+          "logistics",
+          "supply chain",
+          "manufacturing",
+          "industrial",
+          "healthtech",
+          "healthcare",
+          "hospital",
+          "pharma",
+          "diagnostics",
+          "medtech",
+          "real estate",
+          "proptech",
+          "cleantech",
+          "solar",
+          "ev",
+          "electric vehicle",
+          "battery",
+          "deeptech",
+          "spacetech",
+          "dronetech",
+          "drone",
+          "agritech",
+          "hrtech",
+          "legaltech",
+          "crypto",
+          "web3",
+          "blockchain",
+          "cybersecurity",
+          "semiconductor",
+          "defence",
+          "nbfc",
+          "banking",
+          "accounting",
+          "compliance",
+          "automation",
+          "robotics",
+          "iot",
+          "telecom",
+          "cloud",
+          "data centre",
+          "analytics"
+        ]
+      }
+    },
+    "major_companies": [
+      "Google",
+      "Amazon",
+      "Meta",
+      "Microsoft",
+      "Apple",
+      "Tesla",
+      "Intel",
+      "Oracle",
+      "Uber",
+      "PayPal",
+      "Flipkart",
+      "Myntra",
+      "Zomato",
+      "Eternal",
+      "Blinkit",
+      "Swiggy",
+      "Paytm",
+      "PhonePe",
+      "Ola",
+      "Ola Electric",
+      "Krutrim",
+      "Byju's",
+      "BYJU'S",
+      "Byjus",
+      "Unacademy",
+      "Cred",
+      "CRED",
+      "Zepto",
+      "Meesho",
+      "Nykaa",
+      "Reliance",
+      "Jio",
+      "Tata",
+      "Tata Digital",
+      "Airtel",
+      "Bharti Airtel",
+      "Infosys",
+      "TCS",
+      "Wipro",
+      "HCLTech",
+      "Dream11",
+      "Dream Sports",
+      "Lenskart",
+      "boAt",
+      "Mamaearth",
+      "Honasa",
+      "PharmEasy",
+      "Livspace",
+      "Udaan",
+      "Dunzo",
+      "Razorpay",
+      "Groww",
+      "Zerodha",
+      "Upstox",
+      "Rapido",
+      "Porter",
+      "MPL",
+      "Games24x7",
+      "PhysicsWallah",
+      "Physics Wallah",
+      "Vedantu",
+      "upGrad",
+      "Allen",
+      "Allen Career Institute",
+      "Pocket FM",
+      "Rebel Foods",
+      "Licious",
+      "BigBasket",
+      "Urban Company",
+      "OYO",
+      "Ixigo",
+      "MakeMyTrip",
+      "Info Edge",
+      "Delhivery",
+      "Shiprocket",
+      "BharatPe",
+      "Slice",
+      "Uni",
+      "Jupiter",
+      "InCred",
+      "OfBusiness",
+      "Infra.Market",
+      "Zetwerk",
+      "Innovaccer",
+      "Whatfix",
+      "Freshworks",
+      "Zoho",
+      "Postman",
+      "BrowserStack",
+      "Glance",
+      "InMobi",
+      "ShareChat",
+      "Moj",
+      "VerSe",
+      "Dailyhunt",
+      "Hike",
+      "Prime Focus",
+      "Zee",
+      "Sony",
+      "Pristyn Care",
+      "Sugar Cosmetics",
+      "Stanza Living",
+      "Bira 91",
+      "Pepperfry",
+      "Nazara",
+      "Adda247",
+      "Simpl",
+      "Fibe",
+      "Navi",
+      "Spinny",
+      "Cars24",
+      "CarDekho",
+      "Zupee",
+      "WinZO",
+      "Rooter",
+      "Kuku FM",
+      "STAGE",
+      "Panasonic",
+      "Adidas",
+      "Jaguar Land Rover",
+      "Indeed",
+      "Deutsche Bank",
+      "Voltas",
+      "Del Monte Foods",
+      "HDFC Life",
+      "HDFC Life Insurance",
+      "Reliance Industries",
+      "WeWork",
+      "WeWork India",
+      "Oracle India",
+      "Krutrim AI",
+      "Fi Money",
+      "Zepto Cafe",
+      "Byju",
+      "Gensol",
+      "Nuvoco",
+      "Gameskraft",
+      "Acko",
+      "Yellow.ai",
+      "Gupshup",
+      "Mensa Brands",
+      "Purplle",
+      "The Good Glamm Group",
+      "MyGlamm",
+      "Cuemath",
+      "Builder.ai",
+      "Pinterest",
+      "Amazon India",
+      "Microsoft India",
+      "Aditya Birla",
+      "Hindustan Unilever",
+      "HUL",
+      "ITC",
+      "Mahindra",
+      "Bajaj",
+      "Godrej",
+      "Tata Motors",
+      "Titan",
+      "Adani",
+      "Vedanta",
+      "JSW",
+      "Air India",
+      "IndiGo",
+      "SpiceJet",
+      "Go First",
+      "Jet Airways",
+      "Future Group",
+      "Future Retail",
+      "Zee Entertainment",
+      "Balaji Telefilms",
+      "Eros International",
+      "Disney Star",
+      "Viacom18",
+      "JioStar",
+      "Netflix"
+    ]
   },
   "metadata_fields": [
-    "subtype", "hq_city", "hq_state", "team_size_estimate", "product_category",
-    "funding_stage", "total_raised", "notable_customers", "why_fit", "scoring_inputs"
+    "city",
+    "sector_label",
+    "descriptor",
+    "press_events",
+    "funding_summary",
+    "site_health",
+    "app",
+    "distress_summary",
+    "why_fit",
+    "scoring_inputs"
   ],
   "sources": [
-    { "slug": "google_news_rss", "name": "Google News RSS (funding + strategic-options headlines)", "kind": "rss", "phase": 1, "detail": "Same connector as Segment 1, different queries. A funding or strategic-options headline naming the company is the primary discovery path." },
-    { "slug": "wikidata", "name": "Wikidata SPARQL", "kind": "api", "phase": 2, "detail": "US software/technology companies with a website. Seed, not stream." },
-    { "slug": "youtube_api", "name": "YouTube Data API v3", "kind": "api", "phase": 3, "detail": "Product demo channels. Low expected yield; kept for parity." },
-    { "slug": "x_intent_signals", "name": "X intent posts via Google News RSS", "kind": "rss", "phase": 3, "detail": "Founder posts signalling openness. Noisy." }
+    {
+      "slug": "startup_news",
+      "name": "Google News RSS headlines (distress India-wide, funding Mumbai 2021-24)",
+      "kind": "rss",
+      "phase": 1,
+      "detail": "tools/discover_startup_news.py. Headlines only; the publishers' own pages are never fetched."
+    },
+    {
+      "slug": "company_site",
+      "name": "The startup's own website",
+      "kind": "first_party",
+      "phase": 1,
+      "detail": "tools/enrich_startups.py: address and PIN for the city, whether the site is up, a closing notice, App Store links. robots.txt honoured."
+    },
+    {
+      "slug": "apple_app_store",
+      "name": "Apple App Store lookup",
+      "kind": "api",
+      "phase": 1,
+      "detail": "Apple's public lookup API for an app the site links to: last update and ratings."
+    }
   ],
   "self_exclusion": {
-    "domains": ["theviralfever.com", "tvfplay.com"],
-    "name_patterns": ["the viral fever", "girliyapa", "contagious online media"],
-    "guidance": "Same affiliates as Segment 1 must never enter this pool either."
+    "domains": [
+      "theviralfever.com",
+      "tvfplay.com"
+    ],
+    "name_patterns": [
+      "the viral fever",
+      "girliyapa",
+      "contagious online media",
+      "tvf"
+    ],
+    "guidance": "Same affiliates as Segment 1 must never enter this pool either. In this segment 'tvf' is also a whole-word pattern: startup news calls TVF 'TVF', and the first dry run (2026-09-17) put it on its own acquisition list. Whole-word matching keeps names like TVFoods out of reach."
   },
   "enrichment": {
-    "provider": "site_scrape",
+    "provider": "news_and_site",
     "contact_method": "team_page_then_about_page",
     "email_verifier": "mx_check",
-    "fallback": "human_confirm",
-    "fallback_enabled": true,
-    "guidance": "Startups publish founders on /team and /about far more reliably than production shops publish EPs, so the site-scrape path is primary here, not a fallback."
+    "guidance": "tools/enrich_startups.py places each startup, reads its site and its app, and asks the news about it by name (one RSS query); Find contacts on sites (tools/enrich_sitescrape.py) finds the founder. Nothing from LinkedIn, ever."
+  },
+  "ui": {
+    "project_type": "Acquisition segment",
+    "key_prefix": "STA",
+    "board_title": "Struggling Mumbai startups",
+    "list_title": "Startups",
+    "entity_label": "startup",
+    "entity_plural": "startups",
+    "summary_label": "Startup",
+    "sidebar_note": "You're in the <strong>startup acquisitions</strong> segment: Mumbai startups showing public signs of struggle that TVF could acquire for little or back with its content and audience. Discovery, enrichment and scoring all run here.",
+    "card_fields": [
+      {
+        "path": "metadata.distress_label",
+        "label": "",
+        "format": "text"
+      },
+      {
+        "path": "metadata.sector_label",
+        "label": "",
+        "format": "text"
+      },
+      {
+        "path": "metadata.city",
+        "label": "",
+        "format": "text"
+      }
+    ],
+    "details": [
+      {
+        "path": "metadata.city",
+        "label": "Based in",
+        "format": "text"
+      },
+      {
+        "path": "metadata.sector_label",
+        "label": "Sector",
+        "format": "text"
+      },
+      {
+        "path": "metadata.descriptor",
+        "label": "Described as",
+        "format": "text"
+      },
+      {
+        "path": "metadata.funding_summary",
+        "label": "Funding seen",
+        "format": "text"
+      },
+      {
+        "path": "metadata.site_health.status",
+        "label": "Website",
+        "format": "text"
+      },
+      {
+        "path": "metadata.app.url",
+        "label": "App",
+        "format": "link"
+      }
+    ],
+    "evidence": [
+      {
+        "path": "metadata.distress_summary",
+        "label": "Signs of struggle",
+        "format": "text"
+      },
+      {
+        "path": "metadata.latest_story_url",
+        "label": "Latest story",
+        "format": "link"
+      },
+      {
+        "path": "metadata.geo_evidence",
+        "label": "Why Mumbai",
+        "format": "text"
+      },
+      {
+        "path": "metadata.site_health.note",
+        "label": "Website check",
+        "format": "text"
+      },
+      {
+        "path": "metadata.app.note",
+        "label": "App",
+        "format": "text"
+      }
+    ]
   },
   "outreach": {
     "sender": {
@@ -180,5 +782,27 @@
       "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
       "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
     }
+  },
+  "schedule": [
+    {
+      "name": "weekly refresh",
+      "pipeline": "weekly_refresh",
+      "dow": 3,
+      "hour": 2,
+      "minute": 0,
+      "enabled": true
+    }
+  ],
+  "pipelines": {
+    "weekly_refresh": [
+      "discover_startup_news",
+      "promote_chain",
+      "enrich_startups",
+      "enrich_contacts",
+      "promote_chain"
+    ],
+    "rescore": [
+      "promote_chain"
+    ]
   }
 }

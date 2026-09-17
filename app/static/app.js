@@ -140,7 +140,7 @@ const SOURCES = {
   aicp_directory: ["AICP", ""], google_news_rss: ["News", "inprogress"], wikidata: ["Wikidata", "new"],
   youtube_api: ["YouTube", ""], x_intent: ["X", "new"], manual_p1: ["Manual", "moved"], manual: ["Manual", "moved"],
   wikidata_channels: ["Wikidata", "new"], tvf_pool: ["TVF pool", "moved"],
-  apple_podcasts: ["Podcast", "new"],
+  apple_podcasts: ["Podcast", "new"], startup_news: ["News", "inprogress"],
 };
 function sourceLabel(src) { return (SOURCES[src] || [String(src || "unknown").replace(/_/g, " "), ""])[0]; }
 function sourceLozenge(src) {

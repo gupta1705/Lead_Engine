@@ -856,6 +856,12 @@ def startup_criterion(key, lead):
         if v > 0:
             return FOUND, "Closed more than a year ago: the team and users have usually moved on.", [s for s in (story,) if s]
         return (NONE, "Not closed for a year or more.", []) if enriched else (UNCHECKED, "Not checked yet.", [])
+    if key == "no_struggle_signal":
+        if v > 0:
+            return FOUND, ("%d stor%s about it and its website were read, and nothing shows struggle. The brief is "
+                           "startups that are struggling, so it is ranked down; a headline showing trouble lifts this."
+                           % (len(events), "y" if len(events) == 1 else "ies")), []
+        return (NONE, "It shows a sign of struggle, so no penalty.", []) if enriched else (UNCHECKED, "Not checked yet.", [])
     return None
 
 
@@ -920,7 +926,10 @@ def startup_analysis(lead, crit):
         risks.append({"level": "blocker", "title": "Already sold", "detail": "A headline says another company acquired it."})
     # a recent round and a long-closed company are score modifiers: they reach the risk list from there
     if lead.si.get("mumbai_confirmed") is not None and (lead.v("mumbai_confirmed") or 0) == 0:
-        risks.append({"level": "warning", "title": "Not placed in Mumbai", "detail": m.get("geo_evidence") or "Nothing places it."})
+        risks.append({"level": "warning", "title": "City not known",
+                      "detail": "Nothing on record says where it is based (its headlines name no city%s). Check the "
+                                "founders' profiles or its registered address before treating it as a Mumbai startup."
+                                % ("" if (m.get("site_health") or {}).get("status") == "up" else ", and its website is gone")})
     return questions, risks
 
 

@@ -54,7 +54,7 @@ manual with screenshots of every screen:
 Its source is [`docs/manual/manual.md`](docs/manual/manual.md); `python tools/gen_manual.py`
 retakes the screenshots from the real UI and `python tools/md_to_pdf.py` rebuilds the PDF.
 
-The engine runs more than one segment from one deployment. Alongside the TVF co-production segment it now carries **LCX clipping**, a sales segment for creators and podcasters with a deep back catalogue and no shorts, discovered through Apple's podcast search and the YouTube Data API and scored on their own numbers. Switch segments from the Projects menu; see [`docs/LCX_clipping.md`](docs/LCX_clipping.md).
+The engine runs more than one segment from one deployment. Alongside the TVF co-production segment it now carries **LCX clipping**, a sales segment for creators and podcasters with a deep back catalogue and no shorts, discovered through Apple's podcast search and the YouTube Data API and scored on their own numbers. Switch segments from the Projects menu; see [`docs/LCX_clipping.md`](docs/LCX_clipping.md). The **startup acquisitions** segment finds Mumbai startups showing public signs of struggle that TVF could buy for little or back with its content and audience, from news headlines and each startup's own website; see [`docs/startups.md`](docs/startups.md).
 
 ## Where things are
 

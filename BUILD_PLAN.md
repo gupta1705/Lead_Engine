@@ -362,3 +362,16 @@ The first sales segment, and the first proof that a second segment really is a c
 | **C6** | ✅ | **First live run** (2026-09-09): 215 shows staged, 119 ready for review (67 in the priority band), 62 with a published contact, 86 gated out with reasons; three rubric corrections folded back into the config from what the run showed. Numbers in `docs/LCX_clipping.md`. Sender `SET_ME` values and `GMAIL_SENDER_ADDRESS_LCX_CLIPPING` remain the owner's. |
 | **C7** | ⏭️ | **The sales motion**: follow-up threads, batch approval with sampling, mailbox rotation. Each changes a TVF guarantee and waits for the owner's explicit yes. |
 
+## Segment 2 ladder — startup acquisitions (2026-09-17)
+
+The owner's brief: *"find a list of startups that are currently struggling based out of bombay which we can acquire for little to no resources or give them our support."* The segment row existed since 2026-09-03 as proof of the config-row design; this is its real targeting. Details and numbers in `docs/startups.md`.
+
+| Rung | Status | What |
+|---|---|---|
+| **S0** | ✅ | **Config.** `config/segment.startup-acquisitions.json`: rubric (distress evidence 30, recency 10, Mumbai confirmed 15, small deal 15, TVF fit 20, something to keep 10, reachable founder 10), penalties (recently funded -20, long dead -15, no public sign of struggle -40), gates (outside Mumbai, too big, already sold, long gone), checklist, discovery queries, publishers, sector tiers, large-company list. `sql/03c` generated and live. |
+| **S1** | ✅ | **Headlines connector** `tools/discover_startup_news.py`: Google News RSS, listed Indian publishers only, headlines only (the trade press's terms forbid automated collection from article pages); distress queries India-wide, small-round queries for Mumbai, one search per quarter; `--backfill` for two years. |
+| **S2** | ✅ | **Headline rules** `tools/startup_signals.py` with `tools/test_startup_signals.py` (92 checks from real headlines): which company a headline is about, the event, the amount (never an AUM or a valuation), the city a headline gives, the scoring inputs. |
+| **S3** | ✅ | **Enrichment** `tools/enrich_startups.py`: news by name, the startup's own website (robots honoured; a closing notice, a parked page, a Mumbai PIN), its App Store app; `--rescore --reopen-gated` recomputes from stored evidence when the rules change. |
+| **S4** | ✅ | **Contacts** through the shared site reader: 70 startups have an address from 126 sites tried, 4 of them a named founder's. |
+| **S5** | ✅ | **First list** (2026-09-17): 319 startups, 187 gated with reasons, 132 open, 30 in the review band. Only 2 of the 30 are confirmed in Mumbai; the rest have no city in any headline and usually no website. Placing them needs a human or a paid database. |
+| **S6** | ⏭️ | **Owner's calls**: the outreach template and sender for founders, and whether to buy a startup database (Tracxn, Venture Intelligence, Private Circle) to place companies and see funding history in bulk. |

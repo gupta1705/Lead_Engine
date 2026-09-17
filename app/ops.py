@@ -110,6 +110,30 @@ JOBS = {
         "cmd": [PY, "tools/import_pool.py", "--from", "us-production-houses", "--limit", "1500"],
         "segments": ["lcx-clipping"],
     },
+    "discover_startup_news": {
+        "label": "Harvest: startup news (distress + funding)",
+        "group": "Discover",
+        "desc": "Google News headlines about layoffs, shutdowns, salary delays, insolvency and rescue rounds "
+                "from the last 40 days. Headlines only; no article page is ever fetched.",
+        "cmd": [PY, "tools/discover_startup_news.py"],
+        "segments": ["startup-acquisitions"],
+    },
+    "discover_startup_backfill": {
+        "label": "Harvest: startup news, full backfill",
+        "group": "Discover",
+        "desc": "Two years of distress headlines plus the Mumbai startups that raised a small round in 2021-24. "
+                "About 120 searches; a few minutes.",
+        "cmd": [PY, "tools/discover_startup_news.py", "--backfill"],
+        "segments": ["startup-acquisitions"],
+    },
+    "enrich_startups": {
+        "label": "Check startups (city, website, app, news)",
+        "group": "Enrich",
+        "desc": "Places each startup in Mumbai or elsewhere, reads its own website and App Store app, "
+                "asks the news about it by name, and scores it.",
+        "cmd": [PY, "tools/enrich_startups.py", "--limit", "400"],
+        "segments": ["startup-acquisitions"],
+    },
     "promote_chain": {
         "label": "Promote + score + gates",
         "group": "Process",

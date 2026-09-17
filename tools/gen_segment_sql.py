@@ -20,7 +20,7 @@ FILES = {                       # slug -> (sql file, name, entity_type)
     "lcx-clipping": "03d_segment_lcx_clipping.sql",
 }
 NAMES = {
-    "startup-acquisitions": "Startup Acquisition Targets -- creator tools & media-tech",
+    "startup-acquisitions": "Startup Acquisition Targets -- struggling Mumbai startups",
     "lcx-clipping": "LCX Clipping -- creators and podcasters with a back catalogue",
 }
 

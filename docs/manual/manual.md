@@ -80,7 +80,8 @@ Right now there are three:
 - **LCX Clipping** — creators, podcasters and production houses with a deep back
   catalogue and almost no short-form. This is the active one.
 - **US Production Houses** — TVF co-production targets.
-- **Startup Acquisitions** — creator-tools and media-tech companies.
+- **Startup Acquisitions** — Mumbai startups showing public signs of struggle,
+  which TVF could buy for little or back with its content and audience.
 
 Whichever project you pick, every screen changes with it. The board, the leads,
 the emails, the reports. Check the sidebar if you are ever unsure which one you
