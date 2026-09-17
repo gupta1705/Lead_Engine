@@ -278,20 +278,38 @@ def main():
     # the pooler dropped the connection at ~90 names the entire pass was lost.
     # A per-item write costs one name on failure instead of all of them.
     def save(eid, dom, method):
+        """Give the entity its website -- unless another company in the segment
+        already has that website. Then it is probably the same company under a
+        second name, which is a merge for a person to settle; overwriting would
+        break the one-row-per-domain index. That collision (Blue Ant Studios,
+        blueantstudios.com) crashed the whole TVF weekly refresh on 2026-09-08
+        and again on 2026-09-15, so every later step was skipped."""
         if args.dry_run:
-            return
-        db.run(lambda cur, _d=dom, _m=method, _e=eid: cur.execute(
-            "update entities set domain = %s,"
-            " metadata = jsonb_set(metadata, '{domain_resolution}', to_jsonb(%s::text))"
-            " where id = %s and domain is null", (_d, _m, _e)))
+            return True
+        def _write(cur, _d=dom, _m=method, _e=eid):
+            cur.execute("select name from entities where domain = %s and id <> %s"
+                        " and segment_id = (select segment_id from entities where id = %s)", (_d, _e, _e))
+            other = cur.fetchone()
+            if other:
+                cur.execute("update entities set metadata = jsonb_set(metadata, '{domain_conflict}', to_jsonb(%s::text))"
+                            " where id = %s", ("%s already belongs to %s" % (_d, other[0]), _e))
+                return False
+            cur.execute("update entities set domain = %s,"
+                        " metadata = jsonb_set(metadata, '{domain_resolution}', to_jsonb(%s::text))"
+                        " where id = %s and domain is null", (_d, _m, _e))
+            return True
+        ok = db.run(_write)
+        if not ok:
+            log("  %-34s %-28s already another company's website -- left for a person" % ("", dom))
+        return ok
 
     found = {}
     for eid, name, source, score in rows:
         hit = wd.get(name.lower())
         if hit:
-            found[eid] = (hit, "wikidata P856")
             log("  %-34s %-28s wikidata" % (name[:34], hit))
-            save(eid, hit, "wikidata P856")
+            if save(eid, hit, "wikidata P856"):
+                found[eid] = (hit, "wikidata P856")
 
     # --- method 2, only if asked
     if args.guess:
@@ -304,9 +322,9 @@ def main():
                     continue
                 why = verify(cand, name)
                 if why:
-                    found[eid] = (cand, "guessed + verified: " + why)
                     log("  %-34s %-28s %s" % (name[:34], cand, why))
-                    save(eid, cand, "guessed + verified: " + why)
+                    if save(eid, cand, "guessed + verified: " + why):
+                        found[eid] = (cand, "guessed + verified: " + why)
                     break
 
     unresolved = [r for r in rows if r[0] not in found]
