@@ -116,7 +116,7 @@ made it interesting: subscribers, how much short-form it publishes, how many
 episodes, how often.
 
 On the bottom row: the lead's key (like `LCX-CCAB`, the name you can quote to a
-colleague), a priority arrow, and the fit score, **out of 110** and explained in
+colleague), a priority arrow, and the fit score, **out of 100** and explained in
 full inside the lead. 25 and up is worth a look; 45 and up is the priority band.
 
 
@@ -142,27 +142,44 @@ This is the main job. Click any row or card.
 
 Read it top to bottom:
 
+**Analysis** comes first. It gives the engine's verdict and one suggested next
+step. Then it answers the project's review questions from the evidence: yes, no
+or unclear, with the facts behind each answer and what is still missing. Last
+come strengths, gaps and risks. A blocker, such as a public company or no usable
+address, puts the lead on hold whatever its score.
+
 **Why this could fit** is one honest sentence built from their real numbers.
 
 **Evidence** is the raw facts, each one a thing the engine actually observed:
 subscribers, videos, how many of the last 50 uploads were long-form, how many
 were shorts, the average length, how often they publish, and any sign they spend
-money (sponsors, Patreon, merch, a paid newsletter).
+money (sponsors, Patreon, merch, a paid newsletter). Evidence withdrawn on review
+stays listed, struck through, with the reason.
 
-**Score breakdown** shows every criterion, what it is worth, and what this lead
-earned. Three states:
+**Score breakdown** shows every criterion: what it is worth, what this lead
+earned, why, and a link to the evidence. Each criterion is in one of three
+states:
 
-- **Earned** — the criterion was met.
-- **Assessed · 0** — the engine looked and this lead did not meet it.
-- **Not assessed** — the engine could not check. It counts as nothing, not as a
-  failure.
+- **Found** — evidence earned points. The source is linked.
+- **Checked, nothing found** — a pass looked (it read their website, searched
+  the news, profiled the channel) and found nothing. It scores 0, and that zero
+  means something.
+- **Not checked yet** — nobody has looked. It also scores 0 for now, so the
+  score is a floor: checking can only raise it. The row says what would check
+  it: an Operations job, or what to look at by hand.
 
-**Review checklist** is three judgment calls the engine cannot make. The ticks
-are for your own thinking and are not saved anywhere.
+The bar above the table shows how much of the score has actually been checked.
+When most of the points are unchecked, the analysis says **Too little checked to
+trust the score**. The score is the points earned out of the rubric's 110,
+scaled to 100, plus any adjustments.
 
-On the right: the contact, the priority, the score, where it came from, the host,
-and a link to the channel. Open the channel and look at it before you decide.
-Thirty seconds there beats any rubric.
+On the right, **Contacts** lists every address, best first. **Drafts use this**
+marks the address the email goes to. Addresses that cannot be used, such as a
+website template's placeholder or a scraping artefact, are struck through with
+the reason. Below them are the other ways in: a phone number, people listed
+without an address, the contact page, social profiles, the channel or feed, and
+what has already been tried. Open the website or channel and look at it before
+you decide. Thirty seconds there beats any rubric.
 
 Then press one of two buttons at the bottom:
 
@@ -209,10 +226,13 @@ Click any row in Drafts.
 The subject and the body are editable. Change anything you like: the whole point
 is that what you approve is what goes out, word for word.
 
-Notice what is personal in it. The greeting is their first name, never the show's
-name. The opening sentence is their own numbers. The offer names their actual
-most recent episode. None of that was invented; all of it came from the evidence
-on the lead.
+Notice what is personal in it. The greeting is the first name of the person the
+email goes to, never the show's or the company's name. In LCX Clipping the
+opening sentence is their own numbers, and the offer names their actual most
+recent episode. For production houses it is a trade-press deal about them from
+the last year, or the kind of work their own website describes. None of that
+was invented; all of it came from the evidence on the lead. Internal research
+notes never go into an email.
 
 Some drafts carry a **Written** mark: a model wrote the opening sentence from
 that same evidence and nothing else, with every number in it checked against
@@ -467,12 +487,16 @@ instance goes to sleep when it is idle and takes a few seconds to wake. Reload
 once. If it persists, check Operations for a failed run.
 
 **"A lead has no contact."** The engine only uses addresses that companies have
-published themselves. If nobody published one, the lead sits there without one.
-The enrichment passes add addresses as they find them.
+published themselves. If nobody published one, open the lead: **Contacts** shows
+every other way in it found (a phone number, the contact page, social profiles)
+and what it already tried. **Find contacts on sites** reads the website of every
+lead without a usable address once, shortlisted leads included.
 
-**"The greeting says 'Hi there'."** That means the engine could not establish a
-real person's name with confidence, and it will not guess. "Hi there" is correct
-behaviour; "Hi Tech Talk" would not be.
+**"The greeting says 'Hi there' or 'Hi … team'."** That means no person could be
+named for the address the email goes to, and the engine will not guess. When the
+lead lists a person at their own address, or a person against a shared inbox
+like info@, the greeting uses their first name. "Hi there" is correct behaviour;
+"Hi Tech Talk" would not be.
 
 **"A draft will not approve."** The dialog names the reason: an unfilled
 placeholder, a sender that still says `SET_ME`, an address that failed
@@ -489,8 +513,9 @@ and mailboxes. Switch with the project name at the top of the sidebar.
 
 **Lead** — one company, show or creator. Has a key like `LCX-CCAB`.
 
-**Fit score** — out of 110, from the rubric in Project settings. Every point is
-explained in the lead dialog.
+**Fit score** — out of 100: the points earned out of the rubric's 110 (Project
+settings), scaled to 100, plus adjustments. Every point is explained in the
+lead dialog, along with the points nobody has checked yet.
 
 **Gate** — a hard disqualifier. Fires only on confirmed evidence, never on
 something the engine failed to check.

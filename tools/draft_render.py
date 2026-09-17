@@ -281,28 +281,71 @@ def hook_for_clipping(meta, company, seed=None):
     return " ".join(out) or None
 
 
-def hook_for(meta, company):
-    """Segments 1 and 2: one sentence of THEIR evidence, so the email reads
-    researched, not blasted. Priority: news evidence > research why_fit > site
-    genre language. None when nothing defensible exists -- the template then
-    uses the neutral line, and the human approving sees exactly that."""
-    for ev in (meta.get("news_evidence") or []):
-        h = (ev.get("headline") or "").strip()
-        if h:
-            return ('Saw the news -- "%s" -- which is exactly the kind of '
-                    'cross-border thinking we look for in a partner.' % h[:120])
-    why = (meta.get("why_fit") or "").strip()
-    if why:
-        return why.split(". ")[0].rstrip(".") + "."
-    genres = meta.get("site_genre_evidence") or []
-    if genres:
-        return ("Your work in %s sits squarely in the lanes TVF's formats "
-                "live in." % ", ".join(genres[:3]))
+# Their own site's words for what they make, as a sentence can use them. The
+# scrape records the raw match ("humorous", "scripted content"); an email says
+# what a person would.
+_GENRE_WORD = [                     # (matched terms, the word an email uses), in order of preference
+    (("comedy", "comedic", "humor", "humorous", "sitcom", "scripted comedy", "branded comedy"), "comedy"),
+    (("satire", "satirical"), "satire"),
+    (("sketch comedy",), "sketch comedy"),
+    (("slice of life", "slice-of-life"), "slice-of-life"),
+    (("coming of age", "coming-of-age"), "coming-of-age"),
+    (("young adult", "young-adult"), "young-adult"),
+    (("scripted series", "scripted content"), "scripted"),
+    (("web series",), "web series"),
+]
+
+
+def genre_words(terms, limit=2):
+    have = {str(t).strip().lower() for t in (terms or []) if t}
+    out = []
+    for matched, word in _GENRE_WORD:
+        if have.intersection(matched) and word not in out:
+            if word == "sketch comedy" and "comedy" in out:
+                continue
+            out.append(word)
+    return out[:limit]
+
+
+_NEWS_FRAMES = ["Congratulations on the {noun}{saw}.",
+                "I saw the news of the {noun}{where}. Congratulations."]
+_GENRE_FRAMES = ["Your site puts {genres} work front and center, and that's exactly the territory TVF's shows "
+                 "come from.",
+                 "{Genres} work like yours is what TVF is known for, which is why I wanted to write.",
+                 "I came across {company} through the {genres} work on your site, the same ground TVF's "
+                 "best-known series stand on."]
+
+
+def hook_for(meta, company, seed=None, now=None):
+    """Segments 1 and 2: one sentence about THEM, from evidence a person could
+    check. None when nothing defensible exists -- the template then uses the
+    neutral line, and the human approving sees exactly that.
+
+    Two sources, in order:
+      * a deal in the trade press that is ABOUT this company (tools/newsmatch.py),
+        dated and less than a year old
+      * the genres their own website describes
+    Never the research note (why_fit). It is written for us, about them --
+    "Arguably the most AI-relevant craft on the list" -- and it went out in
+    drafts until the owner's review of 2026-09-17."""
+    import newsmatch
+    news = newsmatch.usable_news(company, meta.get("news_evidence"), now)
+    if news:
+        noun, publisher, _when = news
+        frame = variant("%s|news" % (seed or company), _NEWS_FRAMES)
+        return frame.format(noun=noun,
+                            saw=(". I saw the news in %s" % publisher) if publisher else "",
+                            where=(" in %s" % publisher) if publisher else "")
+    words = genre_words(meta.get("site_genre_evidence"))
+    if words:
+        g = " and ".join(words)
+        frame = variant("%s|genre" % (seed or company), _GENRE_FRAMES)
+        return frame.format(genres=g, Genres=g[0].upper() + g[1:], company=company)
     return None
 
 
-NEUTRAL_HOOK = ("We've been mapping US independents whose work overlaps with "
-                "TVF's lanes, and {{company}} made our shortlist.")
+NEUTRAL_HOOK = ("I've been looking for independent US studios we could build series with, "
+                "and {{company}} stood out.")
 
 
 def _short(s, limit=60):
@@ -370,9 +413,9 @@ def facts_for(company, meta, now=None):
     return f
 
 
-def hook_line(meta, company, cfg, seed=None):
+def hook_line(meta, company, cfg, seed=None, now=None):
     hook = (hook_for_clipping(meta, company, seed) if cfg.get("hook_style") == "clipping"
-            else hook_for(meta, company))
+            else hook_for(meta, company, seed, now))
     return (hook or cfg.get("neutral_hook") or NEUTRAL_HOOK).replace("{{company}}", company)
 
 
@@ -384,17 +427,22 @@ def greeting_for(full_name, email, company, fallback=None):
     "Hi Tech Talk"."""
     import personname
     return personname.greeting_name(full_name) or (
-        fallback or "team at {{company}}").replace("{{company}}", company)
+        fallback or "{{company}} team").replace("{{company}}", company)
 
 
-def pick_greeting(cname, email, company, meta, cfg):
-    """The contact's own first name when it is a person; else the host the
-    engine found (high/medium confidence only); else the segment fallback.
-    Never a show name."""
-    import personname
+def pick_greeting(cname, email, company, meta, cfg, source=None):
+    """Who the email is to, in this order:
+      1. the contact's own first name -- tools/contacts.py decides whether the
+         name is a person and whether the address is theirs ("Hi Becky" for
+         Becky Donahue at becky@, not "Hi team at Taste In Motion, Inc.")
+      2. the host the engine found (high/medium confidence only)
+      3. a first name the mailbox itself carries (nina@ is Nina)
+      4. the segment's fallback. Never a show name."""
+    import contacts
     host = (meta or {}).get("host") or {}
-    return (personname.greeting_name(cname)
+    return (contacts.first_name_for(cname, email, company, source, mailbox_fallback=False)
             or (host.get("first_name") if host.get("confidence") in ("high", "medium") else None)
+            or contacts.first_name_for(None, email, company, source)
             or greeting_for(None, email, company, cfg.get("greeting_fallback")))
 
 
@@ -424,8 +472,17 @@ def pick_template(cfg, meta):
 
 
 # ----------------------------------------------------------------- rendering
+def possessive(name):
+    """Angel Studios' work, Supply&Demand's work."""
+    name = name or ""
+    return name + ("'" if name.lower().endswith("s") else "'s")
+
+
 def render(template, ctx):
     out = template or ""
+    if "company" in ctx:                     # "{{company}}'s" read "Angel Studios's" until 2026-09-17
+        for apos in ("'", "\u2019"):
+            out = out.replace("{{company}}%ss" % apos, possessive(ctx["company"]).replace("'", apos))
     for k, v in ctx.items():
         out = out.replace("{{%s}}" % k, v if isinstance(v, str) else str(v))
     leftover = PLACEHOLDER.findall(out)
@@ -435,7 +492,7 @@ def render(template, ctx):
 
 
 def build_context(cfg, company, meta, contact_name=None, contact_email=None,
-                  seed=None, opener_subject=None, now=None, generator=None):
+                  seed=None, opener_subject=None, now=None, generator=None, contact_source=None):
     """Every field a template may use, for one lead. {{footer}} is rendered
     first, so a template only ever has to end with it.
 
@@ -445,8 +502,10 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
     returned in ctx["generated_hook"] so the caller can record which drafts
     were written by a model -- those are not eligible for spot-checked batch
     approval unless the segment says so."""
+    import newsmatch
     sender = cfg.get("sender") or {}
-    company = company or ""
+    # the company as a person writes it: "Taste In Motion", not "Taste In Motion, Inc."
+    company = newsmatch.display_name(company or "")
     meta = meta or {}
     written = None
     if generator is not None:
@@ -456,8 +515,8 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
             written = None
     ctx = {
         "company": company,
-        "greeting_name": pick_greeting(contact_name, contact_email, company, meta, cfg),
-        "hook": written or hook_line(meta, company, cfg, seed),
+        "greeting_name": pick_greeting(contact_name, contact_email, company, meta, cfg, contact_source),
+        "hook": written or hook_line(meta, company, cfg, seed, now),
         "generated_hook": written or "",
         "latest_work": latest_work(meta, now),
         "clip_math": clip_math(meta),

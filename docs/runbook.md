@@ -23,11 +23,11 @@ app unless a terminal command is shown.
    the log tail is in the row. Fix or re-run with *Run weekly refresh now*.
 2. **Review queue** → set *Min score* to 25 (the band). Every lead here has
    been web-verified as a real, active, independent US production company —
-   your job is the three judgment calls in the review checklist, not fact
-   checking.
+   your job is the three judgment calls the dialog's **Analysis** answers
+   from the evidence (confirm or overrule them), not fact checking.
 3. Click through each: read the *Why this could fit*, the score breakdown
-   (note which criteria are **not assessed** vs scored zero), and the
-   contact. **Shortlist** or **Reject** with a one-line reason. Undo exists.
+   (note which criteria are **not checked yet** vs **checked, nothing
+   found**), and the contacts. **Shortlist** or **Reject** with a one-line reason. Undo exists.
 4. Aim to clear the band. New harvests refill it; an un-reviewed backlog is
    the one thing that stalls the pipeline.
 

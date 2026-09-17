@@ -119,7 +119,7 @@ function prioIcon(score, withLabel) {
   return `<span class="prio ${p.cls}" title="Priority: ${p.label} (fit score ${fmtScore(score)})">${icon(p.glyph, 16)}${withLabel ? ` <span style="color:var(--text)">${p.label}</span>` : ""}</span>`;
 }
 function ptsClass(score) { score = +score || 0; return score >= PRIORITY_THRESHOLD ? "hi" : score >= REVIEW_THRESHOLD ? "mid" : ""; }
-function pts(score) { return `<span class="pts ${ptsClass(score)}" title="Fit score out of 110">${fmtScore(score)}</span>`; }
+function pts(score) { return `<span class="pts ${ptsClass(score)}" title="Fit score out of 100">${fmtScore(score)}</span>`; }
 
 const LEAD_STATUS = {
   discovered: ["To review", ""], enriched: ["To review", ""], scored: ["To review", ""],
@@ -548,14 +548,104 @@ function syncExportLinks() {
 }
 
 /* ======================================================== lead modal */
-function renderCriteria(criteria) {
+/* The score, criterion by criterion (owner's review, 2026-09-17). Every row
+ * says which of three states it is in -- found, checked and nothing found, or
+ * not checked yet -- why, and where the evidence is. The explanation is built
+ * server-side by app/explain.py; this only draws it. */
+const STATE_CLS = { found: "success", none: "", unchecked: "moved" };
+function srcLinks(sources) {
+  if (!sources || !sources.length) return "";
+  return `<div class="crit-src">${sources.map((s) => s.url
+    ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}${s.date ? " · " + esc(s.date) : ""} ${icon("external", 12)}</a>`
+    : `<span>${esc(s.label)}${s.date ? " · " + esc(s.date) : ""}</span>`).join("")}</div>`;
+}
+function checkHint(c) {
+  if (!c.check) return "";
+  return c.check.job
+    ? `<div class="crit-check">${icon("play", 12)}<span>Checked by <strong>${esc(c.check.label)}</strong> in Operations</span></div>`
+    : `<div class="crit-check">${icon("user", 12)}<span>By hand: ${esc(c.check.manual)}</span></div>`;
+}
+function critRow(c, mod) {
+  const amount = mod
+    ? (c.state === "found" ? `<strong>${c.delta > 0 ? "+" : ""}${fmtScore(c.delta)}</strong>` : "—")
+    : (c.state === "unchecked" ? "—" : `<strong>${fmtScore(c.earned)}</strong>`);
+  return `<tr class="crit-${esc(c.state)}">
+      <td><div class="crit-label">${esc(c.label)}</div><span class="lozenge state-inline ${STATE_CLS[c.state] || ""}">${esc(c.state_label)}</span><div class="why">${esc(c.why)}</div>${srcLinks(c.sources)}${checkHint(c)}</td>
+      <td class="r num">${mod ? (c.max > 0 ? "+" : "") + fmtScore(c.max) : fmtScore(c.points)}</td>
+      <td class="r num">${amount}</td>
+      <td><span class="lozenge ${STATE_CLS[c.state] || ""}">${esc(c.state_label)}</span></td></tr>`;
+}
+function renderCriteria(ex) {
+  const cov = ex.coverage || {};
   return `<table class="tbl crit-table"><thead><tr><th>Criterion</th><th class="r">Points</th><th class="r">Earned</th><th>State</th></tr></thead><tbody>` +
-    criteria.map((c) => `<tr class="${!c.assessed ? "unassessed" : ""}">
-      <td>${esc(c.label)}${!c.assessed ? `<div class="why">No source has looked at this yet. It is not evidence of a bad fit.</div>` : ""}</td>
-      <td class="r num">${c.points}</td>
-      <td class="r num">${c.assessed ? `<strong>${c.earned}</strong>` : "—"}</td>
-      <td>${c.assessed ? `<span class="lozenge ${c.earned > 0 ? "success" : ""}">${c.earned > 0 ? "Earned" : "Assessed · 0"}</span>` : `<span class="lozenge moved">Not assessed</span>`}</td>
-    </tr>`).join("") + "</tbody></table>";
+    (ex.criteria || []).map((c) => critRow(c, false)).join("") +
+    `<tr class="crit-total"><td>Total</td><td class="r num">${fmtScore(cov.points_total)}</td><td class="r num"><strong>${fmtScore(cov.points_earned)}</strong></td><td></td></tr></tbody></table>` +
+    ((ex.modifiers || []).length ? `<table class="tbl crit-table mod-table"><thead><tr><th>Adjustment</th><th class="r">Up to</th><th class="r">Applied</th><th>State</th></tr></thead><tbody>` +
+      ex.modifiers.map((c) => critRow(c, true)).join("") + "</tbody></table>" : "");
+}
+function renderCoverage(ex) {
+  const cov = ex.coverage || {}, total = +cov.points_total || 0, checked = +cov.points_checked || 0, earned = +cov.points_earned || 0;
+  const pct = (n) => total ? Math.max(0, Math.min(100, n / total * 100)) : 0;
+  return `<div class="coverage">
+      <div class="coverage-bar" role="img" aria-label="${fmtScore(earned)} points earned, ${fmtScore(checked - earned)} checked with nothing found, ${fmtScore(total - checked)} not checked yet, of ${fmtScore(total)}">
+        <span class="earned" style="width:${pct(earned)}%"></span><span class="checked" style="width:${pct(checked - earned)}%"></span></div>
+      <div class="coverage-key small">
+        <span><i class="k earned"></i>${fmtScore(earned)} earned</span>
+        <span><i class="k checked"></i>${fmtScore(checked - earned)} checked, nothing found</span>
+        <span><i class="k unchecked"></i>${fmtScore(total - checked)} not checked yet</span>
+        <span class="muted">of ${fmtScore(total)} points</span></div>
+      <p class="muted small" style="margin:4px 0 0">${esc(cov.formula || "")}</p>
+      ${cov.stale ? `<p class="small warn-text" style="margin:4px 0 0">${esc(cov.stale)}</p>` : ""}
+    </div>`;
+}
+function renderLegend(ex) {
+  return `<details class="legend"><summary>What “found”, “checked, nothing found” and “not checked yet” mean</summary><dl>${(ex.legend || []).map((l) =>
+    `<dt><span class="lozenge ${STATE_CLS[l.state] || ""}">${esc(l.label)}</span></dt><dd>${esc(l.meaning)}</dd>`).join("")}</dl></details>`;
+}
+/* The analysis that replaced the tick-box checklist: the segment's review
+ * questions answered from the evidence, then strengths, gaps, risks and one
+ * next step. */
+const VERDICT_TONE = { strong: "success", promising: "", weak: "warning", unreliable: "warning", hold: "danger" };
+const Q_VERDICT = { yes: ["Yes", "success"], no: ["No", "removed"], unclear: ["Unclear", "moved"] };
+function renderAnalysis(ex) {
+  const a = ex.analysis || {}, v = a.verdict || {};
+  const list = (items, cls) => items && items.length
+    ? `<ul class="plain-list ${cls || ""}">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<p class="muted small">None.</p>`;
+  const questions = (a.questions || []).map((q) => {
+    const [label, cls] = Q_VERDICT[q.verdict] || Q_VERDICT.unclear;
+    return `<div class="question"><div class="q-head"><span class="lozenge ${cls}">${label}</span><span>${esc(q.label)}</span></div>
+      ${(q.evidence || []).length ? list(q.evidence) : ""}${(q.gaps || []).length ? list(q.gaps, "gaps") : ""}</div>`;
+  }).join("");
+  const risks = (a.risks || []).length
+    ? `<ul class="plain-list risks">${a.risks.map((r) => `<li class="risk ${esc(r.level)}">${icon(r.level === "info" ? "info" : "warn", 14)}<span><strong>${esc(r.title)}.</strong> ${esc(r.detail)}</span></li>`).join("")}</ul>`
+    : `<p class="muted small">None found.</p>`;
+  return `<div class="section-msg ${VERDICT_TONE[v.tone] || ""}" style="margin-bottom:8px">${icon(v.tone === "hold" ? "alert" : v.tone === "strong" ? "checkCircle" : "info", 20)}<div><div class="title">${esc(v.title || "")}</div><div class="text">${esc(v.detail || "")}</div></div></div>
+    <div class="next-step">${icon("chevRight", 16)}<div><strong>Next step.</strong> ${esc(a.next_step || "")}</div></div>
+    ${questions ? `<h4 class="sub-h">Review questions, answered from the evidence</h4>${questions}` : ""}
+    <div class="analysis-grid"><div><h4 class="sub-h">Strengths</h4>${list(a.strengths)}</div><div><h4 class="sub-h">Gaps</h4>${list(a.gaps)}</div></div>
+    <h4 class="sub-h">Risks</h4>${risks}`;
+}
+/* Every way in: addresses best first (the first usable one is where drafts go),
+ * junk shown struck through with the reason, then phone, people listed without
+ * an address, website, channel and feed, and what was already tried. */
+function renderContacts(d) {
+  const cr = (d.explain || {}).contact_routes || { routes: [], tried: [] };
+  const people = (d.contacts || []).map((c) => `<div class="contact-row ${c.usable ? "" : "retired"}">
+      ${avatar(c.full_name, c.email)}
+      <div class="contact-main"><div class="who">${esc(c.full_name || "No name published")}${c.drafts_use ? ` <span class="lozenge success" title="Drafts go to this address">Drafts use this</span>` : ""}</div>
+        ${c.role_title ? `<div class="role">${esc(c.role_title)}</div>` : ""}
+        <div class="mail">${c.usable ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : `<s>${esc(c.email || "")}</s>`}${c.kind === "shared" ? " · shared inbox" : c.kind === "low_value" ? ` · <span class="warn-text">rarely read for partnerships</span>` : ""}</div>
+        ${!c.usable ? `<div class="role warn-text">Not used: ${esc(c.unusable_reason)}</div>` : ""}
+      </div></div>`).join("");
+  const glyphs = { phone: "user", people: "users", website: "globe", channel: "play", podcast: "play", app: "link", social: "link" };
+  const routes = (cr.routes || []).map((r) => {
+    const body = r.people ? r.people.map((p) => `${esc(p.name)}${p.role ? ` <span class="muted">(${esc(p.role)})</span>` : ""}`).join(", ")
+      : r.url ? `<a href="${esc(r.url)}"${String(r.url).startsWith("tel:") ? "" : ` target="_blank" rel="noopener"`}>${esc(r.value)}</a>` : esc(r.value || "");
+    return `<li>${icon(glyphs[r.kind] || "link", 14)}<span><span class="muted">${esc(r.label)}:</span> ${body}</span></li>`;
+  }).join("");
+  return `${people || `<p class="muted small" style="margin:0 0 8px">No email address on record.</p>`}
+    ${routes ? `<ul class="evidence-list routes">${routes}</ul>` : ""}
+    ${(cr.tried || []).length ? `<p class="tried small muted">${cr.tried.map(esc).join(" ")}</p>` : ""}`;
 }
 function factList(obj, max) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return "";
@@ -567,17 +657,22 @@ function factList(obj, max) {
 }
 function evidenceItems(m) {
   const out = [];
-  const text = (v) => typeof v === "string" ? v : (v && (v.phrase || v.text || v.snippet || v.title || v.headline || v.summary)) || JSON.stringify(v);
+  // a field one pass writes as a list may be a single string from another:
+  // site_platform_evidence is a string, and .forEach on it stopped the dialog opening
+  const arr = (v) => Array.isArray(v) ? v : (v == null || v === "") ? [] : [v];
+  const text = (v) => typeof v === "string" ? v : (v && (v.headline || v.title || v.phrase || v.text || v.snippet || v.summary)) || JSON.stringify(v);
   const link = (v) => v && typeof v === "object" && (v.url || v.link || v.page) ? (v.url || v.link || v.page) : null;
   const push = (glyph, label, v) => {
     const u = link(v), t = text(v);
     out.push(`<li>${icon(glyph, 16)}<span><strong>${esc(label)}</strong> ${esc(t)}${u ? ` <a href="${esc(u)}" target="_blank" rel="noopener">${icon("external", 12)}</a>` : ""}</span></li>`);
   };
-  (m.news_evidence || []).forEach((v) => push("news", "News:", v));
-  (m.site_genre_evidence || []).forEach((v) => push("film", "Genre signal:", v));
-  (m.site_platform_evidence || []).forEach((v) => push("globe", "Platform credit:", v));
-  (m.format_deals || []).forEach((v) => push("bookmark", "Format deal:", v));
-  (m.notable_credits || []).forEach((v) => push("film", "Credit:", v));
+  arr(m.news_evidence).forEach((v) => push("news", "News:", v));
+  arr(m.site_genre_evidence).forEach((v) => push("film", "Genre signal:", v));
+  arr(m.site_platform_evidence).forEach((v) => push("globe", "Platform credit:", v));
+  arr(m.format_deals).forEach((v) => push("bookmark", "Format deal:", v));
+  arr(m.notable_credits).forEach((v) => push("film", "Credit:", v));
+  // evidence withdrawn on review stays visible, so a score that dropped is never a mystery
+  arr(m.retracted_evidence).forEach((v) => out.push(`<li class="withdrawn">${icon("x", 16)}<span><strong>Withdrawn:</strong> <s>${esc(v.headline || v.site_platform_evidence || "")}</s> <span class="small">(${esc(v.reason || "withdrawn on review")})</span></span></li>`));
   if (m.web_verification) {
     const w = m.web_verification;
     push("shield", "Web verification:", typeof w === "string" ? w : (w.summary || w.verdict || w.result || "checked" + (w.checked_at ? " " + fmtDate(w.checked_at) : "")));
@@ -611,12 +706,7 @@ async function openLead(id, opts) {
   const m = d.metadata || {}, research = m.p1_research || {};
   const st = leadStatus(d.status), score = +d.fit_score || 0, prio = prioFor(score);
   const decided = d.status === "shortlisted" || d.status === "rejected";
-  const contacts = (d.contacts || []).length
-    ? d.contacts.map((c) => `<div class="person" style="margin-bottom:10px">${avatar(c.full_name, c.email, "lg")}
-        <div style="min-width:0"><div class="who">${esc(c.full_name || "No name published")}${c.is_primary ? ` <span class="lozenge" style="margin-left:4px">primary</span>` : ""}</div>
-        ${c.role_title ? `<div class="role">${esc(c.role_title)}</div>` : ""}
-        <div class="mail"><a href="mailto:${esc(c.email)}">${esc(c.email)}</a>${c.email_status && c.email_status !== "unknown" ? ` <span class="lozenge ${c.email_status === "invalid" ? "removed" : c.email_status === "valid" ? "success" : ""}">${esc(c.email_status)}</span>` : ""}</div></div></div>`).join("")
-    : `<div class="person">${avatar(null, null, "lg")}<div class="muted">No contact found yet. The site-scrape and AICP passes add one when they find a named person.</div></div>`;
+  const contacts = renderContacts(d);
   const evidence = evidenceItems(m).concat(uiEvidence(d));
   const pills = [sourceLozenge(d.source)];
   if (m.subtype) pills.push(`<span class="lozenge new">${esc(String(m.subtype).replace(/_/g, " "))}</span>`);
@@ -634,18 +724,16 @@ async function openLead(id, opts) {
           : `<h2 class="modal-title">${esc(d.name)}</h2>`; })()}
         <div class="pill-list" style="margin:-8px 0 20px">${pills.join("")}</div>
 
-        ${m.why_fit ? `<div class="section"><h3>${icon("sparkle", 16)} Why this could fit</h3><div class="body"><p>${esc(m.why_fit)}</p></div></div>` : ""}
+        ${d.explain ? `<div class="section"><h3>${icon("sparkle", 16)} Analysis</h3><div class="body">${renderAnalysis(d.explain)}</div></div>` : ""}
+
+        ${m.why_fit ? `<div class="section"><h3>${icon("book", 16)} Why this could fit</h3><div class="body"><p>${esc(m.why_fit)}</p></div></div>` : ""}
 
         <div class="section"><h3>${icon("shield", 16)} Evidence</h3>
           <div class="body">${evidence.length ? `<ul class="evidence-list">${evidence.join("")}</ul>`
             : `<p class="muted">No evidence beyond the discovery record yet. Run the enrichment passes from Operations.</p>`}</div></div>
 
-        <div class="section"><h3>${icon("chart", 16)} Score breakdown <span class="pts ${ptsClass(score)}">${fmtScore(score)} / 110</span></h3>
-          <div class="body">${renderCriteria(d.criteria || [])}</div></div>
-
-        ${(d.checklist || []).length ? `<div class="section"><h3>${icon("check", 16)} Review checklist</h3>
-          <div class="body"><p class="muted small" style="margin-bottom:8px">Your three judgment calls. Ticks are for you, they are not saved.</p>
-          ${d.checklist.map((c, i) => `<label class="check" style="margin-bottom:10px"><input type="checkbox" id="chk${i}"><span>${esc(c.label)}${c.guidance ? `<div class="guidance">${esc(c.guidance)}</div>` : ""}</span></label>`).join("")}</div></div>` : ""}
+        <div class="section"><h3>${icon("chart", 16)} Score breakdown <span class="pts ${ptsClass(score)}">${fmtScore(score)} / 100</span></h3>
+          <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) + renderLegend(d.explain) : ""}</div></div>
 
         ${research.ownership || research.caveats ? `<div class="section"><h3>${icon("book", 16)} Research notes</h3><div class="body">
           ${research.ownership ? `<p><strong>Ownership.</strong> ${esc(research.ownership)}</p>` : ""}
@@ -675,11 +763,11 @@ async function openLead(id, opts) {
           <div class="actions"><button class="btn subtle" id="reasonCancel">Cancel</button><button class="btn danger" id="reasonGo">Reject</button></div>
         </div>
 
+        <div class="side-group"><div class="group-head">${icon("users", 16)} Contacts</div><div class="group-body">${contacts}</div></div>
         <div class="side-group"><div class="group-head">Details</div><div class="group-body">
           <dl class="details">
-            <dt>Contact</dt><dd>${contacts}</dd>
             <dt>Priority</dt><dd>${prioIcon(score, true)}</dd>
-            <dt>Fit score</dt><dd>${pts(score)} <span class="muted small">of 110</span></dd>
+            <dt>Fit score</dt><dd>${pts(score)} <span class="muted small">of 100</span></dd>
             <dt>Source</dt><dd>${sourceLozenge(d.source)}</dd>
             <dt>Website</dt><dd>${d.domain ? `<a href="https://${esc(d.domain)}" target="_blank" rel="noopener">${esc(d.domain)}</a>` : '<span class="muted">None yet</span>'}</dd>
             ${(m.hq_city || m.hq_state) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state].filter(Boolean).join(", "))}</dd>` : ""}

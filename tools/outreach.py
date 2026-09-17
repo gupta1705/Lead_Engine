@@ -135,13 +135,22 @@ def cmd_draft(args):
         log("      is safe -- approval will catch them -- but fix the config")
         log("      before anyone approves.\n")
 
+    # The best-ranked address at each company (contact_rank, sql/28), not whichever row
+    # an enrichment pass happened to mark primary: drafts went to accounting@kfilms.us
+    # while the lead listed Warren Kushner, Owner/Director. A placeholder, a URL
+    # fragment or an address marked invalid is never written to (rank <= -500).
     rows = db.run(lambda cur: (cur.execute("""
-        select e.id, e.name, e.metadata, c.id, c.full_name, c.email
+        select e.id, e.name, e.metadata, c.id, c.full_name, c.email, c.source
         from entities e
-        join contacts c on c.entity_id = e.id and c.is_primary
+        join lateral (
+            select c.* from contacts c
+            where c.entity_id = e.id and c.email is not null
+              and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500
+            order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
+                     c.created_at, c.id
+            limit 1) c on true
         where e.segment_id = (select id from segments where slug = %s)
           and e.status = 'shortlisted'
-          and c.email is not null
           and not exists (select 1 from outreach o
                           where o.entity_id = e.id and o.direction = 'outbound'
                             and o.status not in ('cancelled','failed'))
@@ -166,12 +175,13 @@ def cmd_draft(args):
         log("  GROQ_API_KEY is not set, so every hook is the built-in one\n")
 
     made = 0
-    for eid, company, meta, cid, cname, email in rows:
+    for eid, company, meta, cid, cname, email, csource in rows:
         meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
         tpl = requested or pick_template(cfg, meta)
         # only a template that actually uses {{hook}} is worth a model call
         use_gen = gen if "{{hook}}" in (tpl.get("body") or "") else None
-        ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen)
+        ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen,
+                            contact_source=csource)
         subject, body = render_message(tpl, ctx)
         written = ctx.get("generated_hook") or None
         log("  %-32s -> %-34s [%s]%s" % (company[:32], email, tpl["key"],

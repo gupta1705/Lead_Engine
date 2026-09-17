@@ -141,6 +141,56 @@ def main():
     bad += not ok
     print("%s  the same lead renders identically twice" % ("ok  " if ok else "FAIL"))
 
+    print("\n-- production houses: what the opening sentence may say (owner's review, 2026-09-17)")
+    recent = "Tue, 02 Jun 2026 17:00:00 GMT"
+    angel = {"criterion": "distribution_relationship", "phrase": "first-look deal", "published": recent,
+             "headline": "The McDonough Company Inks First-Look Deal With Angel Studios - Deadline"}
+    tvf_cases = [
+        ("the research note never reaches the prospect",
+         dr.hook_for({"why_fit": "Arguably the most AI-relevant craft on the list: rotoscope IS human "
+                                 "performance capture."}, "Minnow Mountain", "s", NOW), None, None),
+        ("somebody else's headline is never quoted",
+         dr.hook_for({"news_evidence": [dict(angel, headline="Chelsea Handler Inks First-Look Deal With "
+                                                             "NBCUniversal - The Hollywood Reporter")]},
+                     "Chelsea", "s", NOW), None, None),
+        ("an undated headline is not mentioned",
+         dr.hook_for({"news_evidence": [dict(angel, published=None)]}, "Angel Studios", "s", NOW), None, None),
+        ("a headline over a year old is not mentioned",
+         dr.hook_for({"news_evidence": [dict(angel, published="Mon, 04 Jan 2016 10:00:00 GMT")]},
+                     "Angel Studios", "s", NOW), None, None),
+        ("a recent deal about them, in plain words",
+         dr.hook_for({"news_evidence": [angel]}, "Angel Studios", "s", NOW), "first-look deal", "Deadline -"),
+        ("the site's own genre words, as a person says them",
+         dr.hook_for({"site_genre_evidence": ["humorous", "satirical", "web series"]}, "Merman Branded", "s",
+                     NOW), "comedy and satire", "humorous"),
+    ]
+    for label, got, want, forbid in tvf_cases:
+        ok = (got is None) if want is None else (want in (got or ""))
+        if ok and forbid:
+            ok = forbid not in (got or "")
+        bad += not ok
+        print("%s  %-48s -> %s" % ("ok  " if ok else "FAIL", label, (got or "(none: the neutral line)")[:80]))
+
+    tvf_cfg = {"sender": GOOD_SENDER, "greeting_fallback": "{{company}} team", "footer": {"text": dr.DEFAULT_FOOTER},
+               "templates": [{"key": "t", "subject": "{{company}} x TVF", "body": "Hi {{greeting_name}},\n\n{{hook}}"
+                              "\n\nGiven {{company}}'s work.\n\n{{footer}}"}]}
+    renders = [
+        ("a listed person is greeted by name", "Taste In Motion, Inc.", "Becky Donahue", "becky@tasteinmotion.com",
+         "Hi Becky,", "team"),
+        ("a shared inbox with nobody named greets the team", "Myriad Pictures", None, "info@myriadpictures.com",
+         "Hi Myriad Pictures team,", None),
+        ("no legal form in the company's name", "Taste In Motion, Inc.", None, "info@tasteinmotion.com",
+         "Given Taste In Motion's work", "Inc."),
+        ("a name ending in s takes an apostrophe only", "Angel Studios", None, "info@angel.com",
+         "Given Angel Studios' work", "Studios's"),
+    ]
+    for label, company, name, email, want, forbid in renders:
+        ctx = dr.build_context(tvf_cfg, company, {}, name, email, seed="x", now=NOW)
+        subject, body = dr.render_message(tvf_cfg["templates"][0], ctx)
+        ok = want in body and not (forbid and forbid in body.split("\n\n")[0] + subject + body)
+        bad += not ok
+        print("%s  %-48s -> %s" % ("ok  " if ok else "FAIL", label, body.replace("\n", " ")[:80]))
+
     print("\n-- a rendered email has no placeholder left in it")
     cfg = {"sender": GOOD_SENDER, "hook_style": "clipping", "greeting_fallback": "there",
            "neutral_hook": "We map shows with a back catalogue and no short-form.",

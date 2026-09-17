@@ -35,6 +35,13 @@ It sets nothing else. Headcount, genre and revenue are not reliably legible
 from a homepage, and a plausible guess in those fields is worse than a blank:
 04b marks blanks as unverified, so a human can see what still needs checking.
 
+ROUTES IN BESIDES EMAIL (2026-09-17). The owner's review: "Contact details
+missing in each lead". A site that publishes no address usually still has a
+way in -- a phone number, a contact page with a form, an Instagram. Every read
+now records those under metadata.site_contact_routes, and contact-finding mode
+reads each lead that has no usable address ONCE under these rules, shortlisted
+leads included. LinkedIn links are never recorded, let alone followed.
+
 Usage:
     python tools/enrich_sitescrape.py --limit 5 --dry-run
     python tools/enrich_sitescrape.py --limit 25
@@ -42,12 +49,14 @@ Usage:
 """
 import os
 import argparse
+import html as html_lib
 from concurrent.futures import ThreadPoolExecutor
 import re
 import socket
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import urllib.robotparser
 from pathlib import Path
@@ -55,6 +64,9 @@ from urllib.parse import urljoin, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+# names come off team pages with their labels attached ("Chloe Sedelmaier Executive",
+# "Contact Jeffrey Levine"); tools/contacts.py takes the labels off before a row is written
+from contacts import clean_name  # noqa: E402
 
 # The segment this run works on. Segment 2 is meant to be "a config row and
 # connectors, nothing else" -- so the slug comes from the environment, and
@@ -72,6 +84,14 @@ CANDIDATE_PATHS = ["/", "/contact", "/contact-us", "/about", "/about-us",
                    "/team", "/our-team", "/people", "/connect"]
 
 LINK_HINTS = re.compile(r"contact|about|team|people|connect|work with", re.I)
+CONTACT_PATH_RE = re.compile(r"contact|connect|reach|get-in-touch|enquir|inquir", re.I)
+SOCIAL_RE = re.compile(r"^https?://(?:www\.|m\.)?(instagram\.com|facebook\.com|x\.com|twitter\.com|tiktok\.com|"
+                       r"vimeo\.com|youtube\.com)/((?:channel/|c/|user/)?@?[A-Za-z0-9_.\-]+)/?(?:[?#].*)?$", re.I)
+SOCIAL_SKIP = {"share", "sharer", "sharer.php", "intent", "home", "login", "signup", "explore", "watch", "embed",
+               "hashtag", "p", "reel", "reels", "tr", "dialog", "plugins", "privacy", "legal", "about", "help",
+               "policies", "stories", "search", "hashtags", "results", "playlist", "feed"}
+SOCIAL_NAME = {"instagram.com": "instagram", "facebook.com": "facebook", "x.com": "x", "twitter.com": "x",
+               "tiktok.com": "tiktok", "vimeo.com": "vimeo", "youtube.com": "youtube"}
 
 EMAIL_RE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.I)
 
@@ -114,8 +134,32 @@ GENRE_RE = re.compile(
 # window disqualifies the match.
 PLATFORM_RE = re.compile(
     r"\b(series|show|film|feature|documentary|original)s?\b[^.<]{0,60}?"
-    r"\b(netflix|hulu|hbo(?: max)?|max|amazon prime|prime video|apple tv\+?|"
+    r"\b(netflix|hulu|hbo(?: max)?|amazon prime|prime video|apple tv\+?|"
     r"disney\+|peacock|paramount\+)\b", re.I)
+# Bare "max" went in 2026-09-17: it matched "Director: Doron Max" and "MAX" in a
+# Japanese radio show's blurb. HBO Max still matches as "hbo max".
+
+# Code is not a claim. Pages carry CSS and JSON, and until 2026-09-17 the text
+# the platform and genre patterns read still had them in it: "film-logo{max",
+# "show svg[data-v-16bb3b6a]{transform:rotate(180deg)}@media (max" and
+# 'Documentary)","slug":"netflix' each earned a distribution credit.
+CODE_BLOCK_RE = re.compile(r"(?is)<(script|style|noscript|svg|template)\b.*?</\1\s*>|<!--.*?-->")
+CODE_CHARS_RE = re.compile(r"[{}\[\]<>=;\\|]|\"[:,]\"|@media|\*/|/\*|\bpx\b")
+
+
+def page_text_of(page):
+    """What a visitor reads: tags, scripts, styles and comments removed."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", CODE_BLOCK_RE.sub(" ", page or "")))
+
+
+def platform_claim_ok(claim):
+    """A platform claim fit to credit and to show a reviewer: prose, not code."""
+    if not claim or not isinstance(claim, str):
+        return False
+    text = html_lib.unescape(claim)               # 'Series &quot;Gaming Wall Street&quot;' is prose
+    return not CODE_CHARS_RE.search(text) and bool(PLATFORM_RE.search(text))
+
+
 SERVICE_WORK_RE = re.compile(
     r"\b(commercial|branded?|spot|campaign|advertis|promo)\w*\b", re.I)
 
@@ -363,7 +407,8 @@ def scrape_site(domain, company=None):
     """Return findings for one domain, honouring robots.txt throughout."""
     out = {"pages": 0, "emails": [], "invitation": None, "blocked": None,
            "error": None, "team_count": 0, "team_page": None,
-           "team_leadership": False, "genre_terms": set(), "platform_claim": None}
+           "team_leadership": False, "genre_terms": set(), "platform_claim": None,
+           "phones": [], "contact_page": None, "contact_form": False, "socials": {}}
 
     rp, err = robots_for(domain)
     if rp is None:
@@ -403,7 +448,7 @@ def scrape_site(domain, company=None):
             continue
         out["pages"] += 1
 
-        page_text = re.sub(r"<[^>]+>", " ", html)
+        page_text = page_text_of(html)
         if out["invitation"] is None:
             m = INVITATION_RE.search(page_text)
             if m:
@@ -416,9 +461,9 @@ def scrape_site(domain, company=None):
         if out["platform_claim"] is None:
             for m in PLATFORM_RE.finditer(page_text):
                 window = page_text[max(0, m.start() - 80):m.end() + 40]
-                if not SERVICE_WORK_RE.search(window):
-                    out["platform_claim"] = re.sub(
-                        r"\s+", " ", m.group(0)).strip()[:160]
+                claim = re.sub(r"\s+", " ", m.group(0)).strip()[:160]
+                if not SERVICE_WORK_RE.search(window) and platform_claim_ok(claim):
+                    out["platform_claim"] = claim
                     break
 
         # Headcount evidence. Keep the LARGEST staff count seen across the
@@ -462,6 +507,23 @@ def scrape_site(domain, company=None):
                 seen_emails[addr] = {"email": addr, "kind": classify_email(addr),
                                      "name": name, "role": role, "page": path}
 
+        # routes in besides email: a phone, the contact page and its form, social profiles
+        if CONTACT_PATH_RE.search(path):
+            out["contact_page"] = out["contact_page"] or url
+            if re.search(r"<form\b", html, re.I) and re.search(r"type=[\"']?email|name=[\"'][^\"']*(?:email|message)", html, re.I):
+                out["contact_form"] = True
+        for tel in re.findall(r'href=["\']tel:([^"\']+)["\']', html, re.I)[:6]:
+            tel = urllib.parse.unquote(html_lib.unescape(tel)).strip()
+            if 7 <= len(re.sub(r"\D", "", tel)) <= 15 and tel not in out["phones"]:
+                out["phones"].append(tel)
+        for href in re.findall(r'href=["\'](https?://[^"\']+)["\']', html)[:400]:
+            m = SOCIAL_RE.match(html_lib.unescape(href))
+            if not m:
+                continue                          # (linkedin.com never matches: it is not recorded)
+            net, handle = SOCIAL_NAME[m.group(1).lower()], m.group(2)
+            if net not in out["socials"] and handle.split("/")[0].lower().lstrip("@") not in SOCIAL_SKIP:
+                out["socials"][net] = html_lib.unescape(href).split("?")[0].split("#")[0]
+
         # follow same-host links that look like contact/about/team
         if out["pages"] < MAX_PAGES_PER_SITE:
             for href in re.findall(r'href=["\']([^"\']+)["\']', html)[:300]:
@@ -498,7 +560,7 @@ def write_content_signals(cur, eid, found):
             " where id = %s",
             ('["' + '","'.join(t.replace('"', '') for t in terms[:8]) + '"]', eid))
     claim = found.get("platform_claim")
-    if claim:
+    if claim and platform_claim_ok(claim):
         cur.execute(
             "select set_scoring_input(%s,'distribution_relationship','0.5'::jsonb)"
             " from entities where id = %s"
@@ -508,6 +570,75 @@ def write_content_signals(cur, eid, found):
             "update entities set metadata = metadata ||"
             " jsonb_build_object('site_platform_evidence', to_jsonb(%s::text))"
             " where id = %s", (claim, eid))
+
+
+def write_routes(cur, eid, found):
+    """Every way in the site shows besides an email address, and when it was read."""
+    import datetime as dt
+    import json as _json
+    routes = {"phones": (found.get("phones") or [])[:3], "contact_page": found.get("contact_page"),
+              "contact_form": bool(found.get("contact_form")), "socials": found.get("socials") or {},
+              "pages_read": found.get("pages") or 0, "read_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    cur.execute("update entities set metadata = metadata || jsonb_build_object('site_contact_routes', %s::jsonb)"
+                " where id = %s", (_json.dumps(routes), eid))
+
+
+def write_invitation(cur, eid, phrase):
+    """The words on their site that earned collaboration_openness."""
+    cur.execute("update entities set metadata = metadata || jsonb_build_object('site_invitation', %s::text)"
+                " where id = %s", (phrase, eid))
+
+
+def rejudge_claims(db, dry_run=False):
+    """Retract distribution credit that rested on code read as a claim.
+
+    A site's platform claim is worth 0.5. When the recorded claim is CSS or
+    JSON rather than a sentence, the credit is withdrawn: the claim moves to
+    metadata.retracted_evidence with the reason, and the criterion goes back
+    to 0 listed in unverified_inputs (free for real evidence to overwrite) --
+    unless news evidence or a fuller credit holds it up, in which case only
+    the bad claim is removed. The row is re-scored either way."""
+    import datetime as dt
+    import json as _json
+    rows = db.run(lambda cur: (cur.execute("""
+        select e.id, e.name, e.status, e.fit_score, e.metadata from entities e join segments s on s.id = e.segment_id
+        where s.slug = %s and e.metadata ? 'site_platform_evidence'""", (SEGMENT,)), cur.fetchall())[1])
+    now = dt.datetime.now(dt.timezone.utc).isoformat()
+    n = 0
+    for eid, name, status, score, meta in rows:
+        claim = meta.get("site_platform_evidence")
+        if platform_claim_ok(claim):
+            continue
+        si = dict(meta.get("scoring_inputs") or {})
+        unverified = list(meta.get("unverified_inputs") or [])
+        news_dist = any(isinstance(e, dict) and e.get("criterion") == "distribution_relationship"
+                        for e in (meta.get("news_evidence") or []))
+        credit = si.get("distribution_relationship")
+        withdraw = credit == 0.5 and not news_dist
+        n += 1
+        log("  %-34s %-16s %s  %r" % (name[:34], status, "credit withdrawn" if withdraw else "claim removed",
+                                      str(claim)[:70]))
+        if dry_run:
+            continue
+        if withdraw:
+            si["distribution_relationship"] = 0
+            if "distribution_relationship" not in unverified:
+                unverified.append("distribution_relationship")
+        history = list(meta.get("retracted_evidence") or [])
+        history.append({"criterion": "distribution_relationship", "site_platform_evidence": claim,
+                        "retracted_at": now,
+                        "reason": "not a claim that their work ran on a streamer: page code or a stray word "
+                                  "(tools/enrich_sitescrape.py)"})
+
+        def write(cur, _e=eid, _si=si, _u=unverified, _h=history):
+            cur.execute("update entities set metadata = (metadata - 'site_platform_evidence') || %s::jsonb,"
+                        " updated_at = now() where id = %s",
+                        (_json.dumps({"scoring_inputs": _si, "unverified_inputs": _u, "retracted_evidence": _h}), _e))
+            cur.execute("select score_entity(%s)", (_e,))
+            return cur.fetchone()[0]
+        log("      score %s -> %s" % (score, db.run(write)))
+    log("\n  %d claim(s) that were code%s" % (n, "  [DRY RUN]" if dry_run else ""))
+    return 0
 
 
 def write_size(cur, eid, found):
@@ -576,7 +707,18 @@ def main():
                          "companies with no contact yet, which structurally "
                          "excluded the 243 AICP rows -- the best-contactable "
                          "part of the pool -- from ever being scored.")
+    ap.add_argument("--rejudge-claims", action="store_true",
+                    help="no network: withdraw distribution credit whose recorded platform claim is page "
+                         "code (CSS, JSON) rather than a sentence, and re-score those rows")
     args = ap.parse_args()
+
+    if args.rejudge_claims:
+        from dbconn import Db
+        db = Db()
+        try:
+            return rejudge_claims(db, args.dry_run)
+        finally:
+            db.close()
 
     from run_sql import load_db_url
     import psycopg2
@@ -594,12 +736,17 @@ def main():
              # a studio/network subsidiary. The review checklist requires
              # founder/partner ownership with no parent on record, so a
              # subsidiary fails review even if someone does reply.
-             "e.metadata->'discovery_raw'->'wikidata'->>'parent_organisation' is null",
-             "e.status in ('discovered','enriched','scored','ready_for_review')"]
+             "e.metadata->'discovery_raw'->'wikidata'->>'parent_organisation' is null"]
     if not args.qualify:
-        # contact-finding mode: skip anyone we can already reach
-        where.append("not exists (select 1 from contacts c where c.entity_id = e.id)")
+        # contact-finding mode: every lead with no USABLE address (a retired junk address is no way
+        # in), shortlisted ones included, each read once under the routes rules. Until 2026-09-17 it
+        # took "no contact row at all" and, stamping nothing, re-read the same sites on every run.
+        where.append("e.status in ('discovered','enriched','scored','ready_for_review','shortlisted')")
+        where.append("not exists (select 1 from contacts c where c.entity_id = e.id and c.email is not null"
+                     " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
+        where.append("not (e.metadata ? 'site_contact_routes')")
     else:
+        where.append("e.status in ('discovered','enriched','scored','ready_for_review')")
         # qualification mode: skip only what has already been read
         # STAMP is versioned: bumping it makes every already-read site
         # eligible for exactly one more pass. v2 = the pass that added genre
@@ -697,10 +844,12 @@ def main():
                         # partnership invitation, and both are scoreable.
                         write_size(cur, _e, _f)
                         write_content_signals(cur, _e, _f)
+                        write_routes(cur, _e, _f)
                         if _f["invitation"]:
                             cur.execute(
                                 "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
                                 (_e,))
+                            write_invitation(cur, _e, _f["invitation"])
                         # NEVER zero a contact another source already found. In
                         # --qualify mode most rows arrive WITH an AICP contact;
                         # writing 0 here because this particular page published
@@ -742,7 +891,7 @@ def main():
                                           source, is_primary)
                     values (%s,%s,%s,%s,%s, now(), 'sitescrape_mx', 'site_scrape', true)
                     on conflict do nothing
-                """, (_e, _b["name"], _b["role"], _b["email"],
+                """, (_e, clean_name(_b["name"], _b["email"]), _b["role"], _b["email"],
                       "unverified" if _k == "personal" else "catch_all"))
                 for extra in _em[1:4]:
                     cur.execute("""
@@ -750,14 +899,16 @@ def main():
                                               email_status, source, is_primary)
                         values (%s,%s,%s,%s,'unverified','site_scrape',false)
                         on conflict do nothing
-                    """, (_e, extra["name"], extra["role"], extra["email"]))
+                    """, (_e, clean_name(extra["name"], extra["email"]), extra["role"], extra["email"]))
                 cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
                             (_e, str(_r)))
                 if _f["invitation"]:
                     cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
                                 (_e,))
+                    write_invitation(cur, _e, _f["invitation"])
                 write_size(cur, _e, _f)
                 write_content_signals(cur, _e, _f)
+                write_routes(cur, _e, _f)
                 cur.execute("""update entities
                                set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
                                    status = case when status = 'discovered' then 'enriched' else status end

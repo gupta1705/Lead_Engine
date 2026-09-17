@@ -412,10 +412,13 @@ def leads(q: str = "", source: str = "", status: str = "open",
             "      then e.metadata->'host'->>'name' end as host_name," + extra +
             " e.metadata->>'hq_city' as city, e.metadata->>'hq_state' as state,"
             " (select count(*) from contacts c where c.entity_id = e.id) as n_contacts,"
+            # the address a draft would use, by the same ranking (sql/28)
             " (select c.email from contacts c where c.entity_id = e.id"
-            "   order by c.is_primary desc nulls last limit 1) as email,"
+            "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
+            "   c.created_at, c.id limit 1) as email,"
             " (select c.full_name from contacts c where c.entity_id = e.id"
-            "   order by c.is_primary desc nulls last limit 1) as contact_name"
+            "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
+            "   c.created_at, c.id limit 1) as contact_name"
             " from entities e where " + clause +
             " order by " + order + " limit %s offset %s",
             params + [min(limit, 500), offset])
@@ -432,7 +435,7 @@ def leads(q: str = "", source: str = "", status: str = "open",
 def lead(lead_id: str):
     with cursor() as cur:
         cur.execute(
-            "select e.*, s.config->'rubric' as rubric,"
+            "select e.*, s.slug as segment_slug, s.config as segment_config,"
             " s.config->'review_checklist' as checklist"
             " from entities e join segments s on s.id = e.segment_id"
             " where e.id = %s", (lead_id,))
@@ -440,37 +443,43 @@ def lead(lead_id: str):
         if not row:
             raise HTTPException(404, "no such lead")
         row = dict(row)
+        # every address, best first: the order the draft step uses (contact_rank, sql/28)
         cur.execute(
-            "select full_name, role_title, email, email_status, is_primary, source"
-            " from contacts where entity_id = %s"
-            " order by is_primary desc nulls last", (lead_id,))
-        row["contacts"] = [dict(c) for c in cur.fetchall()]
+            "select c.id, c.full_name, c.role_title, c.email, c.email_status, c.is_primary, c.source, c.notes,"
+            " contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) as rank"
+            " from contacts c join entities e on e.id = c.entity_id"
+            " where c.entity_id = %s order by rank desc, c.created_at, c.id", (lead_id,))
+        contacts, seen = [], set()
+        for c in cur.fetchall():
+            c = dict(c)
+            key = (c.get("email") or "").lower() or str(c["id"])
+            if key in seen:
+                continue                          # the same address from two sources is one route
+            seen.add(key)
+            c["id"] = str(c["id"])
+            contacts.append(c)
+        cur.execute(
+            "select id, status, subject, template_key from outreach"
+            " where entity_id = %s and direction = 'outbound' and coalesce(sequence_step, 0) = 0"
+            " and status not in ('cancelled', 'failed') order by created_at desc limit 1", (lead_id,))
+        draft = cur.fetchone()
 
-    # Explain the score criterion by criterion, INCLUDING what was never
-    # assessed. A reviewer needs "nobody looked at this" to read differently
-    # from "we looked and it scored zero" -- that distinction is the entire
-    # design of unverified_inputs, and hiding it in the UI would waste it.
+    # What the score is made of, what nobody has checked yet, the analysis a
+    # reviewer used to be left to do by ticking boxes, and every route in.
+    # app/explain.py; the owner's review of 2026-09-17 asked for all four.
+    import explain
+    cfg = row.pop("segment_config") or {}
+    slug = row.pop("segment_slug")
+    ranked = explain.rank_contacts(contacts, row.get("domain"))
+    row["contacts"] = ranked
+    outreach = dict(draft, id=str(draft["id"])) if draft else None
+    row["outreach"] = outreach
+    row["explain"] = explain.explain_lead(slug, cfg, row, ranked, outreach)
+    row["criteria"] = [dict(c, assessed=c["state"] != explain.UNCHECKED) for c in row["explain"]["criteria"]]
     meta = row.get("metadata") or {}
-    si = meta.get("scoring_inputs") or {}
-    unverified = set(meta.get("unverified_inputs") or [])
-    criteria = []
-    for r in (row.get("rubric") or []):
-        key = r["key"]
-        raw = si.get(key)
-        numeric = isinstance(raw, (int, float)) and not isinstance(raw, bool)
-        criteria.append({
-            "key": key,
-            "label": r.get("label", key),
-            "points": r["points"],
-            "value": raw,
-            "earned": round(float(r["points"]) * float(raw), 1) if numeric else 0,
-            "assessed": (key in si) and (key not in unverified),
-            "guidance": r.get("guidance", ""),
-        })
-    row["criteria"] = criteria
     h = meta.get("host") or {}
     row["host_name"] = h.get("name") if h.get("confidence") in ("high", "medium") else None
-    row.pop("rubric", None)
+    row["thresholds"] = {"review": cfg.get("score_threshold_review"), "priority": cfg.get("score_threshold_priority")}
     row["id"] = str(row["id"])
     row["segment_id"] = str(row["segment_id"])
     return row
@@ -782,7 +791,7 @@ def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
 
 REBUILD_SQL = """
 select o.id, o.template_key, o.subject, o.body, o.entity_id,
-       e.name as company, e.metadata, c.full_name, c.email,
+       e.name as company, e.metadata, c.full_name, c.email, c.source as contact_source,
        p.subject as opener_subject
 from outreach o
 join entities e on e.id = o.entity_id
@@ -810,7 +819,8 @@ def _rebuild_drafts(cur, segment, old_cfg, new_cfg, dr):
     for r in rows:
         meta = r["metadata"] if isinstance(r["metadata"], dict) else {}
         args = dict(contact_name=r["full_name"], contact_email=r["email"],
-                    seed=r["entity_id"], opener_subject=r["opener_subject"])
+                    seed=r["entity_id"], opener_subject=r["opener_subject"],
+                    contact_source=r["contact_source"])
         try:
             was = dr.build_context(old_cfg, r["company"], meta, **args)["footer"]
             now = dr.build_context(new_cfg, r["company"], meta, **args)["footer"]

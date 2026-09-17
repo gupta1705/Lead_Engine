@@ -323,12 +323,13 @@
       "guidance": "sender.name and postal_address MUST be set before the first send. The Gmail address itself comes from GMAIL_SENDER_ADDRESS in .env, never from config."
     },
     "daily_send_cap": 20,
+    "greeting_fallback": "{{company}} team",
     "templates": [
       {
         "key": "copro_intro_v1",
         "subject": "Co-production idea: {{company}} x The Viral Fever",
-        "body": "Hi {{greeting_name}},\n\nI run business development at The Viral Fever (TVF) - one of India's largest independent studios, ~40M subscribers across platforms, best known for premium comedy and slice-of-life series (Panchayat, Kota Factory, Pitchers).\n\n{{hook}}\n\nWe're looking for a small number of US production partners for format licensing and co-development - adapting proven TVF originals for US audiences, and the reverse. Given {{company}}'s work, I think there's a genuinely good fit worth a 20-minute call.\n\nWorth exploring? Happy to send a two-page format deck first.\n\n{{footer}}",
-        "guidance": "The default first-touch. {{hook}} is one sentence built from the lead's own evidence (why_fit, a news headline, their site's genre language) - the draft command fills it and a human reads every draft before approval. Greeting: named contact -> first name; role inbox -> 'team at {{company}}'."
+        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run business development at The Viral Fever (TVF), one of India's largest independent studios. We have around 40M subscribers across platforms and are best known for premium comedy and slice-of-life series like Panchayat, Kota Factory and Pitchers.\n\nWe're looking for a small number of US production partners to adapt proven TVF originals for American audiences, and to bring the right US formats to India. I think there's a genuinely good fit here.\n\nWould a 20-minute call be worth it? I'm happy to send a two-page format deck first.\n\n{{footer}}",
+        "guidance": "The default first-touch. It opens with {{hook}}: one sentence about them from evidence a person can check -- a deal in the trade press that is about this company and under a year old, or the genres their own site describes -- and never the internal research note (why_fit); with neither, the neutral line. Greeting: the listed person's first name when the address is theirs or a shared inbox they are listed against, else a first name the mailbox carries, else greeting_fallback. {{company}} drops the legal form (Inc., LLC). A human reads every draft before approval; see tools/draft_render.py. REWRITTEN 2026-09-17 after the owner's review of the drafts."
       }
     ],
     "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
