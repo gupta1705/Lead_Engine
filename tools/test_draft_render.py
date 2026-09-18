@@ -287,6 +287,68 @@ def main():
             "across the world today."), "Neon Zoo is an award-winning independent film studio, founded by director "
                                         "Elyse Kelly"),
     ]
+    # the first full run's weak paragraphs (2026-09-18), each now closed by a rule
+    bronson = {"company": "Bronson Canyon Pictures", "recent_news": {
+        "headline": "Fox Entertainment Studios Signs Jeffrey Levine and Bronson Canyon Pictures To First-Look Deal",
+        "deal": "first-look deal", "reported_by": "Variety", "when": "December 2025"}}
+    fox = ("Your first-look deal with Fox Entertainment Studios, reported by Variety in December 2025, is a vote of "
+           "confidence in the TV drama you develop. That is exactly how we think.")
+    iron = {"company": "Ironbound Films", "in_their_own_words": {"site_title": "Ironbound Films"}}
+    insignia = {"company": "Insignia Films", "genres": ["comedy"], "in_their_own_words": {
+        "site_description": "Insignia Films, a documentary production studio based in New York City"}}
+    white = {"company": "Whitewater Films", "genres": ["drama"], "in_their_own_words": {
+        "site_description": "Rick Rosenthal is an award-winning producer and director with over 35 years in film and "
+                            "television"}}
+    seen = []
+    real_complete = llm.complete_partner
+    llm.complete_partner = lambda facts, pol, seed=None, previous=None, reason=None: (seen.append(facts), json.dumps(
+        {"theme": "Stories Built to Travel", "paragraph": "You describe yourselves as a documentary production "
+                                                          "studio, and that focus is rare. That is exactly how we think."}))[1]
+    try:
+        writer = llm.make_partner_writer({"model": "m", "min_words": 15, "max_words": 75, "max_calls": 5, "rpm": 0,
+                                          "kind": "paragraph"})
+        wrote = (writer(iron, "x"), writer(dict(insignia, lane="conscience"), "x"),
+                 writer({"company": "Toon Works", "lane": "animation",
+                         "in_their_own_words": {"site_description": "We make hand-drawn animated series."}}, "x"))
+    finally:
+        llm.complete_partner = real_complete
+    checks += [
+        ("'this December' is refused, the month and year pass",
+         [llm.check_partner({"theme": "Drama", "paragraph": p}, bronson)[1] is None
+          for p in (fox.replace("in December 2025", "this December"), fox)], [False, True]),
+        ("relative time words are refused, 'just as' is not",
+         [bool(llm.RELATIVE_DATE.search(s)) for s in ("you recently signed", "was just placed at #4", "your recent "
+          "first-look deal", "reported in December 2025", "your most recent film", "we hold just as firmly")],
+         [True, True, True, False, False, False]),
+        ("the company named over and over is refused", llm.check_partner(
+            {"theme": "Stories", "paragraph": "Ironbound Films, as presented on your site, is the name of your studio, "
+                                              "Ironbound Films, and the brand you operate under, Ironbound Films. That "
+                                              "is exactly how we think."}, iron)[1], "names the company over and over"),
+        ("'TV' and the M of '2M' are not names", [llm.check_partner({"theme": "x", "paragraph": p}, f)[1] for p, f in (
+            (fox, bronson), ("You position 2M Productions as a dance studio that will keep making films, and it is "
+                             "rare to see. That is exactly how we think.", two_m))], [None, None]),
+        ("'powerhouse' and 'leveraging' are refused", [llm.check_partner(edit(paragraph=tonko_answer["paragraph"]
+                                                       .replace(a, b)), tonko)[1] for a, b in (
+            ("is rare and quietly extraordinary", "is a creative powerhouse"),
+            ("carries genuinely emotional", "leveraging genuinely emotional"))], ["uses 'powerhouse'", "uses 'leverag'"]),
+        ("a page title alone: no model call", (wrote[0], writer.stats["skipped"], len(seen)), (None, 1, 2)),
+        ("genre words never reach the model", ("genres" in seen[0],
+                                               (wrote[1] or {}).get("paragraph", "").startswith("You describe")),
+         (False, True)),
+        ("the lane reaches it only when it is animation", [f.get("lane") for f in seen], [None, "animation"]),
+        ("a biography is not quoted as their belief", dr.tvf_fit_fallback(white),
+         "The drama at the heart of your work is the same ground our own series stand on."),
+        ("...their about page is, when it is about them", dr.tvf_fit_fallback(dict(white, in_their_own_words=dict(
+            white["in_their_own_words"], about_page="Whitewater Films develops and produces film and television with "
+                                                    "emerging filmmakers."))).startswith(
+            "Your own site puts it simply: “Whitewater Films develops and produces"), True),
+        ("a sentence naming one of their people is not quoted", dr.tvf_fit_fallback(dict(white, people=[
+            {"name": "Rick Rosenthal", "role": "Founder"}], in_their_own_words={
+            "site_description": "Founded by Rick Rosenthal, a home for emerging filmmakers"}))[:9], "The drama"),
+        ("their own description is still quoted", dr.tvf_fit_fallback(insignia),
+         "Your own site puts it simply: “Insignia Films, a documentary production studio based in New York City”. "
+         "That is close to how we think about our own work, and rare to find."),
+    ]
     for label, got, want in checks:
         ok = got == want
         bad += not ok

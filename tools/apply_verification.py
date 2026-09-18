@@ -15,7 +15,9 @@ MAPPING, deliberately conservative:
                                    so gate logic lives in exactly one place
   subsidiary_or_major           -> major_or_oversized_signal = true
   defunct_or_dormant            -> activity_signal = 'confirmed_dormant'
-  domain wrong_company          -> domain stripped + contacts at it deleted
+  domain wrong_company          -> domain stripped, contacts at it deleted,
+                                   addresses read off it marked invalid, and
+                                   drafts to any of them cancelled
   clean, country US             -> geography_signal = 'us' (a positive
                                    confirmation is evidence too)
 Every touched row gets metadata.web_verification with the verdict and the
@@ -130,8 +132,21 @@ def main():
                 cur.execute("select domain from entities where id=%s", (_e,))
                 dom = cur.fetchone()[0]
                 if dom:
+                    # Every address read off that site belongs to the other company, whatever its
+                    # domain: premeditatedproductionslv@gmail.com came off a Las Vegas events firm's
+                    # pages and was drafted to as the Amazon MGM producer (found 2026-09-18). The
+                    # scraper only reads the lead's own domain, so site_scrape means this site.
+                    wrong = ("address came from %s, which web check found belongs to a different company"
+                             % dom)
+                    cur.execute("update outreach set status='cancelled', stopped_reason=%s, updated_at=now()"
+                                " where entity_id=%s and status in ('drafted','approved') and contact_id in"
+                                " (select id from contacts where entity_id=%s"
+                                "  and (split_part(email,'@',2)=%s or source='site_scrape'))",
+                                (wrong, _e, _e, dom))
                     cur.execute("delete from contacts where entity_id=%s"
                                 " and split_part(email,'@',2)=%s", (_e, dom))
+                    cur.execute("update contacts set email_status='invalid', notes=concat_ws(' | ', notes, %s),"
+                                " updated_at=now() where entity_id=%s and source='site_scrape'", (wrong, _e))
                     cur.execute("update entities set domain=null,"
                                 " metadata = metadata || jsonb_build_object("
                                 "'rejected_domain', %s::text,"

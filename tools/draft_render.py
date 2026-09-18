@@ -555,6 +555,27 @@ def _mentions_recipient(text, first, full=None):
     return False
 
 
+_GENERIC_NAME_WORDS = {"the", "a", "an", "and", "of", "inc", "llc", "ltd", "co", "films", "film", "productions",
+                       "production", "pictures", "studio", "studios", "media", "content", "entertainment", "group"}
+_SUBJECT_VERB = re.compile(r"\s*((?:[A-Z][\w.'’&-]*)(?:\s+[A-Z][\w.'’&-]*){0,3})\s+(?:is|was|has|had|began|started|"
+                           r"founded|co-founded|created|leads|led|joined|brings|spent)\b")
+
+
+def _about_a_person(text, facts):
+    """Is the sentence about someone rather than the company? It names one of their people, or it opens
+    with a name that is not the company's: "Rick Rosenthal is an award-winning producer and director...",
+    quoted as what Whitewater Films stands for (2026-09-18)."""
+    for p in facts.get("people") or []:
+        parts = [t for t in re.findall(r"[A-Za-zÀ-ÿ'’\-]+", p.get("name") or "") if len(t) > 2]
+        if parts and re.search(r"\b%s\b" % re.escape(parts[-1]), text or ""):
+            return True
+    m = _SUBJECT_VERB.match(text or "")
+    if not m:
+        return False
+    words = lambda s: {w.lower() for w in re.findall(r"[A-Za-zÀ-ÿ0-9]+", s or "")} - _GENERIC_NAME_WORDS
+    return not (words(m.group(1)) & words(facts.get("company")))
+
+
 def _whole_clause(text, limit=30):
     """The first sentence when it is short enough to quote whole, else its first clause ending at a comma,
     else None: a quotation is never cut off mid-thought ("...and spark meaningful", 2026-09-18)."""
@@ -574,10 +595,15 @@ def tvf_fit_fallback(facts):
     matches. Plain on purpose -- it says only what the facts say."""
     own = facts.get("in_their_own_words") or {}
     work = facts.get("their_work") or []
-    desc = own.get("site_description") or own.get("about_page")
-    quote = _whole_clause(desc)
-    if quote and _mentions_recipient(quote, facts.get("writing_to"), facts.get("writing_to_full_name")):
-        quote = None                          # "founded by director Elyse Kelly", in an email to Elyse
+    quote = None
+    for text in (own.get("site_description"), own.get("about_page")):
+        quote = _whole_clause(text)
+        if quote and _mentions_recipient(quote, facts.get("writing_to"), facts.get("writing_to_full_name")):
+            quote = None                      # "founded by director Elyse Kelly", in an email to Elyse
+        if quote and _about_a_person(quote, facts):
+            quote = None                      # a biography, quoted, reads as the company's belief
+        if quote:
+            break
     if quote:
         return ("Your own site puts it simply: “%s”. That is close to how we think about our own work, and "
                 "rare to find." % quote)
