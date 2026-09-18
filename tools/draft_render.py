@@ -419,6 +419,168 @@ def hook_line(meta, company, cfg, seed=None, now=None):
     return (hook or cfg.get("neutral_hook") or NEUTRAL_HOOK).replace("{{company}}", company)
 
 
+# ------------------------------- production houses: the partnership email (2026-09-18)
+# The owner's template: who we are and what we make; which is why THIS company
+# caught our attention; the partnership and why it fits; a short call. The
+# owner's own sentences are the template (config outreach.templates and
+# outreach.angles). What varies is the lane the company works in, which picks
+# the matching sentences from the owner's samples, and one paragraph about the
+# company itself -- written by a model from their own words when one is set up
+# (tools/llm.py, generated_paragraph), otherwise the plain paragraph below.
+TVF_ANGLES = [                     # (lane, what in their own description or our records puts them in it)
+    ("animation", r"animat|stop[- ]motion|rotoscop|cartoon|claymation|puppet|motion design|motion graphics"),
+    ("conscience", r"documentar|non-?fiction|social impact|underrepresented|under-represented|justice|"
+                   r"non-?profit|advocacy|journalis|untold"),
+    ("digital", r"youtube|digital[- ]first|digital[- ]native|creator[- ]led|creators|web series|social video|"
+                r"online video"),
+    ("drama", r"\bscripted|\bdrama|thriller|feature film|features|horror|fantasy|genre film|narrative"),
+]
+_LA = re.compile(r"los angeles|santa monica|culver city|burbank|hollywood|venice|beverly hills|west hollywood|"
+                 r"glendale|pasadena|marina del rey|playa vista|north hollywood|\bla\b", re.I)
+_NY = re.compile(r"new york|brooklyn|manhattan|queens|\bnyc\b", re.I)
+
+
+def tvf_angle(meta, company=""):
+    """The lane a production company works in, from what it says about itself and what we recorded."""
+    meta = meta or {}
+    about = meta.get("site_about") or {}
+    research = meta.get("p1_research") or {}
+    text = " ".join(str(x) for x in (
+        company, (meta.get("aicp_detail") or {}).get("company_type"), about.get("title"), about.get("description"),
+        about.get("about"), " ".join(meta.get("genres") or []), " ".join(meta.get("notable_credits") or []),
+        research.get("ownership"), meta.get("subtype"), (meta.get("web_verification") or {}).get("note"),
+        " ".join(meta.get("site_genre_evidence") or []) if isinstance(meta.get("site_genre_evidence"), list) else "")
+        if x).lower()
+    for angle, rx in TVF_ANGLES:
+        if re.search(rx, text):
+            return angle
+    if (meta.get("discovery_raw") or {}).get("youtube_api"):
+        return "digital"
+    return "general"
+
+
+def _title_only(credit):
+    return re.split(r"\s*[(\-–—:]", str(credit or ""))[0].strip().strip('"“”') or None
+
+
+def tvf_facts(company, meta, angle, now=None, writing_to=None):
+    """What the partnership paragraph may be written from: their own words first. Where they are based is
+    left out (the first run turned it into "operating from Fairfield, CT"), and so is the person the email
+    is to, from the list of names (it named Mike Parker in an email to Mike)."""
+    meta = meta or {}
+    about = meta.get("site_about") or {}
+    # TVF's side is not in the facts: given it, the model described the company with TVF's own words
+    # ("blends deeply local, human narratives with a craft that can travel", 2026-09-18)
+    f = {"company": company, "lane": angle}
+    if writing_to:
+        f["writing_to"] = writing_to
+    own = {}
+    if _short(about.get("description"), 400):
+        own["site_description"] = _short(about.get("description"), 400)
+    if _short(about.get("about"), 700):
+        own["about_page"] = _short(about.get("about"), 700)
+    if not own and _short(about.get("title"), 140):
+        own["site_title"] = _short(about.get("title"), 140)
+    if own:
+        f["in_their_own_words"] = own
+    work = [t for t in (_title_only(c) for c in (meta.get("notable_credits") or [])) if t]
+    work += [t for t in (_title_only(c) for c in (meta.get("format_deals") or [])) if t]
+    if work:
+        f["their_work"] = list(dict.fromkeys(work))[:4]
+    people = []
+    for chunk in re.split(r";", (meta.get("p1_research") or {}).get("key_contact") or ""):
+        m = re.match(r"\s*([A-Z][\w.'’\- ]+?)\s+-\s+(.+)$", chunk.strip())
+        if m and re.search(r"founder|owner|partner|president|creator|principal", m.group(2), re.I):
+            people.append({"name": m.group(1).strip(), "role": m.group(2).strip()})
+    for q in ((meta.get("aicp_detail") or {}).get("people") or []):
+        name = " ".join(x for x in (q.get("first"), q.get("last")) if x).strip()
+        if name and re.search(r"founder|owner|partner|president", q.get("title") or "", re.I):
+            people.append({"name": name, "role": q.get("title")})
+    if writing_to:
+        people = [q for q in people if q["name"].split()[0].lower() != writing_to.lower()]
+    if people:
+        f["people"] = list({q["name"]: q for q in people}.values())[:3]
+    kind = (meta.get("aicp_detail") or {}).get("company_type")
+    if kind:
+        f["kind"] = kind
+    g = genre_words(meta.get("site_genre_evidence") if isinstance(meta.get("site_genre_evidence"), list) else [])
+    if g:
+        f["genres"] = g
+    import newsmatch
+    news = newsmatch.usable_news(company, meta.get("news_evidence"), now)
+    if news:
+        head = next((newsmatch.split_publisher(e.get("headline"))[0] for e in (meta.get("news_evidence") or [])
+                     if isinstance(e, dict) and newsmatch.names_company(company, e.get("headline"))
+                     and newsmatch.published_at(e.get("published")) == news[2]), None)
+        f["recent_news"] = {"headline": head, "deal": news[0], "reported_by": news[1],
+                            "when": news[2].strftime("%B %Y")}
+    return f
+
+
+def _clause(text, limit=26):
+    """A description cut to a readable clause: whole words, no trailing punctuation."""
+    t = re.split(r"(?<=[.!?])\s", " ".join(str(text or "").split()))[0].rstrip(" .!?,;:")
+    words = t.split()
+    if len(words) > limit:
+        t = " ".join(words[:limit]).rstrip(" ,;:")
+    return t
+
+
+def tvf_fit_fallback(facts):
+    """The paragraph when no model writes one: what they say about themselves, or their work, and why it
+    matches. Plain on purpose -- it says only what the facts say."""
+    own = facts.get("in_their_own_words") or {}
+    work = facts.get("their_work") or []
+    desc = own.get("site_description") or own.get("about_page")
+    if desc and len(_clause(desc).split()) >= 6:
+        return ("Your own site puts it simply: “%s”. That is close to how we think about our own work, and "
+                "rare to find." % _clause(desc))
+    if len(work) > 1:
+        return ("From %s to %s, your work carries the kind of craft that travels, and that is exactly what we "
+                "look for in a partner." % (work[0], work[1]))
+    if work:
+        return ("%s carries the kind of craft that travels, and that is exactly what we look for in a partner."
+                % work[0])
+    if facts.get("genres"):
+        return ("The %s at the heart of your work is the same ground our own series stand on." %
+                " and ".join(facts["genres"]))
+    return "Your work is exactly the kind of storytelling we look for in a partner, and rare to find."
+
+
+def _their_city(meta):
+    place = " ".join(str(x) for x in ((meta or {}).get("hq_city"), (meta or {}).get("hq_state")) if x)
+    if _LA.search(place):
+        return " in LA"
+    if _NY.search(place):
+        return " in New York"
+    return ""
+
+
+def tvf_partnership_context(cfg, company, meta, seed, now, generator, person=None):
+    """The fields the partnership templates use, and the paragraph a model wrote, if any."""
+    angle = tvf_angle(meta, company)
+    angles = cfg.get("angles") or {}
+    copy = angles.get(angle) or angles.get("general") or {}
+    facts = tvf_facts(company, meta, angle, now, writing_to=person)
+    wrote = None
+    if generator is not None:
+        try:
+            wrote = generator(facts, seed)
+        except Exception:                        # a model must never fail a draft run
+            wrote = None
+    paragraph = (wrote or {}).get("paragraph") or tvf_fit_fallback(facts)
+    opener = variant("%s|which" % (seed or company), ["caught my attention.", "drew me in."])
+    return {
+        "angle": angle,
+        "angle_line": copy.get("intro_line") or "",
+        "partnership": (copy.get("partnership") or "").replace("{{company}}", company),
+        "theme": (wrote or {}).get("theme") or copy.get("theme") or "Stories Built to Travel",
+        "hook": "Which is why %s %s %s" % (company, opener, paragraph),
+        "generated_hook": (wrote or {}).get("paragraph") or "",
+        "their_city": _their_city(meta),
+    }
+
+
 # -------------------------------------------------------- greeting, template
 def greeting_for(full_name, email, company, fallback=None):
     """A person -> first name. Anything else -> the segment's fallback. The
@@ -430,26 +592,33 @@ def greeting_for(full_name, email, company, fallback=None):
         fallback or "{{company}} team").replace("{{company}}", company)
 
 
-def pick_greeting(cname, email, company, meta, cfg, source=None):
-    """Who the email is to, in this order:
+def greeting_person(cname, email, company, meta, source=None):
+    """The first name of the person the email goes to, or None. In this order:
       1. the contact's own first name -- tools/contacts.py decides whether the
          name is a person and whether the address is theirs ("Hi Becky" for
          Becky Donahue at becky@, not "Hi team at Taste In Motion, Inc.")
       2. the host the engine found (high/medium confidence only)
       3. a first name the mailbox itself carries (nina@ is Nina)
-      4. the segment's fallback. Never a show name."""
+    Never a show name."""
     import contacts
     host = (meta or {}).get("host") or {}
     return (contacts.first_name_for(cname, email, company, source, mailbox_fallback=False)
             or (host.get("first_name") if host.get("confidence") in ("high", "medium") else None)
-            or contacts.first_name_for(None, email, company, source)
+            or contacts.first_name_for(None, email, company, source))
+
+
+def pick_greeting(cname, email, company, meta, cfg, source=None):
+    """greeting_person(), else the segment's fallback."""
+    return (greeting_person(cname, email, company, meta, source)
             or greeting_for(None, email, company, cfg.get("greeting_fallback")))
 
 
-def pick_template(cfg, meta):
+def pick_template(cfg, meta, ctx=None):
     """The first template whose `when` conditions match the lead's metadata
-    (e.g. {"metadata.kind": "production_house"}), else the first template with
-    no conditions. Follow-up templates are never openers."""
+    (e.g. {"metadata.kind": "production_house"}) or, for "contact_named", whether
+    the email greets a person by name (the production-house templates differ
+    there, as the owner's samples do); else the first template with no
+    conditions. Follow-up templates are never openers."""
     tpls = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]
     for t in tpls:
         w = t.get("when") or {}
@@ -457,12 +626,15 @@ def pick_template(cfg, meta):
             continue
         ok = True
         for path, want in w.items():
-            parts = path.split(".")
-            if parts and parts[0] == "metadata":
-                parts = parts[1:]
-            v = meta
-            for part in parts:
-                v = v.get(part) if isinstance(v, dict) else None
+            if path == "contact_named":
+                v = (ctx or {}).get("contact_named")
+            else:
+                parts = path.split(".")
+                if parts and parts[0] == "metadata":
+                    parts = parts[1:]
+                v = meta
+                for part in parts:
+                    v = v.get(part) if isinstance(v, dict) else None
             if v != want:
                 ok = False
                 break
@@ -507,16 +679,19 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
     # the company as a person writes it: "Taste In Motion", not "Taste In Motion, Inc."
     company = newsmatch.display_name(company or "")
     meta = meta or {}
+    partnership = cfg.get("hook_style") == "tvf_partnership"
     written = None
-    if generator is not None:
+    if generator is not None and not partnership:
         try:
             written = generator(facts_for(company, meta, now), seed)
         except Exception:                    # a model must never fail a draft run
             written = None
+    person = greeting_person(contact_name, contact_email, company, meta, contact_source)
     ctx = {
         "company": company,
-        "greeting_name": pick_greeting(contact_name, contact_email, company, meta, cfg, contact_source),
-        "hook": written or hook_line(meta, company, cfg, seed, now),
+        "greeting_name": person or greeting_for(None, contact_email, company, cfg.get("greeting_fallback")),
+        "contact_named": bool(person),
+        "hook": written or (None if partnership else hook_line(meta, company, cfg, seed, now)),
         "generated_hook": written or "",
         "latest_work": latest_work(meta, now),
         "clip_math": clip_math(meta),
@@ -526,6 +701,8 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "postal_address": sender.get("postal_address", "") or "",
         "opener_subject": (opener_subject or "").strip(),
     }
+    if partnership:
+        ctx.update(tvf_partnership_context(cfg, company, meta, seed, now, generator, person))
     ctx["footer"] = render(footer_text(cfg), ctx)
     return ctx
 

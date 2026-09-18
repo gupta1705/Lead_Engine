@@ -35,6 +35,14 @@ It sets nothing else. Headcount, genre and revenue are not reliably legible
 from a homepage, and a plausible guess in those fields is worse than a blank:
 04b marks blanks as unverified, so a human can see what still needs checking.
 
+IN THEIR OWN WORDS (2026-09-18). The owner's outreach template has a paragraph
+about what makes each company worth writing to ("Which is why Tonko House drew
+me in..."). It is written from what the company says about itself: every read
+keeps the home page's title and description and the first real paragraphs of
+its About page under metadata.site_about. --about reads just that, for leads
+that have a website and no site_about yet, shortlisted first, and writes
+nothing else: no contacts, no scores.
+
 ROUTES IN BESIDES EMAIL (2026-09-17). The owner's review: "Contact details
 missing in each lead". A site that publishes no address usually still has a
 way in -- a phone number, a contact page with a form, an Instagram. Every read
@@ -85,6 +93,17 @@ CANDIDATE_PATHS = ["/", "/contact", "/contact-us", "/about", "/about-us",
 
 LINK_HINTS = re.compile(r"contact|about|team|people|connect|work with", re.I)
 CONTACT_PATH_RE = re.compile(r"contact|connect|reach|get-in-touch|enquir|inquir", re.I)
+ABOUT_PATH_RE = re.compile(r"about|story|who-we-are|mission|company|studio|philosophy", re.I)
+ABOUT_PATHS = ["/", "/about", "/about-us", "/our-story", "/who-we-are", "/story", "/company", "/studio"]
+META_DESC_RES = [re.compile(r"""<meta\b[^>]*\b(?:name|property)\s*=\s*["'](?:description|og:description)["'][^>]*"""
+                            r"""\bcontent\s*=\s*["']([^"']{20,500})["']""", re.I),
+                 re.compile(r"""<meta\b[^>]*\bcontent\s*=\s*["']([^"']{20,500})["'][^>]*"""
+                            r"""\b(?:name|property)\s*=\s*["'](?:description|og:description)["']""", re.I)]
+# boilerplate that is not a company describing itself
+ABOUT_NOISE_RE = re.compile(r"cookie|javascript|browser|subscribe|newsletter|sign up|log ?in|privacy|terms of|"
+                            r"all rights reserved|copyright|\u00a9|click here|skip to|loading|404|page not found|"
+                            r"one moment|just a moment|checking your|attention required|access denied|forbidden|"
+                            r"under construction|coming soon|site is not available|verify you are human", re.I)
 SOCIAL_RE = re.compile(r"^https?://(?:www\.|m\.)?(instagram\.com|facebook\.com|x\.com|twitter\.com|tiktok\.com|"
                        r"vimeo\.com|youtube\.com)/((?:channel/|c/|user/)?@?[A-Za-z0-9_.\-]+)/?(?:[?#].*)?$", re.I)
 SOCIAL_SKIP = {"share", "sharer", "sharer.php", "intent", "home", "login", "signup", "explore", "watch", "embed",
@@ -403,12 +422,44 @@ LEADERSHIP_RE = re.compile(
     r"managing director|executive producer|head of)\b", re.I)
 
 
-def scrape_site(domain, company=None):
-    """Return findings for one domain, honouring robots.txt throughout."""
+def _clean_text(fragment):
+    t = html_lib.unescape(re.sub(r"<[^>]+>", " ", fragment or ""))
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def read_about(page, path, about):
+    """Fill `about` with what the page says the company is: the title and description of the first page
+    that has them, and on an about-style page its first real paragraphs."""
+    if not about.get("title"):
+        m = re.search(r"(?is)<title[^>]*>(.*?)</title>", page)
+        t = _clean_text(m.group(1)) if m else ""
+        if t and not ABOUT_NOISE_RE.search(t):
+            about["title"] = t[:160]
+    if not about.get("description"):
+        for rx in META_DESC_RES:
+            m = rx.search(page)
+            d = _clean_text(m.group(1)) if m else ""
+            if len(d.split()) >= 5 and not ABOUT_NOISE_RE.search(d):
+                about["description"] = d[:400]
+                break
+    if not about.get("about") and (path != "/" and ABOUT_PATH_RE.search(path)):
+        body = CODE_BLOCK_RE.sub(" ", page)
+        paras = [_clean_text(x) for x in re.findall(r"(?is)<p\b[^>]*>(.*?)</p>", body)]
+        paras = [x for x in paras if len(x.split()) >= 12 and not ABOUT_NOISE_RE.search(x)
+                 and not EMAIL_RE.search(x) and "http" not in x.lower()]
+        if paras:
+            about["about"] = " ".join(paras[:2])[:700]
+            about["page"] = path
+
+
+def scrape_site(domain, company=None, paths=None, max_pages=None, about_only=False):
+    """Return findings for one domain, honouring robots.txt throughout. With about_only, only what the
+    company says about itself is read, from the home page and its about-style pages."""
     out = {"pages": 0, "emails": [], "invitation": None, "blocked": None,
            "error": None, "team_count": 0, "team_page": None,
            "team_leadership": False, "genre_terms": set(), "platform_claim": None,
-           "phones": [], "contact_page": None, "contact_form": False, "socials": {}}
+           "phones": [], "contact_page": None, "contact_form": False, "socials": {},
+           "about": {}}
 
     rp, err = robots_for(domain)
     if rp is None:
@@ -417,11 +468,12 @@ def scrape_site(domain, company=None):
 
     base = "https://%s" % domain
     tried, queue = set(), []
-    for p in CANDIDATE_PATHS:
+    for p in (paths or CANDIDATE_PATHS):
         queue.append(urljoin(base, p))
+    limit = max_pages or MAX_PAGES_PER_SITE
 
     seen_emails = {}
-    while queue and out["pages"] < MAX_PAGES_PER_SITE:
+    while queue and out["pages"] < limit:
         url = queue.pop(0)
         if url in tried:
             continue
@@ -447,6 +499,16 @@ def scrape_site(domain, company=None):
         if not html:
             continue
         out["pages"] += 1
+        read_about(html, path, out["about"])
+        if about_only:
+            if out["about"].get("about"):
+                break                         # the home page's words and an about page: enough
+            for href in re.findall(r'href=["\']([^"\']+)["\']', html)[:300]:
+                nxt = urljoin(url, href)
+                if (urlparse(nxt).netloc.replace("www.", "") == domain and ABOUT_PATH_RE.search(urlparse(nxt).path)
+                        and nxt not in tried and nxt not in queue):
+                    queue.insert(0, nxt)
+            continue
 
         page_text = page_text_of(html)
         if out["invitation"] is None:
@@ -570,6 +632,55 @@ def write_content_signals(cur, eid, found):
             "update entities set metadata = metadata ||"
             " jsonb_build_object('site_platform_evidence', to_jsonb(%s::text))"
             " where id = %s", (claim, eid))
+
+
+def write_about(cur, eid, found):
+    """What the company says it is (see read_about), stamped so it is read once."""
+    import datetime as dt
+    import json as _json
+    about = dict(found.get("about") or {})
+    about["read_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    if found.get("blocked"):
+        about["blocked"] = found["blocked"]
+    cur.execute("update entities set metadata = metadata || jsonb_build_object('site_about', %s::jsonb)"
+                " where id = %s", (_json.dumps(about), eid))
+
+
+def about_pass(db, limit, workers, dry_run=False):
+    """--about: read what each company says about itself, and nothing else."""
+    rows = db.run(lambda cur: (cur.execute("""
+        select e.id, e.name, e.domain from entities e join segments s on s.id = e.segment_id
+        where s.slug = %s and e.domain is not null and not (e.metadata ? 'site_about')
+          and e.status in ('shortlisted', 'discovered', 'enriched', 'scored', 'ready_for_review')
+        order by (e.status = 'shortlisted') desc, e.fit_score desc nulls last, e.name
+        limit %s""", (SEGMENT, limit)), cur.fetchall())[1])
+    if not rows:
+        log("nothing to read -- every lead with a website has its own words on record")
+        return 0
+    log("reading what %d compan(ies) say about themselves%s\n" % (len(rows), "  [DRY RUN]" if dry_run else ""))
+
+    def read_one(t):
+        eid, name, domain = t
+        try:
+            if not has_mx(domain):
+                return t, {"about": {}, "blocked": "the domain does not resolve"}
+            return t, scrape_site(domain, name, paths=ABOUT_PATHS, max_pages=3, about_only=True)
+        except Exception as exc:                       # never let one site kill the run
+            return t, {"about": {}, "error": type(exc).__name__}
+
+    got = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        for (eid, name, domain), found in pool.map(read_one, rows):
+            a = found.get("about") or {}
+            has = bool(a.get("description") or a.get("about"))
+            got += has
+            log("  %-34s %-28s %s" % (name[:34], domain[:28], ("about page + description" if a.get("about") and
+                a.get("description") else "about page" if a.get("about") else "description" if has else
+                (found.get("blocked") or found.get("error") or "nothing usable"))))
+            if not dry_run and not found.get("error"):
+                db.run(lambda cur, _e=eid, _f=found: write_about(cur, _e, _f))
+    log("\n%d of %d have their own words on record%s" % (got, len(rows), "  [DRY RUN]" if dry_run else ""))
+    return 0
 
 
 def write_routes(cur, eid, found):
@@ -709,10 +820,21 @@ def main():
                          "companies with no contact yet, which structurally "
                          "excluded the 243 AICP rows -- the best-contactable "
                          "part of the pool -- from ever being scored.")
+    ap.add_argument("--about", action="store_true",
+                    help="read only what each company says about itself (title, description, about page) "
+                         "for leads with a website and none on record, shortlisted first; writes nothing else")
     ap.add_argument("--rejudge-claims", action="store_true",
                     help="no network: withdraw distribution credit whose recorded platform claim is page "
                          "code (CSS, JSON) rather than a sentence, and re-score those rows")
     args = ap.parse_args()
+
+    if args.about:
+        from dbconn import Db
+        db = Db()
+        try:
+            return about_pass(db, args.limit, args.workers, args.dry_run)
+        finally:
+            db.close()
 
     if args.rejudge_claims:
         from dbconn import Db
@@ -851,6 +973,8 @@ def main():
                         write_size(cur, _e, _f)
                         write_content_signals(cur, _e, _f)
                         write_routes(cur, _e, _f)
+                        if _f.get("about"):
+                            write_about(cur, _e, _f)
                         if _f["invitation"]:
                             cur.execute(
                                 "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
@@ -915,6 +1039,8 @@ def main():
                 write_size(cur, _e, _f)
                 write_content_signals(cur, _e, _f)
                 write_routes(cur, _e, _f)
+                if _f.get("about"):
+                    write_about(cur, _e, _f)
                 cur.execute("""update entities
                                set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
                                    status = case when status = 'discovered' then 'enriched' else status end

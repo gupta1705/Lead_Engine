@@ -151,10 +151,11 @@ changes, all agreed:
   without a person-first flag render exactly as before.
 - **No greeting ever uses a show name.** `greeting_for` greets by first name
   only when the contact reads as a person; otherwise the segment's
-  `greeting_fallback` ("there"). The TVF segment says "{{company}} team". Since
-  2026-09-17 the contact's name goes through `tools/contacts.py` first: a
-  listed person at their own address, or against a shared inbox, is greeted by
-  first name.
+  `greeting_fallback` ("there"). The TVF segment follows the owner's template
+  (2026-09-18): "Hello <first name>, I trust you are well." or, with nobody
+  named, "Hello,". Since 2026-09-17 the contact's name goes through
+  `tools/contacts.py` first: a listed person at their own address, or against a
+  shared inbox, is greeted by first name.
 - **The rules are a regression table.** `python tools/test_personname.py`
   holds every case the live pool and a hostile review (2026-09-10) produced:
   "Dr. Phil", glued "Dr.Thema", initials, co-host pairs, sponsors behind "by",

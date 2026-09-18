@@ -191,6 +191,84 @@ def main():
         bad += not ok
         print("%s  %-48s -> %s" % ("ok  " if ok else "FAIL", label, body.replace("\n", " ")[:80]))
 
+    print("\n-- production houses: the owner's template (samples of 2026-09-18), from the real config")
+    import json
+    import llm
+    real = json.loads((Path(__file__).resolve().parent.parent / "config" / "segment.us-production-houses.json")
+                      .read_text(encoding="utf-8"))["outreach"]
+    real = dict(real, sender=dict(real["sender"], postal_address=ADDR))
+    taste = {"site_about": {"description": "Taste is a tabletop production company making food and beverage films."},
+             "aicp_detail": {"company_type": "Tabletop Commercial Production Company"},
+             "why_fit": "INTERNAL: arguably the most AI-relevant craft on the list", "hq_city": "Los Angeles"}
+    toons = {"aicp_detail": {"company_type": "Animation Studio"},
+             "site_about": {"description": "We make hand-drawn animated series for kids and families."}}
+
+    def email(company, meta, name, addr, gen=None):
+        ctx = dr.build_context(real, company, meta, name, addr, seed="x", now=NOW, generator=gen)
+        tpl = dr.pick_template(real, meta, ctx)
+        return dr.render_message(tpl, ctx)
+
+    s1, b1 = email("Taste In Motion, Inc.", taste, "Becky Donahue", "becky@tasteinmotion.com")
+    s2, b2 = email("Myriad Pictures", {}, None, "info@myriadpictures.com")
+    s3, b3 = email("Toon Works", toons, None, "hello@toonworks.com")
+    written = lambda facts, seed: {"theme": "Food Stories That Travel",
+                                   "paragraph": "A tabletop studio built around food and beverage films is rare. "
+                                                "That is exactly how we think."}
+    s4, b4 = email("Taste In Motion, Inc.", taste, "Becky Donahue", "becky@tasteinmotion.com", gen=written)
+
+    def boom(facts, seed):
+        raise RuntimeError("model down")
+    s5, b5 = email("Taste In Motion, Inc.", taste, "Becky Donahue", "becky@tasteinmotion.com", gen=boom)
+    checks = [
+        ("a named person: the samples' greeting", b1.startswith("Hello Becky,\n\nI trust you are well.\n\nI am Kartikeya,"
+                                                               " and I lead Business Development and IP Strategy at The "
+                                                               "Viral Fever (TVF), one of India's leading"), True),
+        ("a named person: the samples' subject", s1.startswith("From TVF in India — On "), True),
+        ("four paragraphs, then the sign-off", b1.split("\n\nWarm regards,")[0].count("\n\n"), 5),
+        ("paragraph two is about them", "\n\nWhich is why Taste In Motion caught my attention." in b1
+         or "\n\nWhich is why Taste In Motion drew me in." in b1, True),
+        ("the owner's sign-off, then the address and the way out",
+         "Warm regards,\nKartikeya\nBusiness Development and IP Strategy\n\n" + ADDR in b1, True),
+        ("their city in the ask", "work around your schedule in LA." in b1, True),
+        ("the research note never reaches the email", "INTERNAL" in b1 + b4 + b5, False),
+        ("nobody named: the samples' plain greeting", b2.startswith("Hello,\n\nI am Kartikeya, and I handle Business "
+                                                                    "Development and IP Strategy at The Viral Fever (TVF, "
+                                                                    "India)"), True),
+        ("nobody named: the samples' subject and close", (s2.startswith("On "),
+                                                         "Either way, I would love to hear from you." in b2), (True, True)),
+        ("an animation studio gets the animation lane", ("extending it into animation" in b3, "kids and family" in b3),
+         (True, True)),
+        ("a written paragraph and theme are used", ("A tabletop studio built around food" in b4,
+                                                    s4 == "From TVF in India — On Food Stories That Travel"), (True, True)),
+        ("a model that fails leaves the plain paragraph", "Which is why Taste In Motion" in b5 and "{{" not in b5, True),
+        ("no placeholder left anywhere", "{{" in s1 + b1 + s2 + b2 + s3 + b3 + s4 + b4, False),
+    ]
+    tonko, tonko_answer = llm.PARTNER_EXAMPLES[0]
+    edit = lambda **kw: dict(tonko_answer, **kw)
+    checks += [
+        ("the owner's own samples pass the model checks",
+         [llm.check_partner(a, f)[1] for f, a in llm.PARTNER_EXAMPLES], [None, None]),
+        ("a name not in the facts is refused", llm.check_partner(edit(paragraph=tonko_answer["paragraph"].replace(
+            "after Pixar", "after Pixar and DreamWorks")), tonko)[1], "names 'DreamWorks', which is not in the facts"),
+        ("a number not in the facts is refused", (llm.check_partner(edit(paragraph="Across 12 films since Pixar, you "
+                                                  "have made craft carry emotion, and it is rare. That is exactly how we "
+                                                  "think about our own work."), tonko)[1] or "").startswith("numbers"),
+         True),
+        ("the next paragraph's pitch is refused", llm.check_partner(edit(paragraph=tonko_answer["paragraph"] +
+                                                  " It aligns with our co-production plans."), tonko)[1] is not None, True),
+        ("the person written to is never named", llm.check_partner(edit(paragraph="What Robert built after Pixar, "
+                                                  "from The Dam Keeper onward, is rare and quietly extraordinary, and "
+                                                  "it moves audiences of every age. That is exactly how we think."),
+                                                  dict(tonko, writing_to="Robert"))[1],
+         "names the person it is written to"),
+        ("a theme that names someone falls back", llm.check_partner(edit(theme="Pixar Roots, Indian Stories"),
+                                                                    tonko)[0][0], None),
+    ]
+    for label, got, want in checks:
+        ok = got == want
+        bad += not ok
+        print("%s  %-52s -> %r" % ("ok  " if ok else "FAIL", label, got))
+
     print("\n-- a rendered email has no placeholder left in it")
     cfg = {"sender": GOOD_SENDER, "hook_style": "clipping", "greeting_fallback": "there",
            "neutral_hook": "We map shows with a back catalogue and no short-form.",

@@ -230,10 +230,18 @@ is that what you approve is what goes out, word for word.
 Notice what is personal in it. The greeting is the first name of the person the
 email goes to, never the show's or the company's name. In LCX Clipping the
 opening sentence is their own numbers, and the offer names their actual most
-recent episode. For production houses it is a trade-press deal about them from
-the last year, or the kind of work their own website describes. None of that
-was invented; all of it came from the evidence on the lead. Internal research
-notes never go into an email.
+recent episode. None of that was invented; all of it came from the evidence on
+the lead. Internal research notes never go into an email.
+
+Production-house emails follow the owner's template, in four paragraphs: who
+Kartikeya is and what TVF makes; which is why this company caught our attention;
+the partnership and why it fits; a short call. They are signed "Warm regards,
+Kartikeya, Business Development and IP Strategy". The wording for the company's
+lane (animation, documentary, digital-first, drama or general) is the owner's
+own. The second paragraph is written from what the company says about itself
+on its website, its work and its founders, and it never names anything that is
+not on record. With a named person the email opens "Hello Becky, I trust you
+are well."; with none, "Hello,".
 
 Some drafts carry a **Written** mark: a model wrote the opening sentence from
 that same evidence and nothing else, with every number in it checked against
@@ -493,7 +501,7 @@ every other way in it found (a phone number, the contact page, social profiles)
 and what it already tried. **Find contacts on sites** reads the website of every
 lead without a usable address once, shortlisted leads included.
 
-**"The greeting says 'Hi there' or 'Hi … team'."** That means no person could be
+**"The greeting says 'Hi there' or just 'Hello,'."** That means no person could be
 named for the address the email goes to, and the engine will not guess. When the
 lead lists a person at their own address, or a person against a shared inbox
 like info@, the greeting uses their first name. "Hi there" is correct behaviour;

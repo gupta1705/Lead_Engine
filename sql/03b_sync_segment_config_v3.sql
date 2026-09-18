@@ -357,25 +357,73 @@ set config = '{
   },
   "outreach": {
     "sender": {
-      "name": "SET_ME e.g. Arunabh Kumar",
-      "title": "Business Development, The Viral Fever",
+      "name": "Kartikeya",
+      "title": "Business Development and IP Strategy",
       "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
-      "guidance": "sender.name and postal_address MUST be set before the first send. The Gmail address itself comes from GMAIL_SENDER_ADDRESS in .env, never from config."
+      "guidance": "Set by the owner 2026-09-18 with the outreach template. postal_address MUST be set before the first send (approval refuses a draft that still says SET_ME). The Gmail address itself comes from GMAIL_SENDER_ADDRESS in .env, never from config."
     },
     "daily_send_cap": 20,
     "greeting_fallback": "{{company}} team",
+    "hook_style": "tvf_partnership",
     "templates": [
       {
-        "key": "copro_intro_v1",
-        "subject": "Co-production idea: {{company}} x The Viral Fever",
-        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run business development at The Viral Fever (TVF), one of India''s largest independent studios. We have around 40M subscribers across platforms and are best known for premium comedy and slice-of-life series like Panchayat, Kota Factory and Pitchers.\n\nWe''re looking for a small number of US production partners to adapt proven TVF originals for American audiences, and to bring the right US formats to India. I think there''s a genuinely good fit here.\n\nWould a 20-minute call be worth it? I''m happy to send a two-page format deck first.\n\n{{footer}}",
-        "guidance": "The default first-touch. It opens with {{hook}}: one sentence about them from evidence a person can check -- a deal in the trade press that is about this company and under a year old, or the genres their own site describes -- and never the internal research note (why_fit); with neither, the neutral line. Greeting: the listed person''s first name when the address is theirs or a shared inbox they are listed against, else a first name the mailbox carries, else greeting_fallback. {{company}} drops the legal form (Inc., LLC). A human reads every draft before approval; see tools/draft_render.py. REWRITTEN 2026-09-17 after the owner''s review of the drafts."
+        "key": "tvf_partner_named_v2",
+        "when": {
+          "contact_named": true
+        },
+        "subject": "From TVF in India — On {{theme}}",
+        "body": "Hello {{greeting_name}},\n\nI trust you are well.\n\nI am {{sender_name}}, and I lead {{sender_title}} at The Viral Fever (TVF), one of India''s leading digital-native content studios. We are best known for series such as Panchayat, Sapne vs. Everyone and Aspirants, and six of our titles rank among India''s ten highest-rated shows on IMDb. {{angle_line}}\n\n{{hook}}\n\n{{partnership}}\n\nWould you have time for a short call in the coming weeks to explore whether there is a fit? I am based in Mumbai and would gladly work around your schedule{{their_city}}.\n\n{{footer}}",
+        "guidance": "The owner''s outreach template (samples of 2026-09-18). Four paragraphs: who we are and what we make; which is why this company caught our attention; the partnership and why it fits; a short call. {{angle_line}} and {{partnership}} are the owner''s sentences for the company''s lane, from outreach.angles. {{hook}} is \"Which is why <company> caught my attention.\" and a paragraph about the company written from what it says about itself (generated_paragraph; the plain paragraph in tools/draft_render.py when no model writes one). {{theme}} is the subject''s theme. A human reads every draft before approval. This one when the email greets a named person (samples 5 and 6)."
+      },
+      {
+        "key": "tvf_partner_v2",
+        "subject": "On {{theme}}",
+        "body": "Hello,\n\nI am {{sender_name}}, and I handle {{sender_title}} at The Viral Fever (TVF, India), one of India''s largest digital-native studios. Of the 11 Indian shows on the IMDb Global 250 list, 7 are ours. {{angle_line}}\n\n{{hook}}\n\n{{partnership}}\n\nWould you have time for a short call in the coming weeks? Either way, I would love to hear from you.\n\n{{footer}}",
+        "guidance": "The owner''s outreach template (samples of 2026-09-18). Four paragraphs: who we are and what we make; which is why this company caught our attention; the partnership and why it fits; a short call. {{angle_line}} and {{partnership}} are the owner''s sentences for the company''s lane, from outreach.angles. {{hook}} is \"Which is why <company> caught my attention.\" and a paragraph about the company written from what it says about itself (generated_paragraph; the plain paragraph in tools/draft_render.py when no model writes one). {{theme}} is the subject''s theme. A human reads every draft before approval. This one when no person is named (samples 1 to 4)."
       }
     ],
+    "angles": {
+      "guidance": "The owner''s own sentences for each lane a production company works in, taken from the samples of 2026-09-18. tools/draft_render.tvf_angle() picks the lane from what the company says about itself and what the engine recorded: animation, then documentary and impact work (conscience), then digital-first (digital), then scripted drama and genre (drama), else general. intro_line ends the first paragraph, partnership is the third, theme is the subject when no model writes one.",
+      "general": {
+        "intro_line": "Much of our work draws its strength from telling deeply local, human stories with enough craft to travel far beyond India.",
+        "partnership": "That shared instinct is why I wanted to reach out. India is one of the world''s richest and least-tapped sources of stories, talent and IP, and I believe there is real potential in how a house like {{company}} and a studio like ours might work together, whether through co-production, international financing, or developing series and films designed to cross borders from the start.",
+        "theme": "Stories Built to Travel"
+      },
+      "animation": {
+        "intro_line": "Storytelling has always been the core of what we do, and we are now extending it into animation, an area we have been building toward deliberately and are keen to grow with the right partners.",
+        "partnership": "Part of this is a deliberate move into kids and family content built for a global audience, drawing on Indian stories and characters with the potential to travel worldwide. I believe there is real potential in how our storytelling and your artistry might come together, whether co-developing original films and series, or building new IP that reaches audiences of every age across our markets.",
+        "theme": "Bringing Our Stories to Animation"
+      },
+      "conscience": {
+        "intro_line": "Much of our best work comes from a single instinct: giving honest, often overlooked lives the dignity of being told well, and telling them with enough craft to travel.",
+        "partnership": "That shared instinct is why I wanted to reach out. India holds an extraordinary depth of underrepresented and untold stories, and very few have reached a global audience with the care they deserve. I believe there is real potential in how our two companies might work together, whether co-producing character-driven film and series, or bringing these kinds of stories across our markets.",
+        "theme": "Storytelling With a Conscience"
+      },
+      "digital": {
+        "intro_line": "We built long-form scripted storytelling on YouTube in India before the traditional system took us seriously, and grew from there into series, formats and film.",
+        "partnership": "That shared belief is why I wanted to reach out. India is one of the richest and least-tapped sources of stories, talent and IP anywhere, and I believe there is real potential in how an indie studio like {{company}} and a studio like ours might work together, whether through co-financing, co-production, or developing series designed to travel. This is precisely the kind of non-standard partnership we are built to lead.",
+        "theme": "Building Outside the Traditional System"
+      },
+      "drama": {
+        "intro_line": "Our work has always been built on telling deeply local, human stories with a craft that lets them travel far beyond India.",
+        "partnership": "That shared belief is why I wanted to reach out. India is one of the world''s richest and least-tapped sources of exactly these stories, in epics, thrillers, grounded fantasy and character-driven drama, and I believe there is real potential in how a studio like ours and {{company}} might work together, whether through co-production, adaptation, or developing high-concept stories designed to cross borders from the start.",
+        "theme": "Stories That Transcend Borders"
+      }
+    },
+    "generated_paragraph": {
+      "enabled": true,
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "min_words": 25,
+      "max_words": 75,
+      "max_calls_per_run": 200,
+      "requests_per_minute": 3,
+      "guidance": "The one paragraph of the owner''s template no fixed text can write: what makes this company worth writing to, and why that matches how TVF thinks. Written by a model from tools/draft_render.tvf_facts(): what the company says about itself on its own site (title, description, about page), its named work, its founders, a dated headline about it, and its lane; nothing else, and nothing about TVF, which the model otherwise borrowed to describe the company. Every name, title, place and number it writes must be in those facts, and so must every quoted phrase; no TVF claims, links, sales or flattery words, nothing about co-production or financing (the next paragraph says that); 25 to 75 words; the subject theme may not name anyone. A rejected answer gets one retry, told why. Anything still failing, a lead with nothing of its own on record, or no GROQ_API_KEY: the plain paragraph (draft_render.tvf_fit_fallback). Three requests a minute keeps inside the free plan''s 8,000 tokens a minute. The paragraph is stored on the outreach row, so what a person approved is what is sent. See tools/llm.py."
+    },
     "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
-      "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+      "guidance": "The owner''s sign-off (2026-09-18): Warm regards, Kartikeya, Business Development and IP Strategy. Under it, the postal address and the one-line way out that commercial email must carry and the footer check requires. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}. Templates end with {{footer}}; see tools/draft_render.py."
     }
   }
 }'::jsonb
