@@ -318,8 +318,9 @@ def main():
           for p in (fox.replace("in December 2025", "this December"), fox)], [False, True]),
         ("relative time words are refused, 'just as' is not",
          [bool(llm.RELATIVE_DATE.search(s)) for s in ("you recently signed", "was just placed at #4", "your recent "
-          "first-look deal", "reported in December 2025", "your most recent film", "we hold just as firmly")],
-         [True, True, True, False, False, False]),
+          "first-look deal", "Bronson Canyon Pictures' recent first-look deal", "reported in December 2025",
+          "your most recent film", "we hold just as firmly")],
+         [True, True, True, True, False, False, False]),
         ("the company named over and over is refused", llm.check_partner(
             {"theme": "Stories", "paragraph": "Ironbound Films, as presented on your site, is the name of your studio, "
                                               "Ironbound Films, and the brand you operate under, Ironbound Films. That "
@@ -345,9 +346,22 @@ def main():
         ("a sentence naming one of their people is not quoted", dr.tvf_fit_fallback(dict(white, people=[
             {"name": "Rick Rosenthal", "role": "Founder"}], in_their_own_words={
             "site_description": "Founded by Rick Rosenthal, a home for emerging filmmakers"}))[:9], "The drama"),
+        ("a page's list of projects is not their description", dr.tvf_facts("Mayan Productions", {"site_about": {
+            "title": "Home Page - Paul Dektor", "description": "Selected Projects Coca-Cola Bets Famous 'Hilltop' "
+            "Jingle Still Has Fizz With Modern Crowds Peter Dinklage and Shirley MacLaine at their very best"}},
+            "general").get("in_their_own_words"), {"site_title": "Home Page - Paul Dektor"}),
         ("their own description is still quoted", dr.tvf_fit_fallback(insignia),
          "Your own site puts it simply: “Insignia Films, a documentary production studio based in New York City”. "
-         "That is close to how we think about our own work, and rare to find."),
+         "That is exactly the kind of company we hoped to find."),
+        ("'how we think' follows something they believe", dr.tvf_fit_fallback({
+            "company": "Hungry Man", "in_their_own_words": {
+                "site_description": "hungryman is an independent production company based in LOS ANGELES, NEW YORK, "
+                                    "AND SÃO PAULO.",
+                "about_page": "hungryman is a global production company with offices in London, New York, Los Angeles "
+                              "and São Paulo. hungryman was founded in 1997 around a pretty simple idea: make great "
+                              "work and everything else will follow. Nearly 30 years later, we're still at it."}}),
+         "Your own site puts it simply: “hungryman was founded in 1997 around a pretty simple idea: make great work "
+         "and everything else will follow”. That is close to how we think about our own work, and rare to find."),
     ]
     for label, got, want in checks:
         ok = got == want

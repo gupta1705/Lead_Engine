@@ -480,7 +480,7 @@ OWN_WORDS = {"tvf", "the", "viral", "fever", "india", "indian", "mumbai", "i", "
 RELATIVE_DATE = re.compile(r"\b(?:(?:this|last|next|earlier this|later this)\s+(?:january|february|march|april|may|"
                            r"june|july|august|september|october|november|december|month|year|week|spring|summer|"
                            r"fall|autumn|winter)|recently|just\s+(?:been\s+)?(?:named|placed|announced|signed|landed|"
-                           r"won|launched|released|extended|renewed)|(?:your|the|a)\s+recent\s+(?:first-look|deal|"
+                           r"won|launched|released|extended|renewed)|recent\s+(?:first-look|deal|"
                            r"extension|announcement|signing|acquisition|launch|win|award|news))\b", re.I)
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 THEME_WORDS = set("""a an the of on to with for and in at by from that who whoever wherever whatever what where

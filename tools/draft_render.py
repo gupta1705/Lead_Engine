@@ -475,6 +475,13 @@ def _same_person(name, first, full):
     return bool(ftoks) and len(toks) > 1 and toks[-1] == ftoks[-1]
 
 
+# A page's list of its projects is not what the company says about itself: "Selected Projects Coca-Cola Bets
+# Famous 'Hilltop' Jingle Still Has Fizz With Modern Crowds Peter Dinklage and Shirley MacLaine at their very
+# best..." was written up as one campaign, Hilltop re-imagined with Dinklage and MacLaine (2026-09-18).
+_LISTING = re.compile(r"\s*(?:(?:selected|featured|recent|latest)\s+(?:projects?|works?|films|spots|commercials)|"
+                      r"portfolio|projects)\b", re.I)
+
+
 def tvf_facts(company, meta, angle, now=None, writing_to=None, writing_to_name=None):
     """What the partnership paragraph may be written from: their own words first. Where they are based is
     left out (the first run turned it into "operating from Fairfield, CT"), and so is the person the email
@@ -489,9 +496,9 @@ def tvf_facts(company, meta, angle, now=None, writing_to=None, writing_to_name=N
         if writing_to_name and writing_to_name.split()[0].lower() != writing_to.lower():
             f["writing_to_full_name"] = writing_to_name
     own = {}
-    if _short(about.get("description"), 400):
+    if _short(about.get("description"), 400) and not _LISTING.match(about.get("description")):
         own["site_description"] = _short(about.get("description"), 400)
-    if _short(about.get("about"), 700):
+    if _short(about.get("about"), 700) and not _LISTING.match(about.get("about")):
         own["about_page"] = _short(about.get("about"), 700)
     if not own and _short(about.get("title"), 140):
         own["site_title"] = _short(about.get("title"), 140)
@@ -561,6 +568,11 @@ _SUBJECT_VERB = re.compile(r"\s*((?:[A-Z][\w.'’&-]*)(?:\s+[A-Z][\w.'’&-]*){0
                            r"founded|co-founded|created|leads|led|joined|brings|spent)\b")
 
 
+_BELIEF = re.compile(r"\b(?:believ|idea|mission|purpose|passion|love|heart|stor(?:y|ies)|storytell|craft|creat|"
+                     r"human|voice|truth|honest|vision|value|dream|imagin|spirit|soul|dedicat|devot|commit|driven|"
+                     r"champion|elevat|inspir|empower|matter|meaning|authentic|joy|curio|fearless)", re.I)
+
+
 def _about_a_person(text, facts):
     """Is the sentence about someone rather than the company? It names one of their people, or it opens
     with a name that is not the company's: "Rick Rosenthal is an award-winning producer and director...",
@@ -595,18 +607,26 @@ def tvf_fit_fallback(facts):
     matches. Plain on purpose -- it says only what the facts say."""
     own = facts.get("in_their_own_words") or {}
     work = facts.get("their_work") or []
-    quote = None
+    quotes = []
     for text in (own.get("site_description"), own.get("about_page")):
-        quote = _whole_clause(text)
-        if quote and _mentions_recipient(quote, facts.get("writing_to"), facts.get("writing_to_full_name")):
-            quote = None                      # "founded by director Elyse Kelly", in an email to Elyse
-        if quote and _about_a_person(quote, facts):
-            quote = None                      # a biography, quoted, reads as the company's belief
-        if quote:
-            break
-    if quote:
+        for sentence in re.split(r"(?<=[.!?])\s+", text or "")[:4]:
+            q = _whole_clause(sentence)
+            if not q or q in quotes:
+                continue
+            if _mentions_recipient(q, facts.get("writing_to"), facts.get("writing_to_full_name")):
+                continue                      # "founded by director Elyse Kelly", in an email to Elyse
+            if _about_a_person(q, facts):
+                continue                      # a biography, quoted, reads as the company's belief
+            quotes.append(q)
+    # "That is close to how we think" has to follow something they believe. After "an independent
+    # production company based in LOS ANGELES, NEW YORK, AND SÃO PAULO" it made no sense, and the
+    # about page had "a pretty simple idea: make great work and everything else will follow" (2026-09-18)
+    belief = next((q for q in quotes if _BELIEF.search(q)), None)
+    if belief:
         return ("Your own site puts it simply: “%s”. That is close to how we think about our own work, and "
-                "rare to find." % quote)
+                "rare to find." % belief)
+    if quotes:
+        return "Your own site puts it simply: “%s”. That is exactly the kind of company we hoped to find." % quotes[0]
     if len(work) > 1:
         return ("From %s to %s, your work carries the kind of craft that travels, and that is exactly what we "
                 "look for in a partner." % (work[0], work[1]))
