@@ -541,6 +541,20 @@ def _clause(text, limit=26):
     return t
 
 
+def _mentions_recipient(text, first, full=None):
+    """Does the text name the person the email is to (as a capitalised word: Matt, Matthew, Wilkinson)?"""
+    if not first:
+        return False
+    f = first.lower()
+    surname = [t.lower().strip(".,") for t in str(full or "").split() if len(t.strip(".,")) > 2][-1:]
+    for tok in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*", text or ""):
+        w = re.sub(r"['’]s$", "", tok).lower()
+        if tok[0].isupper() and (w == f or (len(f) >= 3 and w.startswith(f) and len(w) <= len(f) + 4)
+                                 or (surname and w == surname[0])):
+            return True
+    return False
+
+
 def _whole_clause(text, limit=30):
     """The first sentence when it is short enough to quote whole, else its first clause ending at a comma,
     else None: a quotation is never cut off mid-thought ("...and spark meaningful", 2026-09-18)."""
@@ -562,6 +576,8 @@ def tvf_fit_fallback(facts):
     work = facts.get("their_work") or []
     desc = own.get("site_description") or own.get("about_page")
     quote = _whole_clause(desc)
+    if quote and _mentions_recipient(quote, facts.get("writing_to"), facts.get("writing_to_full_name")):
+        quote = None                          # "founded by director Elyse Kelly", in an email to Elyse
     if quote:
         return ("Your own site puts it simply: “%s”. That is close to how we think about our own work, and "
                 "rare to find." % quote)
