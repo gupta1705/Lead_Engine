@@ -463,7 +463,19 @@ def _title_only(credit):
     return re.split(r"\s*[(\-–—:]", str(credit or ""))[0].strip().strip('"“”') or None
 
 
-def tvf_facts(company, meta, angle, now=None, writing_to=None):
+def _same_person(name, first, full):
+    """Is `name` the person the email is to? Matt is Matthew Wilkinson; a shared surname counts too."""
+    toks = [t.lower().strip(".,") for t in str(name or "").split() if t.strip(".,")]
+    if not toks:
+        return False
+    f = (first or "").lower()
+    if f and (toks[0].startswith(f) or f.startswith(toks[0])):
+        return True
+    ftoks = [t.lower().strip(".,") for t in str(full or "").split() if len(t.strip(".,")) > 2]
+    return bool(ftoks) and len(toks) > 1 and toks[-1] == ftoks[-1]
+
+
+def tvf_facts(company, meta, angle, now=None, writing_to=None, writing_to_name=None):
     """What the partnership paragraph may be written from: their own words first. Where they are based is
     left out (the first run turned it into "operating from Fairfield, CT"), and so is the person the email
     is to, from the list of names (it named Mike Parker in an email to Mike)."""
@@ -474,6 +486,8 @@ def tvf_facts(company, meta, angle, now=None, writing_to=None):
     f = {"company": company, "lane": angle}
     if writing_to:
         f["writing_to"] = writing_to
+        if writing_to_name and writing_to_name.split()[0].lower() != writing_to.lower():
+            f["writing_to_full_name"] = writing_to_name
     own = {}
     if _short(about.get("description"), 400):
         own["site_description"] = _short(about.get("description"), 400)
@@ -497,7 +511,8 @@ def tvf_facts(company, meta, angle, now=None, writing_to=None):
         if name and re.search(r"founder|owner|partner|president", q.get("title") or "", re.I):
             people.append({"name": name, "role": q.get("title")})
     if writing_to:
-        people = [q for q in people if q["name"].split()[0].lower() != writing_to.lower()]
+        # the first run named "Matthew Wilkinson" in an email to Matt (2026-09-18)
+        people = [q for q in people if not _same_person(q["name"], writing_to, writing_to_name)]
     if people:
         f["people"] = list({q["name"]: q for q in people}.values())[:3]
     kind = (meta.get("aicp_detail") or {}).get("company_type")
@@ -526,15 +541,30 @@ def _clause(text, limit=26):
     return t
 
 
+def _whole_clause(text, limit=30):
+    """The first sentence when it is short enough to quote whole, else its first clause ending at a comma,
+    else None: a quotation is never cut off mid-thought ("...and spark meaningful", 2026-09-18)."""
+    first = re.split(r"(?<=[.!?])\s", " ".join(str(text or "").split()))[0].rstrip(" .!?")
+    words = first.split()
+    if 6 <= len(words) <= limit:
+        return first
+    head = " ".join(words[:limit])
+    cut = head.rfind(",")
+    if cut > 0 and len(head[:cut].split()) >= 8:
+        return head[:cut]
+    return None
+
+
 def tvf_fit_fallback(facts):
     """The paragraph when no model writes one: what they say about themselves, or their work, and why it
     matches. Plain on purpose -- it says only what the facts say."""
     own = facts.get("in_their_own_words") or {}
     work = facts.get("their_work") or []
     desc = own.get("site_description") or own.get("about_page")
-    if desc and len(_clause(desc).split()) >= 6:
+    quote = _whole_clause(desc)
+    if quote:
         return ("Your own site puts it simply: “%s”. That is close to how we think about our own work, and "
-                "rare to find." % _clause(desc))
+                "rare to find." % quote)
     if len(work) > 1:
         return ("From %s to %s, your work carries the kind of craft that travels, and that is exactly what we "
                 "look for in a partner." % (work[0], work[1]))
@@ -556,12 +586,12 @@ def _their_city(meta):
     return ""
 
 
-def tvf_partnership_context(cfg, company, meta, seed, now, generator, person=None):
+def tvf_partnership_context(cfg, company, meta, seed, now, generator, person=None, person_name=None):
     """The fields the partnership templates use, and the paragraph a model wrote, if any."""
     angle = tvf_angle(meta, company)
     angles = cfg.get("angles") or {}
     copy = angles.get(angle) or angles.get("general") or {}
-    facts = tvf_facts(company, meta, angle, now, writing_to=person)
+    facts = tvf_facts(company, meta, angle, now, writing_to=person, writing_to_name=person_name)
     wrote = None
     if generator is not None:
         try:
@@ -702,7 +732,9 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "opener_subject": (opener_subject or "").strip(),
     }
     if partnership:
-        ctx.update(tvf_partnership_context(cfg, company, meta, seed, now, generator, person))
+        import contacts
+        ctx.update(tvf_partnership_context(cfg, company, meta, seed, now, generator, person,
+                                           contacts.clean_name(contact_name, contact_email, company) if person else None))
     ctx["footer"] = render(footer_text(cfg), ctx)
     return ctx
 

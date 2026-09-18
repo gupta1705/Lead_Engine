@@ -264,6 +264,29 @@ def main():
         ("a theme that names someone falls back", llm.check_partner(edit(theme="Pixar Roots, Indian Stories"),
                                                                     tonko)[0][0], None),
     ]
+    # first full run (2026-09-18): an email to Matt said "founded by ... Matthew Wilkinson"
+    two_m = {"company": "2M Productions", "in_their_own_words": {"about_page": "founded by Michelle Valdez and "
+             "Matthew Wilkinson; a dance studio that will keep making films"}}
+    two_m_para = {"theme": "Stories Built to Travel",
+                  "paragraph": "You built a dance studio that will keep making films, founded by Michelle Valdez and "
+                               "Matthew Wilkinson, and it is rare to see. That is exactly how we think."}
+    checks += [
+        ("Matt is Matthew Wilkinson: never named", llm.check_partner(two_m_para, dict(
+            two_m, writing_to="Matt", writing_to_full_name="Matthew N. Wilkinson"))[1],
+         "names the person it is written to"),
+        ("'will' and 'dance' are not Will or Dan", [llm.check_partner(two_m_para, dict(two_m, writing_to=w))[1]
+                                                    for w in ("Will", "Dan")], [None, None]),
+        ("the recipient is not in the list of names", [p["name"] for p in dr.tvf_facts(
+            "2M Productions", {"aicp_detail": {"people": [
+                {"first": "Matthew", "last": "Wilkinson", "title": "Founder"},
+                {"first": "Michelle", "last": "Valdez", "title": "Founder"}]}}, "general",
+            writing_to="Matt", writing_to_name="Matthew N. Wilkinson").get("people", [])], ["Michelle Valdez"]),
+        ("a quoted description is never cut mid-thought", dr._whole_clause(
+            "Neon Zoo is an award-winning independent film studio, founded by director Elyse Kelly, known for "
+            "telling captivating stories that resonate deeply with audiences and spark meaningful conversation "
+            "across the world today."), "Neon Zoo is an award-winning independent film studio, founded by director "
+                                        "Elyse Kelly"),
+    ]
     for label, got, want in checks:
         ok = got == want
         bad += not ok

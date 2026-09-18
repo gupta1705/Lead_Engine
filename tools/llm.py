@@ -410,7 +410,8 @@ Age" or "Stories That Transcend Borders". No company or person names in the them
 Hard rules:
 - Use only the facts in the JSON. Every name, title, place, company and number you \
 write must appear in the JSON. Invent nothing.
-- Speak to them as "you" and "your". Never name the person the email is to (writing_to).
+- Speak to them as "you" and "your". Never name the person the email is to (writing_to, \
+writing_to_full_name).
 - Do not mention co-production, financing, partnerships, or what TVF is looking for; the \
 next paragraph of the email does that. Say nothing about TVF's shows, size or audience.
 - Do not mention where they are based unless in_their_own_words makes it part of what \
@@ -561,8 +562,15 @@ def check_partner(raw, facts, min_words=25, max_words=75):
                 if part and part[0].isupper() and _norm_word(part) not in known:
                     return None, "names %r, which is not in the facts" % part
     who = str(facts.get("writing_to") or "").strip().lower()
-    if who and re.search(r"\b%s\b" % re.escape(who), para.lower()):
-        return None, "names the person it is written to"
+    full = [t.lower().strip(".,") for t in str(facts.get("writing_to_full_name") or "").split()
+            if len(t.strip(".,")) > 2]
+    for tok in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’\-]*", para):
+        if not tok[0].isupper():
+            continue                      # a name is capitalised: "will" is not Will, "dance" is not Dan
+        w = _norm_word(tok)
+        if who and (w == who or (len(who) >= 3 and w.startswith(who) and len(w) <= len(who) + 4)) \
+                or (full and w == full[-1]):
+            return None, "names the person it is written to"
     for q in re.findall(r"[“\"]([^”\"]{4,})[”\"]", para):
         flat = " ".join(q.lower().split())
         if not any(flat in " ".join(str(v).lower().split()) for v in _strings(facts)):
