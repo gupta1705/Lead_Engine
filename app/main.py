@@ -435,8 +435,7 @@ def leads(q: str = "", source: str = "", status: str = "open",
 def lead(lead_id: str):
     with cursor() as cur:
         cur.execute(
-            "select e.*, s.slug as segment_slug, s.config as segment_config,"
-            " s.config->'review_checklist' as checklist"
+            "select e.*, s.slug as segment_slug, s.config as segment_config"
             " from entities e join segments s on s.id = e.segment_id"
             " where e.id = %s", (lead_id,))
         row = cur.fetchone()
@@ -504,13 +503,21 @@ def decide(lead_id: str, body: dict = Body(...)):
         cur.execute(
             "update entities set status = %s, status_reason = %s,"
             " status_changed_at = now(), updated_at = now()"
-            " where id = %s returning id, name, status, status_reason",
+            " where id = %s returning id, name, status, status_reason,"
+            " (select s.slug from segments s where s.id = entities.segment_id) as segment,"
+            " (select jsonb_array_length(coalesce(s.config->'outreach'->'templates', '[]'::jsonb)) > 0"
+            "  from segments s where s.id = entities.segment_id) as writes_email",
             (mapping[decision], reason, lead_id))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "no such lead")
         row = dict(row)
         row["id"] = str(row["id"])
+    # the simple flow (owner, 2026-09-19): shortlisting is the last thing a person does before
+    # reading the email, so the email is drafted straight away, off this request (app/scheduler.py)
+    row["drafting"] = bool(row["status"] == "shortlisted" and row.pop("writes_email", False))
+    if row["drafting"]:
+        _scheduler.kick_outreach(row["segment"], "manual")
     return row
 
 
@@ -652,7 +659,9 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(400, "unknown action")
         if not cur.fetchone():
             raise HTTPException(409, "row is not in a state that allows " + action)
-    return {"ok": True}
+    # approved: it is sent now, not when someone next opens a terminal (app/scheduler.py)
+    _scheduler.kick_outreach(segment, "manual")
+    return {"ok": True, "can_send": _can_send(segment)}
 
 
 @app.post("/api/outreach/batch/sample")
@@ -710,7 +719,21 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
                                              bool(pol.generated_among(cur, ok))):
             raise HTTPException(400, "the spot-check sample is too small for this batch")
         batch_id, approved = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
-    return {"batch_id": batch_id, "approved": approved, "skipped": skipped}
+    if approved:
+        _scheduler.kick_outreach(segment, "manual")          # approved means sent: no terminal step
+    return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment)}
+
+
+def _can_send(segment):
+    """Is a mailbox connected for this segment on this server? The page words an approval by it:
+    "sending now" or "sends as soon as a mailbox is connected"."""
+    try:
+        with cursor() as cur:
+            cfg = _policy().outreach_config(cur, segment)
+        return any(mb["enabled"] and _scheduler.mailbox_connected(mb)
+                   for mb in _policy().mailbox_list(cfg, segment))
+    except Exception:
+        return False
 
 
 def _render():
@@ -845,8 +868,9 @@ def _rebuild_drafts(cur, segment, old_cfg, new_cfg, dr):
 @app.get("/api/mailboxes")
 def mailboxes_state(segment: str = Depends(current_segment)):
     """The segment's sending mailboxes: cap for today (warm-up included), sends
-    today, room left. Addresses are the ones recorded on sent email; the
-    credentials themselves live on the laptop and are never shown here."""
+    today, room left, and whether this server can send from each (connected:
+    its address and Gmail token are set here). Addresses are the ones recorded
+    on sent email; the credentials themselves are never shown."""
     import datetime as _dt
     pol = _policy()
     with cursor() as cur:
@@ -862,9 +886,10 @@ def mailboxes_state(segment: str = Depends(current_segment)):
     for st in status:
         row = {k: st.get(k) for k in keep}
         row["first_sent"] = st["first_sent"].isoformat() if st.get("first_sent") else None
+        row["connected"] = bool(st.get("enabled")) and _scheduler.mailbox_connected(st)
         out.append(row)
     return {"segment_cap": int(cfg.get("daily_send_cap", 20)), "rotation": bool(cfg.get("mailboxes")),
-            "mailboxes": out}
+            "mailboxes": out, "can_send": any(r["connected"] for r in out)}
 
 
 # ------------------------------------------------------------------ kpis

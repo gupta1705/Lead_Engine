@@ -129,23 +129,6 @@ values (
       "guidance": "Fires when the newest sign of life -- a headline, a working website -- is more than three years old."
     }
   ],
-  "review_checklist": [
-    {
-      "key": "trouble_is_real",
-      "label": "Is the trouble real and current: the company itself, not one unit of a healthy parent, and not an old story it has recovered from?",
-      "guidance": "Open the story. A layoff at a company that raised last month is a restructure, not distress."
-    },
-    {
-      "key": "worth_having",
-      "label": "Is there something worth having: a product people use, a brand, an audience, IP, or a team TVF would want to keep?",
-      "guidance": "The website, the app''s ratings and the founders'' own posts usually settle it in two minutes."
-    },
-    {
-      "key": "tvf_changes_it",
-      "label": "Would TVF''s content, audience or distribution change its trajectory, or is it small enough that owning it outright is realistic?",
-      "guidance": "Support means TVF''s reach doing something the startup could not buy; acquisition means a price its situation makes small."
-    }
-  ],
   "startup_discovery": {
     "guidance": "tools/discover_startup_news.py. Google News RSS headlines only: the trade publications'' terms forbid crawling their pages, so no article is ever fetched, and a row carries the headline, the publisher and the link for a person to read. Distress queries run India-wide (a headline rarely says where a company is; enrichment places it); funding queries find Mumbai startups that raised a small round in 2021-24, the cohort whose runway has since run out. Windows are quarters, because one search returns at most 100 items. Only publishers listed here count, which keeps foreign startup news out.",
     "distress_months": 24,

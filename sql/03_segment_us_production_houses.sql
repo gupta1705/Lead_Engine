@@ -8,7 +8,8 @@
 -- sums to 115), revenue_above_cap modifier (-10, NOT YET connector-automated
 -- - reviewer-set for now), is_active gate, and a review_checklist array for
 -- the 3 signals free connectors cannot verify (production-company judgment,
--- subtype judgment, independent-ownership judgment).
+-- subtype judgment, independent-ownership judgment). The checklist was removed
+-- on 2026-09-19 (owner: it "serves no point"; the flow is shortlist, approve, send).
 --
 -- v3 (2026-08-20): owner-run rubric weight review (P1/P2 authoring session).
 -- genre_fit 25->15, right_size 15->20, revenue_above_cap max_penalty -10->-20.
@@ -129,23 +130,6 @@ values (
       "input": "metadata.scoring_inputs.activity_signal",
       "exclude_when": "confirmed_dormant",
       "guidance": "Fires ONLY on confirmed dormancy (e.g. no upload or site activity in 12+ months, an explicit closed/discontinued notice). Blank/unknown always passes through. The connector makes a cheap best-effort read from upload recency at discovery time; Layer B enrichment gets a fuller look once it actually visits the site, and can override that initial guess."
-    }
-  ],
-  "review_checklist": [
-    {
-      "key": "is_a_content_production_company",
-      "label": "Is this actually an IP-owning production company, not a service vendor, agency, institution, or an unrelated same-name LLC?",
-      "guidance": "Free sources cannot reliably tell these apart at intake - this is a human judgment call at review (§7.5), not an auto-enforced gate."
-    },
-    {
-      "key": "in_scope_subtype",
-      "label": "Is the subtype actually in scope (commercial/branded, digital/social, film/TV/streaming) and NOT corporate/service video?",
-      "guidance": "Confirm against real site/channel content, not just a keyword match that got it into staging."
-    },
-    {
-      "key": "independent_ownership",
-      "label": "Founder/partner-owned - no studio/network parent, no PE ownership, no large-scale VC backing on record",
-      "guidance": "Check Crunchbase/PitchBook/press where feasible. Free automated sources (YouTube API etc.) cannot verify ownership/cap-table structure - this is a manual check, not a connector-computed signal. Precedent for a judgment-call exception: a single small convertible note (e.g. roughly $500K) from non-marquee sources does not by itself disqualify a candidate."
     }
   ],
   "youtube_discovery_queries": [

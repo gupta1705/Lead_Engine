@@ -706,10 +706,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .next-step svg { flex: none; margin-top: 2px; color: var(--icon-subtle); }
 .sub-h { font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
   color: var(--text-subtle); margin: 16px 0 4px; }
-.question { padding: 8px 0; border-bottom: 1px solid var(--border); }
-.question:last-of-type { border-bottom: 0; }
-.q-head { display: flex; gap: 8px; align-items: flex-start; font-weight: 500; }
-.q-head .lozenge { flex: none; margin-top: 2px; min-width: 56px; justify-content: center; }
 .plain-list { margin: 4px 0 0; padding-left: 18px; font-size: 13px; line-height: 18px; }
 .plain-list li { margin: 2px 0; overflow-wrap: anywhere; }
 .plain-list.gaps li { color: var(--text-subtle); }

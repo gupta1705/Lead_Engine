@@ -192,7 +192,7 @@ MOCK_JS = r"""
       if (d) return json(d);
       const row = FX.leads.find((r) => r.id === m[1]);
       if (!row) return json({ detail: "no such lead" }, 404);
-      return json({ ...row, metadata: { why_fit: row.why_fit, hq_city: row.city, hq_state: row.state }, contacts: [], criteria: [], checklist: [] });
+      return json({ ...row, metadata: { why_fit: row.why_fit, hq_city: row.city, hq_state: row.state }, contacts: [], criteria: [] });
     }
     if (p === "/api/outreach" && method === "GET") {
       const f = q.get("folder") || "drafts";

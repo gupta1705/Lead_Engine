@@ -195,7 +195,7 @@ const post = (path, body) => api(path, { method: "POST",
 
 /* ============================================================== state */
 const state = {
-  route: null, user: null, rubric: [], checklist: [], sources: [], segment: null, segments: [],
+  route: null, user: null, rubric: [], sources: [], segment: null, segments: [],
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD, source: "", has_contact: false },
            cols: {}, token: 0 },
   leads: { filters: { q: "", status: "open", min_score: 0, source: "", has_contact: false, sort: "score" },
@@ -398,7 +398,6 @@ function applySegment(seg) {
     if (opts[2]) { opts[2].value = String(PRIORITY_THRESHOLD); opts[2].textContent = "Priority · " + PRIORITY_THRESHOLD + "+"; }
   });
   state.board.filters.min_score = REVIEW_THRESHOLD;
-  $("#followupsBtn").hidden = !followUpsOn();
   const hidden = new Set(ui.hide_routes || []), apolloPage = ui.search_page === "apollo";
   $$(".side-item[data-route]").forEach((b) => { b.hidden = !routeAllowed(b.dataset.route); });
   // Universal generates leads on its search page, so the sidebar has no second way to the same place
@@ -628,26 +627,19 @@ function renderLegend(ex) {
   return `<details class="legend"><summary>What “found”, “checked, nothing found” and “not checked yet” mean</summary><dl>${(ex.legend || []).map((l) =>
     `<dt><span class="lozenge ${STATE_CLS[l.state] || ""}">${esc(l.label)}</span></dt><dd>${esc(l.meaning)}</dd>`).join("")}</dl></details>`;
 }
-/* The analysis that replaced the tick-box checklist: the segment's review
- * questions answered from the evidence, then strengths, gaps, risks and one
- * next step. */
+/* The analysis: a verdict, one next step, strengths, gaps and risks. There is no
+ * review checklist any more -- the owner, 2026-09-19: it "serves no point"; the
+ * flow is leads shown, shortlisted, approved, sent. */
 const VERDICT_TONE = { strong: "success", promising: "", weak: "warning", unreliable: "warning", hold: "danger" };
-const Q_VERDICT = { yes: ["Yes", "success"], no: ["No", "removed"], unclear: ["Unclear", "moved"] };
 function renderAnalysis(ex) {
   const a = ex.analysis || {}, v = a.verdict || {};
   const list = (items, cls) => items && items.length
     ? `<ul class="plain-list ${cls || ""}">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : `<p class="muted small">None.</p>`;
-  const questions = (a.questions || []).map((q) => {
-    const [label, cls] = Q_VERDICT[q.verdict] || Q_VERDICT.unclear;
-    return `<div class="question"><div class="q-head"><span class="lozenge ${cls}">${label}</span><span>${esc(q.label)}</span></div>
-      ${(q.evidence || []).length ? list(q.evidence) : ""}${(q.gaps || []).length ? list(q.gaps, "gaps") : ""}</div>`;
-  }).join("");
   const risks = (a.risks || []).length
     ? `<ul class="plain-list risks">${a.risks.map((r) => `<li class="risk ${esc(r.level)}">${icon(r.level === "info" ? "info" : "warn", 14)}<span><strong>${esc(r.title)}.</strong> ${esc(r.detail)}</span></li>`).join("")}</ul>`
     : `<p class="muted small">None found.</p>`;
   return `<div class="section-msg ${VERDICT_TONE[v.tone] || ""}" style="margin-bottom:8px">${icon(v.tone === "hold" ? "alert" : v.tone === "strong" ? "checkCircle" : "info", 20)}<div><div class="title">${esc(v.title || "")}</div><div class="text">${esc(v.detail || "")}</div></div></div>
     <div class="next-step">${icon("chevRight", 16)}<div><strong>Next step.</strong> ${esc(a.next_step || "")}</div></div>
-    ${questions ? `<h4 class="sub-h">Review questions, answered from the evidence</h4>${questions}` : ""}
     <div class="analysis-grid"><div><h4 class="sub-h">Strengths</h4>${list(a.strengths)}</div><div><h4 class="sub-h">Gaps</h4>${list(a.gaps)}</div></div>
     <h4 class="sub-h">Risks</h4>${risks}`;
 }
@@ -779,7 +771,7 @@ async function openLead(id, opts) {
           <button class="status-btn ${st.cls.split(" ")[0]}" id="statusBtn" aria-haspopup="true" aria-expanded="false">${esc(st.label)} ${icon("chevDown", 14)}</button>
           <div class="menu" id="statusMenu" hidden>
             <div class="menu-heading">Transition to</div>
-            ${d.status !== "shortlisted" ? `<button class="menu-item" data-decide="shortlist"><span class="lozenge success">Shortlisted</span> Approve for outreach</button>` : ""}
+            ${d.status !== "shortlisted" ? `<button class="menu-item" data-decide="shortlist"><span class="lozenge success">Shortlisted</span> Its email is drafted next</button>` : ""}
             ${d.status !== "rejected" ? `<button class="menu-item" data-decide="reject"><span class="lozenge removed">Rejected</span> Keep out of the pipeline</button>` : ""}
             ${decided ? `<button class="menu-item" data-decide="reset"><span class="lozenge">To review</span> Undo the decision</button>` : ""}
           </div>
@@ -832,7 +824,8 @@ async function decide(id, decision, reason) {
   try {
     const r = await post("/api/leads/" + id + "/decision", { decision, reason: reason || "" });
     const s = leadStatus(r.status);
-    flag(r.name, { desc: "Moved to " + s.label + (decision === "reset" ? " (decision undone)" : "") });
+    flag(r.name, { desc: "Moved to " + s.label + (decision === "reset" ? " (decision undone)" : "")
+      + (r.drafting ? ". Its email is being drafted: it appears in Outreach within minutes, for you to approve." : "") });
     await openLead(id, { quiet: true }); // re-render with the new status; Undo stays reachable
     refreshCurrentView();
     refreshNotifications(true);
@@ -882,6 +875,8 @@ async function loadOutreach() {
   let d;
   try { d = await api("/api/outreach?folder=" + encodeURIComponent(o.folder)); }
   catch (e) { return toast("Could not load outreach: " + e.message, true); }
+  // can an approval go out from here? (a connected mailbox) -- it words what "approve" does
+  api("/api/mailboxes").then((m) => { o.canSend = !!m.can_send; }).catch(() => {});
   if (token !== o.token) return;
   o.rows = d.rows; o.counts = d.counts || {};
   const present = new Set(d.rows.map((r) => r.id));
@@ -904,7 +899,7 @@ async function loadOutreach() {
       <td class="secondary nowrap" title="${esc(fmtDate(r.sent_at || r.created_at))}">${rel(r.sent_at || r.created_at)}</td>
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="7">${o.folder === "drafts"
-        ? "No drafts waiting. Shortlist companies on the board, then press Draft emails."
+        ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
         : "Nothing in this folder yet."}</td></tr>`;
   delegateOpen("#outreachBody", openMessage, ".sel-col");
   $$("#outreachBody [data-sel]").forEach((c) => c.addEventListener("change", () => {
@@ -987,7 +982,8 @@ async function startBatch() {
       o.selected.clear();
       flag("Approved " + r.approved + " draft" + (r.approved === 1 ? "" : "s"), {
         desc: r.skipped.length ? r.skipped.length + " skipped: " + [...new Set(r.skipped.map((x) => x.reason))].join("; ")
-                               : "They're in Approved, ready for the next send.",
+                               : (r.can_send ? "They go out within minutes, inside today's sending limit."
+                                             : "They go out as soon as a mailbox is connected."),
         kind: r.skipped.length ? "info" : "" });
       await loadOutreach();
     } catch (err) { toast(err.message, true); b.classList.remove("loading"); b.disabled = false; }
@@ -1092,7 +1088,7 @@ function openMessage(id) {
         ${isDraft
           ? `<div class="field" style="margin-bottom:12px"><label for="draftSubject">Subject</label><input id="draftSubject" type="text" value="${esc(r.subject || "")}" autofocus></div>
              <div class="field"><label for="draftBody">Body</label><textarea id="draftBody" style="min-height:300px">${esc(r.body || "")}</textarea>
-             <div class="help">Edits are saved when you approve. Approving means a person read exactly this text and stands behind it.</div></div>`
+             <div class="help">Edits are saved when you approve. Approving sends it: a person read exactly this text and stands behind it.</div></div>`
           : `<h2 class="modal-title" style="font-size:20px;line-height:24px">${esc(r.subject || "(no subject)")}</h2>
              <div class="mail-body">${esc(r.body || "")}</div>
              ${r.triage_reason ? `<div class="section" style="margin-top:20px"><h3>${icon("sparkle", 16)} Triage note</h3><div class="body">${esc(r.triage_reason)}</div></div>` : ""}`}
@@ -1117,9 +1113,9 @@ function openMessage(id) {
       </div>
     </div>
     <div class="modal-foot">
-      <span class="left">${r.status === "approved" ? "Sends happen from the terminal: python tools/outreach.py send" : esc(threadNote())}</span>
+      <span class="left">${r.status === "approved" ? (o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : esc(threadNote())}</span>
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
-      ${isDraft ? `<button class="btn subtle danger-text" data-act="cancel">Cancel draft</button><button class="btn primary" data-act="approve">${icon("check", 16)} Approve for sending</button>` : ""}
+      ${isDraft ? `<button class="btn subtle danger-text" data-act="cancel">Cancel draft</button><button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
       ${isReply && r.status !== "cancelled" ? `<button class="btn" data-act="mark_negative">Mark negative</button><button class="btn primary" data-act="mark_positive">${icon("check", 16)} Mark positive</button>` : ""}
     </div>`, { label: r.subject || "Message" });
@@ -1137,9 +1133,11 @@ function openMessage(id) {
           body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value }) });
       }
       const res = await post("/api/outreach/" + id + "/decision", { action: b.dataset.act });
-      const msg = { approve: "Approved for sending", cancel: "Cancelled", mark_positive: "Marked positive",
+      const msg = { approve: res.can_send ? "Approved: sending" : "Approved", cancel: "Cancelled", mark_positive: "Marked positive",
         mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped" }[b.dataset.act];
-      const desc = b.dataset.act === "stop_sequence"
+      const desc = b.dataset.act === "approve"
+        ? r.company + (res.can_send ? ": it goes out within minutes." : ": it goes out as soon as a mailbox is connected.")
+        : b.dataset.act === "stop_sequence"
         ? (res.cancelled ? res.cancelled + " pending follow-up" + (res.cancelled === 1 ? "" : "s") + " cancelled." : "No further follow-ups will be drafted.")
         : res.entity_promoted === false ? "Reply recorded; the company was not in a state that could be promoted." : r.company;
       flag(msg, { desc });
@@ -1376,8 +1374,6 @@ function bindOps() {
     b.classList.remove("loading");
   });
   $("#logClose").addEventListener("click", () => { $("#logPanel").hidden = true; });
-  $("#draftBtn").addEventListener("click", () => runJob("draft_outreach", { onDone: () => { if (currentView() === "outreach") loadOutreach(); } }));
-  $("#followupsBtn").addEventListener("click", () => runJob("draft_followups", { onDone: () => { if (currentView() === "outreach") loadOutreach(); } }));
   $("#footerBtn").addEventListener("click", openFooter);
   $("#outreachSelAll").addEventListener("change", (e) => {
     const o = state.outreach;
@@ -1943,9 +1939,9 @@ function openAbout() {
     <div class="modal-body single"><div class="modal-main">
       <div class="section"><h3>Pipeline</h3><div class="body"><p><strong>Discover</strong> (news, X, YouTube, Wikidata, AICP) →
         <strong>Promote and dedupe</strong> → <strong>Enrich</strong> (website, contacts, evidence) → <strong>Score</strong> against the rubric →
-        <strong>Review</strong> (this board) → <strong>Outreach</strong> (draft, approve, send) → <strong>Triage</strong> replies.</p>
+        <strong>Review</strong> (this board) → <strong>Shortlist</strong> (its email is drafted) → <strong>Approve</strong> (it is sent) → <strong>Triage</strong> replies.</p>
         <p>Nothing outbound leaves without a person approving that exact text. One email per company, ever.</p></div></div>
-      <div class="section"><h3>Where things run</h3><div class="body"><p>Harvests run in the office n8n on their schedule. Everything after that runs here, including the Tuesday 02:00 UTC weekly refresh. Sending and reply pull run from the terminal on the office laptop, on purpose.</p></div></div>
+      <div class="section"><h3>Where things run</h3><div class="body"><p>Harvests run in the office n8n on their schedule. Everything after that runs here, including the Tuesday 02:00 UTC weekly refresh. Drafting and sending run by themselves: shortlisting drafts the email, approving sends it, within the day's limit. Pulling replies runs from the terminal.</p></div></div>
       <div class="section"><h3>Keyboard</h3><div class="body">
         <dl class="details"><dt><span class="kbd">/</span></dt><dd>Search the current view</dd>
         <dt><span class="kbd">c</span></dt><dd>Create (run a job)</dd>

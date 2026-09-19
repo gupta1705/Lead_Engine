@@ -369,8 +369,9 @@ between 20 and 25, 83 production houses. 255 have an email address and can be
 drafted now; the other 196 wait for a contact. None of the 591 left in review
 scores above 20.
 
-**What follows from it.** **Draft emails** drafts up to 20 per press, and a
-draft whose opening line Groq wrote is approved on its own, never in a batch.
+**What follows from it.** Shortlisted leads are drafted by themselves, up to 20
+per run every fifteen minutes (since 2026-09-19), and a draft whose opening line
+Groq wrote is approved on its own, never in a batch.
 255 contactable leads are therefore up to 255 individual approvals unless
 `batch_approval.allow_generated` is turned on. `tools/test_auto_shortlist.py`
 covers the rule (13 checks, rolled back).

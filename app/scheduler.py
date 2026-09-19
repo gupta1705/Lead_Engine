@@ -21,17 +21,51 @@ WHAT MAKES UNATTENDED SAFE:
     configured it degrades to a logged warning and never crashes the loop
   * the single-slot lock is shared with manual runs, so a scheduled pipeline
     and a human clicking Run can never collide
-  * schedules for anything that SENDS email stay off until Gmail is configured
+  * sending needs a connected Gmail mailbox; without one nothing is sent and
+    nothing is recorded
 
-Everything here is opt-in-safe: the loop only fires the enrichment pipeline,
-which reads and writes our own database and politely crawls sites we already
-visit. Nothing outbound happens without the Gmail credential the owner adds.
+THE SIMPLE FLOW (owner, 2026-09-19): "leads are displayed, shortlisted and
+after approval sent." Two steps used to wait for a person to remember them:
+pressing Draft emails after shortlisting, and running `outreach.py send` in a
+terminal after approving. Both now happen by themselves (outreach_tick): a
+shortlisted lead with an address gets its draft, a due follow-up gets drafted,
+and an approved email goes out -- within the day's cap, from a connected
+mailbox, through the same tools with the same checks. Approval is still the
+human decision on every email; nothing leaves that a person did not approve.
+It runs right after a shortlist or an approval (kick_outreach, off the
+request thread) and every fifteen minutes for whatever a trigger missed: a
+busy job slot, a cap that reset overnight, a follow-up that fell due. A tick
+with no work does nothing and records nothing.
+
+Nothing outbound happens without the Gmail credential the owner adds.
 """
+import io
 import json
+import os
+import sys
 import threading
 import time
 import urllib.request
 from datetime import datetime, timezone
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# work the simple flow looks for before it runs anything
+DRAFT_NEEDED_SQL = """
+select 1 from entities e
+where e.segment_id = (select id from segments where slug = %s)
+  and e.status = 'shortlisted'
+  and not exists (select 1 from outreach o where o.entity_id = e.id and o.direction = 'outbound'
+                    and o.status not in ('cancelled', 'failed'))
+  and exists (select 1 from contacts c where c.entity_id = e.id and c.email is not null
+                and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)
+limit 1"""
+APPROVED_SQL = """
+select 1 from outreach o join entities e on e.id = o.entity_id
+where e.segment_id = (select id from segments where slug = %s)
+  and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null
+limit 1"""
+TICK_MINUTES = 15
 
 # Pipelines: an ordered list of ops-job keys. A pipeline fails at the first
 # step that fails; later steps do not run. run_chain appears twice in the
@@ -73,6 +107,9 @@ class Scheduler:
         self._thread = None
         self._stop = threading.Event()
         self._fired = {}               # (segment, name) -> last-fired minute-key, dedupe
+        self._kick_lock = threading.Lock()
+        self._kicking, self._kick_again = set(), set()   # segments with an outreach run going / asked again
+        self._last_tick = None         # minute-key of the last fifteen-minute outreach tick
 
     # ---------------------------------------------------------------- config
     def segments(self):
@@ -174,7 +211,9 @@ class Scheduler:
         env = {"SEGMENT_SLUG": segment}
         for key in steps:
             sid = self._open(pipeline, key, trigger, segment)
-            rc, logpath = self._ops.run_blocking(key, wait_slot=600, env=env)
+            # half an hour, not ten minutes: an outreach run drafting twenty production-house emails at
+            # three model calls a minute can hold the slot for a while, and the refresh should wait for it
+            rc, logpath = self._ops.run_blocking(key, wait_slot=1800, env=env)
             if rc is None:
                 # slot never freed, or job unavailable here -- skip, do not fail
                 self._close(sid, "skipped", "unavailable or slot busy")
@@ -201,6 +240,107 @@ class Scheduler:
             return self._ops.io_open(logpath, "r").read()[-n:]
         except OSError:
             return ""
+
+    # --------------------------------------------------------- the simple flow
+    @staticmethod
+    def _env(name):
+        v = os.environ.get(name)
+        if v:
+            return v
+        path = os.path.join(REPO, ".env")
+        if os.path.exists(path):
+            for line in io.open(path, encoding="utf-8"):
+                if line.strip().startswith(name + "="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'") or None
+        return None
+
+    def mailbox_connected(self, mb):
+        """The same test tools/outreach.py makes: an address, and a Gmail token on this machine."""
+        return bool(self._env(mb["email_env"])) and (
+            os.path.exists(os.path.join(REPO, mb["token_file"])) or bool(self._env(mb["token_env"])))
+
+    def outreach_work(self, segment, now=None):
+        """What the flow has to do for a segment right now, or None when the segment writes no email."""
+        tools = os.path.join(REPO, "tools")
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import outreach_policy as pol
+        now = now or _now()
+        with self._cursor() as cur:
+            cfg = pol.outreach_config(cur, segment)
+            if not (cfg or {}).get("templates"):
+                return None
+            cur.execute(DRAFT_NEEDED_SQL, (segment,))
+            draft = cur.fetchone() is not None
+            steps = pol.followup_steps(cfg)
+            followups = bool(steps) and bool(pol.due_followups(cur, segment, steps, now))
+            cur.execute(APPROVED_SQL, (segment,))
+            approved = cur.fetchone() is not None
+            boxes = pol.mailbox_list(cfg, segment)
+            connected = [mb["key"] for mb in boxes if mb["enabled"] and self.mailbox_connected(mb)]
+            room = 0
+            if approved and connected and "SET_ME" not in json.dumps(cfg.get("sender") or {}):
+                status = pol.mailbox_status(cur, segment, boxes, now.date())
+                sent_today = sum(st["sent_today"] for st in status)
+                room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),
+                           sum(st["remaining"] for st in status if st["key"] in connected))
+        return {"draft": draft, "followups": followups, "approved": approved, "connected": connected,
+                "send": approved and room > 0}
+
+    def outreach_tick(self, segment, trigger="schedule"):
+        """Draft what needs drafting, send what is approved. -> "idle" | "ok" | "skipped" | "failed"."""
+        work = self.outreach_work(segment)
+        if not work:
+            return "idle"
+        steps = ([("draft_followups", work["followups"]), ("draft_outreach", work["draft"]),
+                  ("send_outreach", work["send"])])
+        steps = [k for k, needed in steps if needed]
+        if not steps:
+            return "idle"
+        print("[outreach] %s (%s): %s" % (segment, trigger, ", ".join(steps)), flush=True)
+        pid = self._open("outreach", None, trigger, segment)
+        env, outcome = {"SEGMENT_SLUG": segment}, "ok"
+        for key in steps:
+            sid = self._open("outreach", key, trigger, segment)
+            rc, logpath = self._ops.run_blocking(key, wait_slot=600, env=env)
+            if rc is None:
+                self._close(sid, "skipped", "the job slot stayed busy; the next tick tries again")
+                outcome = "skipped"
+                continue
+            if rc != 0:
+                tail = self._logtail(logpath)
+                self._close(sid, "failed", tail)
+                self._close(pid, "failed", "stopped at step '%s'" % key)
+                self.alert("TVF Lead Engine [%s]: outreach step '%s' FAILED.\n%s" % (segment, key, tail[-400:]))
+                return "failed"
+            self._close(sid, "ok")
+        self._close(pid, outcome)
+        return outcome
+
+    def kick_outreach(self, segment, trigger="manual"):
+        """Run outreach_tick for a segment in the background. A kick while one is running asks it to
+        go round once more instead of starting a second: ten shortlists in a row are one or two runs."""
+        with self._kick_lock:
+            if segment in self._kicking:
+                self._kick_again.add(segment)
+                return False
+            self._kicking.add(segment)
+
+        def run():
+            while True:
+                try:
+                    self.outreach_tick(segment, trigger)
+                except Exception as e:                      # never let a background run die silently
+                    print("[outreach] %s crashed: %r" % (segment, e), flush=True)
+                    self.alert("TVF Lead Engine [%s]: the outreach run crashed: %r" % (segment, e))
+                with self._kick_lock:
+                    if segment in self._kick_again:
+                        self._kick_again.discard(segment)
+                        continue
+                    self._kicking.discard(segment)
+                    return
+        threading.Thread(target=run, daemon=True).start()
+        return True
 
     # ------------------------------------------------------------- the loop
     def _due(self, entry, now):
@@ -233,6 +373,11 @@ class Scheduler:
                             self.alert("TVF Lead Engine [%s]: scheduler crashed running "
                                        "'%s': %r" % (segment, name, e))
                             print("[scheduler] run_pipeline crashed: %r" % e, flush=True)
+            # the simple flow's catch-up: every fifteen minutes, draft and send whatever is waiting
+            if now.minute % TICK_MINUTES == 0 and self._last_tick != minute_key:
+                self._last_tick = minute_key
+                for segment in self.segments():
+                    self.kick_outreach(segment, "schedule")
             # wake a little under once a minute so no minute is skipped
             self._stop.wait(30)
 

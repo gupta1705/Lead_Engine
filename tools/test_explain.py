@@ -22,7 +22,6 @@ TVF_CFG = {
         ("international_ip_experience", 30), ("genre_fit", 15), ("distribution_relationship", 20),
         ("right_size", 20), ("reachable_decision_maker", 10), ("collaboration_openness", 15))],
     "score_modifiers": [{"key": "client_work_dominance", "label": "client work", "max_penalty": -20}],
-    "review_checklist": [{"key": "independent_ownership", "label": "Founder/partner-owned?"}],
     "score_threshold_review": 25, "score_threshold_priority": 45,
 }
 LCX_CFG = {"rubric": [{"key": "shorts_gap", "label": "Shorts gap", "points": 25},
@@ -81,8 +80,10 @@ def main():
         ("an unexplained credit is a risk", any(r["title"] == "Unexplained credit"
                                                 for r in no_source["analysis"]["risks"]), True),
         ("a public company is on hold", public["analysis"]["verdict"]["tone"], "hold"),
-        ("a public company is not founder-owned",
-         next(q["verdict"] for q in public["analysis"]["questions"] if q["key"] == "independent_ownership"), "no"),
+        ("a public company is flagged: not a small independent",
+         any(r["title"] == "Not a small independent" for r in public["analysis"]["risks"]), True),
+        ("no review checklist: the analysis asks no questions (owner, 2026-09-19)", "questions" in public["analysis"],
+         False),
         ("support@ is a weak address", any(r["title"] == "Weak address" for r in public["analysis"]["risks"]), True),
         # ip, genre, distribution, contact and collaboration were looked at; right size was not
         ("points checked add up", read["coverage"]["points_checked"], 90.0),
@@ -114,9 +115,32 @@ def main():
                                                       "distress_summary": "Layoffs (Jun 2026)",
                                                       "funding_summary": "$56.0M (Apr 2026)"})
     cases += [
-        ("recently funded: the trouble is not real",
-         next(q["verdict"] for q in funded["analysis"]["questions"] if q["key"] == "trouble_is_real"), "no"),
+        ("recently funded: the penalty shows as a risk",
+         any(r["title"] == "Recently funded" for r in funded["analysis"]["risks"]), True),
         ("recently funded: the penalty is found", state(funded, "recently_funded"), ex.FOUND),
+    ]
+
+    # the simple flow: shortlisted -> the email is drafted -> approved -> sent
+    mailing = dict(TVF_CFG, outreach={"templates": [{"key": "opener"}]})
+    reach = [{"email": "kay@example.com", "full_name": "Kay Doe", "rank": 60, "email_status": "valid"}]
+
+    def step(cfg, status, draft=None, contacts=reach):
+        ranked = ex.rank_contacts([dict(c) for c in contacts], "example.com")
+        row = {"name": "Example Films", "domain": "example.com", "status": status, "fit_score": 40,
+               "metadata": {"scoring_inputs": dict(zeros)}}
+        return ex.explain_lead("us-production-houses", cfg, row, ranked,
+                               {"status": draft} if draft else None)["analysis"]["next_step"]
+    cases += [
+        ("shortlisted, no draft yet: it is being drafted", step(mailing, "shortlisted")[:30],
+         "Its email is being drafted; it"),
+        ("drafted: approving sends it", step(mailing, "shortlisted", "drafted"),
+         "Read the email in Outreach and approve it. Approving sends it."),
+        ("approved: it goes out by itself", step(mailing, "shortlisted", "approved"),
+         "Approved: it goes out automatically, within the day's sending limit."),
+        ("a project without templates says so", step(TVF_CFG, "shortlisted"),
+         "Shortlisted. This project has no email templates, so nothing is drafted for it."),
+        ("shortlisted: never sent to Operations for an unchecked criterion",
+         "Operations" in step(mailing, "shortlisted"), False),
     ]
 
     for label, got, want in cases:

@@ -14,10 +14,11 @@ as subprocesses means the UI gets exactly the behaviour the terminal gets,
 including the logs, and a crashing tool can never take the web server down
 with it.
 
-WHAT IS DELIBERATELY NOT HERE: outreach send/pull/triage. Those stay in the
-terminal (tools/outreach.py) until the Gmail credential exists; a button that
-sends email deserves its own considered UI moment, not a slot in a generic
-job grid. Drafting IS here -- drafts are inert until a human approves them.
+OUTREACH IS NOT A BUTTON HERE. Drafting and sending run by themselves since
+2026-09-19 (the owner's simple flow: shortlist, approve, sent): the jobs exist
+so the scheduler's outreach_tick can run them through this same slot, but they
+are hidden from the grid. The only way an email leaves is a person approving
+that email. Reply pull and triage stay in the terminal (tools/outreach.py).
 
 Harvests (P4-P8) run through the n8n CLI, which exists on the host but not
 inside the app container; those jobs report themselves unavailable there
@@ -175,12 +176,17 @@ JOBS = {
         "cmd": [PY, "tools/enrich_newscheck.py", "--limit", "200", "--shortlisted"],
         "segments": ["us-production-houses"],
     },
+    # The simple flow (owner, 2026-09-19): shortlist, approve, sent. These three run by themselves --
+    # after a shortlist, after an approval, and every fifteen minutes (app/scheduler.py outreach_tick) --
+    # so they are "hidden": not on the Operations page, not runnable from it. Approval stays the human
+    # decision on every email; send only ever sends what a person approved.
     "draft_outreach": {
         "label": "Draft outreach emails",
         "group": "Outreach",
         "desc": "Personalised drafts for shortlisted leads. Drafts are inert "
                 "until you approve each one in the Outreach tab.",
         "cmd": [PY, "tools/outreach.py", "draft"],
+        "hidden": True,
     },
     "draft_followups": {
         "label": "Draft follow-ups",
@@ -189,6 +195,14 @@ JOBS = {
                 "Drafts still need approval in the Outreach tab.",
         "cmd": [PY, "tools/outreach.py", "followups"],
         "segments": ["lcx-clipping"],
+        "hidden": True,
+    },
+    "send_outreach": {
+        "label": "Send approved emails",
+        "group": "Outreach",
+        "desc": "Sends the emails a person approved, within the day's cap, from the connected mailboxes.",
+        "cmd": [PY, "tools/outreach.py", "send"],
+        "hidden": True,
     },
 }
 
@@ -297,7 +311,7 @@ def build_router():
         seg = getattr(request.state, "segment", None)
         out = []
         for key, job in JOBS.items():
-            if seg and job.get("segments") and seg not in job["segments"]:
+            if job.get("hidden") or (seg and job.get("segments") and seg not in job["segments"]):
                 continue
             ok, why = _available(job)
             st = _STATE.get(key, {})
@@ -314,8 +328,8 @@ def build_router():
     @r.post("/api/ops/{key}/run")
     def run_job(key: str, request: Request):
         job = JOBS.get(key)
-        if not job:
-            raise HTTPException(404, "no such job")
+        if not job or job.get("hidden"):
+            raise HTTPException(404, "no such job")        # the outreach jobs run by themselves
         seg = getattr(request.state, "segment", None)
         if seg and job.get("segments") and seg not in job["segments"]:
             raise HTTPException(409, "that job does not apply to this segment")

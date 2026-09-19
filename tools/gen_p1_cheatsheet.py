@@ -125,22 +125,8 @@ def render(cfg):
         "contact record backs up. `sql/04_insert_template.sql` CHECK 2 flags it.")
     add("")
 
-    checklist = cfg.get("review_checklist", [])
-    add("---")
-    add("")
-    add("## Not scored at all — the %d human judgement calls (P3)" % len(checklist))
-    add("")
-    add("Free sources cannot verify these, so they are never auto-enforced. "
-        "They come back as literal checkboxes at review.")
-    add("")
-    for item in checklist:
-        add("### `%s`" % item.get("key"))
-        add("")
-        add("**%s**" % item.get("label", ""))
-        add("")
-        add(item.get("guidance", ""))
-        add("")
-
+    # The P3 review checklist that used to follow here was removed on 2026-09-19 (the owner: it
+    # "serves no point"; the flow is shortlist, approve, send).
     return "\n".join(L).rstrip() + "\n"
 
 

@@ -22,7 +22,8 @@ What it checks:
      Three copies of one config is a standing drift risk; this check is what
      makes keeping three copies safe.
   4. The v3 shape that 00_verify_state.sql checks the live DB against:
-     6 rubric criteria / 4 gates / 3 modifiers / 3 checklist items, with
+     6 rubric criteria / 4 gates / 3 modifiers (the review checklist was
+     removed on 2026-09-19, and must stay gone), with
      genre_fit=15, right_size=20, revenue_above_cap=-20, thresholds 25/60.
   5. Structural invariants: every rubric/modifier/gate input path sits under
      metadata.scoring_inputs, keys are unique, rubric points are positive,
@@ -50,7 +51,6 @@ EXPECTED_COUNTS = {
     "rubric": 6,
     "gates": 4,
     "score_modifiers": 3,
-    "review_checklist": 3,
 }
 EXPECTED_WEIGHTS = {"genre_fit": 15, "right_size": 20}
 EXPECTED_PENALTY = {"revenue_above_cap": -20}
@@ -155,8 +155,10 @@ def check_v3_shape(cfg):
         if actual != expected_n:
             fail("config.%s: expected %d entries (v3), found %d"
                  % (key, expected_n, actual))
+    if "review_checklist" in cfg:
+        fail("config.review_checklist is back: the owner removed the checklist on 2026-09-19")
     if len(failures) == mark:
-        print("  ok    counts  6 rubric / 4 gates / 3 modifiers / 3 checklist")
+        print("  ok    counts  6 rubric / 4 gates / 3 modifiers / no checklist")
 
     mark = len(failures)
     rubric = {c.get("key"): c for c in cfg.get("rubric", [])}

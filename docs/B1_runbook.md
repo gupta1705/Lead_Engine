@@ -76,7 +76,7 @@ them — it burned 4 of 10 slots on companies dissolved in 2008, 2016, 2017 and
 |---|---|
 | `activity_signal = confirmed_dormant` | Wikidata P576 dissolution date. Nobody answers a dead company's inbox. |
 | `major_or_oversized_signal = true` | The gates reject them at P13 anyway. |
-| Has a `parent_organisation` | The review checklist requires founder/partner ownership with no studio or network parent. |
+| Has a `parent_organisation` | The brief wants founder/partner ownership with no studio or network parent. |
 
 For the Wikidata pool that is **309 rows → 204 addressable**. A third were never
 worth a request.

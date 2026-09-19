@@ -180,23 +180,6 @@ values (
       "guidance": "First live run (2026-09-09): a 40M-subscriber gaming channel scored 92 because audience_band only withholds 15 points. Channels that size have a post team and a procurement process; they are not clipping customers. Set from the channel''s subscriber count. Blank passes."
     }
   ],
-  "review_checklist": [
-    {
-      "key": "independent_show",
-      "label": "Is this an independent show (host- or small-studio-owned), not a network, broadcaster, or brand production?",
-      "guidance": "Networks and brands have post teams and procurement. The feed author, the website footer, and the channel''s About page usually settle it in thirty seconds."
-    },
-    {
-      "key": "clip_friendly_content",
-      "label": "Is the content clip-friendly: talk, interview, commentary, education, comedy, sport analysis, not music or kids?",
-      "guidance": "Clips need a speaking moment with a hook. Ambient, music, or children''s content does not produce them and carries licensing or COPPA risk."
-    },
-    {
-      "key": "real_business_contact",
-      "label": "Does the contact look like the host''s or producer''s real business address, not a hosting-provider or agency inbox?",
-      "guidance": "Feeds sometimes carry the hosting platform''s address or an agency''s. Writing there wastes the one touch. Prefer the address on the show''s own site when they differ."
-    }
-  ],
   "podcast_discovery": {
     "countries": [
       "US",

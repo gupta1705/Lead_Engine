@@ -31,32 +31,34 @@ app unless a terminal command is shown.
 4. Aim to clear the band. New harvests refill it; an un-reviewed backlog is
    the one thing that stalls the pipeline.
 
-## Wednesday — approve and send (~45 min)
+## Wednesday — approve (~45 min)
 
-1. **Operations** → *Draft outreach emails* (or wait — the scheduler drafts
-   for anything newly shortlisted). Drafts are inert until approved.
-2. **Outreach** → *Drafts*. Read every draft. Fix the hook if the evidence
-   sentence reads wrong. **Approve** means: a person read this exact text and
-   stands behind it.
-3. Send from a terminal (deliberately not a button):
+The flow is three steps (owner, 2026-09-19): leads are shown, shortlisted, and
+sent once approved. Nothing between them needs a button.
 
-```bash
-python tools/outreach.py send
-```
+1. **Outreach** → *Drafts*. Every shortlisted lead with an address has its
+   draft here within minutes of being shortlisted. Drafts are inert until
+   approved.
+2. Read every draft. Fix the hook if the evidence sentence reads wrong.
+   **Approve and send** means: a person read this exact text and stands behind
+   it, and it goes out within minutes from the connected mailbox.
 
    One email per company, ever, enforced by the database; the daily cap in
-   config is a hard ceiling. Anything the send refuses lands in *Attention*
-   with the reason.
+   config is a hard ceiling, and what it holds back goes first the next day.
+   Anything the send refuses lands in *Attention* with the reason. Drafting and
+   sending run every fifteen minutes as well, for whatever a shortlist or an
+   approval could not finish at once (app/scheduler.py, outreach_tick).
 
 ### LCX clipping differs in two ways
 
 - **Batch approval.** In Drafts, tick the drafts and press Approve selected.
   Read the random sample the portal shows, tick each one, approve. Drafts
   that fail a check are listed and left as drafts.
-- **Follow-ups.** They are drafted every morning for threads with no reply,
-  and land in Drafts like any other email. Sending and pulling work the same,
-  with `SEGMENT_SLUG=lcx-clipping` in front of the command. Pull pauses a
-  thread as soon as a reply arrives.
+- **Follow-ups.** They are drafted by themselves when they fall due, for
+  threads with no reply, and land in Drafts like any other email; approving
+  sends them in the opener's thread. Pulling replies still runs from a
+  terminal with `SEGMENT_SLUG=lcx-clipping` in front of the command, and pull
+  pauses a thread as soon as a reply arrives.
 - **Several mailboxes.** Send spreads openers across every connected LCX
   mailbox and keeps each follow-up on its opener's mailbox. Before sending,
   `SEGMENT_SLUG=lcx-clipping python tools/outreach.py mailboxes` shows what

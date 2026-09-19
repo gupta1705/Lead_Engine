@@ -17,7 +17,6 @@ values (
   "rubric": [],
   "score_modifiers": [],
   "gates": [],
-  "review_checklist": [],
   "sources": [
     {
       "slug": "apollo",

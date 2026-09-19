@@ -126,27 +126,3 @@ Fires ONLY on confirmed dormancy (e.g. no upload or site activity in 12+ months,
 ## Do not fill these in by hand
 
 - **`reachable_decision_maker`** — engine-set from a verified contact at P10/P16. Setting it yourself inflates the score with a signal no contact record backs up. `sql/04_insert_template.sql` CHECK 2 flags it.
-
----
-
-## Not scored at all — the 3 human judgement calls (P3)
-
-Free sources cannot verify these, so they are never auto-enforced. They come back as literal checkboxes at review.
-
-### `is_a_content_production_company`
-
-**Is this actually an IP-owning production company, not a service vendor, agency, institution, or an unrelated same-name LLC?**
-
-Free sources cannot reliably tell these apart at intake - this is a human judgment call at review (§7.5), not an auto-enforced gate.
-
-### `in_scope_subtype`
-
-**Is the subtype actually in scope (commercial/branded, digital/social, film/TV/streaming) and NOT corporate/service video?**
-
-Confirm against real site/channel content, not just a keyword match that got it into staging.
-
-### `independent_ownership`
-
-**Founder/partner-owned - no studio/network parent, no PE ownership, no large-scale VC backing on record**
-
-Check Crunchbase/PitchBook/press where feasible. Free automated sources (YouTube API etc.) cannot verify ownership/cap-table structure - this is a manual check, not a connector-computed signal. Precedent for a judgment-call exception: a single small convertible note (e.g. roughly $500K) from non-marquee sources does not by itself disqualify a candidate.

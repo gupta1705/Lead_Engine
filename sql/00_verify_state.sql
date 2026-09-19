@@ -19,9 +19,9 @@
 --   Query 1 succeeds but query 2 returns 0 rows
 --     -> schema is live but the segment was never inserted. Run
 --        03_segment_us_production_houses.sql only.
---   Query 2 returns 1 row: check rubric_criteria/gates/modifiers/checklist
+--   Query 2 returns 1 row: check rubric_criteria/gates/modifiers
 --   against the expected counts below (v3, as of 2026-08-20):
---     rubric_criteria = 6, gates = 4, score_modifiers = 3, review_checklist = 3
+--     rubric_criteria = 6, gates = 4, score_modifiers = 3 (no review_checklist since 2026-09-19)
 --     genre_fit_points = 15, right_size_points = 20, revenue_penalty = -20
 --     score_threshold_review = 25, score_threshold_priority = 60  (v4, 2026-08-23)
 --   If genre_fit_points/right_size_points/revenue_penalty DON'T match
@@ -44,7 +44,6 @@ select
   jsonb_array_length(config->'rubric')          as rubric_criteria,   -- expect 6
   jsonb_array_length(config->'gates')            as gates,             -- expect 4
   jsonb_array_length(config->'score_modifiers')  as score_modifiers,   -- expect 3
-  jsonb_array_length(config->'review_checklist') as review_checklist,  -- expect 3
   config->'rubric'->1->>'points'                 as genre_fit_points,  -- expect 15
   config->'rubric'->3->>'points'                 as right_size_points, -- expect 20
   config->'score_modifiers'->2->>'max_penalty'   as revenue_penalty,   -- expect -20
