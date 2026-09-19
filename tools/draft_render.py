@@ -37,8 +37,7 @@ DEFAULT_FOOTER = (
 
 # What the footer is allowed to interpolate. Deliberately small: the footer is
 # the same on every email, so a field that varies per lead does not belong.
-FOOTER_FIELDS = ("sender_name", "sender_title", "sender_email",
-                 "postal_address", "company", "greeting_name")
+FOOTER_FIELDS = ("sender_name", "sender_title", "postal_address")
 
 OPT_OUT_MARKERS = ("unsubscribe", "opt out", "opt-out", "no thanks",
                    "hear from me again", "hear from us again", "hear from me",
@@ -56,10 +55,7 @@ def resolve_footer(text, sender):
     sender = sender or {}
     vals = {"sender_name": sender.get("name") or "",
             "sender_title": sender.get("title") or "",
-            "sender_email": sender.get("email") or "",
-            "postal_address": sender.get("postal_address") or "",
-            "company": "Example Productions",
-            "greeting_name": "there"}
+            "postal_address": sender.get("postal_address") or ""}
     out = text or ""
     for k, v in vals.items():
         out = out.replace("{{%s}}" % k, v)
@@ -789,7 +785,6 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "clip_math": clip_math(meta),
         "sender_name": sender.get("name", "") or "",
         "sender_title": sender.get("title", "") or "",
-        "sender_email": sender.get("email", "") or "",
         "postal_address": sender.get("postal_address", "") or "",
         "opener_subject": (opener_subject or "").strip(),
     }

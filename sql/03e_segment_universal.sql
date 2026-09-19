@@ -53,7 +53,6 @@ values (
   },
   "ui": {
     "project_name": "Universal",
-    "project_type": "Apollo search",
     "key_prefix": "UNI",
     "board_title": "Universal leads",
     "list_title": "Leads",
@@ -64,9 +63,9 @@ values (
     "default_route": "universal",
     "hide_routes": [
       "outreach",
-      "ops"
+      "ops",
+      "reports"
     ],
-    "sidebar_note": "You''re in <strong>Universal</strong>: leads found with Apollo. Searching people is free; saving a person costs one Apollo credit.",
     "card_fields": [
       {
         "path": "metadata.industry",
@@ -121,18 +120,6 @@ values (
         "format": "text"
       },
       {
-        "path": "metadata.apollo.linkedin_url",
-        "label": "LinkedIn",
-        "format": "link"
-      },
-      {
-        "path": "metadata.apollo.phone",
-        "label": "Phone",
-        "format": "text"
-      }
-    ],
-    "evidence": [
-      {
         "path": "metadata.apollo.short_description",
         "label": "Apollo''s description",
         "format": "text"
@@ -144,7 +131,7 @@ values (
       },
       {
         "path": "metadata.saved_from.summary",
-        "label": "Found by the search",
+        "label": "Found by",
         "format": "text"
       }
     ]

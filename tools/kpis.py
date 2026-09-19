@@ -78,20 +78,16 @@ def main():
         return 0
 
     print("KPIs -- segment %s\n" % SEGMENT)
-    for section in ("funnel", "approval", "enrichment", "outreach", "unattended"):
+    for section in ("funnel", "outreach"):
         row = r.get(section) or {}
         print(section.upper())
         for k, v in row.items():
             print("  %-28s %s" % (k, _plain(v) if v is not None else "-"))
         print()
     print("BY SOURCE")
-    print("  %-18s %6s %6s %6s %6s %6s %6s %8s" % (
-        "source", "found", "site", "contact", "review", "appr", "rej", "appr%"))
+    print("  %-18s %6s %8s %12s" % ("source", "found", "contact", "shortlisted"))
     for s in r.get("by_source") or []:
-        print("  %-18s %6s %6s %6s %6s %6s %6s %8s" % (
-            s["source"], s["found"], s["with_website"], s["contactable"],
-            s["reviewable"], s["approved"], s["rejected"],
-            _plain(s["approval_rate_pct"]) if s["approval_rate_pct"] is not None else "-"))
+        print("  %-18s %6s %8s %12s" % (s["source"], s["found"], s["contactable"], s["approved"]))
     return 0
 
 

@@ -37,8 +37,8 @@ long to wait, because a person is sitting in front of it.
 WHAT THE FILTERS ARE. Exactly the parameters the two search endpoints accept,
 under the names Apollo's own app gives them. Apollo's app has filters the API
 does not expose (buying intent, departments, past titles, founded year,
-SIC/NAICS, education, time in role, personas...) -- APP_ONLY lists them so the
-page can say so instead of offering a control that silently does nothing.
+SIC/NAICS, education, time in role, personas...); they are not offered here,
+rather than as a control that silently does nothing.
 """
 import argparse
 import io
@@ -244,19 +244,14 @@ FILTERS = [
     {"key": "organization_headcount_growth_range", "label": "Headcount growth (%)", "for": [P, C], "type": "range",
      "param": "organization_headcount_growth_range", "group": "Headcount growth", "signed": True,
      "help": "10 to 50 is growing 10-50%. Shrinking: -20 to -1."},
-    {"key": "organization_ids", "label": "Company", "for": [P, C], "type": "ids", "param": "organization_ids[]",
+    {"key": "organization_ids", "label": "Company", "for": [P], "type": "ids", "param": "organization_ids[]",
      "group": "Company", "help": "Specific companies, picked from a company search."},
-    {"key": "lookalike_organization_ids", "label": "Company lookalikes", "for": [P, C], "type": "ids",
+    {"key": "lookalike_organization_ids", "label": "Company lookalikes", "for": [C], "type": "ids",
      "param": "lookalike_organization_ids[]", "group": "Company", "max": 5,
      "help": "Companies like these (up to 5), picked from a company search. The seeds themselves are left out."},
 ]
 FILTER_BY_KEY = {f["key"]: f for f in FILTERS}
 
-# Filters Apollo's app has that its API does not: named on the page so nobody looks for them.
-APP_ONLY = ["Buying intent", "Departments & job function", "Past job titles", "Industry (single value) for people",
-            "Founded year", "SIC and NAICS", "Education", "Time in current role", "Total years of experience",
-            "Languages", "Market segments", "Retail locations", "News", "Scores", "Signals", "Personas",
-            "Zip code radius"]
 
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ID = re.compile(r"^[0-9a-f]{24}$")
@@ -413,12 +408,7 @@ def _person_row(p):
             "last_name_obfuscated": p.get("last_name_obfuscated") or "",
             "title": p.get("title") or "",
             "has_email": bool(p.get("has_email")),
-            "has_direct_phone": p.get("has_direct_phone") or "",
-            "has_location": bool(p.get("has_city") or p.get("has_state") or p.get("has_country")),
-            "last_refreshed_at": p.get("last_refreshed_at"),
-            "company": org.get("name") or "",
-            "company_known": [k[4:].replace("_", " ") for k in ("has_industry", "has_employee_count",
-                                                               "has_revenue", "has_phone") if org.get(k)]}
+            "company": org.get("name") or ""}
 
 
 def search_people(filters, page=1, per_page=25):

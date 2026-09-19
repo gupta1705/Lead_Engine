@@ -20,12 +20,13 @@ so the scheduler's outreach_tick can run them through this same slot, but they
 are hidden from the grid. The only way an email leaves is a person approving
 that email. Reply pull and triage stay in the terminal (tools/outreach.py).
 
-Harvests (P4-P8) run through the n8n CLI, which exists on the host but not
-inside the app container; those jobs report themselves unavailable there
-rather than failing, and the UI says why. P25 moves them fully into Docker.
+NO JOB GRID (2026-09-19). Every job here is a step of a pipeline the scheduler
+runs (app/scheduler.py), so Operations offers the whole weekly refresh, not its
+steps one by one, and shows the log of whatever holds the slot. The n8n
+harvests, which the server cannot run, and the finished one-offs (pool import,
+startup backfill) left the list; their tools still run from a terminal.
 """
 import os
-import shutil
 import subprocess
 import threading
 import time
@@ -39,38 +40,6 @@ LOGDIR = REPO / "logs" / "ops"
 PY = "python"
 
 JOBS = {
-    "harvest_news": {
-        "label": "Harvest: Google News",
-        "group": "Discover",
-        "desc": "Run the P5 connector -- deal/format headlines into staging.",
-        "cmd": ["n8n", "execute", "--id", "newsrssdiscov01"],
-        "needs": "n8n",
-        "segments": ["us-production-houses"],
-    },
-    "harvest_wikidata": {
-        "label": "Harvest: Wikidata",
-        "group": "Discover",
-        "desc": "Run the P7 seed -- US film+TV companies, domains attached.",
-        "cmd": ["n8n", "execute", "--id", "wikidataseed01"],
-        "needs": "n8n",
-        "segments": ["us-production-houses"],
-    },
-    "harvest_youtube": {
-        "label": "Harvest: YouTube",
-        "group": "Discover",
-        "desc": "Run the P4 connector (quota ~750 units/run).",
-        "cmd": ["n8n", "execute", "--id", "ytdiscovery00001"],
-        "needs": "n8n",
-        "segments": ["us-production-houses"],
-    },
-    "harvest_aicp": {
-        "label": "Harvest: AICP directory",
-        "group": "Discover",
-        "desc": "Re-scrape the member directory (names refresh).",
-        "cmd": ["n8n", "execute", "--id", "aicpdirectory1"],
-        "needs": "n8n",
-        "segments": ["us-production-houses"],
-    },
     "discover_podcasts": {
         "label": "Harvest: podcasts (Apple search + feeds)",
         "group": "Discover",
@@ -103,28 +72,12 @@ JOBS = {
         "cmd": [PY, "tools/discover_wikidata_channels.py", "--limit-channels", "300"],
         "segments": ["lcx-clipping"],
     },
-    "import_pool": {
-        "label": "Import the TVF production-house pool",
-        "group": "Discover",
-        "desc": "Copy the US production houses TVF already discovered, contacts included, into this "
-                "segment; the enrichment pass then looks for each one's YouTube channel.",
-        "cmd": [PY, "tools/import_pool.py", "--from", "us-production-houses", "--limit", "1500"],
-        "segments": ["lcx-clipping"],
-    },
     "discover_startup_news": {
         "label": "Harvest: startup news (distress + funding)",
         "group": "Discover",
         "desc": "Google News headlines about layoffs, shutdowns, salary delays, insolvency and rescue rounds "
                 "from the last 40 days. Headlines only; no article page is ever fetched.",
         "cmd": [PY, "tools/discover_startup_news.py"],
-        "segments": ["startup-acquisitions"],
-    },
-    "discover_startup_backfill": {
-        "label": "Harvest: startup news, full backfill",
-        "group": "Discover",
-        "desc": "Two years of distress headlines plus the Mumbai startups that raised a small round in 2021-24. "
-                "About 120 searches; a few minutes.",
-        "cmd": [PY, "tools/discover_startup_news.py", "--backfill"],
         "segments": ["startup-acquisitions"],
     },
     "enrich_startups": {
@@ -211,11 +164,6 @@ _STATE = {}     # key -> {status, started, finished, rc, log}
 _CURRENT = {"key": None, "proc": None}
 
 
-def _available(job):
-    if job.get("needs") == "n8n" and shutil.which("n8n") is None:
-        return False, "needs the n8n CLI -- run from the host until P25"
-    return True, None
-
 
 def _execute(key, job, logpath, env_extra=None):
     """Run one job's subprocess to completion. Returns its exit code.
@@ -236,16 +184,6 @@ def _execute(key, job, logpath, env_extra=None):
         _STATE[key].update(status="done" if rc == 0 else "failed",
                            finished=time.time(), rc=rc)
     return rc
-
-
-def _runner(key, job, logpath, env_extra=None):
-    """HTTP path: execute then release the slot."""
-    try:
-        _execute(key, job, logpath, env_extra)
-    finally:
-        with _LOCK:
-            _CURRENT["key"] = None
-            _CURRENT["proc"] = None
 
 
 def _claim(key):
@@ -280,9 +218,6 @@ def run_blocking(key, wait_slot=0, env=None):
     job = JOBS.get(key)
     if not job:
         return None, None
-    ok, _why = _available(job)
-    if not ok:
-        return None, None
     waited = 0.0
     logpath = _claim(key)
     while logpath is None and waited < wait_slot:
@@ -307,42 +242,10 @@ def build_router():
     LOGDIR.mkdir(parents=True, exist_ok=True)
 
     @r.get("/api/ops")
-    def list_jobs(request: Request):
-        seg = getattr(request.state, "segment", None)
-        out = []
-        for key, job in JOBS.items():
-            if job.get("hidden") or (seg and job.get("segments") and seg not in job["segments"]):
-                continue
-            ok, why = _available(job)
-            st = _STATE.get(key, {})
-            out.append({
-                "key": key, "label": job["label"], "group": job["group"],
-                "desc": job["desc"], "available": ok, "unavailable_reason": why,
-                "status": st.get("status"),
-                "running": _CURRENT["key"] == key,
-                "started": st.get("started"), "finished": st.get("finished"),
-                "rc": st.get("rc"),
-            })
-        return {"jobs": out, "busy": _CURRENT["key"]}
-
-    @r.post("/api/ops/{key}/run")
-    def run_job(key: str, request: Request):
-        job = JOBS.get(key)
-        if not job or job.get("hidden"):
-            raise HTTPException(404, "no such job")        # the outreach jobs run by themselves
-        seg = getattr(request.state, "segment", None)
-        if seg and job.get("segments") and seg not in job["segments"]:
-            raise HTTPException(409, "that job does not apply to this segment")
-        ok, why = _available(job)
-        if not ok:
-            raise HTTPException(409, why)
-        logpath = _claim(key)
-        if logpath is None:
-            raise HTTPException(409, "another job is running: " + (_CURRENT["key"] or "?"))
-        env = {"SEGMENT_SLUG": seg} if seg else None
-        threading.Thread(target=_runner, args=(key, job, logpath, env),
-                         daemon=True).start()
-        return {"ok": True, "log": str(logpath.name)}
+    def busy_job():
+        """The job holding the single slot, if any, so Operations can show its log."""
+        key = _CURRENT["key"]
+        return {"busy": key, "label": JOBS[key]["label"] if key in JOBS else key}
 
     @r.get("/api/ops/{key}/log")
     def job_log(key: str, tail: int = 120):
@@ -358,6 +261,8 @@ def build_router():
 
     @r.post("/api/ops/{key}/stop")
     def stop_job(key: str):
+        if key == "send_outreach":
+            raise HTTPException(409, "a send stops only by finishing: stopped midway, its email would stay marked sending")
         with _LOCK:
             if _CURRENT["key"] != key or not _CURRENT["proc"]:
                 raise HTTPException(409, "that job is not running")

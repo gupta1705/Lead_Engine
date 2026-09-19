@@ -49,7 +49,8 @@ def current_segment(request: Request) -> str:
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
-app = FastAPI(title="TVF Lead Engine", docs_url="/api/docs")
+# no API console: every action has one place, on the page, with what it acts on in view
+app = FastAPI(title="TVF Lead Engine", docs_url=None, redoc_url=None, openapi_url=None)
 
 # ---------------------------------------------------------------- auth wall
 # Everything except the login surface requires a session. The login page is
@@ -166,9 +167,9 @@ def cursor():
 
 # ------------------------------------------------------------------ segments
 UI_DEFAULTS = {
-    "project_name": None, "project_type": "Lead segment", "key_prefix": "TVF",
+    "project_name": None, "key_prefix": "TVF",
     "board_title": "Lead board", "list_title": "Leads", "entity_label": "company",
-    "sidebar_note": None, "card_fields": [], "details": [], "evidence": [],
+    "card_fields": [], "details": [],
 }
 
 
@@ -180,9 +181,9 @@ def segment_rows(force=False):
                 cur.execute("select slug, name, entity_type, config->'ui' as ui,"
                             " config->>'score_threshold_review' as review,"
                             " config->>'score_threshold_priority' as priority,"
-                            " config->>'weekly_target' as weekly_target,"
-                            " config->'outreach'->'follow_ups' as follow_ups,"
-                            " config->'outreach'->'batch_approval' as batch_approval"
+                                                       " config->'outreach'->'follow_ups' as follow_ups,"
+                            " config->'outreach'->'batch_approval' as batch_approval,"
+                            " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist"
                             " from segments where is_active order by slug")
                 rows = [dict(r) for r in cur.fetchall()]
             if SEGMENTS_ALLOWED:
@@ -191,8 +192,8 @@ def segment_rows(force=False):
         except Exception:
             if not _SEG_CACHE["rows"]:
                 _SEG_CACHE["rows"] = [{"slug": SEGMENT, "name": SEGMENT, "entity_type": "",
-                                       "ui": None, "review": "25", "priority": "45", "weekly_target": None,
-                                       "follow_ups": None, "batch_approval": None}]
+                                       "ui": None, "review": "25", "priority": "45",
+                                       "follow_ups": None, "batch_approval": None, "auto_shortlist": False}]
     return _SEG_CACHE["rows"]
 
 
@@ -212,9 +213,6 @@ def ui_for(row):
     if not ui["project_name"]:
         # "US Production Houses -- Co-Pro & Format" / "... \u2014 ..." -> the first clause
         ui["project_name"] = re.split(r"\s+(?:--|\u2014|\u2013)\s+|\s\(", row["name"])[0].strip()
-    if not ui["sidebar_note"]:
-        ui["sidebar_note"] = ("You're in the <strong>%s</strong> segment. Harvests run on the office n8n;"
-                              " everything else runs here." % ui["project_name"])
     return ui
 
 
@@ -225,8 +223,7 @@ def segment_info(slug):
     return {"slug": row["slug"], "name": row["name"], "entity_type": row["entity_type"],
             "ui": ui_for(row),
             "thresholds": {"review": float(row["review"] or 25), "priority": float(row["priority"] or 45)},
-            "weekly_target": int(row["weekly_target"]) if row["weekly_target"] else None,
-            "config_file": "config/segment.%s.json" % row["slug"],
+            "auto_shortlist": bool(row.get("auto_shortlist")),
             "outreach_policy": outreach_policy_info(row)}
 
 
@@ -253,19 +250,11 @@ def outreach_policy_info(row):
 
 def segments_list(current):
     out = []
-    with cursor() as cur:
-        for r in segment_rows():
-            cur.execute(
-                "select count(*) filter (where status in " + OPEN_STATUSES + " and coalesce(fit_score,0) >= %s) as reviewable,"
-                " count(*) filter (where status = 'shortlisted') as shortlisted,"
-                " count(*) as total from entities where segment_id = (select id from segments where slug = %s)",
-                (float(r["review"] or 25), r["slug"]))
-            c = dict(cur.fetchone())
-            ui = ui_for(r)
-            out.append({"slug": r["slug"], "name": r["name"], "entity_type": r["entity_type"],
-                        "project_name": ui["project_name"], "project_type": ui["project_type"],
-                        "key_prefix": ui["key_prefix"], "current": r["slug"] == current,
-                        "counts": {k: int(v) for k, v in c.items()}})
+    for r in segment_rows():
+        ui = ui_for(r)
+        out.append({"slug": r["slug"], "name": r["name"], "entity_type": r["entity_type"],
+                    "project_name": ui["project_name"], "key_prefix": ui["key_prefix"],
+                    "current": r["slug"] == current})
     return {"current": current, "segments": out}
 
 
@@ -295,76 +284,33 @@ def api_segment_select(request: Request, body: dict = Body(...)):
 # --------------------------------------------------------------------- stats
 @app.get("/api/stats")
 def stats(segment: str = Depends(current_segment)):
-    """Everything the dashboard needs, in one round trip."""
+    """The status counts and the project's sources, in one round trip."""
     with cursor() as cur:
         cur.execute(
             "with e as (select * from entities where segment_id ="
             " (select id from segments where slug = %s))"
-            " select (select count(*) from e) as total,"
-            " (select count(*) from e where domain is not null) as with_domain,"
-            " (select count(*) from e where exists (select 1 from contacts c"
-            "    where c.entity_id = e.id)) as with_contact,"
-            " (select count(*) from e where exists (select 1 from contacts c"
-            "    where c.entity_id = e.id and c.full_name is not null)) as named_contact,"
-            " (select count(*) from e where status = 'shortlisted') as shortlisted,"
+            " select (select count(*) from e where status = 'shortlisted') as shortlisted,"
             " (select count(*) from e where status = 'rejected') as rejected,"
+            " (select count(*) from e where status = 'contacted') as contacted,"
+            " (select count(*) from e where status = 'in_conversation') as in_conversation,"
+            " (select count(*) from e where status = 'archived') as archived,"
             " (select count(*) from e where status in " + OPEN_STATUSES + ") as open_pool",
             (segment,))
         s = dict(cur.fetchone())
 
+        # the sources this project has: the Leads source filter and whether it is worth showing
         cur.execute(
-            "select source, count(*) as n,"
-            " count(*) filter (where domain is not null) as with_domain,"
-            " count(*) filter (where exists (select 1 from contacts c"
-            "   where c.entity_id = entities.id)) as with_contact,"
-            " round(avg(fit_score)::numeric,1) as avg_score,"
-            " count(*) filter (where fit_score >= 25) as reviewable"
-            " from entities where segment_id ="
-            " (select id from segments where slug = %s)"
-            " group by source order by reviewable desc, n desc", (segment,))
+            "select source, count(*) as n from entities where segment_id ="
+            " (select id from segments where slug = %s) group by source order by n desc", (segment,))
         s["by_source"] = [dict(r) for r in cur.fetchall()]
 
-        cur.execute(
-            "select case when fit_score is null or fit_score = 0 then '0'"
-            "            when fit_score < 10 then '1-9'"
-            "            when fit_score < 25 then '10-24'"
-            "            when fit_score < 40 then '25-39'"
-            "            when fit_score < 60 then '40-59'"
-            "            else '60+' end as band, count(*) as n"
-            " from entities where segment_id ="
-            " (select id from segments where slug = %s)"
-            " and status in " + OPEN_STATUSES + " group by 1", (segment,))
-        got = {r["band"]: r["n"] for r in cur.fetchall()}
-        s["histogram"] = [{"band": b, "n": got.get(b, 0)}
-                          for b in ("0", "1-9", "10-24", "25-39", "40-59", "60+")]
-
-        # Evidence coverage: which criteria the engine can actually SEE. This is
-        # the most diagnostic number in the product -- a criterion nobody scores
-        # is points nobody can earn, and that is invisible in a score alone.
-        cur.execute(
-            "select"
-            " count(*) filter (where (metadata->'scoring_inputs'->>'international_ip_experience')::numeric > 0) as international_ip_experience,"
-            " count(*) filter (where (metadata->'scoring_inputs'->>'genre_fit')::numeric > 0) as genre_fit,"
-            " count(*) filter (where (metadata->'scoring_inputs'->>'distribution_relationship')::numeric > 0) as distribution_relationship,"
-            " count(*) filter (where (metadata->'scoring_inputs'->>'right_size')::numeric > 0) as right_size,"
-            " count(*) filter (where (metadata->'scoring_inputs'->>'reachable_decision_maker')::numeric > 0) as reachable_decision_maker,"
-            " count(*) filter (where (metadata->'scoring_inputs'->>'collaboration_openness')::numeric > 0) as collaboration_openness"
-            " from entities where segment_id ="
-            " (select id from segments where slug = %s)"
-            " and status in " + OPEN_STATUSES, (segment,))
-        s["coverage"] = dict(cur.fetchone())
-
-        cur.execute("select config->'rubric' as rubric from segments where slug = %s",
-                    (segment,))
-        s["rubric"] = cur.fetchone()["rubric"]
     return s
 
 
 # ---------------------------------------------------------------------- list
 @app.get("/api/leads")
 def leads(q: str = "", source: str = "", status: str = "open",
-          min_score: float = 0, has_contact: int = 0,
-          sort: str = "score", limit: int = 100, offset: int = 0,
+          min_score: float = 0, limit: int = 100, offset: int = 0,
           segment: str = Depends(current_segment)):
     where = ["e.segment_id = (select id from segments where slug = %s)"]
     params = [segment]
@@ -385,12 +331,7 @@ def leads(q: str = "", source: str = "", status: str = "open",
     if min_score:
         where.append("coalesce(e.fit_score,0) >= %s")
         params.append(min_score)
-    if has_contact:
-        where.append("exists (select 1 from contacts c where c.entity_id = e.id)")
-
-    order = {"score": "e.fit_score desc nulls last, e.name",
-             "name": "e.name",
-             "recent": "e.created_at desc"}.get(sort, "e.fit_score desc nulls last")
+    order = "e.fit_score desc nulls last, e.name"
     clause = " and ".join(where)
 
     # Segment 3: the UI's card_fields are metadata paths the segment config
@@ -411,12 +352,13 @@ def leads(q: str = "", source: str = "", status: str = "open",
             " case when e.metadata->'host'->>'confidence' in ('high','medium')"
             "      then e.metadata->'host'->>'name' end as host_name," + extra +
             " e.metadata->>'hq_city' as city, e.metadata->>'hq_state' as state,"
-            " (select count(*) from contacts c where c.entity_id = e.id) as n_contacts,"
             # the address a draft would use, by the same ranking (sql/28)
             " (select c.email from contacts c where c.entity_id = e.id"
+            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
             "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
             "   c.created_at, c.id limit 1) as email,"
             " (select c.full_name from contacts c where c.entity_id = e.id"
+            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
             "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
             "   c.created_at, c.id limit 1) as contact_name"
             " from entities e where " + clause +
@@ -513,6 +455,17 @@ def decide(lead_id: str, body: dict = Body(...)):
             raise HTTPException(404, "no such lead")
         row = dict(row)
         row["id"] = str(row["id"])
+        row["withdrawn"] = 0
+        if row["status"] != "shortlisted":
+            # a lead taken off the shortlist takes its waiting email with it: nothing goes out to a
+            # company a person has just rejected or sent back to review
+            why = ("lead %s: %s" % (row["status"].replace("_", " "), reason or "decision undone"))[:200]
+            cur.execute("update outreach set status = 'cancelled', stopped_reason = %s, updated_at = now()"
+                        " where entity_id = %s and direction = 'outbound' and status in ('drafted', 'approved')",
+                        (why, lead_id))
+            row["withdrawn"] = cur.rowcount
+            if row["status"] == "rejected":
+                _policy().stop_thread(cur, lead_id, why)      # and no follow-up to a company refused
     # the simple flow (owner, 2026-09-19): shortlisting is the last thing a person does before
     # reading the email, so the email is drafted straight away, off this request (app/scheduler.py)
     row["drafting"] = bool(row["status"] == "shortlisted" and row.pop("writes_email", False))
@@ -523,7 +476,7 @@ def decide(lead_id: str, body: dict = Body(...)):
 
 # -------------------------------------------------------------------- export
 @app.get("/api/export.xlsx")
-def export(status: str = "shortlisted", min_score: float = 0, source: str = "",
+def export(status: str = "shortlisted", min_score: float = 0, source: str = "", q: str = "",
            segment: str = Depends(current_segment)):
     """The owner's 17-column sheet, generated live from the current selection.
 
@@ -544,24 +497,29 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = "",
         cmd += ["--min-score", str(min_score)]
     if source:
         cmd += ["--source", source]
+    if q:
+        cmd += ["--q", q]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO,
                        env={**os.environ, "SEGMENT_SLUG": segment})
     if not os.path.exists(tmp):
         raise HTTPException(500, "export failed: " + ((r.stderr or r.stdout)[-400:]))
     return FileResponse(
-        tmp, filename="TVF_leads.xlsx",
+        tmp, filename=segment + "_leads.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 # ------------------------------------------------------------------ outreach
 @app.get("/api/outreach")
 def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment)):
-    """One folder of the outreach_folders view, newest first, for this segment."""
+    """One folder of the outreach_folders view, newest first, for this segment. Replies holds
+    every reply, marked or not (the mark is on the row); 'untriaged' counts the ones nobody has
+    marked yet, which is what the sidebar count shows."""
+    folders = ["inbox", "positive", "negative"] if folder == "inbox" else [folder]
     with cursor() as cur:
         cur.execute(
             "select f.* from outreach_folders f join entities e on e.id = f.entity_id"
-            " where f.folder = %s and e.segment_id = (select id from segments where slug = %s)"
-            " order by coalesce(f.sent_at, f.created_at) desc limit 200", (folder, segment))
+            " where f.folder = any(%s) and e.segment_id = (select id from segments where slug = %s)"
+            " order by coalesce(f.sent_at, f.created_at) desc limit 200", (folders, segment))
         rows = [dict(r) for r in cur.fetchall()]
         for r in rows:
             r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
@@ -570,6 +528,8 @@ def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment
                     " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
                     (segment,))
         counts = {r["folder"]: r["n"] for r in cur.fetchall()}
+    counts["untriaged"] = counts.get("inbox", 0)
+    counts["inbox"] = counts["untriaged"] + counts.pop("positive", 0) + counts.pop("negative", 0)
     return {"rows": rows, "counts": counts}
 
 
@@ -761,11 +721,10 @@ def footer_get(segment: str = Depends(current_segment)):
         pending = cur.fetchone()["n"]
     sender = cfg.get("sender") or {}
     text = dr.footer_text(cfg)
-    return {"text": text, "default": dr.DEFAULT_FOOTER, "fields": list(dr.FOOTER_FIELDS),
+    return {"text": text, "fields": list(dr.FOOTER_FIELDS),
             "sender": {"name": sender.get("name", "") or "",
                        "title": sender.get("title", "") or "",
                        "postal_address": sender.get("postal_address", "") or ""},
-            "preview": dr.resolve_footer(text, sender),
             "problems": dr.validate_footer(text, sender),
             "drafts_pending": pending}
 
@@ -779,10 +738,10 @@ def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
     lines copied into every template: the part that has to be right on EVERY
     email should be impossible to get wrong on one of them.
 
-    Drafts already written keep the text they were written with unless
-    apply_to_drafts says otherwise -- and even then, a draft somebody edited by
-    hand is left exactly as they left it. Rebuilding it would throw their
-    words away."""
+    Drafts waiting for approval get the new footer too: they cannot be approved
+    with a footer that still says SET_ME. Only the footer is swapped, and a draft
+    somebody edited at the end by hand is left exactly as they left it --
+    rebuilding it would throw their words away."""
     dr, pol = _render(), _policy()
     b = body or {}
     text = (b.get("text") or "").strip()
@@ -808,8 +767,7 @@ def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
             raise HTTPException(404, "no such segment")
         out = {"ok": True, "preview": dr.resolve_footer(text, sender),
                "rebuilt": 0, "unchanged": 0, "left_alone": 0}
-        if b.get("apply_to_drafts"):
-            out.update(_rebuild_drafts(cur, segment, old, pol.outreach_config(cur, segment), dr))
+        out.update(_rebuild_drafts(cur, segment, old, pol.outreach_config(cur, segment), dr))
     return out
 
 
@@ -1005,25 +963,31 @@ def _stop_scheduler():
 
 @app.get("/api/schedule")
 def schedule_state(segment: str = Depends(current_segment)):
-    """The configured schedule plus the most recent pipeline runs -- this is
-    how 'unattended' becomes observable in the Operations tab. Runs recorded
-    before the segment column existed show under the default segment."""
+    """What runs by itself for this segment, and how each pipeline's last whole run went --
+    how 'unattended' becomes observable in Operations. A failed run names the step it stopped
+    at. Runs recorded before the segment column existed count under the default segment."""
     with cursor() as cur:
         cur.execute(
-            "select id, pipeline, step, trigger, status, detail,"
-            " started_at, finished_at from pipeline_runs"
-            " where coalesce(segment, %s) = %s"
-            " order by started_at desc limit 40", (SEGMENT, segment))
-        runs = [dict(r) for r in cur.fetchall()]
-        for r in runs:
+            "select distinct on (pipeline) id, pipeline, trigger, status, detail, started_at, finished_at"
+            " from pipeline_runs where coalesce(segment, %s) = %s and step is null"
+            " order by pipeline, started_at desc", (SEGMENT, segment))
+        last = {}
+        for r in [dict(x) for x in cur.fetchall()]:
+            if r["status"] == "failed":
+                cur.execute(
+                    "select step, detail from pipeline_runs where coalesce(segment, %s) = %s and pipeline = %s"
+                    " and step is not null and status = 'failed' and started_at >= %s"
+                    " order by started_at desc limit 1", (SEGMENT, segment, r["pipeline"], r["started_at"]))
+                f = cur.fetchone()
+                if f:
+                    r["failed_step"], r["failed_detail"] = f["step"], (f["detail"] or "")[-400:]
             r["id"] = str(r["id"])
             r["started_at"] = r["started_at"].isoformat() if r["started_at"] else None
             r["finished_at"] = r["finished_at"].isoformat() if r["finished_at"] else None
+            last[r["pipeline"]] = r
     return {"schedule": _scheduler.schedule(segment),
-            "pipelines": list(_scheduler.pipelines(segment).keys()),
-            "segment": segment,
             "webhook_configured": bool(_scheduler.alert_webhook()),
-            "runs": runs}
+            "last": last}
 
 
 @app.post("/api/schedule/run/{pipeline}")
@@ -1034,19 +998,13 @@ def schedule_run_now(pipeline: str, segment: str = Depends(current_segment)):
     import threading
     if pipeline not in _scheduler.pipelines(segment):
         raise HTTPException(404, "no such pipeline for this segment")
+    if _scheduler.is_running(segment, pipeline):
+        raise HTTPException(409, "A %s is already running for this project." % pipeline.replace("_", " "))
     threading.Thread(target=_scheduler.run_pipeline,
                      args=(pipeline,), kwargs={"trigger": "manual", "segment": segment},
                      daemon=True).start()
     return {"ok": True, "pipeline": pipeline, "segment": segment}
 
-
-@app.post("/api/schedule/test-alert")
-def schedule_test_alert():
-    """Fire the alert webhook on demand -- 'a forced failure pings', proven
-    without breaking anything."""
-    _scheduler.alert("TVF Lead Engine: this is a test alert from the "
-                     "Operations tab. If you can read this, alerting works.")
-    return {"ok": True, "webhook_configured": bool(_scheduler.alert_webhook())}
 
 
 @app.get("/login")

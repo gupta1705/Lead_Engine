@@ -18,7 +18,7 @@ const $ = (s, root) => (root || document).querySelector(s);
 const $$ = (s, root) => Array.from((root || document).querySelectorAll(s));
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-let REVIEW_THRESHOLD = 25, PRIORITY_THRESHOLD = 45, KEY_PREFIX = "TVF";
+let REVIEW_THRESHOLD = 25, PRIORITY_THRESHOLD = 45;
 
 function fmtDate(iso) {
   if (!iso) return "";
@@ -38,7 +38,6 @@ function rel(iso) {
   return fmtDate(iso).split(",")[0];
 }
 function fmtScore(n) { n = +n || 0; return Number.isInteger(n) ? String(n) : n.toFixed(1); }
-function leadKey(id) { return KEY_PREFIX + "-" + String(id || "").replace(/-/g, "").slice(0, 4).toUpperCase(); }
 function hashCode(s) { let h = 0; for (const c of String(s || "")) h = (h * 31 + c.charCodeAt(0)) | 0; return Math.abs(h); }
 function initials(name, fallback) {
   // letters and digits only: a scraped address like "%20info@x.com" must not
@@ -79,45 +78,22 @@ const PATHS = {
   list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   chart: '<path d="M18 20V10M12 20V4M6 20v-6"/>',
   play: '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z" fill="currentColor"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
-  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
   send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
   edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
   film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
   sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>',
-  keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>',
   book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/>',
-  pHighest: '<path d="m5 13 7-7 7 7M5 19l7-7 7 7"/>',
-  pHigh: '<path d="m5 15 7-7 7 7"/>',
-  pMedium: '<path d="M5 9h14M5 15h14"/>',
-  pLow: '<path d="m5 9 7 7 7-7"/>',
-  pLowest: '<path d="m5 5 7 7 7-7M5 11l7 7 7-7"/>',
   bookmark: '<path d="M6 3h12v18l-6-4-6 4z" fill="currentColor" stroke="none"/>',
   envelope: '<rect x="3" y="6" width="18" height="12" rx="1.5" fill="currentColor" stroke="none"/><path d="m4 8 8 5 8-5" stroke="#fff" stroke-width="2"/>',
-  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor" stroke="none"/>',
 };
 function icon(name, size, extra) {
   return `<svg width="${size || 16}" height="${size || 16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra || ""}>${PATHS[name] || ""}</svg>`;
 }
 function typeIcon(kind) {
-  const glyph = kind === "mail" ? "envelope" : kind === "job" ? "bolt" : "bookmark";
-  return `<span class="type-icon ${kind}" title="${kind === "mail" ? "Email" : kind === "job" ? "Pipeline job" : "Lead"}">${icon(glyph, 10)}</span>`;
-}
-function prioFor(score) {
-  score = +score || 0;
-  if (score <= 0) return { cls: "low", glyph: "pLowest", label: "Unscored" };
-  if (score >= 60) return { cls: "high", glyph: "pHighest", label: "Highest" };
-  if (score >= PRIORITY_THRESHOLD) return { cls: "high", glyph: "pHigh", label: "High" };
-  if (score >= REVIEW_THRESHOLD) return { cls: "medium", glyph: "pMedium", label: "Medium" };
-  if (score > 0) return { cls: "low", glyph: "pLow", label: "Low" };
-  return { cls: "low", glyph: "pLowest", label: "Unscored" };
-}
-function prioIcon(score, withLabel) {
-  const p = prioFor(score);
-  return `<span class="prio ${p.cls}" title="Priority: ${p.label} (fit score ${fmtScore(score)})">${icon(p.glyph, 16)}${withLabel ? ` <span style="color:var(--text)">${p.label}</span>` : ""}</span>`;
+  const glyph = kind === "mail" ? "envelope" : "bookmark";
+  return `<span class="type-icon ${kind}" title="${kind === "mail" ? "Email" : "Lead"}">${icon(glyph, 10)}</span>`;
 }
 /* A project with no rubric (Universal) has no scores: its thresholds are both 0, and the
    board, list and dialog leave the score and priority out rather than show a row of zeros. */
@@ -195,13 +171,12 @@ const post = (path, body) => api(path, { method: "POST",
 
 /* ============================================================== state */
 const state = {
-  route: null, user: null, rubric: [], sources: [], segment: null, segments: [],
-  board: { filters: { q: "", min_score: REVIEW_THRESHOLD, source: "", has_contact: false },
-           cols: {}, token: 0 },
-  leads: { filters: { q: "", status: "open", min_score: 0, source: "", has_contact: false, sort: "score" },
+  route: null, user: null, sources: [], segment: null, segments: [],
+  board: { filters: { q: "", min_score: REVIEW_THRESHOLD }, cols: {}, token: 0 },
+  leads: { filters: { q: "", status: "all", source: "" },
            page: 0, perPage: 50, total: 0, rows: [], token: 0 },
   outreach: { folder: "drafts", rows: [], counts: {}, token: 0, busy: false, selected: new Set() },
-  ops: { timer: null, watching: null, jobs: [] },
+  ops: { timer: null },
   notif: { counts: null, at: 0 },
 };
 
@@ -294,7 +269,7 @@ function router() {
   const h = (location.hash || "#" + defaultRoute()).slice(1);
   const [head, rest] = h.split("/");
   if (head === "lead" && rest) { if (!state.route) showView(defaultRoute()); openLead(rest); return; }
-  if (head === "outreach" && rest) state.outreach.folder = rest;
+  if (head === "outreach" && rest) state.outreach.folder = FOLDERS.some(([k]) => k === rest) ? rest : "drafts";
   if (state.route === head && head !== "outreach") return;   // same view, nothing to do
   if (modal.isOpen()) modal.close(true);
   showView(head);
@@ -302,9 +277,9 @@ function router() {
 window.addEventListener("hashchange", router);
 
 /* ============================================================ segment */
-const UI_FALLBACK = { project_name: "US Production Houses", project_type: "Lead segment", key_prefix: "TVF",
+const UI_FALLBACK = { project_name: "US Production Houses", key_prefix: "TVF",
   board_title: "Lead board", list_title: "Leads", entity_label: "company", entity_plural: "companies",
-  lead_first: "entity", summary_label: "Summary", card_fields: [], details: [], evidence: [] };
+  lead_first: "entity", summary_label: "Summary", card_fields: [], details: [] };
 /* People first (2026-09-09): in a segment whose leads are shows, the card and
    the row lead with the person the engine found behind the show, and the show
    sits underneath. The record stays the show; the face is the host. */
@@ -319,9 +294,9 @@ function leadTitle(r) {
   if (personFirst() && host) {
     // a show named after its host ("Aswath Damodaran") is not repeated underneath
     const same = host.trim().toLowerCase() === String(r.name || "").trim().toLowerCase();
-    return { title: host, sub: same ? (r.domain || "") : r.name, avatarName: host, aria: same ? host : host + ", " + r.name, same };
+    return { title: host, sub: same ? (r.domain || "") : r.name, aria: same ? host : host + ", " + r.name, same };
   }
-  return { title: r.name, sub: r.domain || "", avatarName: r.contact_name, aria: r.name };
+  return { title: r.name, sub: r.domain || "", aria: r.name };
 }
 function kindLozenge(r) {
   return r.kind ? `<span class="lozenge inprogress" title="Kind of lead">${esc(String(r.kind).replace(/_/g, " "))}</span>` : "";
@@ -357,13 +332,6 @@ function fieldSummary(r) {
     .filter((x) => x.v != null && x.v !== "")
     .map((x) => esc(fmtField(x.v, x.f.format)) + (x.f.label ? " " + esc(x.f.label) : "")).join(" · ");
 }
-function uiEvidence(d) {
-  return (segUi().evidence || []).map((f) => {
-    const v = getPath(d, f.path);
-    if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "";
-    return `<li>${icon("info", 16)}<span><strong>${esc(f.label)}:</strong> ${fmtFieldHtml(v, f.format)}</span></li>`;
-  }).filter(Boolean);
-}
 function uiDetails(d) {
   return (segUi().details || []).map((f) => {
     const v = getPath(d, f.path);
@@ -374,17 +342,13 @@ function uiDetails(d) {
 function applySegment(seg) {
   state.segment = seg;
   const ui = segUi();
-  KEY_PREFIX = ui.key_prefix || "TVF";
   // 0 is a real threshold: a project with no rubric (Universal) scores nothing and hides nothing
   const rv = parseFloat((seg.thresholds || {}).review), pv = parseFloat((seg.thresholds || {}).priority);
   REVIEW_THRESHOLD = Number.isFinite(rv) ? rv : 25;
   PRIORITY_THRESHOLD = Number.isFinite(pv) ? pv : 45;
   $("#projectName").textContent = ui.project_name;
-  $("#projectType").textContent = ui.project_type;
   $("#projectSwitch").dataset.prefix = ui.key_prefix || "TVF";          // tints the project icon per segment
   $("#projectSwitch").setAttribute("aria-label", "Project: " + ui.project_name + ". Switch project");
-  $("#sidebarFoot").innerHTML = ui.sidebar_note || "";      // our own config, not user input
-  $$(".crumb-project").forEach((a) => { a.textContent = ui.project_name; });
   $("#boardTitle").textContent = ui.board_title;
   $("#leadsTitle").textContent = ui.list_title;
   TITLES.board = ui.board_title; TITLES.leads = ui.list_title;
@@ -392,42 +356,32 @@ function applySegment(seg) {
   $("#leadsSummaryCol").textContent = ui.summary_label || "Summary";
   const ent = ui.entity_label || "company";
   $("#outreachEntityCol").textContent = ent.charAt(0).toUpperCase() + ent.slice(1);
-  $$("#boardScore, #leadsScore").forEach((sel) => {
-    const opts = sel.querySelectorAll("option");
-    if (opts[1]) { opts[1].value = String(REVIEW_THRESHOLD); opts[1].textContent = "Reviewable · " + REVIEW_THRESHOLD + "+"; }
-    if (opts[2]) { opts[2].value = String(PRIORITY_THRESHOLD); opts[2].textContent = "Priority · " + PRIORITY_THRESHOLD + "+"; }
-  });
-  state.board.filters.min_score = REVIEW_THRESHOLD;
-  const hidden = new Set(ui.hide_routes || []), apolloPage = ui.search_page === "apollo";
+  /* The board's To review column starts at the review threshold. Where auto-shortlist is on
+     (LCX), everything above its line is shortlisted already, so a floor would empty the column
+     for good: it shows every lead a person may still pick by hand. */
+  state.board.filters.min_score = seg.auto_shortlist ? 0 : REVIEW_THRESHOLD;
   $$(".side-item[data-route]").forEach((b) => { b.hidden = !routeAllowed(b.dataset.route); });
-  // Universal generates leads on its search page, so the sidebar has no second way to the same place
-  $("#createSide").hidden = apolloPage;
-  $("#pipelineHeading").hidden = apolloPage && hidden.has("ops");
-  const unscored = unscoredProject();
-  $$("#boardScore, #leadsScore").forEach((sel) => { sel.hidden = unscored; });
-  $("#leadsTable").classList.toggle("unscored", unscored);
+  COLUMNS = outreachOn() ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== "contacted" && c.key !== "in_conversation");
+  $("#leadsTable").classList.toggle("unscored", unscoredProject());
   document.title = (TITLES[currentView()] || "") + " - " + ui.project_name;
 }
 
 /* ============================================================== board */
-const COLUMNS = [
+const ALL_COLUMNS = [
   { key: "open", title: "To review", status: "open" },
   { key: "shortlisted", title: "Shortlisted", status: "shortlisted" },
   { key: "contacted", title: "Contacted", status: "contacted" },
   { key: "in_conversation", title: "In conversation", status: "in_conversation", done: true },
-  { key: "rejected", title: "Rejected", status: "rejected", muted: true },
-];
+];   // rejected leads have left the flow; Leads, Status: Rejected, is where to find one
+function outreachOn() { return !(segUi().hide_routes || []).includes("outreach"); }
+let COLUMNS = ALL_COLUMNS;
 const COL_LIMIT = 60;
 
 function boardQuery(col, offset) {
   const f = state.board.filters, p = new URLSearchParams();
   p.set("status", col.status);
   if (f.q) p.set("q", f.q);
-  if (f.source) p.set("source", f.source);
-  if (col.key === "open") {      // score and contact filters shape the review band only
-    if (f.min_score) p.set("min_score", f.min_score);
-    if (f.has_contact) p.set("has_contact", "1");
-  }
+  if (col.key === "open" && f.min_score) p.set("min_score", f.min_score);   // the floor shapes the review band only
   p.set("limit", COL_LIMIT); p.set("offset", offset || 0);
   return p.toString();
 }
@@ -436,15 +390,17 @@ function renderCard(r, col) {
   const score = +r.fit_score || 0;
   const place = r.state || r.city;
   const t = leadTitle(r);
+  // the source says something only where a project has more than one
+  const tags = (state.sources.length > 1 ? sourceLozenge(r.source) : "") + kindLozenge(r)
+    + (place ? `<span class="lozenge" title="${esc((r.city || "") + (r.state ? ", " + r.state : ""))}">${esc(place)}</span>` : "");
   return `<div class="card ${col.done ? "done" : ""}" role="button" tabindex="0" data-id="${esc(r.id)}"
        aria-label="${esc(t.aria)}, score ${fmtScore(score)}">
     <div class="card-summary">${esc(t.title)}</div>
     ${t.sub ? `<div class="card-sub truncate">${esc(t.sub)}</div>` : ""}
     ${fieldSummary(r) ? `<div class="card-sub">${fieldSummary(r)}</div>` : ""}
-    <div class="card-tags">${sourceLozenge(r.source)}${kindLozenge(r)}${place ? `<span class="lozenge" title="${esc((r.city || "") + (r.state ? ", " + r.state : ""))}">${esc(place)}</span>` : ""}</div>
+    ${tags ? `<div class="card-tags">${tags}</div>` : ""}
     <div class="card-foot">
-      <span class="type-key">${typeIcon("lead")}<span class="key">${leadKey(r.id)}</span></span>
-      <span class="right">${unscoredProject() ? "" : prioIcon(score) + pts(score)}${avatar(t.avatarName, r.email, "")}</span>
+      <span class="right">${unscoredProject() ? "" : pts(score)}${avatar(r.contact_name, r.email, "")}</span>
     </div></div>`;
 }
 
@@ -452,7 +408,7 @@ function renderColumn(col) {
   const c = state.board.cols[col.key] || { rows: [], total: 0 };
   const body = c.rows.length
     ? c.rows.map((r) => renderCard(r, col)).join("")
-    : `<div class="column-empty">${col.key === "open" ? "Nothing to review with these filters." : "No leads here yet."}</div>`;
+    : `<div class="column-empty">${state.board.filters.q ? "Nothing matches this search." : col.key === "open" ? "Nothing to review." : "No leads here yet."}</div>`;
   const more = c.rows.length < c.total
     ? `<button class="btn subtle compact column-more" data-more="${col.key}">Show more (${c.total - c.rows.length} left)</button>` : "";
   return `<section class="column" aria-label="${esc(col.title)}">
@@ -471,10 +427,7 @@ async function loadBoard() {
     COLUMNS.forEach((col, i) => { state.board.cols[col.key] = { rows: results[i].rows, total: results[i].total }; });
   } catch (e) { return toast("Could not load the board: " + e.message, true); }
   board.innerHTML = COLUMNS.map(renderColumn).join("");
-  const open = state.board.cols.open.total;
-  $("#boardCount").textContent = open.toLocaleString() + " " + (open === 1 ? (segUi().entity_label || "company") : (segUi().entity_plural || "companies")) + " to review";
   bindBoard();
-  syncExportLinks();
 }
 
 /* Opening a lead or a message is a click ANYWHERE on its row or card, not on
@@ -520,9 +473,6 @@ function leadsQuery() {
   p.set("status", f.status);
   if (f.q) p.set("q", f.q);
   if (f.source) p.set("source", f.source);
-  if (f.min_score) p.set("min_score", f.min_score);
-  if (f.has_contact) p.set("has_contact", "1");
-  p.set("sort", f.sort);
   p.set("limit", state.leads.perPage);
   p.set("offset", state.leads.page * state.leads.perPage);
   return p.toString();
@@ -538,36 +488,32 @@ async function loadLeads() {
   $("#leadsCount").textContent = d.total.toLocaleString() + " " + (d.total === 1 ? (segUi().entity_label || "company") : (segUi().entity_plural || "companies"));
   $("#leadsBody").innerHTML = d.rows.length ? d.rows.map((r) => `
     <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
-      <td><span class="cell-key">${typeIcon("lead")}<span class="key">${leadKey(r.id)}</span></span></td>
       <td>${(() => { const t = leadTitle(r);
         const parts = [t.sub || (personFirst() ? (r.domain || "") : "no website yet"), r.kind ? String(r.kind).replace(/_/g, " ") : ""].filter(Boolean);
         return `<div class="primary-cell">${esc(t.title)}</div><div class="secondary">${esc(parts.join(" · "))}</div>`; })()}</td>
-      <td>${statusLozenge(r.status)}</td>
-      <td>${pts(r.fit_score)}</td>
-      <td>${prioIcon(r.fit_score, true)}</td>
-      <td>${sourceLozenge(r.source)}</td>
-      <td>${r.email ? `<span class="cell-person">${avatar(r.contact_name, r.email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.email)}</div></span></span>` : '<span class="muted">Unassigned</span>'}</td>
+      <td class="col-status">${statusLozenge(r.status)}</td>
+      <td class="col-score">${pts(r.fit_score)}</td>
+      <td class="col-source">${sourceLozenge(r.source)}</td>
+      <td>${r.email ? `<span class="cell-person">${avatar(r.contact_name, r.email)}<span>${r.contact_name ? `<div>${esc(r.contact_name)}</div><div class="secondary">${esc(r.email)}</div>` : `<div>${esc(r.email)}</div>`}</span></span>` : '<span class="muted">No address</span>'}</td>
       <td class="secondary">${fieldSummary(r) || esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
     </tr>`).join("")
-    : `<tr class="empty-row"><td colspan="8">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="6">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
+  $("#leadsTable").classList.toggle("one-status", state.leads.filters.status !== "all");
   delegateOpen("#leadsBody", (id) => go("lead/" + id));
   const from = d.total ? state.leads.page * state.leads.perPage + 1 : 0;
   const to = Math.min((state.leads.page + 1) * state.leads.perPage, d.total);
-  $("#leadsInfo").textContent = `${from}–${to} of ${d.total.toLocaleString()}`;
+  $("#leadsInfo").textContent = `${from}–${to}`;       // the total is in the count above the table
   $("#leadsPrev").disabled = state.leads.page === 0;
   $("#leadsNext").disabled = to >= d.total;
+  $("#leadsPager").hidden = d.total <= state.leads.perPage && !state.leads.page;
+  $("#leadsExport").hidden = !d.total;                   // an empty view has nothing to download
   syncExportLinks();
 }
 
 function syncExportLinks() {
-  const b = state.board.filters, p = new URLSearchParams();
-  p.set("status", "open");
-  if (b.min_score) p.set("min_score", b.min_score);
-  if (b.source) p.set("source", b.source);
-  $("#boardExport").href = "/api/export.xlsx?" + p.toString();
   const l = state.leads.filters, q = new URLSearchParams();
-  q.set("status", l.status === "all" ? "open" : l.status);
-  if (l.min_score) q.set("min_score", l.min_score);
+  q.set("status", l.status);
+  if (l.q) q.set("q", l.q);
   if (l.source) q.set("source", l.source);
   $("#leadsExport").href = "/api/export.xlsx?" + q.toString();
 }
@@ -585,10 +531,8 @@ function srcLinks(sources) {
     : `<span>${esc(s.label)}${s.date ? " · " + esc(s.date) : ""}</span>`).join("")}</div>`;
 }
 function checkHint(c) {
-  if (!c.check) return "";
-  return c.check.job
-    ? `<div class="crit-check">${icon("play", 12)}<span>Checked by <strong>${esc(c.check.label)}</strong> in Operations</span></div>`
-    : `<div class="crit-check">${icon("user", 12)}<span>By hand: ${esc(c.check.manual)}</span></div>`;
+  return c.check && c.check.manual
+    ? `<div class="crit-check">${icon("user", 12)}<span>By hand: ${esc(c.check.manual)}</span></div>` : "";
 }
 function critRow(c, mod) {
   const amount = mod
@@ -619,13 +563,8 @@ function renderCoverage(ex) {
         <span><i class="k checked"></i>${fmtScore(checked - earned)} checked, nothing found</span>
         <span><i class="k unchecked"></i>${fmtScore(total - checked)} not checked yet</span>
         <span class="muted">of ${fmtScore(total)} points</span></div>
-      <p class="muted small" style="margin:4px 0 0">${esc(cov.formula || "")}</p>
       ${cov.stale ? `<p class="small warn-text" style="margin:4px 0 0">${esc(cov.stale)}</p>` : ""}
     </div>`;
-}
-function renderLegend(ex) {
-  return `<details class="legend"><summary>What “found”, “checked, nothing found” and “not checked yet” mean</summary><dl>${(ex.legend || []).map((l) =>
-    `<dt><span class="lozenge ${STATE_CLS[l.state] || ""}">${esc(l.label)}</span></dt><dd>${esc(l.meaning)}</dd>`).join("")}</dl></details>`;
 }
 /* The analysis: a verdict, one next step, strengths, gaps and risks. There is no
  * review checklist any more -- the owner, 2026-09-19: it "serves no point"; the
@@ -638,7 +577,7 @@ function renderAnalysis(ex) {
   const risks = (a.risks || []).length
     ? `<ul class="plain-list risks">${a.risks.map((r) => `<li class="risk ${esc(r.level)}">${icon(r.level === "info" ? "info" : "warn", 14)}<span><strong>${esc(r.title)}.</strong> ${esc(r.detail)}</span></li>`).join("")}</ul>`
     : `<p class="muted small">None found.</p>`;
-  return `<div class="section-msg ${VERDICT_TONE[v.tone] || ""}" style="margin-bottom:8px">${icon(v.tone === "hold" ? "alert" : v.tone === "strong" ? "checkCircle" : "info", 20)}<div><div class="title">${esc(v.title || "")}</div><div class="text">${esc(v.detail || "")}</div></div></div>
+  return `${v.title ? `<div class="section-msg ${VERDICT_TONE[v.tone] || ""}" style="margin-bottom:8px">${icon(v.tone === "hold" ? "alert" : v.tone === "strong" ? "checkCircle" : "info", 20)}<div><div class="title">${esc(v.title)}</div></div></div>` : ""}
     <div class="next-step">${icon("chevRight", 16)}<div><strong>Next step.</strong> ${esc(a.next_step || "")}</div></div>
     <div class="analysis-grid"><div><h4 class="sub-h">Strengths</h4>${list(a.strengths)}</div><div><h4 class="sub-h">Gaps</h4>${list(a.gaps)}</div></div>
     <h4 class="sub-h">Risks</h4>${risks}`;
@@ -666,52 +605,13 @@ function renderContacts(d) {
     ${routes ? `<ul class="evidence-list routes">${routes}</ul>` : ""}
     ${(cr.tried || []).length ? `<p class="tried small muted">${cr.tried.map(esc).join(" ")}</p>` : ""}`;
 }
-function factList(obj, max) {
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return "";
-  const items = Object.entries(obj).filter(([k, v]) => v != null && v !== "" &&
-    (typeof v !== "object")).slice(0, max || 8);
-  if (!items.length) return "";
-  return `<dl class="details" style="grid-template-columns:140px 1fr;gap:4px 8px">${items.map(([k, v]) =>
-    `<dt class="small">${esc(k.replace(/_/g, " "))}</dt><dd class="small">${esc(String(v)).slice(0, 240)}</dd>`).join("")}</dl>`;
-}
-function evidenceItems(m) {
-  const out = [];
-  // a field one pass writes as a list may be a single string from another:
-  // site_platform_evidence is a string, and .forEach on it stopped the dialog opening
-  const arr = (v) => Array.isArray(v) ? v : (v == null || v === "") ? [] : [v];
-  const text = (v) => typeof v === "string" ? v : (v && (v.headline || v.title || v.phrase || v.text || v.snippet || v.summary)) || JSON.stringify(v);
-  const link = (v) => v && typeof v === "object" && (v.url || v.link || v.page) ? (v.url || v.link || v.page) : null;
-  const push = (glyph, label, v) => {
-    const u = link(v), t = text(v);
-    out.push(`<li>${icon(glyph, 16)}<span><strong>${esc(label)}</strong> ${esc(t)}${u ? ` <a href="${esc(u)}" target="_blank" rel="noopener">${icon("external", 12)}</a>` : ""}</span></li>`);
-  };
-  arr(m.news_evidence).forEach((v) => push("news", "News:", v));
-  arr(m.site_genre_evidence).forEach((v) => push("film", "Genre signal:", v));
-  arr(m.site_platform_evidence).forEach((v) => push("globe", "Platform credit:", v));
-  arr(m.format_deals).forEach((v) => push("bookmark", "Format deal:", v));
-  arr(m.notable_credits).forEach((v) => push("film", "Credit:", v));
-  // evidence withdrawn on review stays visible, so a score that dropped is never a mystery
-  arr(m.retracted_evidence).forEach((v) => out.push(`<li class="withdrawn">${icon("x", 16)}<span><strong>Withdrawn:</strong> <s>${esc(v.headline || v.site_platform_evidence || "")}</s> <span class="small">(${esc(v.reason || "withdrawn on review")})</span></span></li>`));
-  if (m.web_verification) {
-    const w = m.web_verification;
-    push("shield", "Web verification:", typeof w === "string" ? w : (w.summary || w.verdict || w.result || "checked" + (w.checked_at ? " " + fmtDate(w.checked_at) : "")));
-  }
-  if (m.verified_country) push("pin", "Verified country:", m.verified_country);
-  if (m.team_size_evidence) {
-    const s = m.team_size_evidence;
-    push("users", "Team size:", `${s.people_named} people named on ${s.page || "the site"}${s.scored ? "" : " (recorded, not scored: outside the confident 2–20 band)"}`);
-  }
-  if (m.team_size_estimate) push("users", "Team estimate:", m.team_size_estimate);
-  return out;
-}
-
 async function openLead(id, opts) {
   // The dialog opens on the click, not when the server answers: on a cold
   // cloud instance the fetch can take seconds, and a click that shows nothing
   // reads as a click that did nothing.
   const quiet = !!(opts && opts.quiet);
   if (!quiet) {
-    modal.open(`${modalHead(`${typeIcon("lead")}<span class="key">${leadKey(id)}</span>`)}
+    modal.open(`${modalHead(`${typeIcon("lead")}`)}
       <div class="modal-body single"><div class="modal-main"><div class="empty-state">
         <div class="spin" style="margin: 0 auto 12px"></div><p>Opening the lead</p></div></div></div>`,
       { label: "Opening the lead" });
@@ -723,19 +623,27 @@ async function openLead(id, opts) {
     return toast("Could not load company: " + e.message, true);
   }
   const m = d.metadata || {}, research = m.p1_research || {};
-  const st = leadStatus(d.status), score = +d.fit_score || 0, prio = prioFor(score);
+  const score = +d.fit_score || 0;
   const decided = d.status === "shortlisted" || d.status === "rejected";
   const contacts = renderContacts(d);
-  const evidence = evidenceItems(m).concat(uiEvidence(d));
   const pills = [sourceLozenge(d.source)];
   if (m.subtype) pills.push(`<span class="lozenge new">${esc(String(m.subtype).replace(/_/g, " "))}</span>`);
-  if (m.web_verification) pills.push(`<span class="lozenge success">Web-verified</span>`);
+  // Details: only rows no other part of the dialog shows; the box appears only when it has some
+  const wv = m.web_verification && typeof m.web_verification === "object" ? m.web_verification : null;
+  const credits = Array.isArray(m.notable_credits) ? m.notable_credits.map((c) => typeof c === "string" ? c : (c && (c.title || c.name)) || "").filter(Boolean) : [];
+  const det = [
+    (m.hq_city || m.hq_state) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state].filter(Boolean).join(", "))}</dd>` : "",
+    uiDetails(d),
+    wv && wv.note ? `<dt>Web check</dt><dd>${esc(wv.note)}${wv.date ? ` <span class="muted small">${esc(wv.date)}</span>` : ""}</dd>` : "",
+    m.team_size_estimate ? `<dt>Team size (research)</dt><dd>${esc(m.team_size_estimate)}</dd>` : "",
+    credits.length ? `<dt>Credits</dt><dd>${esc(credits.join("; "))}</dd>` : "",
+  ].join("");
   (m.genres || []).slice(0, 4).forEach((g) => pills.push(`<span class="lozenge">${esc(g)}</span>`));
   (m.platform_relationships || []).slice(0, 4).forEach((g) => pills.push(`<span class="lozenge inprogress">${esc(g)}</span>`));
 
   modal.open(`
-    ${modalHead(`${typeIcon("lead")}<span class="key">${leadKey(d.id)}</span><span style="margin:0 4px">·</span>${statusLozenge(d.status)}`,
-      d.domain ? `<a class="btn subtle" href="https://${esc(d.domain)}" target="_blank" rel="noopener">${icon("external", 16)} Website</a>` : "")}
+    ${modalHead(`${typeIcon("lead")}${statusLozenge(d.status)}`,
+      d.domain ? `<a class="btn subtle" href="https://${esc(d.domain)}" target="_blank" rel="noopener">${icon("external", 16)} ${esc(d.domain)}</a>` : "")}
     <div class="modal-body">
       <div class="modal-main">
         ${(() => { const t = leadTitle(d); return personFirst() && hostOf(d) && !t.same
@@ -745,37 +653,19 @@ async function openLead(id, opts) {
 
         ${d.explain ? `<div class="section"><h3>${icon("sparkle", 16)} Analysis</h3><div class="body">${renderAnalysis(d.explain)}</div></div>` : ""}
 
-        ${m.why_fit ? `<div class="section"><h3>${icon("book", 16)} Why this could fit</h3><div class="body"><p>${esc(m.why_fit)}</p></div></div>` : ""}
-
-        <div class="section"><h3>${icon("shield", 16)} Evidence</h3>
-          <div class="body">${evidence.length ? `<ul class="evidence-list">${evidence.join("")}</ul>`
-            : `<p class="muted">No evidence beyond the discovery record yet. Run the enrichment passes from Operations.</p>`}</div></div>
-
         ${d.explain && !(d.explain.criteria || []).length ? "" : `<div class="section"><h3>${icon("chart", 16)} Score breakdown <span class="pts ${ptsClass(score)}">${fmtScore(score)} / 100</span></h3>
-          <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) + renderLegend(d.explain) : ""}</div></div>`}
+          <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) : ""}</div></div>`}
 
         ${research.ownership || research.caveats ? `<div class="section"><h3>${icon("book", 16)} Research notes</h3><div class="body">
+          ${m.why_fit ? `<p><strong>Why it could fit.</strong> ${esc(m.why_fit)}</p>` : ""}
           ${research.ownership ? `<p><strong>Ownership.</strong> ${esc(research.ownership)}</p>` : ""}
           ${research.caveats ? `<p><strong>Caveats.</strong> ${esc(research.caveats)}</p>` : ""}</div></div>` : ""}
 
-        <div class="section"><h3>${icon("clock", 16)} Activity</h3><div class="body">
-          ${d.status_reason ? `<p><strong>Decision note.</strong> ${esc(d.status_reason)}</p>` : ""}
-          ${d.status_changed_at ? `<p class="muted small">Status changed ${fmtDate(d.status_changed_at)}</p>` : ""}
-          ${m.source_history && m.source_history.length ? `<p class="muted small">Seen by ${m.source_history.length} discovery run${m.source_history.length === 1 ? "" : "s"}.</p>` : ""}
-          ${!d.status_reason && !d.status_changed_at ? `<p class="muted">No decisions yet.</p>` : ""}
-        </div></div>
+        ${d.status_reason ? `<div class="section"><h3>${icon("clock", 16)} Decision note</h3><div class="body">
+          <p>${esc(d.status_reason)} <span class="muted small">(${fmtDate(d.status_changed_at)})</span></p></div></div>` : ""}
       </div>
 
       <div class="modal-side">
-        <div class="menu-anchor" style="margin-bottom:16px">
-          <button class="status-btn ${st.cls.split(" ")[0]}" id="statusBtn" aria-haspopup="true" aria-expanded="false">${esc(st.label)} ${icon("chevDown", 14)}</button>
-          <div class="menu" id="statusMenu" hidden>
-            <div class="menu-heading">Transition to</div>
-            ${d.status !== "shortlisted" ? `<button class="menu-item" data-decide="shortlist"><span class="lozenge success">Shortlisted</span> Its email is drafted next</button>` : ""}
-            ${d.status !== "rejected" ? `<button class="menu-item" data-decide="reject"><span class="lozenge removed">Rejected</span> Keep out of the pipeline</button>` : ""}
-            ${decided ? `<button class="menu-item" data-decide="reset"><span class="lozenge">To review</span> Undo the decision</button>` : ""}
-          </div>
-        </div>
         <div class="reason-box" id="reasonBox" hidden>
           <label for="rejectReason">Reason for rejecting (kept with the decision)</label>
           <textarea id="rejectReason" rows="3" placeholder="e.g. service vendor, not an IP owner"></textarea>
@@ -783,33 +673,18 @@ async function openLead(id, opts) {
         </div>
 
         <div class="side-group"><div class="group-head">${icon("users", 16)} Contacts</div><div class="group-body">${contacts}</div></div>
-        <div class="side-group"><div class="group-head">Details</div><div class="group-body">
-          <dl class="details">
-            ${unscoredProject() ? "" : `<dt>Priority</dt><dd>${prioIcon(score, true)}</dd>
-            <dt>Fit score</dt><dd>${pts(score)} <span class="muted small">of 100</span></dd>`}
-            <dt>Source</dt><dd>${sourceLozenge(d.source)}</dd>
-            <dt>Website</dt><dd>${d.domain ? `<a href="https://${esc(d.domain)}" target="_blank" rel="noopener">${esc(d.domain)}</a>` : '<span class="muted">None yet</span>'}</dd>
-            ${(m.hq_city || m.hq_state) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state].filter(Boolean).join(", "))}</dd>` : ""}
-            ${uiDetails(d)}
-            ${m.aicp_detail ? `<dt>Directory</dt><dd>Listed in AICP${m.aicp_detail.chapter ? ", " + esc(m.aicp_detail.chapter) : ""}</dd>` : ""}
-            ${m.domain_resolution ? `<dt>Website via</dt><dd class="small">${esc(m.domain_resolution.method || m.domain_resolution.source || "resolver")}</dd>` : ""}
-          </dl>
-        </div></div>
-        ${m.web_verification && typeof m.web_verification === "object" ? `<div class="side-group"><div class="group-head">${icon("shield", 16)} Verification</div><div class="group-body">${factList(m.web_verification, 8) || '<span class="muted small">verified</span>'}</div></div>` : ""}
+        ${det ? `<div class="side-group"><div class="group-head">Details</div><div class="group-body"><dl class="details">${det}</dl></div></div>` : ""}
         <div class="timestamps">Created ${fmtDate(d.created_at)}<br>Updated ${fmtDate(d.updated_at || d.created_at)}</div>
       </div>
     </div>
     <div class="modal-foot">
-      <span class="left">${leadKey(d.id)} · ${esc(d.name)}</span>
       ${decided ? `<button class="btn subtle" data-decide="reset">Undo decision</button>` : ""}
       ${d.status !== "rejected" ? `<button class="btn subtle danger-text" data-decide="reject">Reject</button>` : ""}
       ${d.status !== "shortlisted" ? `<button class="btn primary" data-decide="shortlist">${icon("check", 16)} Shortlist</button>` : ""}
     </div>`, { label: d.name, onClose: () => { if (location.hash.startsWith("#lead/")) history.replaceState(null, "", "#" + currentView()); } });
 
   const root = $("#modalRoot");
-  const sb = $("#statusBtn", root), sm = $("#statusMenu", root);
-  sb.addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(sb, sm); });
-  const showReason = () => { $("#reasonBox", root).hidden = false; $("#rejectReason", root).focus(); closeMenus(); };
+  const showReason = () => { $("#reasonBox", root).hidden = false; $("#rejectReason", root).focus(); };
   $$("[data-decide]", root).forEach((b) => b.addEventListener("click", () => {
     const what = b.dataset.decide;
     if (what === "reject") return showReason();
@@ -825,10 +700,11 @@ async function decide(id, decision, reason) {
     const r = await post("/api/leads/" + id + "/decision", { decision, reason: reason || "" });
     const s = leadStatus(r.status);
     flag(r.name, { desc: "Moved to " + s.label + (decision === "reset" ? " (decision undone)" : "")
-      + (r.drafting ? ". Its email is being drafted: it appears in Outreach within minutes, for you to approve." : "") });
+      + (r.drafting ? ". Its email is being drafted: it appears in Outreach within minutes, for you to approve." : "")
+      + (r.withdrawn ? ". Its waiting email was withdrawn." : "") });
     await openLead(id, { quiet: true }); // re-render with the new status; Undo stays reachable
     refreshCurrentView();
-    refreshNotifications(true);
+    refreshOutreachCount(true);
   } catch (e) {
     toast("Could not save: " + e.message, true);
     $$("#modalRoot .btn").forEach((b) => b.disabled = false);
@@ -844,32 +720,17 @@ function refreshCurrentView() {
 }
 
 /* =========================================================== outreach */
-const FOLDERS = [
-  ["drafts", "Drafts"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"],
-  ["positive", "Positive"], ["negative", "Negative"], ["attention", "Attention"], ["cancelled", "Cancelled"],
-];
+/* Every reply sits in Replies with its mark (Positive, Negative, Needs triage); a positive one
+   also moves the company to In conversation. Attention shows only when a send's outcome is
+   unknown. (Positive, Negative and Cancelled folders went on 2026-09-19.) */
+const FOLDERS = [["drafts", "Drafts"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"], ["attention", "Attention"]];
 function outreachPolicy() { return (state.segment && state.segment.outreach_policy) || {}; }
 function batchOn() { return !!outreachPolicy().batch_approval; }
 function followUpsOn() { return !!(outreachPolicy().follow_ups || {}).enabled; }
-/* A draft whose opening line a model wrote is marked wherever it appears.
-   It is approved one at a time unless the segment allows it into a batch, so
-   the mark is not decoration: it is the reason the checkbox may be refused. */
-function writtenLozenge(r) {
-  return r.generated ? `<span class="lozenge moved" title="A model wrote the opening line from this lead's own evidence">Written</span> ` : "";
-}
 function stepLozenge(r) {
   const n = +r.sequence_step || 0;
   return n > 0 ? `<span class="lozenge new" title="Follow-up in the same thread">Follow-up ${n}</span> ` : "";
 }
-function threadNote() {
-  const f = outreachPolicy().follow_ups;
-  if (f && f.enabled) {
-    const n = (f.steps || []).length;
-    return `One thread per company: an opener and up to ${n} follow-up${n === 1 ? "" : "s"}, stopped by any reply.`;
-  }
-  return "One touch per company, enforced by the database.";
-}
-
 async function loadOutreach() {
   const o = state.outreach, token = ++o.token;
   let d;
@@ -883,7 +744,7 @@ async function loadOutreach() {
   o.selected = new Set([...(o.selected || [])].filter((id) => present.has(id)));
   const batch = batchOn() && o.folder === "drafts" && d.rows.length > 0;
   $("#outreachTable").classList.toggle("batch", batch);
-  $("#folderTabs").innerHTML = FOLDERS.map(([key, label]) =>
+  $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => key !== "attention" || o.counts.attention || o.folder === "attention").map(([key, label]) =>
     `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${o.counts[key] || 0}</span></button>`).join("");
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
     o.folder = b.dataset.f; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
@@ -891,14 +752,12 @@ async function loadOutreach() {
   $("#outreachBody").innerHTML = d.rows.length ? d.rows.map((r) => `
     <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
       <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} aria-label="Select this draft"></td>
-      <td><span class="cell-key">${typeIcon("mail")}<span class="key">${leadKey(r.entity_id)}</span></span></td>
       <td><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
-      <td><div class="truncate" style="max-width:360px">${stepLozenge(r)}${writtenLozenge(r)}${esc(r.subject || "(no subject)")}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}${r.stopped_reason && r.status === "cancelled" ? `<div class="secondary">${esc(r.stopped_reason)}</div>` : ""}</td>
-      <td>${mailLozenge(r)}</td>
+      <td><div class="truncate" style="max-width:420px">${r.direction === "inbound" ? mailLozenge(r) + " " : ""}${stepLozenge(r)}${esc(r.subject || "(no subject)")}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
       <td class="secondary nowrap" title="${esc(fmtDate(r.sent_at || r.created_at))}">${rel(r.sent_at || r.created_at)}</td>
     </tr>`).join("")
-    : `<tr class="empty-row"><td colspan="7">${o.folder === "drafts"
+    : `<tr class="empty-row"><td colspan="5">${o.folder === "drafts"
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
         : "Nothing in this folder yet."}</td></tr>`;
   delegateOpen("#outreachBody", openMessage, ".sel-col");
@@ -907,7 +766,7 @@ async function loadOutreach() {
     renderBatchBar();
   }));
   renderBatchBar();
-  updateNotifBadge(o.counts);
+  updateOutreachCount(o.counts);
 }
 
 function renderBatchBar() {
@@ -920,12 +779,11 @@ function renderBatchBar() {
   bar.innerHTML = `<span>${n ? `<strong>${n}</strong> selected` : "Select drafts to approve them together."}</span>
     ${n ? `<span class="small muted">You'll read a random ${k} of them before they're approved.</span>` : ""}
     <span class="grow"></span>
-    <button class="btn subtle" id="batchClear" ${n ? "" : "disabled"}>Clear</button>
     <button class="btn primary" id="batchGo" ${n ? "" : "disabled"}>${icon("check", 16)} Approve ${n || ""} selected</button>`;
-  const all = $("#outreachSelAll");
-  all.checked = n > 0 && n === o.rows.length;
-  all.indeterminate = n > 0 && n < o.rows.length;
-  $("#batchClear").addEventListener("click", () => { o.selected.clear(); loadOutreach(); });
+  const all = $("#outreachSelAll"), cap = Math.min(o.rows.length, pol.max_batch || o.rows.length);
+  all.checked = n > 0 && n >= cap;
+  all.indeterminate = n > 0 && n < cap;
+  all.setAttribute("aria-label", "Select the first " + cap + " drafts"); all.title = "Select the first " + cap + " drafts";
   $("#batchGo").addEventListener("click", startBatch);
 }
 
@@ -996,11 +854,8 @@ async function startBatch() {
    repeated in each template. The server refuses a footer with no address or
    no way out -- both are required of commercial email, and both are what
    keep a sending domain alive. */
-const FOOTER_SAMPLE = { company: "Example Productions", greeting_name: "there" };
-
 function footerPreview(text, sender) {
-  const vals = Object.assign({ sender_name: sender.name, sender_title: sender.title,
-    sender_email: sender.email || "", postal_address: sender.postal_address }, FOOTER_SAMPLE);
+  const vals = { sender_name: sender.name, sender_title: sender.title, postal_address: sender.postal_address };
   let out = text || "";
   Object.keys(vals).forEach((k) => { out = out.split("{{" + k + "}}").join(vals[k] || ""); });
   return out;
@@ -1025,10 +880,10 @@ async function openFooter() {
         <div class="help">Commercial email has to carry a real postal address. A missing one is what gets a sending domain blocked.</div></div>
       <div class="field" style="margin-top:16px"><label for="fText">Footer</label>
         <textarea id="fText" style="min-height:140px">${esc(d.text)}</textarea>
-        <div class="help">Fields: ${d.fields.map((f) => `<code>{{${esc(f)}}}</code>`).join(" ")} &nbsp;<a href="#" id="fReset">restore the standard footer</a></div></div>
+        <div class="help">Fields: ${d.fields.map((f) => `<code>{{${esc(f)}}}</code>`).join(" ")}</div></div>
       <div class="field" style="margin-top:16px"><label>How it will read</label><div class="mail-body" id="fPreview"></div></div>
       <div id="fProblems"></div>
-      ${pending ? `<label class="footer-apply"><input type="checkbox" id="fApply" checked> Put this footer on the ${pending} draft${pending === 1 ? "" : "s"} waiting for approval<div class="help">Only the footer is replaced. Anything you wrote above it stays exactly as you wrote it.</div></label>` : ""}
+      ${pending ? `<div class="help" style="margin-top:12px">${pending === 1 ? "The draft waiting gets" : "The " + pending + " drafts waiting get"} this footer too. Only the footer is replaced; anything written above it stays.</div>` : ""}
     </div></div>
     <div class="modal-foot">
       <span class="left">Emails already sent are not touched.</span>
@@ -1044,17 +899,12 @@ async function openFooter() {
     $("#" + id, root).addEventListener("input", paint));
   paint();
   if (d.problems && d.problems.length) showFooterProblems(root, d.problems);
-  $("#fReset", root).addEventListener("click", (e) => {
-    e.preventDefault(); $("#fText", root).value = d.default; paint();
-  });
   $("#fSave", root).addEventListener("click", async (e) => {
     const b = e.currentTarget;
     b.classList.add("loading"); $$("#modalRoot .btn").forEach((x) => x.disabled = true);
     $("#fProblems", root).innerHTML = "";
     try {
-      const apply = !!($("#fApply", root) || {}).checked;
-      const res = await post("/api/outreach/footer",
-        { text: $("#fText", root).value, sender: sender(), apply_to_drafts: apply });
+      const res = await post("/api/outreach/footer", { text: $("#fText", root).value, sender: sender() });
       const bits = [];
       if (res.rebuilt) bits.push(res.rebuilt + " draft" + (res.rebuilt === 1 ? "" : "s") + " rewritten");
       if (res.left_alone) bits.push(res.left_alone + " left alone (they do not end with the old footer)");
@@ -1077,11 +927,11 @@ function openMessage(id) {
   const o = state.outreach, r = o.rows.find((x) => x.id === id);
   if (!r) return;
   const isDraft = r.status === "drafted", isReply = r.direction === "inbound";
-  const [stLabel, stCls] = mailStatus(r);
   const step = +r.sequence_step || 0;
-  const canStop = followUpsOn() && !isReply && ["drafted", "approved", "sent"].includes(r.status);
+  // ending a live thread by hand, or dismissing a follow-up draft; an unsent opener has no thread yet
+  const canStop = followUpsOn() && !isReply && !r.stopped_reason && (r.status === "sent" || (step > 0 && r.status === "drafted"));
   modal.open(`
-    ${modalHead(`${typeIcon("mail")}<span class="key">${leadKey(r.entity_id)}</span><span style="margin:0 4px">·</span>${stepLozenge(r)}${mailLozenge(r)}`,
+    ${modalHead(`${typeIcon("mail")}${stepLozenge(r)}${mailLozenge(r)}`,
       `<button class="btn subtle" id="msgOpenLead">${icon("bookmark", 14)} Open lead</button>`)}
     <div class="modal-body">
       <div class="modal-main">
@@ -1096,26 +946,21 @@ function openMessage(id) {
       <div class="modal-side">
         <div class="side-group"><div class="group-head">Details</div><div class="group-body">
           <dl class="details">
-            <dt>Company</dt><dd><a href="#lead/${esc(r.entity_id)}">${esc(r.company)}</a>${r.domain ? `<div class="small muted">${esc(r.domain)}</div>` : ""}</dd>
+            <dt>Company</dt><dd>${esc(r.company)}${r.domain ? `<div class="small muted">${esc(r.domain)}</div>` : ""}</dd>
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
-            <dt>Status</dt><dd><span class="lozenge ${stCls}">${esc(stLabel)}</span></dd>
-            <dt>Direction</dt><dd>${isReply ? "Inbound reply" : step ? "Follow-up " + step + ", same thread" : "Opener"}</dd>
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
             ${r.approved_by ? `<dt>Approved</dt><dd>${esc(r.approved_by)}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
-            ${r.triage ? `<dt>Triage</dt><dd><span class="lozenge ${r.triage === "positive" ? "success bold" : r.triage === "negative" ? "removed" : "moved"}">${esc(r.triage.replace(/_/g, " "))}</span></dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
-            ${r.template_key ? `<dt>Template</dt><dd class="mono">${esc(r.template_key)}</dd>` : ""}
-            ${r.generated_hook ? `<dt>Opening line</dt><dd><span class="lozenge moved">Written by a model</span><div class="small muted" style="margin-top:6px">From this lead's own evidence. Every number in it was checked against that evidence before it was kept.</div></dd>` : ""}
-            ${r.gmail_thread_id ? `<dt>Gmail thread</dt><dd class="mono">${esc(r.gmail_thread_id)}</dd>` : ""}
+            ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">Part of this email was written by a model from this lead's own evidence. Every number in it was checked against that evidence.</dd>` : ""}
           </dl></div></div>
         <div class="timestamps">${r.sent_at ? "Sent " + fmtDate(r.sent_at) + "<br>" : ""}Created ${fmtDate(r.created_at)}</div>
       </div>
     </div>
     <div class="modal-foot">
-      <span class="left">${r.status === "approved" ? (o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : esc(threadNote())}</span>
+      <span class="left">${r.status === "approved" ? (o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : ""}</span>
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
-      ${isDraft ? `<button class="btn subtle danger-text" data-act="cancel">Cancel draft</button><button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
+      ${isDraft ? `<button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
       ${isReply && r.status !== "cancelled" ? `<button class="btn" data-act="mark_negative">Mark negative</button><button class="btn primary" data-act="mark_positive">${icon("check", 16)} Mark positive</button>` : ""}
     </div>`, { label: r.subject || "Message" });
@@ -1133,7 +978,7 @@ function openMessage(id) {
           body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value }) });
       }
       const res = await post("/api/outreach/" + id + "/decision", { action: b.dataset.act });
-      const msg = { approve: res.can_send ? "Approved: sending" : "Approved", cancel: "Cancelled", mark_positive: "Marked positive",
+      const msg = { approve: res.can_send ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",
         mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped" }[b.dataset.act];
       const desc = b.dataset.act === "approve"
         ? r.company + (res.can_send ? ": it goes out within minutes." : ": it goes out as soon as a mailbox is connected.")
@@ -1153,17 +998,7 @@ async function loadReports() {
   let s, k;
   try { [s, k] = await Promise.all([api("/api/stats"), api("/api/kpis").catch(() => ({}))]); }
   catch (e) { return toast("Could not load reports: " + e.message, true); }
-  state.rubric = s.rubric || [];
-  const f = k.funnel || {}, a = k.approval || {}, en = k.enrichment || {}, o = k.outreach || {}, u = k.unattended || {};
-
-  $("#statTiles").innerHTML = [
-    ["Companies found", s.total, "all sources, all time", false],
-    ["With a website", s.with_domain, "", false],
-    ["Contactable", s.with_contact, "have an email", true],
-    ["Named person", s.named_contact, "a real name, not info@", true],
-    ["To review", s.open_pool, "open pool", false],
-    ["Shortlisted", s.shortlisted, "approved for outreach", true],
-  ].map(([kk, n, d, hi]) => `<div class="tile ${hi ? "hi" : ""}"><div class="n">${n}</div><div class="k">${esc(kk)}</div>${d ? `<div class="d">${esc(d)}</div>` : ""}</div>`).join("");
+  const f = k.funnel || {}, o = k.outreach || {};
 
   // status donut: reserved status colours, a legend with counts (the table view)
   // Colours in ring order, each adjacent chromatic pair validated for CVD and
@@ -1188,87 +1023,61 @@ async function loadReports() {
   });
   $("#donut").innerHTML = `<svg viewBox="0 0 168 168" width="168" height="168" role="img" aria-label="Status overview: ${segs.map((x) => x.label + " " + x.value).join(", ")}">
     ${total ? arcs.join("") : `<circle r="${r}" cx="${c}" cy="${c}" fill="none" style="stroke:var(--chart-muted)" stroke-width="18"/>`}</svg>
-    <div class="center"><div class="n">${total}</div><div class="k">companies</div></div>`;
+    <div class="center"><div class="n">${total}</div><div class="k">${esc(segUi().entity_plural || "companies")}</div></div>`;
   $("#donutLegend").innerHTML = segs.map((x) => `<li><span class="sw" style="background:${x.color}"></span><span>${esc(x.label)}</span><span class="v">${x.value}${total ? ` · ${Math.round(x.value / total * 100)}%` : ""}</span></li>`).join("");
 
+  // outreach results: nothing to measure until the first email goes out
   const pct = (v) => v == null ? "—" : v + "%";
-  $("#kpiTiles").innerHTML = [
-    ["Contacted, 7d", o.sent_last_7d ?? 0, "target 15–20", true],
-    ["Contacted, 28d", o.sent_last_28d ?? 0, "", false],
-    ["Approval rate", pct(a.approval_rate_pct), `${a.approved ?? 0} kept / ${a.rejected ?? 0} rejected`, true],
-    ["Contact-find rate", pct(en.contact_find_rate_pct), `${en.with_contact ?? 0} of ${en.sites_known ?? 0} sites`, false],
-    ["Email validity", pct(en.email_validity_pct), `${en.invalid_emails ?? 0} invalid`, false],
+  $("#kpiTiles").innerHTML = +o.openers_sent > 0 ? [
+    ["Contacted, 7 days", o.sent_last_7d ?? 0, "companies, not counting follow-ups", true],
     ["Reply rate", pct(o.reply_rate_pct), `${o.replies ?? 0} replies`, true],
     ["Positive rate", pct(o.positive_rate_pct), `${o.positive_replies ?? 0} positive`, true],
-    ["Follow-ups sent", o.followups_sent ?? 0, "in the same thread", false],
-    ["Pipeline runs, 28d", u.pipeline_runs_28d ?? 0, `${u.pipeline_failures_28d ?? 0} failed`, false],
-  ].map(([kk, n, d, hi]) => `<div class="tile ${hi ? "hi" : ""}" style="padding:12px 16px"><div class="n" style="font-size:20px">${esc(n)}</div><div class="k">${esc(kk)}</div>${d ? `<div class="d">${esc(d)}</div>` : ""}</div>`).join("");
+    followUpsOn() && ["Follow-ups sent", o.followups_sent ?? 0, "in the same thread", false],
+  ].filter(Boolean).map(([kk, n, d, hi]) => `<div class="tile ${hi ? "hi" : ""}" style="padding:12px 16px"><div class="n" style="font-size:20px">${esc(n)}</div><div class="k">${esc(kk)}</div>${d ? `<div class="d">${esc(d)}</div>` : ""}</div>`).join("")
+    : `<p class="muted">Nothing sent yet.</p>`;
 
-  const max = Math.max(1, ...s.histogram.map((h) => h.n));
-  $("#histogram").innerHTML = s.histogram.map((h) => `<div class="row" title="${h.n} companies scoring ${esc(h.band)}">
-      <div class="lbl">${esc(h.band)}</div>
-      <div class="track"><div class="fill" style="width:${(h.n / max * 100).toFixed(1)}%"></div></div>
-      <div class="val">${h.n}</div></div>`).join("");
-
-  const pool = s.open_pool || 1, byKey = {};
-  state.rubric.forEach((x) => { byKey[x.key] = x; });
-  $("#coverage").innerHTML = Object.entries(s.coverage).map(([key, n]) => {
-    const p = n / pool * 100, cls = p < 5 ? "starved" : p < 40 ? "thin" : "ok", rr = byKey[key] || {};
-    const state_ = cls === "starved" ? ["Starved", "removed"] : cls === "thin" ? ["Thin", "moved"] : ["Covered", "success"];
-    return `<div class="cov ${cls}">
-      <div class="top-line"><span>${esc(rr.label || key)}</span><span class="pts-label">${rr.points != null ? rr.points + " pts" : ""}</span></div>
-      <div class="track"><div class="fill" style="width:${Math.max(p, 0.6).toFixed(1)}%"></div></div>
-      <div class="state"><span class="lozenge ${state_[1]}">${state_[0]}</span><span class="n">${n} · ${p.toFixed(0)}%</span></div></div>`;
-  }).join("");
-
-  const bySrc = {};
-  (k.by_source || []).forEach((x) => { bySrc[x.source] = x; });
-  $("#sourceTable").innerHTML = `<thead><tr><th>Source</th><th class="r">Found</th><th class="r">With site</th>
-      <th class="r">Contactable</th><th class="r">Avg score</th><th class="r">Reviewable</th><th>Approval</th></tr></thead><tbody>` +
-    s.by_source.map((x) => {
-      const ap = bySrc[x.source] || {}, ruled = (ap.approved || 0) + (ap.rejected || 0);
-      return `<tr><td>${sourceLozenge(x.source)}</td><td class="r num">${x.n}</td><td class="r num">${x.with_domain}</td>
-        <td class="r num">${x.with_contact}</td><td class="r num">${x.avg_score == null ? "—" : x.avg_score}</td>
-        <td class="r num"><strong>${x.reviewable}</strong></td>
-        <td>${ruled ? `<div class="bar-cell"><div class="track"><div class="fill" style="width:${ap.approval_rate_pct || 0}%"></div></div><span class="num small">${ap.approval_rate_pct}% <span class="muted">(${ap.approved}/${ruled})</span></span></div>` : '<span class="muted small">no decisions yet</span>'}</td></tr>`;
-    }).join("") + "</tbody>";
+  // by source: only where a project has more than one to compare
+  const src = k.by_source || [];
+  $("#sourcePanel").hidden = src.length < 2;
+  $("#sourceTable").innerHTML = `<thead><tr><th>Source</th><th class="r">Found</th><th class="r">Contactable</th><th class="r">Shortlisted</th></tr></thead><tbody>` +
+    src.map((x) => `<tr><td>${sourceLozenge(x.source)}</td><td class="r num">${x.found}</td><td class="r num">${x.contactable}</td>
+      <td class="r num">${x.approved}</td></tr>`).join("") + "</tbody>";
 }
 
 /* ================================================================ ops */
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/* What runs by itself, and how its last run went. Days use the scheduler's own numbering
+   (Python's weekday(): Monday is 0) -- the page used to show every day one early. */
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 async function loadSchedule() {
   let d;
   try { d = await api("/api/schedule"); } catch (e) { return; }
-  $("#schedTable").innerHTML = `<thead><tr><th>State</th><th>Name</th><th>When</th><th>Pipeline</th></tr></thead><tbody>` +
-    ((d.schedule || []).map((s) => {
-      const hm = `${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`;
-      const when = s.dow === "*" || s.dow == null ? `${hm} daily` : `${DOW[s.dow]} ${hm} UTC`;
-      return `<tr><td><span class="lozenge ${s.enabled ? "success" : ""}">${s.enabled ? "On" : "Off"}</span></td>
-        <td class="primary-cell">${esc(s.name)}</td><td>${esc(when)}</td><td class="mono">${esc(s.pipeline)}</td></tr>`;
-    }).join("") || `<tr class="empty-row"><td colspan="4">No schedules configured.</td></tr>`) + "</tbody>";
-  $("#webhookMsg").innerHTML = d.webhook_configured
-    ? `<div class="section-msg success">${icon("checkCircle", 24)}<div><div class="title">Alerts are armed</div><div class="text">A failed pipeline step pings the alert webhook. Use Test alert to prove it.</div></div></div>`
-    : `<div class="section-msg warning">${icon("warn", 24)}<div><div class="title">No alert webhook set</div><div class="text">Failures are logged only. Set ALERT_WEBHOOK_URL in the environment to get a Discord or Slack ping.</div></div></div>`;
-  const dur = (r) => (r.started_at && r.finished_at) ? Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000) + "s" : "";
-  $("#runsTable").innerHTML = `<thead><tr><th>Pipeline</th><th>Step</th><th>Trigger</th><th>Status</th><th>When</th><th class="r">Took</th></tr></thead><tbody>` +
-    (d.runs.length ? d.runs.slice(0, 15).map((r) => `<tr>
-        <td class="primary-cell">${esc(r.pipeline)}</td>
-        <td>${r.step ? `<span class="mono">${esc(r.step)}</span>` : '<span class="muted">whole pipeline</span>'}</td>
-        <td><span class="lozenge ${r.trigger === "manual" ? "inprogress" : ""}">${esc(r.trigger)}</span></td>
-        <td><span class="lozenge ${r.status === "ok" ? "success" : r.status === "failed" ? "removed" : "inprogress"}">${esc(r.status)}</span></td>
-        <td class="secondary nowrap" title="${esc(fmtDate(r.started_at))}">${rel(r.started_at)}</td>
-        <td class="r num secondary">${esc(dur(r))}</td></tr>`).join("")
-      : `<tr class="empty-row"><td colspan="6">No runs yet. The first scheduled refresh is Tuesday 02:00 UTC.</td></tr>`) + "</tbody>";
+  const last = d.last || {};
+  const hm = (s) => `${String(s.hour).padStart(2, "0")}:${String(s.minute).padStart(2, "0")}`;
+  const rows = (d.schedule || []).filter((s) => s.enabled !== false).map((s) => ({
+    name: s.name, run: last[s.pipeline],
+    when: s.dow === "*" || s.dow == null ? `Daily ${hm(s)}` : `${DOW[s.dow]} ${hm(s)}` }));
+  rows.push({ name: "drafting and sending", when: "Every 15 minutes, when there is work", run: last.outreach });
+  const result = (r) => !r ? '<span class="muted">Not run yet</span>'
+    : r.status === "running" ? '<span class="lozenge inprogress">Running</span>'
+    : r.status === "failed" ? `<span class="lozenge removed" title="${esc(r.failed_detail || r.detail || "")}">Failed${r.failed_step ? " at " + esc(r.failed_step) : ""}</span>`
+    : r.status === "skipped" ? '<span class="lozenge moved">Skipped</span>' : '<span class="lozenge success">OK</span>';
+  $("#runsTable").innerHTML = `<thead><tr><th>What</th><th>When</th><th>Last run</th><th>Result</th></tr></thead><tbody>` +
+    rows.map((x) => `<tr><td class="primary-cell">${esc(x.name.charAt(0).toUpperCase() + x.name.slice(1))}</td><td>${esc(x.when)}</td>
+      <td class="secondary nowrap" title="${esc(x.run ? fmtDate(x.run.started_at) : "")}">${x.run ? rel(x.run.started_at) + (x.run.trigger === "manual" ? " (by hand)" : "") : "—"}</td>
+      <td>${result(x.run)}</td></tr>`).join("") + "</tbody>";
+  $("#runsSub").textContent = "What runs by itself, and how its last run went. Times are UTC." + (d.webhook_configured ? ""
+    : " Failures show only here: set ALERT_WEBHOOK_URL on the server to get a Slack or Discord ping.");
 }
 
+/* Mailbox rotation and warm-up (LCX). With one mailbox there is nothing to show that
+   Outreach does not already say (whether an approval can go out). */
 async function loadMailboxes() {
   let d;
   try { d = await api("/api/mailboxes"); } catch (e) { $("#mailboxPanel").hidden = true; return; }
-  $("#mailboxPanel").hidden = false;
+  $("#mailboxPanel").hidden = !d.rotation;
+  if (!d.rotation) return;
   const today = d.mailboxes.reduce((a, m) => a + (m.cap_today || 0), 0);
-  $("#mailboxSub").textContent = d.rotation
-    ? `Openers go to the mailbox with the most room left today; follow-ups always leave from the mailbox that sent the opener. New mailboxes warm up slowly. Up to ${Math.min(today, d.segment_cap)} emails today (segment ceiling ${d.segment_cap}). Bounced addresses are never written to again.`
-    : `One mailbox, up to ${d.segment_cap} emails a day.`;
+  $("#mailboxSub").textContent = `Openers go to the mailbox with the most room today; follow-ups leave from the mailbox that sent the opener. Up to ${Math.min(today, d.segment_cap)} emails today (ceiling ${d.segment_cap}).`;
   $("#mailboxTable").innerHTML = `<thead><tr><th>Mailbox</th><th>Address</th><th>Warm-up</th><th class="r">Cap today</th><th class="r">Sent today</th><th>Room left</th></tr></thead><tbody>` +
     d.mailboxes.map((m) => {
       const warm = !m.enabled ? `<span class="lozenge">Disabled</span>`
@@ -1277,7 +1086,7 @@ async function loadMailboxes() {
         : `<span class="lozenge moved">Not started</span>`;
       const pct = m.cap_today ? Math.round(100 * m.remaining / m.cap_today) : 0;
       return `<tr><td class="mono primary-cell">${esc(m.key)}</td>
-        <td>${m.last_address ? esc(m.last_address) : `<span class="muted small">set <span class="mono">${esc(m.email_env)}</span> on the laptop</span>`}</td>
+        <td>${m.connected ? esc(m.last_address || "Connected") : `<span class="muted small">Not connected: set <span class="mono">${esc(m.email_env)}</span>, then <span class="mono">outreach.py auth --mailbox ${esc(m.key)}</span></span>`}</td>
         <td>${warm}${m.warmup ? `<div class="secondary">${m.warmup.start_cap} a day, +${m.warmup.step} every ${m.warmup.every_days} days, up to ${m.daily_cap}</div>` : ""}</td>
         <td class="r num">${m.cap_today}</td><td class="r num">${m.sent_today}</td>
         <td><div class="bar-cell"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="num small">${m.remaining}</span></div></td></tr>`;
@@ -1288,55 +1097,16 @@ async function loadOps() {
   loadSchedule();
   loadMailboxes();
   let d;
-  try { d = await api("/api/ops"); }
-  catch (e) { return toast("Could not load operations: " + e.message, true); }
-  state.ops.jobs = d.jobs;
-  const groups = {};
-  d.jobs.forEach((j) => (groups[j.group] = groups[j.group] || []).push(j));
-  const GROUP_DESC = { Discover: "Find new companies. Runs in the office n8n on schedule.",
-    Process: "Staging into the pool: promote, merge, score, apply gates.",
-    Enrich: "Websites, contacts, qualification evidence, news.",
-    Outreach: "Draft personalised emails for the shortlist." };
-  $("#opsGroups").innerHTML = Object.entries(groups).map(([g, jobs]) => `
-    <div class="panel"><div class="panel-head"><div><h2>${esc(g)}</h2><p class="sub">${esc(GROUP_DESC[g] || "")}</p></div></div>
-      ${jobs.map((j) => `<div class="job-row ${!j.available ? "off" : ""}">
-        <div class="info"><div class="name">${esc(j.label)}</div><div class="desc">${esc(j.desc)}</div>
-          ${!j.available ? `<div class="why">${esc(j.unavailable_reason)}</div>` : ""}</div>
-        <div class="side">
-          ${j.running ? `<span class="spin" aria-hidden="true"></span><span class="lozenge inprogress bold">Running</span><button class="btn" data-stop="${j.key}">Stop</button>`
-            : `<span class="lozenge ${j.status === "done" ? "success" : j.status === "failed" ? "removed" : ""}">${esc(j.status || "idle")}</span>
-               <button class="btn ${j.available && !d.busy ? "primary" : ""}" data-run="${j.key}" ${(!j.available || d.busy) ? "disabled" : ""}>Run</button>`}
-          <button class="btn subtle" data-log="${j.key}" ${!j.status ? "disabled" : ""}>Log</button>
-        </div></div>`).join("")}
-    </div>`).join("");
-  $$("#opsGroups [data-run]").forEach((b) => b.addEventListener("click", () => runJob(b.dataset.run)));
-  $$("#opsGroups [data-stop]").forEach((b) => b.addEventListener("click", async () => {
-    try { await post("/api/ops/" + b.dataset.stop + "/stop"); flag("Stopping " + b.dataset.stop); }
-    catch (e) { toast(e.message, true); }
-    loadOps();
-  }));
-  $$("#opsGroups [data-log]").forEach((b) => b.addEventListener("click", () => watchOps(b.dataset.log)));
-  if (d.busy && !state.ops.timer) watchOps(d.busy);
+  try { d = await api("/api/ops"); } catch (e) { return; }
+  if (d.busy && !state.ops.timer) watchOps(d.busy, d.label);   // a job holds the slot: show its log
 }
 
-async function runJob(key, opts) {
-  opts = opts || {};
-  try {
-    await post("/api/ops/" + key + "/run");
-    const j = state.ops.jobs.find((x) => x.key === key);
-    flag("Started: " + (j ? j.label : key), { desc: "One job runs at a time. The log streams in Operations." });
-    if (opts.goToOps) go("ops");
-    watchOps(key, opts.onDone);
-  } catch (e) { toast(e.message, true); }
-  if (currentView() === "ops") loadOps();
-}
-
-async function watchOps(key, onDone) {
-  state.ops.watching = key;
-  const panel = $("#logPanel");
-  panel.hidden = false;
-  const j = state.ops.jobs.find((x) => x.key === key);
-  $("#logTitle").textContent = "Log: " + (j ? j.label : key);
+/* The log of the job holding the single slot. Stop is there for a job that hangs (it would
+   block drafting and sending); a send only stops by finishing, or its email stays 'sending'. */
+async function watchOps(key, label) {
+  $("#logPanel").hidden = false;
+  $("#logTitle").textContent = "Log: " + (label || key);
+  $("#logStop").dataset.key = key;
   clearInterval(state.ops.timer);
   const tick = async () => {
     try {
@@ -1344,11 +1114,10 @@ async function watchOps(key, onDone) {
       const pre = $("#opsLog");
       pre.textContent = d.lines.join("\n") || "(no output yet)";
       pre.scrollTop = pre.scrollHeight;
+      $("#logStop").hidden = d.status !== "running" || key === "send_outreach";
       if (d.status !== "running") {
         clearInterval(state.ops.timer); state.ops.timer = null;
-        if (currentView() === "ops") loadOps();
-        if (d.status) flag((j ? j.label : key) + ": " + d.status, { kind: d.status === "failed" ? "err" : "" });
-        if (onDone) onDone(d.status);
+        if (currentView() === "ops") loadOps();              // the next step of a refresh, if one is running
       }
     } catch (e) { clearInterval(state.ops.timer); state.ops.timer = null; }
   };
@@ -1357,28 +1126,26 @@ async function watchOps(key, onDone) {
 }
 
 function bindOps() {
-  const runPipe = async (name, btn) => {
-    btn.classList.add("loading");
-    try { await post("/api/schedule/run/" + name); flag(name + " started", { desc: "Watch it in Recent runs." }); setTimeout(loadSchedule, 1500); }
-    catch (e) { toast(e.message, true); }
-    btn.classList.remove("loading");
-  };
-  $("#runRefresh").addEventListener("click", (e) => runPipe("weekly_refresh", e.currentTarget));
-  $("#runRescore").addEventListener("click", (e) => runPipe("rescore", e.currentTarget));
-  $("#testAlert").addEventListener("click", async (e) => {
-    const b = e.currentTarget; b.classList.add("loading");
+  $("#runRefresh").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.classList.add("loading");
     try {
-      const r = await post("/api/schedule/test-alert");
-      flag(r.webhook_configured ? "Alert sent to the webhook" : "No webhook set", { desc: r.webhook_configured ? "Check the channel." : "The alert was logged server-side instead.", kind: r.webhook_configured ? "" : "info" });
+      await post("/api/schedule/run/weekly_refresh");
+      flag("Weekly refresh started", { desc: "Its steps run one at a time; the log streams below." });
+      setTimeout(loadOps, 1500);
     } catch (err) { toast(err.message, true); }
-    b.classList.remove("loading");
+    btn.disabled = false; btn.classList.remove("loading");
+  });
+  $("#logStop").addEventListener("click", async (e) => {
+    try { await post("/api/ops/" + e.currentTarget.dataset.key + "/stop"); flag("Stopping " + $("#logTitle").textContent.replace(/^Log: /, "")); }
+    catch (err) { toast(err.message, true); }
   });
   $("#logClose").addEventListener("click", () => { $("#logPanel").hidden = true; });
   $("#footerBtn").addEventListener("click", openFooter);
   $("#outreachSelAll").addEventListener("change", (e) => {
-    const o = state.outreach;
-    if (e.target.checked) o.rows.forEach((r) => o.selected.add(r.id)); else o.selected.clear();
-    $$("#outreachBody [data-sel]").forEach((c) => { c.checked = e.target.checked; });
+    const o = state.outreach, max = (outreachPolicy().batch_approval || {}).max_batch || o.rows.length;
+    o.selected = new Set(e.target.checked ? o.rows.slice(0, max).map((r) => r.id) : []);   // a batch is at most max_batch
+    $$("#outreachBody [data-sel]").forEach((c) => { c.checked = o.selected.has(c.dataset.sel); });
     renderBatchBar();
   });
 }
@@ -1393,13 +1160,13 @@ const UNI_STORE = "tvf_uni_v1";
 state.uni = {
   kind: "people", q: { people: "", companies: "" }, filters: { people: {}, companies: {} },
   page: 1, perPage: 25, perCompany: "", rows: [], total: 0, totalPages: 0, searched: false, resultKind: null,
-  lastFilters: {}, selected: new Map(), picked: {}, open: {}, schema: [], appOnly: [], status: null,
-  saved: null, maxReveal: 100, token: 0, bound: false,
+  lastFilters: {}, selected: new Map(), picked: {}, open: {}, schema: [], status: null,
+  maxReveal: 100, token: 0, bound: false,
 };
 function safeUrl(u) { return /^https?:\/\//i.test(String(u || "")) ? String(u) : ""; }
 function uniPersist() {
   const u = state.uni;
-  try { localStorage.setItem(UNI_STORE, JSON.stringify({ kind: u.kind, q: u.q, filters: u.filters, perPage: u.perPage, picked: u.picked })); } catch (e) {}
+  try { localStorage.setItem(UNI_STORE, JSON.stringify({ kind: u.kind, q: u.q, filters: u.filters, picked: u.picked })); } catch (e) {}
 }
 function uniRestore() {
   let s = null;
@@ -1409,7 +1176,6 @@ function uniRestore() {
   if (s.kind === "people" || s.kind === "companies") u.kind = s.kind;
   if (s.q && typeof s.q === "object") u.q = { people: s.q.people || "", companies: s.q.companies || "" };
   if (s.filters && typeof s.filters === "object") u.filters = { people: s.filters.people || {}, companies: s.filters.companies || {} };
-  if ([10, 25, 50, 100].includes(+s.perPage)) u.perPage = +s.perPage;
   if (s.picked && typeof s.picked === "object") u.picked = s.picked;
 }
 function uniConnected() { const s = state.uni.status; return !!(s && s.key_set && s.connected); }
@@ -1417,15 +1183,14 @@ function uniConnected() { const s = state.uni.status; return !!(s && s.key_set &
 async function loadUniversal() {
   const u = state.uni;
   if (!u.bound) { uniRestore(); bindUniversal(); u.bound = true; }
-  await uniLoadStatus(false);
-  $("#uniPerPage").value = String(u.perPage);
+  await uniLoadStatus();
   renderUniTabs(); renderUniFilters(); renderUniResults();
 }
-async function uniLoadStatus(refresh) {
+async function uniLoadStatus() {
   const u = state.uni;
   try {
-    const d = await api("/api/universal/status" + (refresh ? "?refresh=1" : ""));
-    u.status = d.apollo; u.schema = d.filters || []; u.appOnly = d.app_only || []; u.saved = d.saved;
+    const d = await api("/api/universal/status");
+    u.status = d.apollo; u.schema = d.filters || [];
     u.maxReveal = d.max_reveal_per_save || 100; u.endpoints = d.endpoints || [];
   } catch (e) {
     u.status = { key_set: false, connected: false, problems: [e.message] };
@@ -1435,9 +1200,9 @@ async function uniLoadStatus(refresh) {
 function renderUniStatus() {
   const u = state.uni, s = u.status || {};
   const left = s.credits && s.credits.lead_credits_left != null ? (+s.credits.lead_credits_left).toLocaleString() : null;
-  $("#uniStatus").innerHTML = !s.key_set ? `<span class="lozenge removed">Apollo not connected</span>`
-    : s.connected ? `<span class="lozenge success" title="${esc(s.profile && s.profile.email ? "The key acts as " + s.profile.email : "Connected")}">Apollo connected</span>${left != null ? `<span class="uni-credits" title="Lead credits left this billing cycle">${esc(left)} credits left</span>` : ""}`
-    : `<span class="lozenge moved">Apollo refused the key</span>`;
+  // whether Apollo is connected is the setup box's to say; the header keeps the one number that costs money
+  $("#uniStatus").innerHTML = uniConnected() && left != null
+    ? `<span class="uni-credits" title="Lead credits left this billing cycle">${esc(left)} credits left</span>` : "";
   const probs = (s.problems || []).map((p) => `<li>${esc(p)}</li>`).join("");
   const eps = (u.endpoints || []).map((e) => `<code>${esc(e.replace(/^api\/v1\//, ""))}</code>`).join(", ");
   const setup = $("#uniSetup");
@@ -1468,7 +1233,12 @@ function renderUniTabs() {
 }
 
 /* ---- the filter panel ---- */
-function uniDefs() { const u = state.uni; return (u.schema || []).filter((f) => f.for.includes(u.kind) && f.group !== "Search"); }
+function uniDefs() {
+  // "include similar titles" only means something once there is a title to widen
+  const u = state.uni, v = u.filters[u.kind] || {};
+  return (u.schema || []).filter((f) => f.for.includes(u.kind) && f.group !== "Search"
+    && (f.key !== "include_similar_titles" || (v.person_titles || []).length));
+}
 function uniActive(f, v) {
   if (f.type === "bool") return v === false;               // the default is on; only "off" narrows a search
   if (v == null || v === "") return false;
@@ -1512,9 +1282,7 @@ function renderUniFilters() {
       return `<details class="uni-group" data-group="${esc(g.name)}" ${k || u.open[g.name] ? "open" : ""}>
         <summary>${esc(g.name)}<span class="pts mid" data-gcount ${k ? "" : "hidden"}>${k}</span></summary>
         <div class="uni-group-body">${g.items.map((f) => uniControl(f, vals[f.key])).join("")}</div></details>`;
-    }).join("") +
-    (u.appOnly.length ? `<details class="uni-apponly"><summary>Filters Apollo's app has that its API does not</summary>
-      <p>${esc(u.appOnly.join(", "))}. Apollo does not accept them through its API, so they are not offered here.</p></details>` : "");
+    }).join("");
 }
 function uniUpdateCounts() {
   const u = state.uni, vals = u.filters[u.kind], defs = uniDefs();
@@ -1562,15 +1330,15 @@ async function uniSearch(page) {
   const token = ++u.token, btn = $("#uniGo");
   btn.classList.add("loading");
   try {
-    const d = await post("/api/universal/search", { kind: u.kind, filters, page: page || 1, per_page: u.perPage });
+    const d = await post("/api/universal/search", { kind: u.kind, filters, page: page || 1 });
     if (token !== u.token) return;
     u.rows = (u.kind === "people" ? d.people : d.companies) || [];
-    u.total = d.total || 0; u.page = d.page || 1;
+    u.total = d.total || 0; u.page = d.page || 1; u.perPage = d.per_page || 25;
     u.totalPages = Math.min(500, d.total_pages || Math.ceil(u.total / u.perPage) || 1);
     u.searched = true; u.resultKind = u.kind; u.lastFilters = filters; u.selected.clear();
     uniPersist();
     renderUniResults();
-    if (u.kind === "companies") uniLoadStatus(false);        // that page cost a credit: show the new balance
+    if (u.kind === "companies") uniLoadStatus();             // that page cost a credit: show the new balance
   } catch (e) { toast(e.message, true); }
   finally { btn.classList.remove("loading"); }
 }
@@ -1578,9 +1346,7 @@ function renderUniResults() {
   const u = state.uni, head = $("#uniHead"), body = $("#uniBody");
   if (!u.searched || u.resultKind !== u.kind) {
     head.innerHTML = "";
-    body.innerHTML = `<tr class="empty-row"><td>${!uniConnected() ? "Connect Apollo to search."
-      : u.kind === "people" ? "Choose filters on the left or type in the search bar, then Search. Searching people costs nothing."
-      : "Choose filters, then Search. Each page of companies costs 1 Apollo credit."}</td></tr>`;
+    body.innerHTML = uniConnected() ? `<tr class="empty-row"><td>Choose filters on the left or type in the search bar, then Search.</td></tr>` : "";
     $("#uniPager").hidden = true; renderUniBatch(); return;
   }
   const selectable = u.rows.filter((r) => !r.saved);
@@ -1591,9 +1357,9 @@ function renderUniResults() {
     body.innerHTML = u.rows.length ? u.rows.map((p) => `<tr class="${u.selected.has(p.id) ? "selected" : ""}">
       <td class="sel">${p.saved ? "" : `<input type="checkbox" data-pick="${esc(p.id)}" ${u.selected.has(p.id) ? "checked" : ""} aria-label="Select ${esc(p.first_name)}">`}</td>
       <td><span class="cell-person">${avatar(p.first_name + " " + p.last_name_obfuscated, p.id)}<span><div class="primary-cell">${esc(p.first_name)} ${esc(p.last_name_obfuscated)}</div>
-        <div class="secondary">${p.has_location ? "Location on file" : "No location on file"}</div></span></span></td>
+</span></span></td>
       <td>${esc(p.title || "")}</td>
-      <td>${esc(p.company || "")}${(p.company_known || []).length ? `<div class="secondary">Apollo knows its ${esc(p.company_known.join(", "))}</div>` : ""}</td>
+      <td>${esc(p.company || "")}</td>
       <td>${p.has_email ? `<span class="lozenge success">Has email</span>` : `<span class="lozenge">No email</span>`}</td>
       <td>${p.saved ? `<span class="lozenge inprogress">Saved</span>` : ""}</td></tr>`).join("")
       : `<tr class="empty-row"><td colspan="6">Nobody matches. Remove a filter or two.</td></tr>`;
@@ -1688,7 +1454,7 @@ function uniAfterSave(r, kind) {
   u.rows.forEach((row) => { if (ids.has(String(row.id))) row.saved = kind === "people" ? true : "ready_for_review"; });
   u.selected.clear();
   renderUniResults();
-  uniLoadStatus(false);
+  uniLoadStatus();
   const bits = [];
   if (kind === "people") {
     if (r.with_email != null) bits.push(`${r.with_email} with an email`);
@@ -1875,117 +1641,33 @@ function bindUniversal() {
   $("#uniBatch").addEventListener("change", (e) => { if (e.target.id === "uniPerCo") u.perCompany = e.target.value; });
   $("#uniPrev").addEventListener("click", () => uniSearch(state.uni.page - 1));
   $("#uniNext").addEventListener("click", () => uniSearch(state.uni.page + 1));
-  $("#uniPerPage").addEventListener("change", (e) => {
-    u.perPage = +e.target.value; uniPersist();
-    if (u.searched && u.resultKind === u.kind && u.kind === "people") uniSearch(1);   // free; a company search waits for Search
-  });
   $("#uniSaveSearch").addEventListener("click", uniSaveSearchDialog);
   $("#uniSavedBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleMenu($("#uniSavedBtn"), $("#uniSavedMenu"), renderUniSavedMenu); });
 }
 
-/* ======================================================= create modal */
-async function openCreate() {
-  let d;
-  try { d = await api("/api/ops"); } catch (e) { return toast(e.message, true); }
-  state.ops.jobs = d.jobs;
-  const groups = {};
-  d.jobs.forEach((j) => (groups[j.group] = groups[j.group] || []).push(j));
-  const options = Object.entries(groups).map(([g, jobs]) => `<optgroup label="${esc(g)}">${jobs.map((j) =>
-    `<option value="${esc(j.key)}" ${!j.available ? "disabled" : ""}>${esc(j.label)}${!j.available ? " (office n8n only)" : ""}</option>`).join("")}</optgroup>`).join("");
-  modal.open(`
-    ${modalHead(`${typeIcon("job")}<span>Create</span>`)}
-    <div class="modal-body single"><div class="modal-main">
-      <p class="muted" style="margin-bottom:16px">Generate new leads or run any pipeline step. One job runs at a time; its log streams in Operations.</p>
-      <div class="field" style="margin-bottom:16px"><label>Project <span class="req">*</span></label>
-        <select disabled><option>US Production Houses</option></select></div>
-      <div class="field" style="margin-bottom:16px"><label for="createJob">Job <span class="req">*</span></label>
-        <select id="createJob" autofocus>${options}</select>
-        <div class="help" id="createDesc"></div></div>
-      ${d.busy ? `<div class="section-msg warning">${icon("warn", 24)}<div><div class="title">A job is already running</div><div class="text">${esc(d.busy)} has the slot. Wait for it to finish, or stop it in Operations.</div></div></div>` : ""}
-    </div></div>
-    <div class="modal-foot"><button class="btn subtle" data-close>Cancel</button>
-      <button class="btn primary" id="createGo" ${d.busy ? "disabled" : ""}>Create</button></div>`,
-    { narrow: true, label: "Create" });
-  const root = $("#modalRoot"), sel = $("#createJob", root);
-  const sync = () => { const j = d.jobs.find((x) => x.key === sel.value); $("#createDesc", root).textContent = j ? j.desc : ""; };
-  sel.addEventListener("change", sync); sync();
-  $("#createGo", root).addEventListener("click", () => { const key = sel.value; modal.close(true); runJob(key, { goToOps: true }); });
-}
-
-/* ==================================================== settings modal */
-async function openSettings() {
-  if (!state.rubric.length) { try { const s = await api("/api/stats"); state.rubric = s.rubric || []; } catch (e) {} }
-  const total = state.rubric.reduce((x, r) => x + (+r.points || 0), 0);
-  modal.open(`
-    ${modalHead(`<span>Project settings</span>`)}
-    <div class="modal-body single"><div class="modal-main">
-      <h2 class="modal-title" style="font-size:20px;line-height:24px">${esc(segUi().project_name)}</h2>
-      <div class="section"><h3>Segment</h3><div class="body">
-        <dl class="details"><dt>Slug</dt><dd class="mono">${esc((state.segment || {}).slug || "us-production-houses")}</dd>
-        <dt>Config</dt><dd class="mono">${esc((state.segment || {}).config_file || "config/segment.us-production-houses.json")}</dd>
-        <dt>Thresholds</dt><dd>Reviewable at ${REVIEW_THRESHOLD} points, priority at ${PRIORITY_THRESHOLD}. Cards show priority arrows from these.</dd></dl></div></div>
-      <div class="section"><h3>Scoring rubric <span class="pts">${total} pts</span></h3><div class="body">
-        ${state.rubric.length ? `<table class="tbl"><thead><tr><th>Criterion</th><th>Key</th><th class="r">Points</th></tr></thead><tbody>
-        ${state.rubric.map((r) => `<tr><td>${esc(r.label || r.key)}${r.guidance ? `<div class="secondary">${esc(r.guidance)}</div>` : ""}</td><td class="mono">${esc(r.key)}</td><td class="r num">${r.points}</td></tr>`).join("")}
-        </tbody></table>` : `<p class="muted">No rubric: this project's leads are picked by a person on the Apollo search page, so they carry no fit score.</p>`}</div></div>
-      <div class="section"><h3>Changing it</h3><div class="body"><p class="muted">Everything segment-specific lives in the config file, not in code. Edit it, re-sync the row with <span class="mono">python tools/run_sql.py sql/03b_sync_segment_config_v3.sql</span>, then re-score from Operations.</p></div></div>
-    </div></div>
-    <div class="modal-foot"><button class="btn primary" data-close>Done</button></div>`, { label: "Project settings" });
-}
-
-function openAbout() {
-  modal.open(`
-    ${modalHead(`<span>How the engine works</span>`)}
-    <div class="modal-body single"><div class="modal-main">
-      <div class="section"><h3>Pipeline</h3><div class="body"><p><strong>Discover</strong> (news, X, YouTube, Wikidata, AICP) →
-        <strong>Promote and dedupe</strong> → <strong>Enrich</strong> (website, contacts, evidence) → <strong>Score</strong> against the rubric →
-        <strong>Review</strong> (this board) → <strong>Shortlist</strong> (its email is drafted) → <strong>Approve</strong> (it is sent) → <strong>Triage</strong> replies.</p>
-        <p>Nothing outbound leaves without a person approving that exact text. One email per company, ever.</p></div></div>
-      <div class="section"><h3>Where things run</h3><div class="body"><p>Harvests run in the office n8n on their schedule. Everything after that runs here, including the Tuesday 02:00 UTC weekly refresh. Drafting and sending run by themselves: shortlisting drafts the email, approving sends it, within the day's limit. Pulling replies runs from the terminal.</p></div></div>
-      <div class="section"><h3>Keyboard</h3><div class="body">
-        <dl class="details"><dt><span class="kbd">/</span></dt><dd>Search the current view</dd>
-        <dt><span class="kbd">c</span></dt><dd>Create (run a job)</dd>
-        <dt><span class="kbd">Esc</span></dt><dd>Close dialogs and menus</dd>
-        <dt><span class="kbd">Enter</span></dt><dd>Open the focused card or row</dd></dl></div></div>
-    </div></div>
-    <div class="modal-foot"><button class="btn primary" data-close>Got it</button></div>`, { narrow: true, label: "Help" });
-}
-
-/* ============================================= notifications + shell */
-function updateNotifBadge(counts) {
-  const n = (counts.drafts || 0) + (counts.inbox || 0) + (counts.attention || 0);
-  const badge = $("#notifBadge");
-  badge.hidden = n === 0; badge.textContent = n > 99 ? "99+" : String(n);
+/* ===================================================== outreach count */
+/* The one signal outside the Outreach page that something waits on a person: drafts to
+   approve, replies to read, sends that failed. (The top-bar bell that repeated it went on
+   2026-09-19.) */
+function updateOutreachCount(counts) {
   const side = $("#outreachCount");
-  const waiting = (counts.drafts || 0) + (counts.outbox || 0);
+  const waiting = (counts.drafts || 0) + (counts.untriaged || 0) + (counts.attention || 0);
   side.hidden = waiting === 0; side.textContent = String(waiting);
+  side.title = "Drafts to approve, replies to read and sends that failed";
   state.notif.counts = counts; state.notif.at = Date.now();
 }
-async function refreshNotifications(force) {
+async function refreshOutreachCount(force) {
+  if (!outreachOn()) return;
   if (!force && Date.now() - state.notif.at < 90000) return;
-  try { const d = await api("/api/outreach?folder=attention"); updateNotifBadge(d.counts || {}); } catch (e) {}
-}
-function renderNotifMenu(menu) {
-  const c = state.notif.counts || {};
-  const rows = [
-    ["drafts", "Drafts waiting for approval", c.drafts || 0, "edit"],
-    ["outbox", "Approved, waiting for the next send", c.outbox || 0, "send"],
-    ["inbox", "Replies to triage", c.inbox || 0, "inbox"],
-    ["attention", "Need attention", c.attention || 0, "warn"],
-  ];
-  menu.innerHTML = `<div class="menu-heading">Notifications</div>` + rows.map(([f, label, n, g]) =>
-    `<button class="menu-item" data-folder="${f}">${icon(g, 20)}<span style="flex:1">${label}</span><span class="pts ${n ? "mid" : ""}">${n}</span></button>`).join("") +
-    (rows.every((r) => !r[2]) ? `<div class="menu-note">All quiet. Nothing is waiting on a person.</div>` : "");
-  $$("[data-folder]", menu).forEach((b) => b.addEventListener("click", () => { closeMenus(); state.outreach.folder = b.dataset.folder; go("outreach/" + b.dataset.folder); if (currentView() === "outreach") loadOutreach(); }));
+  try { const d = await api("/api/outreach?folder=attention"); updateOutreachCount(d.counts || {}); } catch (e) {}
 }
 function renderProjectsMenu(menu) {
   const segs = state.segments.length ? state.segments
-    : [{ slug: "us-production-houses", project_name: "US Production Houses", current: true, counts: {} }];
+    : [{ slug: "us-production-houses", project_name: "US Production Houses", current: true }];
   menu.innerHTML = `<div class="menu-heading">Projects</div>` + segs.map((s) =>
     `<button class="menu-item ${s.current ? "selected" : ""}" data-seg="${esc(s.slug)}">${icon(s.current ? "film" : "bookmark", 20)}
-       <span style="flex:1">${esc(s.project_name)}<span class="desc">${esc(s.slug)}${s.counts && s.counts.reviewable != null ? ` · ${s.counts.reviewable} to review · ${s.counts.shortlisted} shortlisted` : ""}</span></span>
-       ${s.current ? icon("check", 16) : ""}</button>`).join("") +
-    `<div class="menu-sep"></div><div class="menu-note">A segment is a config row plus connectors. Switching changes every screen.</div>`;
+       <span style="flex:1">${esc(s.project_name)}</span>
+       ${s.current ? icon("check", 16) : ""}</button>`).join("");
   $$("[data-seg]", menu).forEach((b) => b.addEventListener("click", async () => {
     closeMenus();
     if (state.segment && b.dataset.seg === state.segment.slug) return;
@@ -1993,29 +1675,11 @@ function renderProjectsMenu(menu) {
     catch (e) { toast(e.message, true); }
   }));
 }
-function renderHelpMenu(menu) {
-  menu.innerHTML = `<div class="menu-heading">Help</div>
-    <button class="menu-item" id="helpAbout">${icon("book", 20)}<span>How the engine works<span class="desc">Pipeline, where things run, shortcuts</span></span></button>
-    <div class="menu-sep"></div>
-    <div class="menu-note">Runbook: docs/runbook.md · Deploy: docs/DEPLOY.md · Plan: BUILD_PLAN.md</div>`;
-  $("#helpAbout", menu).addEventListener("click", () => { closeMenus(); openAbout(); });
-}
-function themeMode() { return document.documentElement.dataset.theme || "auto"; }
-function setTheme(mode) {
-  if (mode === "auto") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = mode;
-  try { if (mode === "auto") localStorage.removeItem("tvf_theme"); else localStorage.setItem("tvf_theme", mode); } catch (e) {}
-}
 function renderUserMenu(menu) {
   const email = state.user || "";
-  const cur = themeMode();
-  const opt = (mode, label, g) => `<button class="menu-item ${cur === mode ? "selected" : ""}" data-theme="${mode}">${icon(g, 20)}<span style="flex:1">${label}</span>${cur === mode ? icon("check", 16) : ""}</button>`;
-  menu.innerHTML = `<div class="menu-user">${avatar(null, email, "lg")}<div style="min-width:0"><div class="email truncate">${esc(email || "Signed in")}</div><div class="small muted">TVF Lead Engine</div></div></div>
-    <div class="menu-sep"></div><div class="menu-heading">Theme</div>
-    ${opt("light", "Light", "sun")}${opt("dark", "Dark", "moon")}${opt("auto", "Match system", "monitor")}
+  menu.innerHTML = `<div class="menu-user">${avatar(null, email, "lg")}<div style="min-width:0"><div class="email truncate">${esc(email || "Signed in")}</div></div></div>
     <div class="menu-sep"></div>
     <button class="menu-item" id="logoutBtn">${icon("logout", 20)}<span>Log out</span></button>`;
-  $$("[data-theme]", menu).forEach((b) => b.addEventListener("click", () => { setTheme(b.dataset.theme); renderUserMenu(menu); }));
   $("#logoutBtn", menu).addEventListener("click", async () => {
     try { await post("/api/auth/logout"); } catch (e) {}
     location.href = "/login";
@@ -2023,14 +1687,10 @@ function renderUserMenu(menu) {
 }
 
 function bindShell() {
-  const pairs = [["#notifBtn", "#notifMenu", renderNotifMenu], ["#helpBtn", "#helpMenu", renderHelpMenu],
-    ["#userBtn", "#userMenu", renderUserMenu],
+  const pairs = [["#userBtn", "#userMenu", renderUserMenu],
     ["#projectSwitch", "#projectSwitchMenu", renderProjectsMenu]];   // the project switcher at the top of the sidebar
   pairs.forEach(([b, m, r]) => $(b).addEventListener("click", (e) => { e.stopPropagation(); toggleMenu($(b), $(m), r); }));
   $$("[data-route]").forEach((b) => b.addEventListener("click", () => go(b.dataset.route)));
-  $("#createSide").addEventListener("click", openCreate);          // hidden where the Apollo page generates leads
-  $("#settingsSide").addEventListener("click", openSettings);
-  $("#notifBtn").addEventListener("click", () => refreshNotifications(true));
 
   // sidebar: collapse on desktop, drawer on small screens
   const frame = $("#frame");
@@ -2044,60 +1704,20 @@ function bindShell() {
   $("#drawerBtn").addEventListener("click", () => frame.classList.toggle("drawer-open"));
   $("#sidebarScrim").addEventListener("click", () => frame.classList.remove("drawer-open"));
 
-  // global search: applies to the board or list you are on, otherwise opens the list
-  let t;
-  $("#globalSearch").addEventListener("input", (e) => {
-    clearTimeout(t);
-    t = setTimeout(() => {
-      const v = e.target.value.trim();
-      // on the Apollo page the box fills the page's own search bar; Enter runs it (it may cost a credit)
-      if (currentView() === "universal") { $("#uniQuery").value = v; state.uni.q[state.uni.kind] = v; return; }
-      if (currentView() === "board") { state.board.filters.q = v; $("#boardSearch").value = v; loadBoard(); }
-      else { state.leads.filters.q = v; $("#leadsSearch").value = v; state.leads.page = 0; if (currentView() === "leads") loadLeads(); else if (v) go("leads"); }
-    }, 300);
-  });
-  $("#globalSearch").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && currentView() === "universal") { e.preventDefault(); uniSearch(1); }
-  });
-  document.addEventListener("keydown", (e) => {
-    const tag = (e.target.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select" || modal.isOpen()) return;
-    if (e.key === "/") { e.preventDefault(); ($("#view-board").classList.contains("active") ? $("#boardSearch") : currentView() === "leads" ? $("#leadsSearch") : currentView() === "universal" ? $("#uniQuery") : $("#globalSearch")).focus(); }
-    if (e.key === "c") { e.preventDefault(); if (segUi().search_page === "apollo") go("universal"); else openCreate(); }
-  });
 }
 
 /* ======================================================= filter wiring */
 function syncLeadControls() {
   const f = state.leads.filters;
-  $("#leadsSearch").value = f.q; $("#leadsStatus").value = f.status; $("#leadsScore").value = String(f.min_score);
-  $("#leadsSource").value = f.source; $("#leadsSort").value = f.sort;
-  $("#leadsContact").setAttribute("aria-pressed", String(f.has_contact));
-  $("#leadsContact").classList.toggle("selected", f.has_contact);
+  $("#leadsSearch").value = f.q; $("#leadsStatus").value = f.status; $("#leadsSource").value = f.source;
 }
 function bindFilters() {
   let t;
   const b = state.board.filters, l = state.leads.filters;
   $("#boardSearch").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { b.q = e.target.value.trim(); loadBoard(); }, 250); });
-  $("#boardScore").addEventListener("change", (e) => { b.min_score = +e.target.value; loadBoard(); });
-  $("#boardSource").addEventListener("change", (e) => { b.source = e.target.value; loadBoard(); });
-  $("#boardContact").addEventListener("click", (e) => {
-    b.has_contact = !b.has_contact;
-    e.currentTarget.setAttribute("aria-pressed", String(b.has_contact)); e.currentTarget.classList.toggle("selected", b.has_contact);
-    loadBoard();
-  });
-  $("#boardRefresh").addEventListener("click", loadBoard);
-  $("#reportsRefresh").addEventListener("click", loadReports);
   $("#leadsSearch").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { l.q = e.target.value.trim(); state.leads.page = 0; loadLeads(); }, 250); });
   $("#leadsStatus").addEventListener("change", (e) => { l.status = e.target.value; state.leads.page = 0; loadLeads(); });
-  $("#leadsScore").addEventListener("change", (e) => { l.min_score = +e.target.value; state.leads.page = 0; loadLeads(); });
   $("#leadsSource").addEventListener("change", (e) => { l.source = e.target.value; state.leads.page = 0; loadLeads(); });
-  $("#leadsSort").addEventListener("change", (e) => { l.sort = e.target.value; state.leads.page = 0; loadLeads(); });
-  $("#leadsContact").addEventListener("click", (e) => {
-    l.has_contact = !l.has_contact;
-    e.currentTarget.setAttribute("aria-pressed", String(l.has_contact)); e.currentTarget.classList.toggle("selected", l.has_contact);
-    state.leads.page = 0; loadLeads();
-  });
   $("#leadsPrev").addEventListener("click", () => { state.leads.page--; loadLeads(); });
   $("#leadsNext").addEventListener("click", () => { state.leads.page++; loadLeads(); });
 }
@@ -2113,11 +1733,15 @@ function bindFilters() {
   } catch (e) {}
   try {
     const s = await api("/api/stats");
-    state.rubric = s.rubric || [];
     state.sources = s.by_source.map((r) => r.source);
-    const opts = '<option value="">All sources</option>' + s.by_source.map((r) =>
-      `<option value="${esc(r.source)}">${esc(sourceLabel(r.source))} (${r.n})</option>`).join("");
-    $("#boardSource").innerHTML = opts; $("#leadsSource").innerHTML = opts;
+    $("#leadsSource").innerHTML = '<option value="">All sources</option>' + s.by_source.map((r) =>
+      `<option value="${esc(r.source)}">${esc(sourceLabel(r.source))}</option>`).join("");
+    $("#leadsSource").hidden = state.sources.length < 2;
+    $("#leadsTable").classList.toggle("one-source", state.sources.length < 2);
+    const n = { open: s.open_pool, shortlisted: s.shortlisted, contacted: s.contacted,
+      in_conversation: s.in_conversation, rejected: s.rejected, archived: s.archived };
+    $$("#leadsStatus option").forEach((o) => { if (o.value in n) o.hidden = !+n[o.value]; });
+    $("#leadsStatus").hidden = !$$("#leadsStatus option").some((o) => o.value !== "all" && !o.hidden);
   } catch (e) {
     flag("Cannot reach the database", { desc: "Is SUPABASE_DB_URL set? " + e.message, kind: "err", ms: 8000 });
   }
@@ -2125,10 +1749,9 @@ function bindFilters() {
     const [seg, segs] = await Promise.all([api("/api/segment"), api("/api/segments")]);
     state.segments = segs.segments || [];
     applySegment(seg);
-    $("#boardScore").value = String(REVIEW_THRESHOLD);
   } catch (e) { /* older server: TVF defaults stand */ }
   syncLeadControls();
   router();
-  refreshNotifications(true);
-  setInterval(() => refreshNotifications(false), 120000);
+  refreshOutreachCount(true);
+  setInterval(() => refreshOutreachCount(false), 120000);
 })();

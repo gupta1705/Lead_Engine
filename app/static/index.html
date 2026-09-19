@@ -5,10 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TVF Lead Engine</title>
 <link rel="stylesheet" href="style.css">
-<script>
-/* Apply the saved theme before first paint so the page never flashes. */
-try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
-</script>
 </head>
 <body>
 <div class="app">
@@ -18,32 +14,14 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
   <button class="btn icon grid-btn" id="drawerBtn" aria-label="Open navigation" title="Navigation">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg>
   </button>
-  <a class="logo" href="#board" aria-label="Lead Engine home">
+  <span class="logo">
     <span class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg></span>
     <span class="word">Lead Engine</span>
-  </a>
+  </span>
 
   <div class="spacer"></div>
 
-  <div class="search">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-    <input id="globalSearch" type="search" class="compact" placeholder="Search" aria-label="Search leads" autocomplete="off">
-  </div>
-
   <div class="actions">
-    <div class="menu-anchor">
-      <button class="btn icon" id="notifBtn" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" title="Notifications">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
-        <span class="badge-dot" id="notifBadge" hidden></span>
-      </button>
-      <div class="menu right" id="notifMenu" hidden></div>
-    </div>
-    <div class="menu-anchor">
-      <button class="btn icon" id="helpBtn" aria-label="Help" aria-haspopup="true" aria-expanded="false" title="Help">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
-      </button>
-      <div class="menu right" id="helpMenu" hidden></div>
-    </div>
     <div class="menu-anchor">
       <button class="btn icon" id="userBtn" aria-label="Your account" aria-haspopup="true" aria-expanded="false" title="Account">
         <span class="avatar av-1" id="userAvatar">?</span>
@@ -67,7 +45,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
           <span class="project-avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="m3 9 1.4-4.2a1 1 0 0 1 1.2-.7L20 7.6l-1 1.4"/><path d="m8 4.6 2 3.6M12.5 5.5l2 3.6"/></svg></span>
           <span class="project-text">
             <span class="project-name" id="projectName">US Production Houses</span>
-            <span class="project-type" id="projectType">Lead segment</span>
           </span>
           <svg class="project-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
         </button>
@@ -96,23 +73,11 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
         Reports
       </button>
 
-      <div class="side-heading" id="pipelineHeading">Pipeline</div>
       <button class="side-item" data-route="ops">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z" fill="currentColor"/></svg>
         Operations
       </button>
-      <button class="side-item" id="createSide">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
-        Generate leads
-      </button>
-
-      <div class="side-heading">Segment</div>
-      <button class="side-item" id="settingsSide">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-        Project settings
-      </button>
     </div>
-    <div class="sidebar-foot" id="sidebarFoot">You're in the <strong>US production houses</strong> segment. Harvests run on the office n8n; everything else runs here.</div>
   </nav>
 
   <!-- =============================================================== MAIN -->
@@ -121,7 +86,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- UNIVERSAL: Apollo's people and company search (the Universal project only) -->
     <section class="view" id="view-universal" aria-labelledby="universalTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">Universal</a></nav>
         <div class="title-row">
           <h1 id="universalTitle">Search Apollo</h1>
           <div class="page-actions">
@@ -157,12 +121,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
           <div class="table-wrap"><table class="tbl" id="uniTable"><thead id="uniHead"></thead><tbody id="uniBody"></tbody></table></div>
           <div class="pager" id="uniPager" hidden>
             <span class="info" id="uniInfo"></span>
-            <select id="uniPerPage" class="filter" aria-label="Results per page">
-              <option value="10">10 a page</option>
-              <option value="25" selected>25 a page</option>
-              <option value="50">50 a page</option>
-              <option value="100">100 a page</option>
-            </select>
             <button class="btn" id="uniPrev">Previous</button>
             <button class="btn" id="uniNext">Next</button>
           </div>
@@ -173,18 +131,8 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- BOARD -->
     <section class="view active" id="view-board" aria-labelledby="boardTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="boardTitle">Lead board</h1>
-          <div class="page-actions">
-            <a class="btn" id="boardExport" href="/api/export.xlsx?status=open&min_score=25">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
-              Export
-            </a>
-            <button class="btn icon" id="boardRefresh" aria-label="Refresh board" title="Refresh">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
-            </button>
-          </div>
         </div>
       </header>
       <div class="toolbar">
@@ -192,15 +140,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="position:absolute;left:8px;top:8px;color:var(--icon-subtle);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input id="boardSearch" type="search" class="compact" placeholder="Search this board" aria-label="Search this board" style="padding-left:32px">
         </div>
-        <select id="boardScore" class="filter" aria-label="Minimum score">
-          <option value="0">Any score</option>
-          <option value="25" selected>Reviewable · 25+</option>
-          <option value="45">Priority · 45+</option>
-          <option value="60">Top · 60+</option>
-        </select>
-        <select id="boardSource" class="filter" aria-label="Source"><option value="">All sources</option></select>
-        <button class="btn" id="boardContact" aria-pressed="false">Contactable only</button>
-        <span class="result-count" id="boardCount"></span>
       </div>
       <div class="board-wrap"><div class="board" id="board" aria-live="polite"></div></div>
     </section>
@@ -208,11 +147,10 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- LEADS -->
     <section class="view" id="view-leads" aria-labelledby="leadsTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="leadsTitle">Leads</h1>
           <div class="page-actions">
-            <a class="btn" id="leadsExport" href="/api/export.xlsx?status=open">
+            <a class="btn" id="leadsExport" href="/api/export.xlsx?status=all">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
               Export this view
             </a>
@@ -225,39 +163,27 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
           <input id="leadsSearch" type="search" class="compact" placeholder="Search leads" aria-label="Search leads" style="padding-left:32px">
         </div>
         <select id="leadsStatus" class="filter" aria-label="Status">
+          <option value="all">Status: All</option>
           <option value="open">Status: To review</option>
           <option value="shortlisted">Status: Shortlisted</option>
           <option value="contacted">Status: Contacted</option>
           <option value="in_conversation">Status: In conversation</option>
           <option value="rejected">Status: Rejected</option>
           <option value="archived">Status: Archived</option>
-          <option value="all">Status: All</option>
-        </select>
-        <select id="leadsScore" class="filter" aria-label="Minimum score">
-          <option value="0">Any score</option>
-          <option value="25">Reviewable · 25+</option>
-          <option value="45">Priority · 45+</option>
-          <option value="60">Top · 60+</option>
         </select>
         <select id="leadsSource" class="filter" aria-label="Source"><option value="">All sources</option></select>
-        <button class="btn" id="leadsContact" aria-pressed="false">Contactable only</button>
-        <select id="leadsSort" class="filter" aria-label="Sort">
-          <option value="score">Sort: Score</option>
-          <option value="name">Sort: Name</option>
-          <option value="recent">Sort: Recently added</option>
-        </select>
         <span class="result-count" id="leadsCount"></span>
       </div>
       <div class="table-wrap">
         <table class="tbl" id="leadsTable">
           <thead><tr>
-            <th>Key</th><th id="leadsSummaryCol">Summary</th><th>Status</th><th>Score</th><th>Priority</th>
-            <th>Source</th><th>Contact</th><th id="leadsLastCol">Location</th>
+            <th id="leadsSummaryCol">Summary</th><th class="col-status">Status</th><th class="col-score">Score</th>
+            <th class="col-source">Source</th><th>Contact</th><th id="leadsLastCol">Location</th>
           </tr></thead>
           <tbody id="leadsBody"></tbody>
         </table>
       </div>
-      <div class="pager">
+      <div class="pager" id="leadsPager">
         <span class="info" id="leadsInfo"></span>
         <button class="btn" id="leadsPrev">Previous</button>
         <button class="btn" id="leadsNext">Next</button>
@@ -267,7 +193,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- OUTREACH -->
     <section class="view" id="view-outreach" aria-labelledby="outreachTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="outreachTitle">Outreach</h1>
           <div class="page-actions">
@@ -282,7 +207,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
       <div class="toolbar batch-bar" id="batchBar" hidden></div>
       <div class="table-wrap">
         <table class="tbl" id="outreachTable">
-          <thead><tr><th class="sel-col"><input type="checkbox" id="outreachSelAll" aria-label="Select every draft"></th><th>Key</th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th>Status</th><th>When</th></tr></thead>
+          <thead><tr><th class="sel-col"><input type="checkbox" id="outreachSelAll" aria-label="Select drafts, up to one batch"></th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th>When</th></tr></thead>
           <tbody id="outreachBody"></tbody>
         </table>
       </div>
@@ -291,39 +216,22 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- REPORTS -->
     <section class="view" id="view-reports" aria-labelledby="reportsTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="reportsTitle">Reports</h1>
-          <div class="page-actions">
-            <button class="btn icon" id="reportsRefresh" aria-label="Refresh reports" title="Refresh">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
-            </button>
-          </div>
         </div>
       </header>
-      <div class="tiles" id="statTiles"></div>
       <div class="panel-grid" style="margin-bottom:16px">
         <div class="panel">
           <div class="panel-head"><div><h2>Status overview</h2><p class="sub">Every company the engine has ever found for this segment, by where it sits now.</p></div></div>
           <div class="donut-wrap"><div class="donut" id="donut"></div><ul class="legend" id="donutLegend"></ul></div>
         </div>
         <div class="panel">
-          <div class="panel-head"><div><h2>v1 KPIs</h2><p class="sub">The numbers the plan judges v1 by. Target: 15 to 20 companies contacted a week.</p></div></div>
+          <div class="panel-head"><div><h2>Outreach results</h2><p class="sub">Companies contacted in the last 7 days, and the replies they sent.</p></div></div>
           <div class="tiles" id="kpiTiles" style="margin:0"></div>
         </div>
       </div>
-      <div class="panel-grid" style="margin-bottom:16px">
-        <div class="panel">
-          <div class="panel-head"><div><h2>Score distribution</h2><p class="sub">Open pool only. A tall bar at zero means companies the engine cannot yet judge, not bad companies.</p></div></div>
-          <div class="hist" id="histogram"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><div><h2>Evidence coverage</h2><p class="sub">How many open-pool companies the engine can actually score on each criterion. A criterion nobody scores is points nobody can earn.</p></div></div>
-          <div class="coverage" id="coverage"></div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div><h2>By source</h2><p class="sub">Which connectors are earning their place.</p></div></div>
+      <div class="panel" id="sourcePanel">
+        <div class="panel-head"><div><h2>By source</h2><p class="sub">Which harvests find leads worth shortlisting.</p></div></div>
         <div class="table-wrap"><table class="tbl" id="sourceTable"></table></div>
       </div>
     </section>
@@ -331,37 +239,26 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     <!-- OPERATIONS -->
     <section class="view" id="view-ops" aria-labelledby="opsTitle">
       <header class="page-head">
-        <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="#board">Projects</a><span class="sep">/</span><a href="#board" class="crumb-project">US Production Houses</a></nav>
         <div class="title-row">
           <h1 id="opsTitle">Operations</h1>
           <div class="page-actions">
             <button class="btn" id="runRefresh">Run weekly refresh</button>
-            <button class="btn" id="runRescore">Run re-score</button>
-            <button class="btn" id="testAlert">Test alert</button>
           </div>
         </div>
       </header>
-      <div id="webhookMsg"></div>
       <div class="panel" id="mailboxPanel" hidden>
         <div class="panel-head"><div><h2>Mailboxes</h2><p class="sub" id="mailboxSub"></p></div></div>
         <div class="table-wrap"><table class="tbl" id="mailboxTable"></table></div>
       </div>
-      <div class="ops-cols">
-        <div class="panel">
-          <div class="panel-head"><div><h2>Unattended schedule</h2><p class="sub">Harvests fire in n8n; this pipeline then promotes, enriches and re-scores the pool. Times are UTC.</p></div></div>
-          <div class="table-wrap"><table class="tbl" id="schedTable"></table></div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><div><h2>Recent runs</h2><p class="sub">Every scheduled or manual pipeline run, with the step that failed if one did.</p></div></div>
-          <div class="table-wrap"><table class="tbl" id="runsTable"></table></div>
-        </div>
+      <div class="panel">
+        <div class="panel-head"><div><h2>Automatic runs</h2><p class="sub" id="runsSub">What runs by itself, and how its last run went. Times are UTC.</p></div></div>
+        <div class="table-wrap"><table class="tbl" id="runsTable"></table></div>
       </div>
       <div class="panel" id="logPanel" hidden>
         <div class="panel-head"><div><h2 id="logTitle">Log</h2><p class="sub">Streams while the job runs; the last lines are kept afterwards.</p></div>
-          <button class="btn subtle" id="logClose">Hide</button></div>
+          <button class="btn subtle" id="logStop" hidden>Stop</button><button class="btn subtle" id="logClose">Hide</button></div>
         <pre class="log" id="opsLog"></pre>
       </div>
-      <div class="ops-cols" id="opsGroups"></div>
     </section>
 
   </main>

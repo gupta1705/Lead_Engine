@@ -136,8 +136,8 @@ def offline():
     check("people search: POST mixed_people/api_search with query parameters",
           stub.calls[0][:2] + (stub.calls[0][3],), ("POST", "/mixed_people/api_search", None))
     check("people search: rows without an ID are dropped, the preview kept", (r["total"], len(r["people"]),
-          r["people"][0]["last_name_obfuscated"], r["people"][0]["company_known"]),
-          (31993, 1, "Mo***s", ["industry", "employee count"]))
+          r["people"][0]["last_name_obfuscated"], r["people"][0]["company"]),
+          (31993, 1, "Mo***s", "Northwind Systems"))
     stub = Stub([{"pagination": {"total_entries": 1184, "total_pages": 592}, "accounts": [
         {"id": OID[0], "name": "Mine Co", "website_url": "http://www.mine.co", "organization_id": OID[0]}],
         "organizations": [{"id": OID[1], "name": "Nikkei Asia", "website_url": "http://www.nikkei.com",
@@ -244,9 +244,9 @@ def offline():
                                        "email_status": "valid", "rank": 90}], "firm1.com")
     ex = explain.explain_lead("universal", {"rubric": []}, row, contacts)
     a = ex["analysis"]
-    check("verdict: saved from Apollo, not 'too little checked'", (a["verdict"]["title"], ex["criteria"]),
-          ("Saved from Apollo", []))
-    check("strengths come from Apollo", [s.split(":")[0] for s in a["strengths"]][:2], ["Verified email", "P1 Q, Producer"])
+    check("no verdict and no criteria: nothing to judge by", (a["verdict"], ex["criteria"]), (None, []))
+    check("strengths: only what Contacts and Details do not say", [s.split(":")[0] for s in a["strengths"]],
+          ["Verified email"])
     check("routes: Apollo's company phone and LinkedIn page",
           [r["label"] for r in ex["contact_routes"]["routes"]][:2], ["Phone (Apollo)", "LinkedIn (company page)"])
     check("tried: what Apollo revealed, not a website read", ex["contact_routes"]["tried"],

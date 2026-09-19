@@ -77,9 +77,12 @@ def main():
         ("34 people on a team page: not checked yet, not zero", state(big_team, "right_size"), ex.UNCHECKED),
         ("no automatic pass sets client work: not checked yet", state(read, "client_work_dominance"), ex.UNCHECKED),
         ("points earned are always found", state(no_source, "international_ip_experience"), ex.FOUND),
-        ("an unexplained credit is a risk", any(r["title"] == "Unexplained credit"
-                                                for r in no_source["analysis"]["risks"]), True),
+        ("no 'unexplained credit' risk: it repeated the criterion row",
+         any(r["title"] == "Unexplained credit" for r in no_source["analysis"]["risks"]), False),
         ("a public company is on hold", public["analysis"]["verdict"]["tone"], "hold"),
+        ("the verdict is a title: its detail repeated the first risk", "detail" in public["analysis"]["verdict"], False),
+        ("the blocker stays in the risks under a hold",
+         any(r["level"] == "blocker" for r in public["analysis"]["risks"]), True),
         ("a public company is flagged: not a small independent",
          any(r["title"] == "Not a small independent" for r in public["analysis"]["risks"]), True),
         ("no review checklist: the analysis asks no questions (owner, 2026-09-19)", "questions" in public["analysis"],
@@ -88,6 +91,14 @@ def main():
         # ip, genre, distribution, contact and collaboration were looked at; right size was not
         ("points checked add up", read["coverage"]["points_checked"], 90.0),
         ("a score matching its evidence is not flagged stale", "stale" in no_source["coverage"], False),
+        ("no legend and no formula sentence (2026-09-19)", ("legend" in read, "formula" in read["coverage"]),
+         (False, False)),
+        ("an unchecked row gets a by-hand hint, never an Operations job",
+         any("job" in (c.get("check") or {}) for c in unread["criteria"] + unread["modifiers"]), False),
+        ("strengths name the criterion and its points; the why is in the breakdown",
+         genre["analysis"]["strengths"], ["genre_fit (+7.5)"]),
+        ("no Website route: the dialog header links the site",
+         [r["label"] for r in read["contact_routes"]["routes"]], []),
         ("a junk address is struck, the next one is used",
          [(c["email"], c["usable"], c["drafts_use"]) for c in ex.rank_contacts([
              {"email": "%20mail@insigniafilms.com", "rank": -1480, "email_status": "invalid",
@@ -108,6 +119,17 @@ def main():
         ("audio-only show: shorts gap not checked, not zero", state(audio, "shorts_gap"), ex.UNCHECKED),
         ("feed episode count: archive found", state(audio, "archive_size"), ex.FOUND),
         ("no shorts in the last 50: found", state(clips, "shorts_gap"), ex.FOUND),
+    ]
+
+    auto_cfg = dict(LCX_CFG, score_threshold_review=25, auto_shortlist={"enabled": True, "min_score": 20})
+    auto = lead("lcx-clipping", auto_cfg, {"scoring_inputs": {"shorts_gap": 1, "archive_size": 0}},
+                status="shortlisted", fit_score=22)
+    by_hand = lead("us-production-houses", TVF_CFG, {"scoring_inputs": dict(zeros, genre_fit=1)},
+                   status="shortlisted", fit_score=9.09)
+    below = lambda out: any(r["title"] == "Shortlisted below the review line" for r in out["analysis"]["risks"])
+    cases += [
+        ("auto-shortlisted above its own line: no 'below the line' risk", below(auto), False),
+        ("shortlisted by hand under the review line: flagged", below(by_hand), True),
     ]
 
     funded = lead("startup-acquisitions", START_CFG, {"scoring_inputs": {"distress_evidence": 1, "recently_funded": 1},

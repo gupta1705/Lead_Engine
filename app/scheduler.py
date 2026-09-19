@@ -82,7 +82,6 @@ PIPELINES = {
         "news_sweep",         # per-company IP/distribution evidence
         "promote_chain",      # re-score with the new evidence, re-apply gates
     ],
-    "rescore": ["promote_chain"],
 }
 
 # Default schedule (UTC). Conservative: one weekly refresh, Tuesday 02:00 UTC,
@@ -110,6 +109,7 @@ class Scheduler:
         self._kick_lock = threading.Lock()
         self._kicking, self._kick_again = set(), set()   # segments with an outreach run going / asked again
         self._last_tick = None         # minute-key of the last fifteen-minute outreach tick
+        self._running = set()          # (segment, pipeline) runs in progress: a second start is refused
 
     # ---------------------------------------------------------------- config
     def segments(self):
@@ -201,11 +201,27 @@ class Scheduler:
             print("[scheduler] could not close pipeline_runs row: %r" % e, flush=True)
 
     # -------------------------------------------------------------- run once
+    def is_running(self, segment, pipeline):
+        with self._kick_lock:
+            return (segment, pipeline) in self._running
+
     def run_pipeline(self, pipeline, trigger="schedule", segment=None):
         segment = segment or self._segment
         steps = self.pipelines(segment).get(pipeline)
         if not steps:
             return
+        with self._kick_lock:
+            # six clicks in six seconds once queued six refreshes (2026-09-17): one at a time
+            if (segment, pipeline) in self._running:
+                return
+            self._running.add((segment, pipeline))
+        try:
+            self._run_steps(pipeline, steps, trigger, segment)
+        finally:
+            with self._kick_lock:
+                self._running.discard((segment, pipeline))
+
+    def _run_steps(self, pipeline, steps, trigger, segment):
         print("[scheduler] pipeline '%s' starting (%s) for %s" % (pipeline, trigger, segment), flush=True)
         pid = self._open(pipeline, None, trigger, segment)
         env = {"SEGMENT_SLUG": segment}

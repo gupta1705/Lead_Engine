@@ -4,9 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log in — TVF Lead Engine</title>
-<script>
-try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
-</script>
 <style>
 /* Self-contained on purpose: this page sits OUTSIDE the auth wall, so it must
    not pull the app's assets with it. Tokens mirror style.css (Atlassian set). */
@@ -19,7 +16,7 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
   --input: #FFFFFF; --input-hover: #F7F8F9;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     --surface: #22272B; --sunken: #1D2125; --text: #B6C2CF; --subtle: #9FADBC;
     --subtlest: #8C9BAB; --border-input: #738496; --focused: #85B8FF;
     --brand: #579DFF; --brand-hover: #85B8FF; --brand-pressed: #CCE0FF;
@@ -27,14 +24,6 @@ try { var t = localStorage.getItem("tvf_theme"); if (t) document.documentElement
     --shadow: 0 0 0 1px #A6C5E229, 0 8px 12px #0304045C; --on-bold: #1D2125;
     --input: #22272B; --input-hover: #282E33;
   }
-}
-:root[data-theme="dark"] {
-  --surface: #22272B; --sunken: #1D2125; --text: #B6C2CF; --subtle: #9FADBC;
-  --subtlest: #8C9BAB; --border-input: #738496; --focused: #85B8FF;
-  --brand: #579DFF; --brand-hover: #85B8FF; --brand-pressed: #CCE0FF;
-  --danger-bg: #42221F; --danger-text: #FD9891; --link: #579DFF;
-  --shadow: 0 0 0 1px #A6C5E229, 0 8px 12px #0304045C; --on-bold: #1D2125;
-  --input: #22272B; --input-hover: #282E33;
 }
 * { box-sizing: border-box; }
 body {

@@ -668,14 +668,12 @@ values (
     "guidance": "tools/enrich_startups.py places each startup, reads its site and its app, and asks the news about it by name (one RSS query); Find contacts on sites (tools/enrich_sitescrape.py) finds the founder. Nothing from LinkedIn, ever."
   },
   "ui": {
-    "project_type": "Acquisition segment",
     "key_prefix": "STA",
     "board_title": "Struggling Mumbai startups",
     "list_title": "Startups",
     "entity_label": "startup",
     "entity_plural": "startups",
     "summary_label": "Startup",
-    "sidebar_note": "You''re in the <strong>startup acquisitions</strong> segment: Mumbai startups showing public signs of struggle that TVF could acquire for little or back with its content and audience. Discovery, enrichment and scoring all run here.",
     "card_fields": [
       {
         "path": "metadata.distress_label",
@@ -697,58 +695,6 @@ values (
       {
         "path": "metadata.city",
         "label": "Based in",
-        "format": "text"
-      },
-      {
-        "path": "metadata.sector_label",
-        "label": "Sector",
-        "format": "text"
-      },
-      {
-        "path": "metadata.descriptor",
-        "label": "Described as",
-        "format": "text"
-      },
-      {
-        "path": "metadata.funding_summary",
-        "label": "Funding seen",
-        "format": "text"
-      },
-      {
-        "path": "metadata.site_health.status",
-        "label": "Website",
-        "format": "text"
-      },
-      {
-        "path": "metadata.app.url",
-        "label": "App",
-        "format": "link"
-      }
-    ],
-    "evidence": [
-      {
-        "path": "metadata.distress_summary",
-        "label": "Signs of struggle",
-        "format": "text"
-      },
-      {
-        "path": "metadata.latest_story_url",
-        "label": "Latest story",
-        "format": "link"
-      },
-      {
-        "path": "metadata.geo_evidence",
-        "label": "Why Mumbai",
-        "format": "text"
-      },
-      {
-        "path": "metadata.site_health.note",
-        "label": "Website check",
-        "format": "text"
-      },
-      {
-        "path": "metadata.app.note",
-        "label": "App",
         "format": "text"
       }
     ]
@@ -772,7 +718,7 @@ values (
     "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
       "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
     }
   },
   "schedule": [
@@ -791,9 +737,6 @@ values (
       "promote_chain",
       "enrich_startups",
       "enrich_contacts",
-      "promote_chain"
-    ],
-    "rescore": [
       "promote_chain"
     ]
   }

@@ -68,31 +68,29 @@ def build_router(cursor):
             return _STATUS["value"]
 
     @r.get("/api/universal/status")
-    def universal_status(refresh: int = 0):
+    def universal_status():
         with cursor() as cur:
-            seg_id, cfg = segment(cur)
-            cur.execute("select count(*) as companies, coalesce(sum(n), 0) as people from ("
-                        " select (select count(*) from jsonb_object_keys(case when jsonb_typeof("
-                        "  metadata->'apollo_people') = 'object' then metadata->'apollo_people'"
-                        "  else '{}'::jsonb end)) as n"
-                        " from entities where segment_id = %s and source = 'apollo') t", (seg_id,))
-            saved = {k: int(v) for k, v in dict(cur.fetchone()).items()}
+            _, cfg = segment(cur)
         a = cfg.get("apollo") or {}
-        return {"apollo": status(bool(refresh)), "saved": saved,
-                "per_page": int(a.get("per_page") or 25),
+        return {"apollo": status(),
                 "max_reveal_per_save": int(a.get("max_reveal_per_save") or 100),
                 "endpoints": a.get("endpoints") or [],
-                "filters": apollo.FILTERS, "app_only": apollo.APP_ONLY}
+                "filters": apollo.FILTERS}
 
     @r.post("/api/universal/search")
     def universal_search(body: dict = Body(...)):
         b = body or {}
         kind = b.get("kind")
+        # a page of companies costs one credit whatever its size, so it is always a full page;
+        # people are free and come in the project's page size
+        with cursor() as cur:
+            _, cfg = segment(cur)
+        people_per = int((cfg.get("apollo") or {}).get("per_page") or 25)
         try:
             if kind == "people":
-                out = apollo.search_people(b.get("filters") or {}, b.get("page") or 1, b.get("per_page") or 25)
+                out = apollo.search_people(b.get("filters") or {}, b.get("page") or 1, people_per)
             elif kind == "companies":
-                out = apollo.search_companies(b.get("filters") or {}, b.get("page") or 1, b.get("per_page") or 25)
+                out = apollo.search_companies(b.get("filters") or {}, b.get("page") or 1, apollo.MAX_PER_PAGE)
             else:
                 raise HTTPException(400, "search people or companies")
         except ValueError as e:

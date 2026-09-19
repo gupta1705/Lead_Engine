@@ -858,12 +858,10 @@ values (
   },
   "ui": {
     "project_name": "LCX Clipping",
-    "project_type": "Sales segment",
     "key_prefix": "LCX",
     "board_title": "Clipping leads",
     "list_title": "Creators and studios",
     "entity_label": "show",
-    "sidebar_note": "You''re in the <strong>LCX clipping</strong> segment: creators, podcasters and production houses with a back catalogue and no shorts, worldwide, US first. Discovery, enrichment and drafting all run here.",
     "card_fields": [
       {
         "path": "metadata.podcast_feed.episode_count",
@@ -888,51 +886,9 @@ values (
     ],
     "details": [
       {
-        "path": "host_name",
-        "label": "Host",
-        "format": "text"
-      },
-      {
-        "path": "metadata.kind",
-        "label": "Kind",
-        "format": "text"
-      },
-      {
-        "path": "metadata.podcast_feed.feed_url",
-        "label": "Feed",
-        "format": "link"
-      },
-      {
-        "path": "metadata.youtube_channel.url",
-        "label": "Channel",
-        "format": "link"
-      },
-      {
-        "path": "metadata.podcast_feed.language",
-        "label": "Language",
-        "format": "text"
-      },
-      {
         "path": "metadata.podcast_feed.categories",
         "label": "Categories",
         "format": "list"
-      },
-      {
-        "path": "metadata.podcast_feed.hosting_provider",
-        "label": "Hosted on",
-        "format": "text"
-      }
-    ],
-    "evidence": [
-      {
-        "path": "metadata.podcast_feed.episode_count",
-        "label": "Episodes in the catalogue",
-        "format": "number"
-      },
-      {
-        "path": "metadata.podcast_feed.cadence_per_month",
-        "label": "Episodes a month, last 90 days",
-        "format": "number1"
       },
       {
         "path": "metadata.podcast_feed.avg_duration_min",
@@ -945,44 +901,14 @@ values (
         "format": "date"
       },
       {
-        "path": "metadata.youtube_channel.subscribers",
-        "label": "YouTube subscribers",
-        "format": "number"
-      },
-      {
         "path": "metadata.youtube_channel.video_count",
         "label": "Videos on the channel",
-        "format": "number"
-      },
-      {
-        "path": "metadata.youtube_channel.recent.long_count",
-        "label": "Long videos among the last 50 uploads",
-        "format": "number"
-      },
-      {
-        "path": "metadata.youtube_channel.recent.shorts_count",
-        "label": "Shorts among the last 50 uploads",
         "format": "number"
       },
       {
         "path": "metadata.youtube_channel.recent.avg_long_minutes",
         "label": "Average long video (min)",
         "format": "number"
-      },
-      {
-        "path": "metadata.youtube_channel.recent.uploads_per_month",
-        "label": "Uploads a month",
-        "format": "number1"
-      },
-      {
-        "path": "metadata.podcast_feed.monetization_hits",
-        "label": "Budget signals in the show notes",
-        "format": "list"
-      },
-      {
-        "path": "metadata.youtube_channel.monetization_hits",
-        "label": "Budget signals on the channel",
-        "format": "list"
       }
     ],
     "lead_first": "person",
@@ -1094,7 +1020,7 @@ values (
     "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox''s first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX''s own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them.",
     "footer": {
       "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}}, {{sender_email}}, {{postal_address}}, {{company}} and {{greeting_name}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
     },
     "generated_hook": {
       "model": "openai/gpt-oss-120b",
@@ -1114,14 +1040,6 @@ values (
       "hour": 2,
       "minute": 0,
       "enabled": true
-    },
-    {
-      "name": "daily follow-ups",
-      "pipeline": "followups",
-      "dow": "*",
-      "hour": 3,
-      "minute": 30,
-      "enabled": true
     }
   ],
   "pipelines": {
@@ -1133,12 +1051,6 @@ values (
       "enrich_clipping",
       "enrich_contacts",
       "promote_chain"
-    ],
-    "rescore": [
-      "promote_chain"
-    ],
-    "followups": [
-      "draft_followups"
     ]
   },
   "wikidata_channel_discovery": {

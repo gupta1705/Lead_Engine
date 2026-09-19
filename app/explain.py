@@ -40,25 +40,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 FOUND, NONE, UNCHECKED = "found", "none", "unchecked"
 STATE_LABEL = {FOUND: "Found", NONE: "Checked, nothing found", UNCHECKED: "Not checked yet"}
-LEGEND = [
-    {"state": FOUND, "label": STATE_LABEL[FOUND],
-     "meaning": "Evidence was found and earned points. The source is listed so it can be checked."},
-    {"state": NONE, "label": STATE_LABEL[NONE],
-     "meaning": "A pass looked and found nothing. It scores 0, and that zero is real information."},
-    {"state": UNCHECKED, "label": STATE_LABEL[UNCHECKED],
-     "meaning": "Nobody has looked yet. It also scores 0 for now, so the score is a floor: checking can only "
-                "raise it. Many unchecked points mean the score is not reliable yet."},
-]
-
-JOBS = {                                   # app/ops.py keys, with the label the Operations page shows
-    "news_sweep": "News evidence sweep",
-    "qualify_sites": "Qualify from sites",
-    "enrich_contacts": "Find contacts on sites",
-    "enrich_clipping": "Enrich shows (contact + YouTube evidence)",
-    "enrich_startups": "Check startups (city, website, app, news)",
-    "resolve_domains": "Resolve missing websites",
-}
-
 LOW_VALUE = re.compile(r"^(?:accounting|accounts|billing|invoices?|payroll|finance|reports?|support|help|helpdesk|"
                        r"careers?|jobs|hr|recruit(?:ing|ment)?|legal|privacy|abuse|webmaster|no-?reply|donotreply|"
                        r"unsubscribe|newsletter|subscribe|orders?|returns|shipping|feedback|complaints?|editor|"
@@ -214,8 +195,6 @@ def contact_routes(lead):
         routes.append({"kind": "website", "label": "Contact page%s" % (" with a form" if site.get("contact_form") else ""),
                        "value": re.sub(r"^https?://(www\.)?", "", site["contact_page"]).rstrip("/"),
                        "url": site["contact_page"]})
-    elif lead.domain:
-        routes.append({"kind": "website", "label": "Website", "value": lead.domain, "url": "https://" + lead.domain})
     names = {"instagram": "Instagram", "facebook": "Facebook", "x": "X", "tiktok": "TikTok", "vimeo": "Vimeo",
              "youtube": "YouTube"}
     for net, url in sorted((site.get("socials") or {}).items()):
@@ -259,7 +238,7 @@ def contact_routes(lead):
     elif m.get("site_read"):
         tried.append("Their website was read for contacts.")
     elif lead.domain:
-        tried.append("Their website has not been read for contacts yet (Operations → %s)." % JOBS["enrich_contacts"])
+        tried.append("Their website has not been read for contacts yet.")
     else:
         tried.append("No website on record, so there is nothing to read for contacts.")
     if aicp:
@@ -479,9 +458,6 @@ def tvf_criterion(key, lead):
     return None
 
 
-TVF_JOBS = {"international_ip_experience": "news_sweep", "distribution_relationship": "news_sweep",
-            "genre_fit": "qualify_sites", "right_size": "qualify_sites", "collaboration_openness": "qualify_sites",
-            "reachable_decision_maker": "enrich_contacts"}
 TVF_HOW = {
     "international_ip_experience": "Search the trades for a format deal or co-production, and their credits for an "
                                    "adapted foreign show.",
@@ -631,8 +607,6 @@ def lcx_criterion(key, lead):
     return None
 
 
-LCX_JOBS = {k: "enrich_clipping" for k in ("archive_size", "cadence", "shorts_gap", "audience_band",
-                                          "monetization_signals", "reachable_contact", "language_match")}
 LCX_HOW = {
     "shorts_gap": "Find their YouTube channel by hand and count the shorts among recent uploads.",
     "audience_band": "Find their YouTube channel by hand: 10k to 1M subscribers is the band.",
@@ -640,15 +614,11 @@ LCX_HOW = {
     "language_match": "Listen to one episode.",
 }
 def lcx_risks(lead, crit):
-    """What should stop or slow a reviewer: a network behind the show, an audience big enough to have an
-    editor already, a show that has gone quiet."""
-    yc = lead.meta.get("youtube_channel") or {}
+    """What should stop or slow a reviewer: a network behind the show, a show that has gone quiet."""
     risks = []
     if (lead.v("network_owned") or 0) > 0:
         risks.append({"level": "blocker", "title": "Network-owned", "detail": "Networks have editors on staff."})
-    if (lead.v("oversized_audience") or 0) > 0:
-        risks.append({"level": "warning", "title": "Very large audience",
-                      "detail": "%s subscribers: likely has an editor already." % human(yc.get("subscribers"))})
+    # a very large audience is a score penalty: it reaches the risk list from there
     if lead.si.get("activity_signal") == "quiet":
         risks.append({"level": "warning", "title": "Gone quiet", "detail": "Nothing new in the last 90 days."})
     return risks
@@ -670,8 +640,9 @@ def startup_criterion(key, lead):
         if enriched:
             return NONE, ("%d stor%s about it %s read; none reports a shutdown, layoffs, unpaid salaries, a down or "
                           "rescue round, or a distress sale." % (len(events), "y" if len(events) == 1 else "ies",
-                                                                  "was" if len(events) == 1 else "were")), []
-        return UNCHECKED, "Its coverage has not been read yet.", []
+                                                                  "was" if len(events) == 1 else "were")), \
+                [s for s in (story,) if s]
+        return UNCHECKED, "Its coverage has not been read yet.", [s for s in (story,) if s]
     if key == "distress_recency":
         if distress:
             newest = max((e.get("published_at") or "" for e in distress), default="")
@@ -737,9 +708,6 @@ def startup_criterion(key, lead):
     return None
 
 
-STARTUP_JOBS = {k: "enrich_startups" for k in ("distress_evidence", "distress_recency", "mumbai_confirmed", "small_deal",
-                                              "tvf_fit", "something_to_keep")}
-STARTUP_JOBS["reachable_decision_maker"] = "enrich_contacts"
 STARTUP_HOW = {
     "small_deal": "Tracxn or the company's own announcements usually state the rounds.",
     "mumbai_confirmed": "The website's footer or the founders' profiles give the city.",
@@ -766,11 +734,10 @@ def startup_risks(lead, crit):
 
 
 def apollo_facts(lead):
-    """What Apollo said about a lead, as strengths and gaps -- the analysis of a project with no rubric."""
+    """What Apollo said about a lead that no other part of the dialog says, as strengths and gaps -- the
+    analysis of a project with no rubric. The people are in Contacts, the company in Details."""
     m = lead.meta
     ap = m.get("apollo") if isinstance(m.get("apollo"), dict) else {}
-    people = [p for p in (m.get("apollo_people") or {}).values() if isinstance(p, dict)] \
-        if isinstance(m.get("apollo_people"), dict) else []
     strengths, gaps = [], []
     verified = [c for c in lead.contacts if c.get("usable") and c.get("email_status") == "valid"]
     if verified:
@@ -778,39 +745,20 @@ def apollo_facts(lead):
             "%s (%s)" % (c.get("full_name") or c["email"], c["email"]) for c in verified[:3])))
     elif lead.usable():
         gaps.append("No email Apollo has verified: the best address is unverified, so expect some bounces.")
-    for p in people[:4]:
-        level = (p.get("seniority") or "").replace("_", " ")
-        role = " ".join(x for x in (p.get("title"), "(%s)" % level if level and level not in (p.get("title") or "").lower()
-                                    else "") if x)
-        where = ", ".join(x for x in (p.get("city"), p.get("country")) if x)
-        strengths.append("%s%s%s" % (p.get("name") or "Someone", (", " + role) if role else "",
-                                     (" -- based in %s" % where) if where else ""))
     try:
         staff = int(float(ap.get("estimated_num_employees") or 0))
     except (TypeError, ValueError):
         staff = 0                     # a value that is not a number is not shown, and never breaks the dialog
-    firm = ", ".join(x for x in (
-        str(ap.get("industry") or "").capitalize() or None,
-        "%s employees" % format(staff, ",") if staff else None,
-        "HQ %s" % ", ".join(x for x in (ap.get("city"), ap.get("country")) if x) if (ap.get("city") or ap.get("country"))
-        else None,
-        "founded %s" % ap["founded_year"] if ap.get("founded_year") else None) if x)
-    if firm:
-        strengths.append("The company: %s." % firm)
     if ap and not staff:
         gaps.append("Apollo gives no headcount for the company.")
-    sf = m.get("saved_from") if isinstance(m.get("saved_from"), dict) else {}
-    if sf.get("summary"):
-        strengths.append("Found by: %s (saved %s%s)." % (sf["summary"], when(sf.get("at")) or "",
-                                                        " by %s" % sf["by"] if sf.get("by") else ""))
     return strengths, gaps
 
 
 # ------------------------------------------------------------- assembly
 SEGMENTS = {
-    "us-production-houses": (tvf_criterion, TVF_JOBS, TVF_HOW, tvf_risks),
-    "lcx-clipping": (lcx_criterion, LCX_JOBS, LCX_HOW, lcx_risks),
-    "startup-acquisitions": (startup_criterion, STARTUP_JOBS, STARTUP_HOW, startup_risks),
+    "us-production-houses": (tvf_criterion, TVF_HOW, tvf_risks),
+    "lcx-clipping": (lcx_criterion, LCX_HOW, lcx_risks),
+    "startup-acquisitions": (startup_criterion, STARTUP_HOW, startup_risks),
 }
 
 
@@ -828,7 +776,7 @@ def generic_criterion(key, lead):
 
 def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
     lead = Lead(slug, cfg, row, contacts, outreach, now)
-    crit_fn, jobs, how, risks_fn = SEGMENTS.get(slug, (None, {}, {}, None))
+    crit_fn, how, risks_fn = SEGMENTS.get(slug, (None, {}, None))
 
     def one(item, points_key):
         key = item["key"]
@@ -850,17 +798,9 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
             limit = num(item.get("max_penalty")) if item.get("max_penalty") is not None else num(item.get("max_bonus"))
             out["max"] = limit or 0
             out["delta"] = round((limit or 0) * (v or 0), 1)
-        if state == UNCHECKED:
-            job = jobs.get(key)
-            done = {"news_sweep": bool(lead.meta.get("news_checked")),
-                    "qualify_sites": bool(lead.meta.get("site_read")) or not lead.domain,
-                    "enrich_contacts": bool(lead.meta.get("site_read")) or not lead.domain,
-                    "enrich_clipping": bool(lead.meta.get("clipping_enriched_at")),
-                    "enrich_startups": bool(lead.meta.get("startup_enriched_at"))}.get(job, True)
-            if job and not done:
-                out["check"] = {"job": job, "label": JOBS.get(job, job)}
-            elif how.get(key):
-                out["check"] = {"manual": how[key]}
+        # the passes run on the weekly refresh; what a person can do is check by hand
+        if state == UNCHECKED and how.get(key):
+            out["check"] = {"manual": how[key]}
         return out
 
     criteria = [one(r, "points") for r in (lead.cfg.get("rubric") or [])]
@@ -874,9 +814,6 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
         "points_total": total, "points_checked": checked, "points_earned": round(earned, 1),
         "modifier_delta": round(delta, 1),
         "unchecked": [{"label": c["label"], "points": c["points"]} for c in criteria if c["state"] == UNCHECKED],
-        "formula": ("Score = points earned ÷ %s × 100, plus adjustments, kept between 0 and 100. %s of %s points earned "
-                    "gives %s%s." % (pts(total), pts(earned), pts(total), pts(earned / total * 100 if total else 0),
-                                     (", %s%s from adjustments" % ("+" if delta >= 0 else "−", pts(abs(delta)))) if delta else "")),
     }
     if score is not None and total and abs((earned / total * 100 + delta) - score) > 1.0:
         coverage["stale"] = ("The score on record (%s) was computed before the latest evidence changes; the next scoring "
@@ -900,6 +837,7 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
                       "detail": "%d piece%s of evidence withdrawn on review (%s): %s" % (
                           len(retracted), "" if len(retracted) == 1 else "s", when(retracted[-1].get("retracted_at")),
                           "; ".join(quote(e.get("headline") or e.get("site_platform_evidence") or "", 90)
+                                    + (" (%s)" % re.sub(r"\s*\(tools/[^)]*\)", "", e["reason"]).strip() if e.get("reason") else "")
                                     for e in retracted[:2]))})
     if lead.meta.get("domain_conflict"):
         risks.append({"level": "warning", "title": "Website shared with another lead",
@@ -908,44 +846,34 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
                                    else lead.meta["domain_conflict"])})
     review = num(lead.cfg.get("score_threshold_review")) or 25
     priority = num(lead.cfg.get("score_threshold_priority")) or 60
-    if row.get("status") == "shortlisted" and score is not None and score < review:
+    auto = lead.cfg.get("auto_shortlist") or {}
+    line = num(auto.get("min_score")) if auto.get("enabled") and auto.get("min_score") is not None else review
+    if row.get("status") == "shortlisted" and score is not None and score < line:
         risks.append({"level": "warning", "title": "Shortlisted below the review line",
-                      "detail": "Its score is now %s, under %s, after evidence was re-checked." % (pts(score), pts(review))})
-    for c in criteria:
-        if c["state"] == FOUND and c["why"].startswith("Credited, but no source"):
-            risks.append({"level": "info", "title": "Unexplained credit",
-                          "detail": "%s earned %s points with no source recorded." % (c["label"], pts(c["earned"]))})
+                      "detail": "Its score is %s, under the %s line." % (pts(score), pts(line))})
 
     blockers = [r for r in risks if r["level"] == "blocker"]
     share = (checked / total) if total else 0
     unscored = not total                 # a project with no rubric (Universal): no score to judge by
-    if unscored:
-        coverage["formula"] = "This project has no scoring rubric, so its leads have no fit score."
     if blockers:
-        verdict = {"tone": "hold", "title": "Hold: %s" % blockers[0]["title"].lower(), "detail": blockers[0]["detail"]}
+        verdict = {"tone": "hold", "title": "Hold: %s" % blockers[0]["title"].lower()}
     elif unscored:
-        verdict = {"tone": "promising", "title": "Saved from Apollo" if lead.meta.get("apollo") else "Not scored",
-                   "detail": "This project has no scoring rubric, so there is no fit score: judge it on the people "
-                             "and the company below."}
+        verdict = None                   # nothing to judge by; the facts below speak for themselves
     elif share < 0.5:
-        verdict = {"tone": "unreliable", "title": "Too little checked to trust the score",
-                   "detail": "Only %s of %s points have been looked at; the rest score 0 until someone checks."
-                             % (pts(checked), pts(total))}
+        verdict = {"tone": "unreliable", "title": "Too little checked to trust the score"}
     elif score is not None and score >= priority:
-        verdict = {"tone": "strong", "title": "Strong lead", "detail": "Scores %s with %s of %s points checked."
-                   % (pts(score), pts(checked), pts(total))}
+        verdict = {"tone": "strong", "title": "Strong lead"}
     elif score is not None and score >= review:
-        verdict = {"tone": "promising", "title": "Worth reviewing", "detail": "Scores %s with %s of %s points checked."
-                   % (pts(score), pts(checked), pts(total))}
+        verdict = {"tone": "promising", "title": "Worth reviewing"}
     else:
-        verdict = {"tone": "weak", "title": "Weak on what is known", "detail": "Scores %s with %s of %s points checked."
-                   % (pts(score or 0), pts(checked), pts(total))}
+        verdict = {"tone": "weak", "title": "Weak on what is known"}
 
-    strengths = ["%s (+%s): %s" % (c["label"], pts(c["earned"]), c["why"])
+    # the criterion and its points; the why is in the score breakdown, row by row
+    strengths = ["%s (+%s)" % (c["label"], pts(c["earned"]))
                  for c in sorted(criteria, key=lambda c: -c["earned"]) if c["state"] == FOUND][:4]
-    strengths += ["%s (+%s): %s" % (c["label"], pts(c["delta"]), c["why"]) for c in modifiers
+    strengths += ["%s (+%s)" % (c["label"], pts(c["delta"])) for c in modifiers
                   if c["state"] == FOUND and c["delta"] > 0]
-    gaps = ["%s (%s pts): %s" % (c["label"], pts(c["points"]), c["why"])
+    gaps = ["%s (%s pts)" % (c["label"], pts(c["points"]))
             for c in sorted(criteria, key=lambda c: -c["points"]) if c["state"] == UNCHECKED][:4]
     if unscored:
         more_strengths, more_gaps = apollo_facts(lead)
@@ -987,12 +915,8 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
     elif not lead.best():
         phone = next((r for r in routes["routes"] if r["kind"] == "phone"), None)
         step = ("Find a way in: call %s, or look for a named person on %s." % (phone["value"], lead.domain or "their site")
-                if phone else "Find a way in: %s." % ("run \u201c%s\u201d in Operations" % JOBS["enrich_contacts"]
-                                                      if lead.domain and not lead.meta.get("site_read")
+                if phone else "Find a way in: %s." % ("save a person at it from Apollo search" if lead.slug == "universal"
                                                       else "look for a named person on their site or channel"))
-    elif big and big[0]["points"] >= 15 and big[0]["check"].get("job"):
-        step = "Run \u201c%s\u201d in Operations to check %s (%s points unchecked)." % (
-            big[0]["check"]["label"], big[0]["key"].replace("_", " "), pts(big[0]["points"]))
     elif big and big[0]["points"] >= 20:
         step = "Check %s by hand (%s points unchecked). %s" % (big[0]["key"].replace("_", " "), pts(big[0]["points"]),
                                                               big[0]["check"].get("manual"))
@@ -1000,7 +924,6 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
         step = "Decide: shortlist it or reject it with a reason."
 
     return {
-        "legend": LEGEND,
         "criteria": criteria,
         "modifiers": modifiers,
         "coverage": coverage,

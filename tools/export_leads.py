@@ -81,7 +81,7 @@ def obj(v):
     return json.loads(v) if isinstance(v, str) else (v or {})
 
 
-def fetch(min_score, source, status=None):
+def fetch(min_score, source, status=None, q=None):
     from run_sql import load_db_url
     import psycopg2
     where = ["s.slug = %s"]
@@ -92,6 +92,10 @@ def fetch(min_score, source, status=None):
     if source:
         where.append("e.source = %s")
         params.append(source)
+    if q:
+        # the same match the Leads search makes (app/main.py leads())
+        where.append("(e.name ilike %s or e.domain ilike %s or e.metadata->'host'->>'name' ilike %s)")
+        params += ["%" + q + "%"] * 3
     # status filter: the web UI exports a shortlist, the CLI exports everything
     if status and status != "all":
         if status == "open":
@@ -214,6 +218,7 @@ def main():
     ap.add_argument("-o", "--out", default=None)
     ap.add_argument("--min-score", type=float, default=None)
     ap.add_argument("--source", default=None)
+    ap.add_argument("--q", default=None, help="the Leads page search text")
     ap.add_argument("--status", default=None,
                     help="shortlisted | rejected | open | all "
                          "(default: every row in the segment)")
@@ -226,7 +231,7 @@ def main():
     except ImportError:
         sys.exit("openpyxl not installed:  pip install openpyxl")
 
-    rows = fetch(args.min_score, args.source, args.status)
+    rows = fetch(args.min_score, args.source, args.status, args.q)
     if not rows:
         print("no rows matched"); return 1
 

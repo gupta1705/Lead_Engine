@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "app" / "static"
 DEFAULT_FIXTURES = ROOT / "logs" / "ui_fixtures.json"
-FOLDERS = ["drafts", "outbox", "sent", "inbox", "positive", "negative", "attention", "cancelled"]
+FOLDERS = ["drafts", "outbox", "sent", "inbox", "attention"]
 STATUSES = ["open", "shortlisted", "contacted", "in_conversation", "rejected", "archived"]
 
 
@@ -70,14 +70,7 @@ def generate(out, slug):
     fx["outreach"] = {"rows": rows, "counts": counts}
     fx["footer"] = main.footer_get(segment=slug)
     fx["schedule"] = main.schedule_state(segment=slug)
-    jobs = []
-    for key, job in ops.JOBS.items():
-        if job.get("segments") and slug not in job["segments"]:
-            continue
-        ok, why = ops._available(job)
-        jobs.append({"key": key, "label": job["label"], "group": job["group"], "desc": job["desc"],
-                     "available": ok, "unavailable_reason": why, "status": None, "running": False})
-    fx["ops"] = {"jobs": jobs}
+    fx["ops"] = {"busy": None}
     # the Apollo page: its filter list, straight from tools/apollo.py; the searches themselves are
     # answered by a pretend Apollo in the mock (made-up people at example.com), so no key and no credit
     import apollo
@@ -86,7 +79,7 @@ def generate(out, slug):
         cur.execute("select config->'apollo' as a from segments where slug = 'universal'")
         row = cur.fetchone()
     a = (row or {}).get("a") or {}
-    fx["universal"] = {"filters": apollo.FILTERS, "app_only": apollo.APP_ONLY, "endpoints": a.get("endpoints") or [],
+    fx["universal"] = {"filters": apollo.FILTERS, "endpoints": a.get("endpoints") or [],
                        "per_page": a.get("per_page") or 25, "max_reveal_per_save": a.get("max_reveal_per_save") or 100}
     # a lead as a save would leave it, explained by the real explain.py, for the lead dialog
     demo = {"id": "00000000-0000-4000-8000-00000000d3m0", "name": "Demo Pictures", "domain": "demopictures.example",
@@ -134,7 +127,7 @@ MOCK_JS = r"""
     headers: { "Content-Type": "application/json" } });
   const RUN = { key: null, lines: {}, status: {} };
   const folderOf = (r) => {
-    if (r.direction === "inbound") return r.triage === "positive" ? "positive" : r.triage === "negative" ? "negative" : "inbox";
+    if (r.direction === "inbound") return "inbox";
     return ({ drafted: "drafts", approved: "outbox", sending: "outbox", sent: "sent", cancelled: "cancelled" })[r.status] || "attention";
   };
   window.fetch = async (url, opts) => {
@@ -154,30 +147,18 @@ MOCK_JS = r"""
     if (p === "/api/kpis") return json(FX.kpis);
     if (p === "/api/schedule") return json(FX.schedule);
     if (p.startsWith("/api/schedule/run/")) return json({ ok: true });
-    if (p === "/api/schedule/test-alert") return json({ ok: true, webhook_configured: false });
-    if (p === "/api/ops") return json({ jobs: FX.ops.jobs.map((j) => ({ ...j, running: RUN.key === j.key,
-      status: RUN.status[j.key] || null })), busy: RUN.key });
+    if (p === "/api/ops") return json({ busy: RUN.key, label: RUN.key });
     let m;
-    if ((m = p.match(/^\/api\/ops\/([^/]+)\/run$/))) {
-      if (RUN.key) return json({ detail: "another job is running: " + RUN.key }, 409);
-      const key = m[1]; RUN.key = key; RUN.status[key] = "running"; RUN.lines[key] = ["[preview] " + key + " started"];
-      let n = 0;
-      const t = setInterval(() => { RUN.lines[key].push("[preview] step " + (++n) + " of 5 ... ok"); if (n >= 5) {
-        clearInterval(t); RUN.lines[key].push("[preview] done"); RUN.status[key] = "done"; RUN.key = null; } }, 1200);
-      return json({ ok: true });
-    }
     if ((m = p.match(/^\/api\/ops\/([^/]+)\/log$/))) return json({ lines: RUN.lines[m[1]] || [], status: RUN.status[m[1]] });
     if ((m = p.match(/^\/api\/ops\/([^/]+)\/stop$/))) { RUN.status[m[1]] = "failed"; RUN.key = null; return json({ ok: true }); }
     if (p === "/api/leads") {
       const st = q.get("status") || "open", qq = (q.get("q") || "").toLowerCase(), src = q.get("source") || "";
-      const min = +(q.get("min_score") || 0), hc = q.get("has_contact") === "1", sort = q.get("sort") || "score";
+      const min = +(q.get("min_score") || 0);
       let rows = FX.leads.filter((r) => st === "all" ? true : st === "open" ? OPEN.has(r.status) : r.status === st);
       if (qq) rows = rows.filter((r) => (r.name || "").toLowerCase().includes(qq) || (r.domain || "").toLowerCase().includes(qq));
       if (src) rows = rows.filter((r) => r.source === src);
       if (min) rows = rows.filter((r) => (+r.fit_score || 0) >= min);
-      if (hc) rows = rows.filter((r) => r.n_contacts > 0 || r.email);
-      if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
-      else if (sort === "score") rows.sort((a, b) => (+b.fit_score || 0) - (+a.fit_score || 0) || a.name.localeCompare(b.name));
+      rows.sort((a, b) => (+b.fit_score || 0) - (+a.fit_score || 0) || a.name.localeCompare(b.name));
       const off = +(q.get("offset") || 0), lim = +(q.get("limit") || 100);
       return json({ total: rows.length, rows: rows.slice(off, off + lim) });
     }
@@ -199,6 +180,7 @@ MOCK_JS = r"""
     if (p === "/api/outreach" && method === "GET") {
       const f = q.get("folder") || "drafts";
       const counts = {}; FX.outreach.rows.forEach((r) => { const k = folderOf(r); counts[k] = (counts[k] || 0) + 1; });
+      counts.untriaged = FX.outreach.rows.filter((r) => r.direction === "inbound" && r.triage !== "positive" && r.triage !== "negative").length;
       return json({ rows: FX.outreach.rows.filter((r) => folderOf(r) === f), counts });
     }
     if ((m = p.match(/^\/api\/outreach\/([^/]+)\/decision$/))) {
@@ -217,7 +199,7 @@ MOCK_JS = r"""
       // the same shape of refusal the server gives, so the error path is real here
       const sd = body.sender || {}, t = (body.text || "").trim();
       const resolved = t.split("{{sender_name}}").join(sd.name || "").split("{{sender_title}}").join(sd.title || "")
-        .split("{{postal_address}}").join(sd.postal_address || "").split("{{sender_email}}").join("");
+        .split("{{postal_address}}").join(sd.postal_address || "");
       const probs = [];
       if (!t) probs.push("The footer is empty. Every email needs a sign-off, a postal address and a way out of the list.");
       if (resolved.includes("SET_ME")) probs.push("The footer still says SET_ME. Fill in the name and the postal address.");
@@ -227,7 +209,7 @@ MOCK_JS = r"""
         probs.push("No way out. Keep a line telling the recipient how to stop hearing from you -- it is both the law and the difference between a reply and a spam report.");
       if (probs.length) return json({ detail: probs.join("\n") }, 400);
       FX.footer.text = t; FX.footer.sender = sd; FX.footer.preview = resolved; FX.footer.problems = [];
-      return json({ ok: true, preview: resolved, rebuilt: body.apply_to_drafts ? FX.footer.drafts_pending : 0,
+      return json({ ok: true, preview: resolved, rebuilt: FX.footer.drafts_pending || 0,
                     hand_edited: 0, failed: 0 });
     }
     if (p === "/api/mailboxes") return json(FX.mailboxes || { segment_cap: 20, rotation: false, mailboxes: [
@@ -260,14 +242,14 @@ MOCK_JS = r"""
         endpoints: U.endpoints, filters: U.filters, app_only: U.app_only });
       if (p === "/api/universal/search") {
         if (off) return json({ detail: "Apollo is not connected: APOLLO_API_KEY is not set." }, 409);
-        const f = body.filters || {}, per = body.per_page || 25, page = body.page || 1, hex = (n) => n.toString(16).padStart(24, "0");
+        const f = body.filters || {}, per = body.kind === "companies" ? 100 : (U.per_page || 25), page = body.page || 1, hex = (n) => n.toString(16).padStart(24, "0");
         const first = ["Asha", "Rohan", "Meera", "Kabir", "Isha", "Dev", "Tara", "Arjun", "Nina", "Vikram"];
         const titles = (f.person_titles && f.person_titles.length) ? f.person_titles : ["Head of Partnerships", "Producer", "Founder"];
         if (body.kind === "people") {
           const people = Array.from({ length: per }, (_, i) => { const k = (page - 1) * per + i;
             return { id: hex(0xa0000 + k), first_name: first[k % 10], last_name_obfuscated: "Ex***e", title: titles[k % titles.length],
-              has_email: k % 4 !== 3, has_direct_phone: "Yes", has_location: true, company: "Example Studio " + (1 + (k % 7)),
-              company_known: ["industry", "employee count"], saved: A.saved.has(hex(0xa0000 + k)) }; });
+              has_email: k % 4 !== 3, company: "Example Studio " + (1 + (k % 7)),
+              saved: A.saved.has(hex(0xa0000 + k)) }; });
           return json({ total: 1234, page, per_page: per, people });
         }
         A.spent += 1;
