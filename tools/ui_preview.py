@@ -76,6 +76,48 @@ def generate(out, slug):
         jobs.append({"key": key, "label": job["label"], "group": job["group"], "desc": job["desc"],
                      "available": ok, "unavailable_reason": why, "status": None, "running": False})
     fx["ops"] = {"jobs": jobs}
+    # the Apollo page: its filter list, straight from tools/apollo.py; the searches themselves are
+    # answered by a pretend Apollo in the mock (made-up people at example.com), so no key and no credit
+    import apollo
+    import explain
+    with main.cursor() as cur:
+        cur.execute("select config->'apollo' as a from segments where slug = 'universal'")
+        row = cur.fetchone()
+    a = (row or {}).get("a") or {}
+    fx["universal"] = {"filters": apollo.FILTERS, "app_only": apollo.APP_ONLY, "endpoints": a.get("endpoints") or [],
+                       "per_page": a.get("per_page") or 25, "max_reveal_per_save": a.get("max_reveal_per_save") or 100}
+    # a lead as a save would leave it, explained by the real explain.py, for the lead dialog
+    demo = {"id": "00000000-0000-4000-8000-00000000d3m0", "name": "Demo Pictures", "domain": "demopictures.example",
+            "source": "apollo", "status": "ready_for_review", "fit_score": None, "status_reason": None,
+            "status_changed_at": None, "created_at": "2026-09-19T10:00:00+00:00", "updated_at": None,
+            "metadata": {"industry": "entertainment", "employees": 24, "hq_city": "Mumbai", "hq_country": "India",
+                         "apollo": {"id": "a" * 24, "name": "Demo Pictures", "industry": "entertainment",
+                                    "estimated_num_employees": 24, "city": "Mumbai", "country": "India",
+                                    "founded_year": 2014, "phone": "+91 22 0000 0000",
+                                    "linkedin_url": "https://www.linkedin.com/company/example",
+                                    "short_description": "A made-up studio, for the preview."},
+                         "apollo_people": {"b" * 24: {"name": "Asha Example", "title": "Head of Partnerships",
+                                                      "seniority": "head", "city": "Mumbai", "country": "India",
+                                                      "has_email": True}},
+                         "saved_from": {"summary": "People · Job titles: head of partnerships",
+                                        "at": "2026-09-19T10:00:00+00:00", "by": fx["auth"]["user"]}}}
+    contacts = explain.rank_contacts([{"id": "c1", "full_name": "Asha Example", "role_title": "Head of Partnerships",
+                                       "email": "asha@demopictures.example", "email_status": "valid", "is_primary": True,
+                                       "source": "apollo", "linkedin_url": "https://www.linkedin.com/in/example",
+                                       "rank": 95}], demo["domain"])
+    demo["contacts"] = contacts
+    demo["outreach"] = None
+    demo["explain"] = explain.explain_lead("universal", {"rubric": []}, demo, contacts)
+    demo["criteria"] = []
+    demo["thresholds"] = {"review": 0, "priority": 0}
+    if slug == "universal":
+        # the Universal project starts empty: one made-up saved lead, so the board, list and dialog have something
+        fx["details"][demo["id"]] = demo
+        fx["leads"].append({"id": demo["id"], "name": demo["name"], "domain": demo["domain"], "source": "apollo",
+                            "status": "ready_for_review", "fit_score": 0, "why_fit": None, "kind": None,
+                            "host_name": None, "fields": ["entertainment", "24", "India"], "city": "Mumbai",
+                            "state": None, "n_contacts": 1, "email": "asha@demopictures.example",
+                            "contact_name": "Asha Example"})
     out.parent.mkdir(parents=True, exist_ok=True)
     io.open(out, "w", encoding="utf-8").write(json.dumps(fx, default=str))
     print("wrote %s: %d leads, %d details, %d outreach rows" % (out, len(leads), len(fx["details"]), len(rows)))
@@ -203,6 +245,54 @@ MOCK_JS = r"""
         if (r) { r.status = "approved"; r.approved_by = FX.auth.user; r.approval_mode = "batch";
                  r.approved_at = new Date().toISOString(); r.spot_checked = (body.sample || []).includes(id); } });
       return json({ batch_id: "preview", approved: (body.ids || []).length, skipped: [] });
+    }
+    // ---- the Apollo page: a pretend Apollo (made-up people at example.com) ----
+    if (p.startsWith("/api/universal/")) {
+      const U = FX.universal || { filters: [], app_only: [], endpoints: [] };
+      const A = (window.__apollo = window.__apollo || { spent: 0, saved: new Set(), searches: [], n: 0 });
+      const off = new URLSearchParams(location.search).get("apollo") === "off";
+      if (p === "/api/universal/status") return json({ apollo: off ? { key_set: false, connected: false, profile: null, credits: null, problems: [] }
+          : { key_set: true, connected: true, profile: { name: "Preview", email: "preview@example.com" },
+              credits: { lead_credits_left: 1200 - A.spent, lead_credits_limit: 1200 }, problems: [] },
+        saved: { companies: 0, people: A.saved.size }, per_page: U.per_page, max_reveal_per_save: U.max_reveal_per_save,
+        endpoints: U.endpoints, filters: U.filters, app_only: U.app_only });
+      if (p === "/api/universal/search") {
+        if (off) return json({ detail: "Apollo is not connected: APOLLO_API_KEY is not set." }, 409);
+        const f = body.filters || {}, per = body.per_page || 25, page = body.page || 1, hex = (n) => n.toString(16).padStart(24, "0");
+        const first = ["Asha", "Rohan", "Meera", "Kabir", "Isha", "Dev", "Tara", "Arjun", "Nina", "Vikram"];
+        const titles = (f.person_titles && f.person_titles.length) ? f.person_titles : ["Head of Partnerships", "Producer", "Founder"];
+        if (body.kind === "people") {
+          const people = Array.from({ length: per }, (_, i) => { const k = (page - 1) * per + i;
+            return { id: hex(0xa0000 + k), first_name: first[k % 10], last_name_obfuscated: "Ex***e", title: titles[k % titles.length],
+              has_email: k % 4 !== 3, has_direct_phone: "Yes", has_location: true, company: "Example Studio " + (1 + (k % 7)),
+              company_known: ["industry", "employee count"], saved: A.saved.has(hex(0xa0000 + k)) }; });
+          return json({ total: 1234, page, per_page: per, people });
+        }
+        A.spent += 1;
+        const companies = Array.from({ length: per }, (_, i) => { const k = (page - 1) * per + i;
+          return { id: hex(0xb0000 + k), name: "Example Studio " + (1 + k), primary_domain: "studio" + (1 + k) + ".example",
+            website_url: "https://studio" + (1 + k) + ".example", linkedin_url: "https://www.linkedin.com/company/example",
+            founded_year: 2000 + (k % 25), phone: "+91 22 0000 00" + String(k % 100).padStart(2, "0"),
+            in_apollo_account: k === 2, saved: A.saved.has(hex(0xb0000 + k)) ? "ready_for_review" : null }; });
+        return json({ total: 311, page, per_page: per, total_pages: Math.ceil(311 / per), companies });
+      }
+      if (p === "/api/universal/save") {
+        const ids = body.kind === "people" ? (body.ids || []) : (body.companies || []).map((c) => c.id);
+        const fresh = ids.filter((id) => !A.saved.has(id)); fresh.forEach((id) => A.saved.add(id));
+        if (body.kind === "people") A.spent += fresh.length;
+        return json({ saved: fresh.length, with_email: fresh.length, companies_created: Math.min(fresh.length, 3),
+          companies_updated: 0, skipped: [], saved_ids: fresh, already_saved: ids.length - fresh.length,
+          not_found: 0, credits: body.kind === "people" ? fresh.length : 0, requested: ids.length, error: null, unrevealed: 0 });
+      }
+      if (p === "/api/universal/searches" && method === "GET") return json({ searches: A.searches });
+      if (p === "/api/universal/searches") {
+        const i = A.searches.findIndex((s) => s.name.toLowerCase() === String(body.name).toLowerCase());
+        const row = { id: i >= 0 ? A.searches[i].id : "s" + (++A.n), name: body.name, kind: body.kind, filters: body.filters,
+          summary: (body.kind === "people" ? "People" : "Companies") + " · " + Object.keys(body.filters || {}).join(", ") };
+        if (i >= 0) A.searches[i] = row; else A.searches.push(row);
+        return json({ ok: true, id: row.id, name: row.name });
+      }
+      if ((m = p.match(/^\/api\/universal\/searches\/(.+)$/))) { A.searches = A.searches.filter((s) => s.id !== m[1]); return json({ ok: true }); }
     }
     return json({ detail: "preview mock: no route for " + method + " " + p }, 404);
   };

@@ -65,6 +65,10 @@ Down the left is the menu. Five places, and you will live in three of them.
 Below those: **Generate leads** starts a harvest, and **Project settings** shows
 the rubric this project scores against.
 
+The Universal project has a different menu: **Apollo search** sits at the top,
+because that is where its leads come from, and Outreach, Operations and Generate
+leads are not there.
+
 ## Switching between projects
 
 A **project** (the code calls it a segment) is one sales motion with its own
@@ -75,17 +79,70 @@ Click the project name at the very top of the left sidebar to switch.
 
 ![Click the project at the top of the sidebar to switch](img/03-projects.png){width=full}
 
-Right now there are three:
+Right now there are four:
 
 - **LCX Clipping** — creators, podcasters and production houses with a deep back
   catalogue and almost no short-form. This is the active one.
 - **US Production Houses** — TVF co-production targets.
 - **Startup Acquisitions** — Mumbai startups showing public signs of struggle,
   which TVF could buy for little or back with its content and audience.
+- **Universal** — any company or person, found with Apollo. No rubric and no
+  harvest: you search, you pick, you save.
 
 Whichever project you pick, every screen changes with it. The board, the leads,
 the emails, the reports. Check the sidebar if you are ever unsure which one you
 are looking at.
+
+
+# Universal: searching Apollo
+
+The Universal project finds leads anywhere, through Apollo. Pick it from the
+project menu and it opens on **Apollo search**.
+
+![Apollo search, in the Universal project](img/13-universal.png){width=full}
+
+**Two searches, as in Apollo's own app.** *People* finds people; *Companies*
+finds companies. Type in the search bar, or set filters on the left, then press
+**Search**. The filters carry the names Apollo gives them:
+
+- **Person**: name, job titles (with or without similar titles), management
+  level, where they live, email status.
+- **Company**: HQ location (a company search can also leave locations out),
+  number of employees, industry and keywords, revenue, company domains, and
+  domains to leave out.
+- **Technologies** the company uses, **funding**, **job postings**, and
+  **headcount growth** over 6, 12 or 24 months.
+- **Company lookalikes**: press **Lookalikes** on a company to find others like it.
+
+A few of Apollo's filters exist only inside its own app: buying intent,
+departments, past job titles and some others. The bottom of the filter column
+names them, so nobody goes looking.
+
+**What it costs.** The credits left show at the top right.
+
+| | Apollo credits |
+|---|---|
+| Searching people | none |
+| Saving a person (reveals their name, work email and LinkedIn) | 1 each, only when Apollo finds them |
+| One page of company results | 1 |
+| Saving companies | none |
+
+Saving people always asks first, and says the most it can cost.
+
+**Saving.** Tick the people or companies worth keeping and press **Save**. Each
+company becomes a lead and each person a contact on it, on this project's Board
+and Leads pages, where you shortlist or reject them as in any other project.
+*At most N per company* stops one company filling the list. Nobody already saved
+is paid for twice, and TVF's own people, and anything rejected before, are never
+saved.
+
+**People at a company.** In a company search, **People here** switches to a
+free people search at that company. Tick several companies and press **Find
+people at these companies** to do the same for all of them.
+
+**Saved searches.** **Save search** keeps the search bar and every filter under
+a name, and **Saved searches** runs one again. A saved company search waits for
+you to press Search, because it costs a credit.
 
 
 # The board
@@ -481,6 +538,12 @@ domain, so a bad week never touches everyday mail.
 shortlisted automatically, so go to Outreach and press **Draft emails**. Each
 press drafts up to 20, and a draft whose opening line Groq wrote is approved
 on its own. In the TVF projects, shortlist leads by hand first.
+
+**4. Connect Apollo**, for the Universal project. In Apollo: Settings →
+Integrations → API Keys → Create new key, tick the five endpoints the Apollo
+search page lists (or turn on *Set as master key*), then put the key in `.env`
+as `APOLLO_API_KEY` and in Render's Environment tab. Until then the page shows
+these steps where the results would be.
 
 Optional, and worth having later: an Anthropic key for reply triage, and an alert
 webhook so a failed overnight run reaches you.

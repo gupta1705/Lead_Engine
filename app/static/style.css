@@ -907,3 +907,82 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .footer-problems svg { flex: none; margin-top: 1px; }
 .footer-problems > div > div + div { margin-top: 6px; }
 @media (max-width: 640px) { .footer-grid { grid-template-columns: 1fr; } }
+
+/* ========================================================= universal */
+/* The Apollo search page (the Universal project): a search bar, a column of
+   filters grouped the way Apollo's own app groups them, and the results beside
+   it. Built from the same tokens as every other page. */
+.project-switch[data-prefix="UNI"] .project-avatar { background: linear-gradient(135deg, #6E5DC6, #0C66E4); }
+.uni-status { display: inline-flex; align-items: center; gap: 8px; margin-right: 4px; }
+#uniTabs { overflow: visible; }
+/* a project with no rubric: the list leaves out its Score and Priority columns */
+#leadsTable.unscored th:nth-child(4), #leadsTable.unscored td:nth-child(4),
+#leadsTable.unscored th:nth-child(5), #leadsTable.unscored td:nth-child(5) { display: none; }            /* two tabs never scroll; auto overflow drew a stray scrollbar */
+.uni-credits { font-size: 12px; color: var(--text-subtle); white-space: nowrap; }
+.uni-searchbar { display: flex; gap: 8px; align-items: center; }
+.uni-query { position: relative; flex: 1; max-width: 720px; }
+.uni-query svg { position: absolute; left: 10px; top: 11px; color: var(--icon-subtle); pointer-events: none; }
+.uni-query input { padding-left: 36px; }
+.uni-searchbar .btn { height: 40px; }
+.uni-cost { display: flex; align-items: center; gap: 6px; margin: 8px 0 16px;
+  font-size: 12px; line-height: 16px; color: var(--text-subtlest); }
+.uni-cost svg { flex: none; }
+.uni-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; align-items: start; }
+.uni-filters { position: sticky; top: 8px; max-height: calc(100vh - 140px); overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.uni-filters-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.uni-filters-head .grow { flex: 1; }
+.uni-group { border-bottom: 1px solid var(--border); }
+.uni-group summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer;
+  font-size: 14px; font-weight: 600; list-style: none; }
+.uni-group summary::-webkit-details-marker { display: none; }
+.uni-group summary::after { content: ""; margin-left: auto; width: 7px; height: 7px;
+  border-right: 2px solid var(--icon-subtle); border-bottom: 2px solid var(--icon-subtle);
+  transform: rotate(-45deg); transition: transform .15s var(--ease); }
+.uni-group[open] summary::after { transform: rotate(45deg); }
+.uni-group summary:hover { background: var(--bg-neutral-subtle-hovered); }
+.uni-group-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 12px 14px; }
+.uni-group-body fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.uni-group-body legend, .uni-group-body .label { margin-bottom: 4px; padding: 0;
+  font-size: 12px; line-height: 16px; font-weight: 600; color: var(--text-subtle); }
+.check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.check-grid .check, .uni-bool { align-items: center; gap: 8px; font-size: 13px; }
+.check-grid .check input, .uni-bool input { margin-top: 0; }
+.range-row { display: flex; align-items: center; gap: 6px; }
+.range-row input { min-width: 0; }
+.chip-input { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 32px; padding: 3px 4px;
+  border: 2px solid var(--border-input); border-radius: var(--radius); background: var(--bg-input); }
+.chip-input:focus-within { border-color: var(--border-focused); background: var(--surface); }
+.chip-input input, .chip-input input:hover, .chip-input input:focus { flex: 1; min-width: 80px; height: 24px;
+  padding: 0 4px; border: 0; outline: 0; background: transparent; }
+.chip-input.static { border-width: 1px; border-style: dashed; background: transparent; }
+.chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; height: 22px; padding: 0 2px 0 6px;
+  border-radius: var(--radius); background: var(--bg-neutral); color: var(--text); font-size: 12px; line-height: 22px; }
+.chip-x { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 2px; background: transparent; color: var(--icon-subtle); cursor: pointer; }
+.chip-x:hover { background: var(--bg-neutral-hovered); color: var(--text); }
+.uni-apponly { padding: 10px 12px; font-size: 12px; color: var(--text-subtlest); }
+.uni-apponly summary { cursor: pointer; font-weight: 600; color: var(--text-subtle); }
+.uni-apponly p { margin: 6px 0 0; line-height: 16px; }
+.uni-results { min-width: 0; }
+.uni-results .tbl th.sel, .uni-results .tbl td.sel { width: 36px; }
+.uni-row-actions { text-align: right; }
+.uni-row-actions .lozenge { margin-right: 4px; }
+.uni-steps, .uni-problems { margin: 4px 0 0 18px; padding: 0; }
+.uni-steps li, .uni-problems li { margin: 2px 0; }
+.uni-problems { margin-top: 8px; font-size: 13px; }
+.uni-steps code, .uni-problems code { padding: 0 3px; border-radius: 3px; background: var(--bg-neutral);
+  font-family: var(--mono); font-size: 12px; }
+.uni-saved-menu { min-width: 320px; max-width: 420px; }
+.uni-saved { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.uni-saved-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.uni-saved .desc { white-space: normal; }
+@media (max-width: 1000px) {
+  .uni-layout { grid-template-columns: 1fr; }
+  .uni-filters { position: static; max-height: none; }
+}
+@media (max-width: 640px) {
+  .uni-searchbar { flex-direction: column; align-items: stretch; }
+  .check-grid { grid-template-columns: 1fr; }
+}

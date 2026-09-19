@@ -18,10 +18,12 @@ ROOT = Path(__file__).resolve().parent.parent
 FILES = {                       # slug -> (sql file, name, entity_type)
     "startup-acquisitions": "03c_segment_startup_acquisitions.sql",
     "lcx-clipping": "03d_segment_lcx_clipping.sql",
+    "universal": "03e_segment_universal.sql",
 }
 NAMES = {
     "startup-acquisitions": "Startup Acquisition Targets -- struggling Mumbai startups",
     "lcx-clipping": "LCX Clipping -- creators and podcasters with a back catalogue",
+    "universal": "Universal -- any company or person, found with Apollo search",
 }
 
 

@@ -108,6 +108,7 @@ function typeIcon(kind) {
 }
 function prioFor(score) {
   score = +score || 0;
+  if (score <= 0) return { cls: "low", glyph: "pLowest", label: "Unscored" };
   if (score >= 60) return { cls: "high", glyph: "pHighest", label: "Highest" };
   if (score >= PRIORITY_THRESHOLD) return { cls: "high", glyph: "pHigh", label: "High" };
   if (score >= REVIEW_THRESHOLD) return { cls: "medium", glyph: "pMedium", label: "Medium" };
@@ -118,6 +119,9 @@ function prioIcon(score, withLabel) {
   const p = prioFor(score);
   return `<span class="prio ${p.cls}" title="Priority: ${p.label} (fit score ${fmtScore(score)})">${icon(p.glyph, 16)}${withLabel ? ` <span style="color:var(--text)">${p.label}</span>` : ""}</span>`;
 }
+/* A project with no rubric (Universal) has no scores: its thresholds are both 0, and the
+   board, list and dialog leave the score and priority out rather than show a row of zeros. */
+function unscoredProject() { return !REVIEW_THRESHOLD && !PRIORITY_THRESHOLD; }
 function ptsClass(score) { score = +score || 0; return score >= PRIORITY_THRESHOLD ? "hi" : score >= REVIEW_THRESHOLD ? "mid" : ""; }
 function pts(score) { return `<span class="pts ${ptsClass(score)}" title="Fit score out of 100">${fmtScore(score)}</span>`; }
 
@@ -140,7 +144,7 @@ const SOURCES = {
   aicp_directory: ["AICP", ""], google_news_rss: ["News", "inprogress"], wikidata: ["Wikidata", "new"],
   youtube_api: ["YouTube", ""], x_intent: ["X", "new"], manual_p1: ["Manual", "moved"], manual: ["Manual", "moved"],
   wikidata_channels: ["Wikidata", "new"], tvf_pool: ["TVF pool", "moved"],
-  apple_podcasts: ["Podcast", "new"], startup_news: ["News", "inprogress"],
+  apple_podcasts: ["Podcast", "new"], startup_news: ["News", "inprogress"], apollo: ["Apollo", "new"],
 };
 function sourceLabel(src) { return (SOURCES[src] || [String(src || "unknown").replace(/_/g, " "), ""])[0]; }
 function sourceLozenge(src) {
@@ -258,12 +262,22 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ============================================================ routing */
-const VIEWS = ["board", "leads", "outreach", "reports", "ops"];
-let TITLES = { board: "Lead board", leads: "Leads", outreach: "Outreach", reports: "Reports", ops: "Operations" };
+const VIEWS = ["universal", "board", "leads", "outreach", "reports", "ops"];
+let TITLES = { universal: "Search Apollo", board: "Lead board", leads: "Leads", outreach: "Outreach", reports: "Reports",
+  ops: "Operations" };
 function go(hash) { location.hash = hash; }
-function currentView() { return state.route || "board"; }
+function currentView() { return state.route || defaultRoute(); }
+/* A project's config may hide pages it has no use for (Universal has no outreach and no
+   pipeline jobs) and name its own first page; the Apollo page exists only where the
+   config asks for it. */
+function routeAllowed(name) {
+  const ui = segUi();
+  if (!VIEWS.includes(name) || (ui.hide_routes || []).includes(name)) return false;
+  return name !== "universal" || ui.search_page === "apollo";
+}
+function defaultRoute() { const d = segUi().default_route; return d && routeAllowed(d) ? d : "board"; }
 function showView(name) {
-  if (!VIEWS.includes(name)) name = "board";
+  if (!routeAllowed(name)) name = defaultRoute();
   state.route = name;
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
   $$(".side-item[data-route]").forEach((b) => b.classList.toggle("active", b.dataset.route === name));
@@ -274,11 +288,12 @@ function showView(name) {
   if (name === "outreach") loadOutreach();
   if (name === "reports") loadReports();
   if (name === "ops") loadOps();
+  if (name === "universal") loadUniversal();
 }
 function router() {
-  const h = (location.hash || "#board").slice(1);
+  const h = (location.hash || "#" + defaultRoute()).slice(1);
   const [head, rest] = h.split("/");
-  if (head === "lead" && rest) { if (!state.route) showView("board"); openLead(rest); return; }
+  if (head === "lead" && rest) { if (!state.route) showView(defaultRoute()); openLead(rest); return; }
   if (head === "outreach" && rest) state.outreach.folder = rest;
   if (state.route === head && head !== "outreach") return;   // same view, nothing to do
   if (modal.isOpen()) modal.close(true);
@@ -330,7 +345,8 @@ function fmtField(v, format) {
   }
 }
 function fmtFieldHtml(v, format) {
-  if (format === "link" && v) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(fmtField(v, format))}</a>`;
+  // only an http(s) address becomes a link: anything else in an href is not a web page
+  if (format === "link" && v && /^https?:\/\//i.test(String(v))) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(fmtField(v, format))}</a>`;
   if (format === "list" && Array.isArray(v)) return `<span class="pill-list">${v.slice(0, 8).map((x) => `<span class="lozenge">${esc(x)}</span>`).join("")}</span>`;
   return esc(fmtField(v, format));
 }
@@ -359,8 +375,10 @@ function applySegment(seg) {
   state.segment = seg;
   const ui = segUi();
   KEY_PREFIX = ui.key_prefix || "TVF";
-  REVIEW_THRESHOLD = +((seg.thresholds || {}).review) || 25;
-  PRIORITY_THRESHOLD = +((seg.thresholds || {}).priority) || 45;
+  // 0 is a real threshold: a project with no rubric (Universal) scores nothing and hides nothing
+  const rv = parseFloat((seg.thresholds || {}).review), pv = parseFloat((seg.thresholds || {}).priority);
+  REVIEW_THRESHOLD = Number.isFinite(rv) ? rv : 25;
+  PRIORITY_THRESHOLD = Number.isFinite(pv) ? pv : 45;
   $("#projectName").textContent = ui.project_name;
   $("#projectType").textContent = ui.project_type;
   $("#projectSwitch").dataset.prefix = ui.key_prefix || "TVF";          // tints the project icon per segment
@@ -381,6 +399,14 @@ function applySegment(seg) {
   });
   state.board.filters.min_score = REVIEW_THRESHOLD;
   $("#followupsBtn").hidden = !followUpsOn();
+  const hidden = new Set(ui.hide_routes || []), apolloPage = ui.search_page === "apollo";
+  $$(".side-item[data-route]").forEach((b) => { b.hidden = !routeAllowed(b.dataset.route); });
+  // Universal generates leads on its search page, so the sidebar has no second way to the same place
+  $("#createSide").hidden = apolloPage;
+  $("#pipelineHeading").hidden = apolloPage && hidden.has("ops");
+  const unscored = unscoredProject();
+  $$("#boardScore, #leadsScore").forEach((sel) => { sel.hidden = unscored; });
+  $("#leadsTable").classList.toggle("unscored", unscored);
   document.title = (TITLES[currentView()] || "") + " - " + ui.project_name;
 }
 
@@ -419,7 +445,7 @@ function renderCard(r, col) {
     <div class="card-tags">${sourceLozenge(r.source)}${kindLozenge(r)}${place ? `<span class="lozenge" title="${esc((r.city || "") + (r.state ? ", " + r.state : ""))}">${esc(place)}</span>` : ""}</div>
     <div class="card-foot">
       <span class="type-key">${typeIcon("lead")}<span class="key">${leadKey(r.id)}</span></span>
-      <span class="right">${prioIcon(score)}${pts(score)}${avatar(t.avatarName, r.email, "")}</span>
+      <span class="right">${unscoredProject() ? "" : prioIcon(score) + pts(score)}${avatar(t.avatarName, r.email, "")}</span>
     </div></div>`;
 }
 
@@ -634,8 +660,9 @@ function renderContacts(d) {
       ${avatar(c.full_name, c.email)}
       <div class="contact-main"><div class="who">${esc(c.full_name || "No name published")}${c.drafts_use ? ` <span class="lozenge success" title="Drafts go to this address">Drafts use this</span>` : ""}</div>
         ${c.role_title ? `<div class="role">${esc(c.role_title)}</div>` : ""}
-        <div class="mail">${c.usable ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : `<s>${esc(c.email || "")}</s>`}${c.kind === "shared" ? " · shared inbox" : c.kind === "low_value" ? ` · <span class="warn-text">rarely read for partnerships</span>` : ""}</div>
-        ${!c.usable ? `<div class="role warn-text">Not used: ${esc(c.unusable_reason)}</div>` : ""}
+        <div class="mail">${c.usable ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : c.email ? `<s>${esc(c.email)}</s>` : `<span class="muted">No email on record</span>`}${c.kind === "shared" ? " · shared inbox" : c.kind === "low_value" ? ` · <span class="warn-text">rarely read for partnerships</span>` : ""}</div>
+        ${!c.usable && c.email ? `<div class="role warn-text">Not used: ${esc(c.unusable_reason)}</div>` : ""}
+        ${safeUrl(c.linkedin_url) ? `<div class="role"><a href="${esc(safeUrl(c.linkedin_url))}" target="_blank" rel="noopener">LinkedIn ${icon("external", 12)}</a></div>` : ""}
       </div></div>`).join("");
   const glyphs = { phone: "user", people: "users", website: "globe", channel: "play", podcast: "play", app: "link", social: "link" };
   const routes = (cr.routes || []).map((r) => {
@@ -732,8 +759,8 @@ async function openLead(id, opts) {
           <div class="body">${evidence.length ? `<ul class="evidence-list">${evidence.join("")}</ul>`
             : `<p class="muted">No evidence beyond the discovery record yet. Run the enrichment passes from Operations.</p>`}</div></div>
 
-        <div class="section"><h3>${icon("chart", 16)} Score breakdown <span class="pts ${ptsClass(score)}">${fmtScore(score)} / 100</span></h3>
-          <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) + renderLegend(d.explain) : ""}</div></div>
+        ${d.explain && !(d.explain.criteria || []).length ? "" : `<div class="section"><h3>${icon("chart", 16)} Score breakdown <span class="pts ${ptsClass(score)}">${fmtScore(score)} / 100</span></h3>
+          <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) + renderLegend(d.explain) : ""}</div></div>`}
 
         ${research.ownership || research.caveats ? `<div class="section"><h3>${icon("book", 16)} Research notes</h3><div class="body">
           ${research.ownership ? `<p><strong>Ownership.</strong> ${esc(research.ownership)}</p>` : ""}
@@ -766,8 +793,8 @@ async function openLead(id, opts) {
         <div class="side-group"><div class="group-head">${icon("users", 16)} Contacts</div><div class="group-body">${contacts}</div></div>
         <div class="side-group"><div class="group-head">Details</div><div class="group-body">
           <dl class="details">
-            <dt>Priority</dt><dd>${prioIcon(score, true)}</dd>
-            <dt>Fit score</dt><dd>${pts(score)} <span class="muted small">of 100</span></dd>
+            ${unscoredProject() ? "" : `<dt>Priority</dt><dd>${prioIcon(score, true)}</dd>
+            <dt>Fit score</dt><dd>${pts(score)} <span class="muted small">of 100</span></dd>`}
             <dt>Source</dt><dd>${sourceLozenge(d.source)}</dd>
             <dt>Website</dt><dd>${d.domain ? `<a href="https://${esc(d.domain)}" target="_blank" rel="noopener">${esc(d.domain)}</a>` : '<span class="muted">None yet</span>'}</dd>
             ${(m.hq_city || m.hq_state) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state].filter(Boolean).join(", "))}</dd>` : ""}
@@ -820,6 +847,7 @@ function refreshCurrentView() {
   if (v === "leads") loadLeads();
   if (v === "outreach") loadOutreach();
   if (v === "reports") loadReports();
+  if (v === "universal") renderUniResults();
 }
 
 /* =========================================================== outreach */
@@ -1359,6 +1387,506 @@ function bindOps() {
   });
 }
 
+/* ========================================================== universal */
+/* The Universal project's page: Apollo's people and company search (2026-09-19).
+ * The filters are drawn from the server's list (tools/apollo.py FILTERS), so the
+ * page offers exactly what Apollo's API accepts, under the names Apollo's own app
+ * gives them. Searching people costs nothing; saving a person reveals them and
+ * costs a credit, so a save that costs credits is always confirmed first. */
+const UNI_STORE = "tvf_uni_v1";
+state.uni = {
+  kind: "people", q: { people: "", companies: "" }, filters: { people: {}, companies: {} },
+  page: 1, perPage: 25, perCompany: "", rows: [], total: 0, totalPages: 0, searched: false, resultKind: null,
+  lastFilters: {}, selected: new Map(), picked: {}, open: {}, schema: [], appOnly: [], status: null,
+  saved: null, maxReveal: 100, token: 0, bound: false,
+};
+function safeUrl(u) { return /^https?:\/\//i.test(String(u || "")) ? String(u) : ""; }
+function uniPersist() {
+  const u = state.uni;
+  try { localStorage.setItem(UNI_STORE, JSON.stringify({ kind: u.kind, q: u.q, filters: u.filters, perPage: u.perPage, picked: u.picked })); } catch (e) {}
+}
+function uniRestore() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(UNI_STORE) || "null"); } catch (e) {}
+  if (!s || typeof s !== "object") return;
+  const u = state.uni;
+  if (s.kind === "people" || s.kind === "companies") u.kind = s.kind;
+  if (s.q && typeof s.q === "object") u.q = { people: s.q.people || "", companies: s.q.companies || "" };
+  if (s.filters && typeof s.filters === "object") u.filters = { people: s.filters.people || {}, companies: s.filters.companies || {} };
+  if ([10, 25, 50, 100].includes(+s.perPage)) u.perPage = +s.perPage;
+  if (s.picked && typeof s.picked === "object") u.picked = s.picked;
+}
+function uniConnected() { const s = state.uni.status; return !!(s && s.key_set && s.connected); }
+
+async function loadUniversal() {
+  const u = state.uni;
+  if (!u.bound) { uniRestore(); bindUniversal(); u.bound = true; }
+  await uniLoadStatus(false);
+  $("#uniPerPage").value = String(u.perPage);
+  renderUniTabs(); renderUniFilters(); renderUniResults();
+}
+async function uniLoadStatus(refresh) {
+  const u = state.uni;
+  try {
+    const d = await api("/api/universal/status" + (refresh ? "?refresh=1" : ""));
+    u.status = d.apollo; u.schema = d.filters || []; u.appOnly = d.app_only || []; u.saved = d.saved;
+    u.maxReveal = d.max_reveal_per_save || 100; u.endpoints = d.endpoints || [];
+  } catch (e) {
+    u.status = { key_set: false, connected: false, problems: [e.message] };
+  }
+  renderUniStatus();
+}
+function renderUniStatus() {
+  const u = state.uni, s = u.status || {};
+  const left = s.credits && s.credits.lead_credits_left != null ? (+s.credits.lead_credits_left).toLocaleString() : null;
+  $("#uniStatus").innerHTML = !s.key_set ? `<span class="lozenge removed">Apollo not connected</span>`
+    : s.connected ? `<span class="lozenge success" title="${esc(s.profile && s.profile.email ? "The key acts as " + s.profile.email : "Connected")}">Apollo connected</span>${left != null ? `<span class="uni-credits" title="Lead credits left this billing cycle">${esc(left)} credits left</span>` : ""}`
+    : `<span class="lozenge moved">Apollo refused the key</span>`;
+  const probs = (s.problems || []).map((p) => `<li>${esc(p)}</li>`).join("");
+  const eps = (u.endpoints || []).map((e) => `<code>${esc(e.replace(/^api\/v1\//, ""))}</code>`).join(", ");
+  const setup = $("#uniSetup");
+  if (!s.key_set || !s.connected) {
+    setup.innerHTML = `<div class="section-msg warning">${icon("warn", 24)}<div>
+      <div class="title">${s.key_set ? "Apollo refused the key" : "Connect Apollo to search"}</div>
+      <div class="text"><ol class="uni-steps">
+        <li>In Apollo, open <strong>Settings → Integrations → API Keys → Create new key</strong>. Tick ${eps || "the search, reveal and usage endpoints"}, or turn on <strong>Set as master key</strong>.</li>
+        <li>Put the key in this project's <code>.env</code> as <code>APOLLO_API_KEY=…</code>, and in Render → Environment as <code>APOLLO_API_KEY</code> for the live site. Never paste it into a chat or an email.</li>
+        <li>Reload this page.</li></ol>
+        ${probs ? `<ul class="uni-problems">${probs}</ul>` : ""}</div></div></div>`;
+  } else if (probs) {
+    setup.innerHTML = `<div class="section-msg">${icon("info", 24)}<div><div class="title">Connected, with a gap</div><div class="text"><ul class="uni-problems">${probs}</ul></div></div></div>`;
+  } else {
+    setup.innerHTML = "";
+  }
+  $("#uniGo").disabled = !uniConnected();
+}
+function renderUniTabs() {
+  const u = state.uni;
+  $$("#uniTabs [data-kind]").forEach((b) => { const on = b.dataset.kind === u.kind; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
+  $("#uniQuery").value = u.q[u.kind] || "";
+  $("#uniQuery").placeholder = u.kind === "people" ? "Search people: any words on their Apollo profile" : "Search companies by name";
+  $("#uniCost").innerHTML = icon("info", 14) + (u.kind === "people"
+    ? `<span>Searching people is free. Saving a person reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.</span>`
+    : `<span>Each page of company results costs <strong>1 Apollo credit</strong>. Saving companies is free.</span>`);
+  $("#uniGo").textContent = u.kind === "people" ? "Search" : "Search · 1 credit";
+}
+
+/* ---- the filter panel ---- */
+function uniDefs() { const u = state.uni; return (u.schema || []).filter((f) => f.for.includes(u.kind) && f.group !== "Search"); }
+function uniActive(f, v) {
+  if (f.type === "bool") return v === false;               // the default is on; only "off" narrows a search
+  if (v == null || v === "") return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === "object") return Object.values(v).some((x) => x != null && x !== "");
+  return true;
+}
+function uniChip(label, key, i) {
+  return `<span class="chip">${esc(label)}<button type="button" class="chip-x" data-remove="${esc(key)}" data-i="${i}" aria-label="Remove ${esc(label)}">${icon("x", 12)}</button></span>`;
+}
+function uniControl(f, v) {
+  const id = "uf_" + f.key, help = f.help ? `<div class="help">${esc(f.help)}</div>` : "";
+  if (f.type === "text") return `<div class="field"><label for="${id}">${esc(f.label)}</label><input id="${id}" class="compact" type="text" data-f="${esc(f.key)}" value="${esc(v || "")}">${help}</div>`;
+  if (f.type === "list") return `<div class="field"><label for="${id}">${esc(f.label)}</label>
+    <div class="chip-input">${(v || []).map((x, i) => uniChip(x, f.key, i)).join("")}<input id="${id}" type="text" data-add="${esc(f.key)}" placeholder="${(v || []).length ? "Add another" : "Type, then Enter"}" autocomplete="off"></div>${help}</div>`;
+  if (f.type === "ids") return `<div class="field"><span class="label">${esc(f.label)}</span>
+    <div class="chip-input static">${(v || []).length ? v.map((x, i) => uniChip(state.uni.picked[x] || x, f.key, i)).join("") : `<span class="muted small">None picked yet</span>`}</div>${help}</div>`;
+  if (f.type === "choice") return `<fieldset class="field"><legend>${esc(f.label)}</legend><div class="check-grid">${f.options.map(([val, label]) =>
+    `<label class="check"><input type="checkbox" data-choice="${esc(f.key)}" value="${esc(val)}" ${(v || []).includes(val) ? "checked" : ""}><span>${esc(label)}</span></label>`).join("")}</div>${help}</fieldset>`;
+  if (f.type === "bool") return `<label class="check uni-bool"><input type="checkbox" data-bool="${esc(f.key)}" ${v === false ? "" : "checked"}><span>${esc(f.label)}</span></label>`;
+  if (f.type === "window") return `<div class="field"><label for="${id}">${esc(f.label)}</label><select id="${id}" class="compact" data-f="${esc(f.key)}"><option value="">Choose a time frame</option>${f.options.map(([val, label]) =>
+    `<option value="${esc(val)}" ${String(v) === val ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>${help}</div>`;
+  if (f.type === "range" || f.type === "daterange") {
+    const t = f.type === "range" ? "number" : "date", o = v || {};
+    const lo = o.min == null ? "" : o.min, hi = o.max == null ? "" : o.max;
+    return `<div class="field"><span class="label">${esc(f.label)}</span><div class="range-row">
+      <input class="compact" type="${t}" data-range="${esc(f.key)}" data-end="min" value="${esc(lo)}" placeholder="Min" aria-label="${esc(f.label)}, minimum">
+      <span class="muted">to</span>
+      <input class="compact" type="${t}" data-range="${esc(f.key)}" data-end="max" value="${esc(hi)}" placeholder="Max" aria-label="${esc(f.label)}, maximum"></div>${help}</div>`;
+  }
+  return "";
+}
+function renderUniFilters() {
+  const u = state.uni, vals = u.filters[u.kind], defs = uniDefs(), groups = [];
+  defs.forEach((f) => { let g = groups.find((x) => x.name === f.group); if (!g) groups.push(g = { name: f.group, items: [] }); g.items.push(f); });
+  const n = defs.filter((f) => uniActive(f, vals[f.key])).length;
+  $("#uniFilters").innerHTML = `<div class="uni-filters-head"><strong>Filters</strong><span class="pts ${n ? "mid" : ""}" id="uniFilterCount">${n}</span><span class="grow"></span>
+      <button class="btn subtle compact" id="uniClear" ${n ? "" : "hidden"}>Clear all</button></div>` +
+    groups.map((g) => {
+      const k = g.items.filter((f) => uniActive(f, vals[f.key])).length;
+      return `<details class="uni-group" data-group="${esc(g.name)}" ${k || u.open[g.name] ? "open" : ""}>
+        <summary>${esc(g.name)}<span class="pts mid" data-gcount ${k ? "" : "hidden"}>${k}</span></summary>
+        <div class="uni-group-body">${g.items.map((f) => uniControl(f, vals[f.key])).join("")}</div></details>`;
+    }).join("") +
+    (u.appOnly.length ? `<details class="uni-apponly"><summary>Filters Apollo's app has that its API does not</summary>
+      <p>${esc(u.appOnly.join(", "))}. Apollo does not accept them through its API, so they are not offered here.</p></details>` : "");
+}
+function uniUpdateCounts() {
+  const u = state.uni, vals = u.filters[u.kind], defs = uniDefs();
+  const n = defs.filter((f) => uniActive(f, vals[f.key])).length;
+  const c = $("#uniFilterCount"); if (c) { c.textContent = n; c.classList.toggle("mid", !!n); }
+  const clr = $("#uniClear"); if (clr) clr.hidden = !n;
+  $$("#uniFilters details[data-group]").forEach((d) => {
+    const k = defs.filter((f) => f.group === d.dataset.group && uniActive(f, vals[f.key])).length;
+    const b = $("[data-gcount]", d); if (b) { b.textContent = k; b.hidden = !k; }
+  });
+}
+function uniAddChip(key, raw) {
+  const u = state.uni, vals = u.filters[u.kind];
+  const items = String(raw || "").split(/[,\n;]+/).map((x) => x.trim()).filter(Boolean);
+  if (!items.length) return;
+  const cur = vals[key] || [];
+  items.forEach((x) => { if (!cur.some((y) => y.toLowerCase() === x.toLowerCase())) cur.push(x); });
+  vals[key] = cur; uniPersist(); renderUniFilters();
+  const again = $(`#uniFilters [data-add="${key}"]`); if (again) again.focus();
+}
+
+/* ---- search and results ---- */
+function uniCurrentFilters() {
+  const u = state.uni, vals = u.filters[u.kind], out = {};
+  uniDefs().forEach((f) => {
+    const v = vals[f.key];
+    if (!uniActive(f, v)) return;
+    if (f.type === "range" || f.type === "daterange") {
+      const o = {};
+      if (v.min != null && v.min !== "") o.min = v.min;
+      if (v.max != null && v.max !== "") o.max = v.max;
+      out[f.key] = o;
+    } else out[f.key] = v;
+  });
+  const q = (u.q[u.kind] || "").trim();
+  if (q) out[u.kind === "people" ? "q_keywords" : "q_organization_name"] = q;
+  return out;
+}
+async function uniSearch(page) {
+  const u = state.uni;
+  if (!uniConnected()) return toast("Connect Apollo first: the steps are at the top of this page.", true);
+  u.q[u.kind] = $("#uniQuery").value.trim();
+  const filters = uniCurrentFilters();
+  if (!Object.keys(filters).length) return toast("Add a filter, or type something to search for.", true);
+  const token = ++u.token, btn = $("#uniGo");
+  btn.classList.add("loading");
+  try {
+    const d = await post("/api/universal/search", { kind: u.kind, filters, page: page || 1, per_page: u.perPage });
+    if (token !== u.token) return;
+    u.rows = (u.kind === "people" ? d.people : d.companies) || [];
+    u.total = d.total || 0; u.page = d.page || 1;
+    u.totalPages = Math.min(500, d.total_pages || Math.ceil(u.total / u.perPage) || 1);
+    u.searched = true; u.resultKind = u.kind; u.lastFilters = filters; u.selected.clear();
+    uniPersist();
+    renderUniResults();
+    if (u.kind === "companies") uniLoadStatus(false);        // that page cost a credit: show the new balance
+  } catch (e) { toast(e.message, true); }
+  finally { btn.classList.remove("loading"); }
+}
+function renderUniResults() {
+  const u = state.uni, head = $("#uniHead"), body = $("#uniBody");
+  if (!u.searched || u.resultKind !== u.kind) {
+    head.innerHTML = "";
+    body.innerHTML = `<tr class="empty-row"><td>${!uniConnected() ? "Connect Apollo to search."
+      : u.kind === "people" ? "Choose filters on the left or type in the search bar, then Search. Searching people costs nothing."
+      : "Choose filters, then Search. Each page of companies costs 1 Apollo credit."}</td></tr>`;
+    $("#uniPager").hidden = true; renderUniBatch(); return;
+  }
+  const selectable = u.rows.filter((r) => !r.saved);
+  const allSel = selectable.length > 0 && selectable.every((r) => u.selected.has(r.id));
+  const selAll = `<th class="sel"><input type="checkbox" id="uniSelAll" aria-label="Select everyone on this page" ${allSel ? "checked" : ""} ${selectable.length ? "" : "disabled"}></th>`;
+  if (u.resultKind === "people") {
+    head.innerHTML = `<tr>${selAll}<th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Lead</th></tr>`;
+    body.innerHTML = u.rows.length ? u.rows.map((p) => `<tr class="${u.selected.has(p.id) ? "selected" : ""}">
+      <td class="sel">${p.saved ? "" : `<input type="checkbox" data-pick="${esc(p.id)}" ${u.selected.has(p.id) ? "checked" : ""} aria-label="Select ${esc(p.first_name)}">`}</td>
+      <td><span class="cell-person">${avatar(p.first_name + " " + p.last_name_obfuscated, p.id)}<span><div class="primary-cell">${esc(p.first_name)} ${esc(p.last_name_obfuscated)}</div>
+        <div class="secondary">${p.has_location ? "Location on file" : "No location on file"}</div></span></span></td>
+      <td>${esc(p.title || "")}</td>
+      <td>${esc(p.company || "")}${(p.company_known || []).length ? `<div class="secondary">Apollo knows its ${esc(p.company_known.join(", "))}</div>` : ""}</td>
+      <td>${p.has_email ? `<span class="lozenge success">Has email</span>` : `<span class="lozenge">No email</span>`}</td>
+      <td>${p.saved ? `<span class="lozenge inprogress">Saved</span>` : ""}</td></tr>`).join("")
+      : `<tr class="empty-row"><td colspan="6">Nobody matches. Remove a filter or two.</td></tr>`;
+  } else {
+    head.innerHTML = `<tr>${selAll}<th>Company</th><th>Website</th><th>LinkedIn</th><th>Founded</th><th>Phone</th><th></th></tr>`;
+    body.innerHTML = u.rows.length ? u.rows.map((c) => {
+      const li = safeUrl(c.linkedin_url);
+      return `<tr class="${u.selected.has(c.id) ? "selected" : ""}">
+      <td class="sel">${c.saved ? "" : `<input type="checkbox" data-pick="${esc(c.id)}" ${u.selected.has(c.id) ? "checked" : ""} aria-label="Select ${esc(c.name)}">`}</td>
+      <td><div class="primary-cell">${esc(c.name)}</div>${c.in_apollo_account ? `<div class="secondary">Already an account in your Apollo</div>` : ""}</td>
+      <td>${c.primary_domain ? `<a href="https://${esc(c.primary_domain)}" target="_blank" rel="noopener">${esc(c.primary_domain)}</a>` : ""}</td>
+      <td>${li ? `<a href="${esc(li)}" target="_blank" rel="noopener">LinkedIn ${icon("external", 12)}</a>` : ""}</td>
+      <td>${esc(c.founded_year || "")}</td>
+      <td class="nowrap">${esc(c.phone || "")}</td>
+      <td class="nowrap uni-row-actions">${c.saved ? statusLozenge(c.saved) : ""}
+        <button class="btn subtle compact" data-people="${esc(c.id)}" data-name="${esc(c.name)}" title="People search, limited to this company (free)">People here</button>
+        <button class="btn subtle compact" data-like="${esc(c.id)}" data-name="${esc(c.name)}" title="Use as a lookalike seed">Lookalikes</button></td></tr>`;
+    }).join("") : `<tr class="empty-row"><td colspan="7">No company matches. Remove a filter or two.</td></tr>`;
+  }
+  const from = u.total ? (u.page - 1) * u.perPage + 1 : 0, to = Math.min(u.page * u.perPage, u.total);
+  $("#uniInfo").textContent = u.total ? `${from.toLocaleString()}–${to.toLocaleString()} of ${u.total.toLocaleString()}${u.total > 500 * u.perPage ? " (Apollo shows the first 500 pages)" : ""}` : "";
+  $("#uniPrev").disabled = u.page <= 1;
+  $("#uniNext").disabled = u.page >= u.totalPages;
+  // every page of companies is another credit, so the buttons say so
+  const cost = u.resultKind === "companies" ? " · 1 credit" : "";
+  $("#uniPrev").textContent = "Previous" + cost;
+  $("#uniNext").textContent = "Next" + cost;
+  $("#uniPager").hidden = !u.total;
+  renderUniBatch();
+}
+function renderUniBatch() {
+  const u = state.uni, n = u.selected.size, bar = $("#uniBatch");
+  if (!n) { bar.hidden = true; bar.innerHTML = ""; return; }
+  bar.hidden = false;
+  if (u.resultKind === "people") {
+    bar.innerHTML = `<strong>${n} selected</strong><span class="grow"></span>
+      <label class="small" for="uniPerCo">At most</label>
+      <select id="uniPerCo" class="filter" aria-label="At most this many people per company">
+        <option value="">any number</option><option value="1">1 per company</option><option value="2">2 per company</option><option value="3">3 per company</option></select>
+      <button class="btn subtle" id="uniClearSel">Clear</button>
+      <button class="btn primary" id="uniSavePeople">${icon("check", 16)} Save ${n} ${n === 1 ? "person" : "people"}</button>`;
+    $("#uniPerCo").value = u.perCompany || "";
+  } else {
+    bar.innerHTML = `<strong>${n} selected</strong><span class="grow"></span>
+      <button class="btn subtle" id="uniClearSel">Clear</button>
+      <button class="btn" id="uniPeopleAt">Find people at ${n === 1 ? "this company" : "these companies"}</button>
+      <button class="btn primary" id="uniSaveCos">${icon("check", 16)} Save ${n} ${n === 1 ? "company" : "companies"}</button>`;
+  }
+}
+function uniTrimPerCompany(rows, max) {
+  if (!max) return { keep: rows, dropped: [] };
+  const seen = {}, keep = [], dropped = [];
+  rows.forEach((r) => { const k = (r.company || "").toLowerCase() || r.id; seen[k] = (seen[k] || 0) + 1; (seen[k] <= max ? keep : dropped).push(r); });
+  return { keep, dropped };
+}
+function uniSavePeople() {
+  const u = state.uni;
+  const { keep, dropped } = uniTrimPerCompany([...u.selected.values()], +u.perCompany || 0);
+  const n = keep.length;
+  if (!n) return;
+  if (n > u.maxReveal) return toast(`Save up to ${u.maxReveal} people at a time; ${n} are selected.`, true);
+  const left = u.status && u.status.credits ? u.status.credits.lead_credits_left : null;
+  modal.open(`${modalHead(`<span>Save ${n} ${n === 1 ? "person" : "people"}</span>`)}
+    <div class="modal-body single"><div class="modal-main">
+      <p style="margin-bottom:16px">Apollo reveals each person's full name, work email, LinkedIn and company. They are saved to this project as leads, one company per lead.</p>
+      <div class="section-msg warning">${icon("warn", 24)}<div><div class="title">Costs up to ${n} Apollo credit${n === 1 ? "" : "s"}</div>
+        <div class="text">One credit for each person Apollo has details for, and none for anyone it cannot find.${left != null ? ` You have ${(+left).toLocaleString()} left.` : ""} Personal emails and phone numbers are never asked for.</div></div></div>
+      ${dropped.length ? `<p class="small muted">${dropped.length} more ${dropped.length === 1 ? "is" : "are"} left out by “${esc(u.perCompany)} per company” and cost nothing.</p>` : ""}
+    </div></div>
+    <div class="modal-foot"><button class="btn subtle" data-close>Cancel</button>
+      <button class="btn primary" id="uniSaveGo">Reveal and save ${n}</button></div>`, { narrow: true, label: "Save people" });
+  $("#uniSaveGo").addEventListener("click", async (e) => {
+    const b = e.currentTarget; b.classList.add("loading");
+    try {
+      const r = await post("/api/universal/save", { kind: "people", ids: keep.map((x) => x.id), filters: u.lastFilters || {} });
+      modal.close(true);
+      uniAfterSave(r, "people");
+    } catch (err) { b.classList.remove("loading"); toast(err.message, true); }
+  });
+}
+async function uniSaveCompanies() {
+  const u = state.uni, rows = [...u.selected.values()];
+  if (!rows.length) return;
+  const b = $("#uniSaveCos"); if (b) b.classList.add("loading");
+  try {
+    const r = await post("/api/universal/save", { kind: "companies", companies: rows, filters: u.lastFilters || {} });
+    uniAfterSave(r, "companies");
+  } catch (err) { toast(err.message, true); if (b) b.classList.remove("loading"); }
+}
+function uniAfterSave(r, kind) {
+  const u = state.uni, ids = new Set((r.saved_ids || []).map(String));
+  u.rows.forEach((row) => { if (ids.has(String(row.id))) row.saved = kind === "people" ? true : "ready_for_review"; });
+  u.selected.clear();
+  renderUniResults();
+  uniLoadStatus(false);
+  const bits = [];
+  if (kind === "people") {
+    if (r.with_email != null) bits.push(`${r.with_email} with an email`);
+    if (r.credits != null) bits.push(`${fmtScore(r.credits)} credit${+r.credits === 1 ? "" : "s"} used`);
+    if (r.already_saved) bits.push(`${r.already_saved} already saved (no charge)`);
+    if (r.not_found) bits.push(`${r.not_found} not found by Apollo (no charge)`);
+  }
+  if (r.companies_created) bits.push(`${r.companies_created} new ${r.companies_created === 1 ? "company" : "companies"}`);
+  const title = `Saved ${r.saved} ${kind === "people" ? (r.saved === 1 ? "person" : "people") : (r.saved === 1 ? "company" : "companies")}`;
+  const problems = (r.skipped || []).map((s) => `<li><strong>${esc(s.name || "Someone")}</strong>: ${esc(s.why)}</li>`).join("");
+  if (problems || r.error) {
+    modal.open(`${modalHead(`<span>${esc(title)}</span>`)}<div class="modal-body single"><div class="modal-main">
+      <p>${esc(bits.join(" · "))}</p>
+      ${r.error ? `<div class="section-msg warning">${icon("warn", 24)}<div><div class="title">Apollo stopped part-way</div><div class="text">${esc(r.error)} ${r.unrevealed ? `${r.unrevealed} ${r.unrevealed === 1 ? "person was" : "people were"} not revealed and not charged; select them again later.` : ""}</div></div></div>` : ""}
+      ${problems ? `<h4 class="sub-h">Not saved</h4><ul class="plain-list">${problems}</ul>` : ""}
+      <p class="small muted">Saved leads are on this project's Board and Leads pages.</p></div></div>
+      <div class="modal-foot"><button class="btn primary" data-close>Done</button></div>`, { narrow: true, label: title });
+  } else {
+    flag(title, { desc: bits.join(" · ") + ". They are on the Board and Leads pages.", ms: 6000 });
+  }
+}
+function uniPeopleAt(pairs) {
+  const u = state.uni;
+  pairs.forEach(([id, name]) => { u.picked[id] = name; });
+  u.filters.people = Object.assign({}, u.filters.people, { organization_ids: pairs.map((p) => p[0]).slice(0, 100) });
+  u.kind = "people"; u.selected.clear();
+  uniPersist(); renderUniTabs(); renderUniFilters(); uniSearch(1);
+}
+function uniLookalike(id, name) {
+  const u = state.uni, v = (u.filters.companies.lookalike_organization_ids || []).slice();
+  if (v.includes(id)) return toast(name + " is already a lookalike seed.");
+  if (v.length >= 5) return toast("Apollo takes up to 5 lookalike seeds. Remove one first.", true);
+  u.picked[id] = name; v.push(id);
+  u.filters.companies.lookalike_organization_ids = v;
+  u.open["Company"] = true;
+  uniPersist(); renderUniFilters();
+  flag(name + " added as a lookalike seed", { desc: "Search again to see companies like it (1 credit a page).", kind: "info" });
+}
+
+/* ---- saved searches ---- */
+async function renderUniSavedMenu(menu) {
+  menu.innerHTML = `<div class="menu-heading">Saved searches</div><div class="menu-note">Loading…</div>`;
+  let d;
+  try { d = await api("/api/universal/searches"); }
+  catch (e) { menu.innerHTML = `<div class="menu-heading">Saved searches</div><div class="menu-note">${esc(e.message)}</div>`; return; }
+  const rows = d.searches || [];
+  menu.innerHTML = `<div class="menu-heading">Saved searches</div>` + (rows.length ? rows.map((s) =>
+    `<div class="menu-item uni-saved" data-load="${esc(s.id)}" role="button" tabindex="0">${icon(s.kind === "people" ? "users" : "globe", 20)}
+      <span class="uni-saved-text"><span class="truncate">${esc(s.name)}</span><span class="desc">${esc(s.summary)}</span></span>
+      <button class="btn icon" data-del="${esc(s.id)}" aria-label="Delete ${esc(s.name)}" title="Delete">${icon("x", 14)}</button></div>`).join("")
+    : `<div class="menu-note">None yet. Set up a search, then “Save search”.</div>`);
+  const byId = Object.fromEntries(rows.map((s) => [s.id, s]));
+  $$("[data-load]", menu).forEach((el) => {
+    const load = (e) => {
+      if (e.target.closest("[data-del]")) return;
+      closeMenus(); uniApplySaved(byId[el.dataset.load]);
+    };
+    el.addEventListener("click", load);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") load(e); });
+  });
+  $$("[data-del]", menu).forEach((b) => b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    try { await api("/api/universal/searches/" + b.dataset.del, { method: "DELETE" }); flag("Saved search deleted"); renderUniSavedMenu(menu); }
+    catch (err) { toast(err.message, true); }
+  }));
+}
+function uniApplySaved(s) {
+  if (!s) return;
+  const u = state.uni, f = Object.assign({}, s.filters || {});
+  u.kind = s.kind;
+  u.q[s.kind] = f.q_keywords || f.q_organization_name || "";
+  delete f.q_keywords; delete f.q_organization_name;
+  u.filters[s.kind] = f;
+  uniPersist(); renderUniTabs(); renderUniFilters();
+  if (s.kind === "people") uniSearch(1);                      // free, so it runs straight away
+  else { u.searched = false; renderUniResults(); flag("“" + s.name + "” loaded", { desc: "Search to run it (1 credit a page).", kind: "info" }); }
+}
+function uniSaveSearchDialog() {
+  const u = state.uni;
+  u.q[u.kind] = $("#uniQuery").value.trim();
+  const filters = uniCurrentFilters();
+  if (!Object.keys(filters).length) return toast("Set up a search first: a filter or some search words.", true);
+  modal.open(`${modalHead(`<span>Save search</span>`)}<div class="modal-body single"><div class="modal-main">
+      <div class="field"><label for="ssName">Name</label><input id="ssName" type="text" maxlength="80" autofocus placeholder="e.g. Heads of partnerships at Mumbai studios">
+      <div class="help">A ${u.kind === "people" ? "people" : "company"} search. Saving under a name you already used replaces that search.</div></div>
+    </div></div>
+    <div class="modal-foot"><button class="btn subtle" data-close>Cancel</button><button class="btn primary" id="ssGo">Save</button></div>`,
+    { narrow: true, label: "Save search" });
+  const go = async () => {
+    const name = $("#ssName").value.trim();
+    if (!name) return $("#ssName").focus();
+    $("#ssGo").classList.add("loading");
+    try { await post("/api/universal/searches", { name, kind: u.kind, filters }); modal.close(true); flag("Search saved", { desc: name }); }
+    catch (e) { toast(e.message, true); $("#ssGo").classList.remove("loading"); }
+  };
+  $("#ssGo").addEventListener("click", go);
+  $("#ssName").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+}
+
+function bindUniversal() {
+  const u = state.uni, fl = $("#uniFilters");
+  $("#uniForm").addEventListener("submit", (e) => { e.preventDefault(); uniSearch(1); });
+  $("#uniQuery").addEventListener("input", (e) => { u.q[u.kind] = e.target.value; uniPersist(); });
+  $$("#uniTabs [data-kind]").forEach((b) => b.addEventListener("click", () => {
+    if (u.kind === b.dataset.kind) return;
+    u.q[u.kind] = $("#uniQuery").value;
+    u.kind = b.dataset.kind; u.selected.clear();
+    uniPersist(); renderUniTabs(); renderUniFilters(); renderUniResults();
+  }));
+  fl.addEventListener("keydown", (e) => {
+    const inp = e.target.closest("[data-add]");
+    if (!inp) return;
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); uniAddChip(inp.dataset.add, inp.value); }
+    else if (e.key === "Backspace" && !inp.value) {
+      const vals = u.filters[u.kind], cur = vals[inp.dataset.add] || [];
+      if (cur.length) { cur.pop(); if (!cur.length) delete vals[inp.dataset.add]; uniPersist(); renderUniFilters(); const again = $(`#uniFilters [data-add="${inp.dataset.add}"]`); if (again) again.focus(); }
+    }
+  });
+  fl.addEventListener("focusout", (e) => {
+    const inp = e.target.closest("[data-add]");
+    if (inp && inp.value.trim()) setTimeout(() => uniAddChip(inp.dataset.add, inp.value), 0);
+  });
+  fl.addEventListener("click", (e) => {
+    const x = e.target.closest("[data-remove]");
+    if (x) {
+      const vals = u.filters[u.kind], cur = vals[x.dataset.remove] || [];
+      cur.splice(+x.dataset.i, 1);
+      if (!cur.length) delete vals[x.dataset.remove];
+      uniPersist(); renderUniFilters();
+      return;
+    }
+    if (e.target.closest("#uniClear")) { u.filters[u.kind] = {}; uniPersist(); renderUniFilters(); }
+  });
+  fl.addEventListener("change", (e) => {
+    const t = e.target, vals = u.filters[u.kind];
+    if (t.dataset.choice) {
+      const cur = vals[t.dataset.choice] || [];
+      const next = t.checked ? cur.concat(cur.includes(t.value) ? [] : [t.value]) : cur.filter((x) => x !== t.value);
+      if (next.length) vals[t.dataset.choice] = next; else delete vals[t.dataset.choice];
+    } else if (t.dataset.bool) {
+      if (t.checked) delete vals[t.dataset.bool]; else vals[t.dataset.bool] = false;
+    } else if (t.dataset.range) {
+      const o = Object.assign({}, vals[t.dataset.range] || {});
+      if (t.value === "") delete o[t.dataset.end]; else o[t.dataset.end] = t.value;
+      if (Object.keys(o).length) vals[t.dataset.range] = o; else delete vals[t.dataset.range];
+    } else if (t.dataset.f) {
+      if (t.value.trim() === "") delete vals[t.dataset.f]; else vals[t.dataset.f] = t.value.trim();
+    } else return;
+    uniPersist(); uniUpdateCounts();
+  });
+  fl.addEventListener("toggle", (e) => {
+    const d = e.target.closest && e.target.closest("details[data-group]");
+    if (d) u.open[d.dataset.group] = d.open;
+  }, true);
+
+  const res = $("#uniTable");
+  res.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t.id === "uniSelAll") {
+      u.rows.filter((r) => !r.saved).forEach((r) => { if (t.checked) u.selected.set(r.id, r); else u.selected.delete(r.id); });
+      renderUniResults(); return;
+    }
+    if (t.dataset.pick) {
+      const row = u.rows.find((r) => r.id === t.dataset.pick);
+      if (t.checked && row) u.selected.set(row.id, row); else u.selected.delete(t.dataset.pick);
+      t.closest("tr").classList.toggle("selected", t.checked);
+      renderUniBatch();
+      const all = $("#uniSelAll"), sel = u.rows.filter((r) => !r.saved);
+      if (all) all.checked = sel.length > 0 && sel.every((r) => u.selected.has(r.id));
+    }
+  });
+  res.addEventListener("click", (e) => {
+    const p = e.target.closest("[data-people]");
+    if (p) return uniPeopleAt([[p.dataset.people, p.dataset.name]]);
+    const l = e.target.closest("[data-like]");
+    if (l) return uniLookalike(l.dataset.like, l.dataset.name);
+  });
+  $("#uniBatch").addEventListener("click", (e) => {
+    if (e.target.closest("#uniClearSel")) { u.selected.clear(); renderUniResults(); }
+    else if (e.target.closest("#uniSavePeople")) uniSavePeople();
+    else if (e.target.closest("#uniSaveCos")) uniSaveCompanies();
+    else if (e.target.closest("#uniPeopleAt")) uniPeopleAt([...u.selected.values()].map((c) => [c.id, c.name]));
+  });
+  $("#uniBatch").addEventListener("change", (e) => { if (e.target.id === "uniPerCo") u.perCompany = e.target.value; });
+  $("#uniPrev").addEventListener("click", () => uniSearch(state.uni.page - 1));
+  $("#uniNext").addEventListener("click", () => uniSearch(state.uni.page + 1));
+  $("#uniPerPage").addEventListener("change", (e) => {
+    u.perPage = +e.target.value; uniPersist();
+    if (u.searched && u.resultKind === u.kind && u.kind === "people") uniSearch(1);   // free; a company search waits for Search
+  });
+  $("#uniSaveSearch").addEventListener("click", uniSaveSearchDialog);
+  $("#uniSavedBtn").addEventListener("click", (e) => { e.stopPropagation(); toggleMenu($("#uniSavedBtn"), $("#uniSavedMenu"), renderUniSavedMenu); });
+}
+
 /* ======================================================= create modal */
 async function openCreate() {
   let d;
@@ -1401,9 +1929,9 @@ async function openSettings() {
         <dt>Config</dt><dd class="mono">${esc((state.segment || {}).config_file || "config/segment.us-production-houses.json")}</dd>
         <dt>Thresholds</dt><dd>Reviewable at ${REVIEW_THRESHOLD} points, priority at ${PRIORITY_THRESHOLD}. Cards show priority arrows from these.</dd></dl></div></div>
       <div class="section"><h3>Scoring rubric <span class="pts">${total} pts</span></h3><div class="body">
-        <table class="tbl"><thead><tr><th>Criterion</th><th>Key</th><th class="r">Points</th></tr></thead><tbody>
+        ${state.rubric.length ? `<table class="tbl"><thead><tr><th>Criterion</th><th>Key</th><th class="r">Points</th></tr></thead><tbody>
         ${state.rubric.map((r) => `<tr><td>${esc(r.label || r.key)}${r.guidance ? `<div class="secondary">${esc(r.guidance)}</div>` : ""}</td><td class="mono">${esc(r.key)}</td><td class="r num">${r.points}</td></tr>`).join("")}
-        </tbody></table></div></div>
+        </tbody></table>` : `<p class="muted">No rubric: this project's leads are picked by a person on the Apollo search page, so they carry no fit score.</p>`}</div></div>
       <div class="section"><h3>Changing it</h3><div class="body"><p class="muted">Everything segment-specific lives in the config file, not in code. Edit it, re-sync the row with <span class="mono">python tools/run_sql.py sql/03b_sync_segment_config_v3.sql</span>, then re-score from Operations.</p></div></div>
     </div></div>
     <div class="modal-foot"><button class="btn primary" data-close>Done</button></div>`, { label: "Project settings" });
@@ -1465,7 +1993,7 @@ function renderProjectsMenu(menu) {
   $$("[data-seg]", menu).forEach((b) => b.addEventListener("click", async () => {
     closeMenus();
     if (state.segment && b.dataset.seg === state.segment.slug) return;
-    try { await post("/api/segment/select", { slug: b.dataset.seg }); location.hash = "#board"; location.reload(); }
+    try { await post("/api/segment/select", { slug: b.dataset.seg }); history.replaceState(null, "", location.pathname); location.reload(); }
     catch (e) { toast(e.message, true); }
   }));
 }
@@ -1504,7 +2032,7 @@ function bindShell() {
     ["#projectSwitch", "#projectSwitchMenu", renderProjectsMenu]];   // the project switcher at the top of the sidebar
   pairs.forEach(([b, m, r]) => $(b).addEventListener("click", (e) => { e.stopPropagation(); toggleMenu($(b), $(m), r); }));
   $$("[data-route]").forEach((b) => b.addEventListener("click", () => go(b.dataset.route)));
-  $("#createSide").addEventListener("click", openCreate);
+  $("#createSide").addEventListener("click", openCreate);          // hidden where the Apollo page generates leads
   $("#settingsSide").addEventListener("click", openSettings);
   $("#notifBtn").addEventListener("click", () => refreshNotifications(true));
 
@@ -1526,15 +2054,20 @@ function bindShell() {
     clearTimeout(t);
     t = setTimeout(() => {
       const v = e.target.value.trim();
+      // on the Apollo page the box fills the page's own search bar; Enter runs it (it may cost a credit)
+      if (currentView() === "universal") { $("#uniQuery").value = v; state.uni.q[state.uni.kind] = v; return; }
       if (currentView() === "board") { state.board.filters.q = v; $("#boardSearch").value = v; loadBoard(); }
       else { state.leads.filters.q = v; $("#leadsSearch").value = v; state.leads.page = 0; if (currentView() === "leads") loadLeads(); else if (v) go("leads"); }
     }, 300);
   });
+  $("#globalSearch").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && currentView() === "universal") { e.preventDefault(); uniSearch(1); }
+  });
   document.addEventListener("keydown", (e) => {
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select" || modal.isOpen()) return;
-    if (e.key === "/") { e.preventDefault(); ($("#view-board").classList.contains("active") ? $("#boardSearch") : currentView() === "leads" ? $("#leadsSearch") : $("#globalSearch")).focus(); }
-    if (e.key === "c") { e.preventDefault(); openCreate(); }
+    if (e.key === "/") { e.preventDefault(); ($("#view-board").classList.contains("active") ? $("#boardSearch") : currentView() === "leads" ? $("#leadsSearch") : currentView() === "universal" ? $("#uniQuery") : $("#globalSearch")).focus(); }
+    if (e.key === "c") { e.preventDefault(); if (segUi().search_page === "apollo") go("universal"); else openCreate(); }
   });
 }
 

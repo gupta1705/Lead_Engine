@@ -188,6 +188,14 @@ def contact_routes(lead):
     if p1.get("phone"):
         routes.append({"kind": "phone", "label": "Phone (research)", "value": p1["phone"],
                        "url": "tel:" + re.sub(r"[^\d+]", "", p1["phone"])})
+    ap = m.get("apollo") if isinstance(m.get("apollo"), dict) else {}
+    if ap.get("phone"):
+        routes.append({"kind": "phone", "label": "Phone (Apollo)", "value": ap["phone"],
+                       "url": "tel:" + re.sub(r"[^\d+]", "", ap["phone"])})
+    if ap.get("linkedin_url"):
+        routes.append({"kind": "social", "label": "LinkedIn (company page)",
+                       "value": re.sub(r"^https?://(www\.)?", "", ap["linkedin_url"]).rstrip("/"),
+                       "url": ap["linkedin_url"]})
     people = []
     for p in (aicp.get("people") or []):
         full = " ".join(x for x in (p.get("first"), p.get("last")) if x).strip()
@@ -227,6 +235,14 @@ def contact_routes(lead):
 
     # what has been tried, so an empty contact list is never a mystery
     result = m.get("enrichment_result")
+    people = m.get("apollo_people") if isinstance(m.get("apollo_people"), dict) else {}
+    if lead.slug == "universal" or people:
+        # an Apollo lead: Apollo's reveal is what was tried; nobody reads its website
+        n, mailed = len(people), sum(1 for p in people.values() if isinstance(p, dict) and p.get("has_email"))
+        tried.append("Apollo revealed %d %s saved here; %d came with an email address." % (
+            n, "person" if n == 1 else "people", mailed) if n else "Saved from an Apollo company search; nobody "
+                                                                 "at it has been revealed yet.")
+        return {"routes": routes, "tried": tried}
     if result == "domain_dead":
         tried.append("Their website does not resolve, so it could not be read.")
     elif site.get("blocked"):
@@ -934,6 +950,47 @@ def startup_analysis(lead, crit):
     return questions, risks
 
 
+def apollo_facts(lead):
+    """What Apollo said about a lead, as strengths and gaps -- the analysis of a project with no rubric."""
+    m = lead.meta
+    ap = m.get("apollo") if isinstance(m.get("apollo"), dict) else {}
+    people = [p for p in (m.get("apollo_people") or {}).values() if isinstance(p, dict)] \
+        if isinstance(m.get("apollo_people"), dict) else []
+    strengths, gaps = [], []
+    verified = [c for c in lead.contacts if c.get("usable") and c.get("email_status") == "valid"]
+    if verified:
+        strengths.append("Verified email%s: %s" % ("" if len(verified) == 1 else "s", ", ".join(
+            "%s (%s)" % (c.get("full_name") or c["email"], c["email"]) for c in verified[:3])))
+    elif lead.usable():
+        gaps.append("No email Apollo has verified: the best address is unverified, so expect some bounces.")
+    for p in people[:4]:
+        level = (p.get("seniority") or "").replace("_", " ")
+        role = " ".join(x for x in (p.get("title"), "(%s)" % level if level and level not in (p.get("title") or "").lower()
+                                    else "") if x)
+        where = ", ".join(x for x in (p.get("city"), p.get("country")) if x)
+        strengths.append("%s%s%s" % (p.get("name") or "Someone", (", " + role) if role else "",
+                                     (" -- based in %s" % where) if where else ""))
+    try:
+        staff = int(float(ap.get("estimated_num_employees") or 0))
+    except (TypeError, ValueError):
+        staff = 0                     # a value that is not a number is not shown, and never breaks the dialog
+    firm = ", ".join(x for x in (
+        str(ap.get("industry") or "").capitalize() or None,
+        "%s employees" % format(staff, ",") if staff else None,
+        "HQ %s" % ", ".join(x for x in (ap.get("city"), ap.get("country")) if x) if (ap.get("city") or ap.get("country"))
+        else None,
+        "founded %s" % ap["founded_year"] if ap.get("founded_year") else None) if x)
+    if firm:
+        strengths.append("The company: %s." % firm)
+    if ap and not staff:
+        gaps.append("Apollo gives no headcount for the company.")
+    sf = m.get("saved_from") if isinstance(m.get("saved_from"), dict) else {}
+    if sf.get("summary"):
+        strengths.append("Found by: %s (saved %s%s)." % (sf["summary"], when(sf.get("at")) or "",
+                                                        " by %s" % sf["by"] if sf.get("by") else ""))
+    return strengths, gaps
+
+
 # ------------------------------------------------------------- assembly
 SEGMENTS = {
     "us-production-houses": (tvf_criterion, TVF_JOBS, TVF_HOW, tvf_analysis),
@@ -1049,8 +1106,15 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
 
     blockers = [r for r in risks if r["level"] == "blocker"]
     share = (checked / total) if total else 0
+    unscored = not total                 # a project with no rubric (Universal): no score to judge by
+    if unscored:
+        coverage["formula"] = "This project has no scoring rubric, so its leads have no fit score."
     if blockers:
         verdict = {"tone": "hold", "title": "Hold: %s" % blockers[0]["title"].lower(), "detail": blockers[0]["detail"]}
+    elif unscored:
+        verdict = {"tone": "promising", "title": "Saved from Apollo" if lead.meta.get("apollo") else "Not scored",
+                   "detail": "This project has no scoring rubric, so there is no fit score: judge it on the people "
+                             "and the company below."}
     elif share < 0.5:
         verdict = {"tone": "unreliable", "title": "Too little checked to trust the score",
                    "detail": "Only %s of %s points have been looked at; the rest score 0 until someone checks."
@@ -1071,6 +1135,10 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
                   if c["state"] == FOUND and c["delta"] > 0]
     gaps = ["%s (%s pts): %s" % (c["label"], pts(c["points"]), c["why"])
             for c in sorted(criteria, key=lambda c: -c["points"]) if c["state"] == UNCHECKED][:4]
+    if unscored:
+        more_strengths, more_gaps = apollo_facts(lead)
+        strengths += more_strengths
+        gaps += more_gaps
     for c in modifiers:
         if c["state"] == FOUND and c["delta"] < 0:
             risks.append({"level": "warning", "title": c["label"], "detail": "%s (%s)" % (c["why"], pts(c["delta"]))})

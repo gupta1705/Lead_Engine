@@ -446,6 +446,7 @@ def lead(lead_id: str):
         # every address, best first: the order the draft step uses (contact_rank, sql/28)
         cur.execute(
             "select c.id, c.full_name, c.role_title, c.email, c.email_status, c.is_primary, c.source, c.notes,"
+            " c.linkedin_url,"
             " contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) as rank"
             " from contacts c join entities e on e.id = c.entity_id"
             " where c.entity_id = %s order by rank desc, c.created_at, c.id", (lead_id,))
@@ -957,6 +958,9 @@ app.include_router(_auth_router)
 
 import ops as _ops_module
 app.include_router(_ops_module.build_router())
+
+import universal as _universal_module          # the Universal project's Apollo search page
+app.include_router(_universal_module.build_router(cursor))
 
 # ---------------------------------------------------------------- scheduler
 import scheduler as _sched_module
