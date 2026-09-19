@@ -4,9 +4,9 @@
 `select * from review_queue` returns jsonb blobs in a terminal grid, which is
 unreadable exactly when it matters most: the moment you are deciding whether a
 real company gets contacted. This renders one card per candidate -- score with
-its arithmetic shown, why_fit, the scoring inputs that produced the number, the
-three human-judgement checklist items, and the research notes the connectors
-could not have found.
+its arithmetic shown, why_fit, the scoring inputs that produced the number, and
+the research notes the connectors could not have found. (It also printed the
+review checklist, which the owner removed on 2026-09-19.)
 
 Reads the live database through the same .env credential as run_sql.py.
 
@@ -62,7 +62,7 @@ def main():
 
     rows = fetch("""
         select e.id, e.name, e.domain, e.fit_score, e.score_breakdown,
-               e.metadata, s.config->'review_checklist' as checklist,
+               e.metadata,
                s.config->>'score_threshold_review'   as t_review,
                s.config->>'score_threshold_priority' as t_priority
         from entities e
@@ -87,8 +87,6 @@ def main():
                     else "" if score >= t_review else "below review threshold")
             print("%-28s %7.2f  %s" % (r["name"], score, flag))
         return 0
-
-    checklist = as_obj(rows[0]["checklist"])
 
     print("=" * 78)
     print("P3 REVIEW QUEUE -- %d candidates, score-ordered" % len(rows))
@@ -145,11 +143,6 @@ def main():
                 v = research.get(k)
                 if v:
                     print("     %-18s %s" % (k + ":", v))
-
-        print("")
-        print("   HUMAN JUDGEMENT -- these are never auto-enforced:")
-        for item in checklist:
-            print("     [ ] %s" % item["label"])
 
     print("")
     print("=" * 78)

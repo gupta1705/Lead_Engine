@@ -4,7 +4,7 @@ The Lead Engine finds companies and people worth emailing, gathers the evidence
 for why they are worth emailing, scores them, writes a first email to each one,
 and holds every email until a person reads it and says yes.
 
-It does not send anything on its own. That is the whole design.
+It sends nothing a person has not approved. That is the whole design.
 
 There are two halves:
 
@@ -16,9 +16,9 @@ that company's own numbers.
 **You** do the part a machine should not do. You look at what it found, decide
 yes or no, read the emails it wrote, and approve the ones you stand behind.
 
-A normal day is twenty minutes: open the board, work through the new leads,
-shortlist the good ones, then read and approve the emails that were drafted
-overnight.
+The whole flow is three steps. **Leads are shown** on the board. **You shortlist**
+the good ones, and each one's email is drafted by itself within minutes. **You
+approve** the email, and it is sent. A normal day is twenty minutes.
 
 > The screenshots in this manual come from the real app, loaded with a snapshot
 > of the live pool. The email addresses in them end in `example.com` because a
@@ -201,10 +201,9 @@ This is the main job. Click any row or card.
 Read it top to bottom:
 
 **Analysis** comes first. It gives the engine's verdict and one suggested next
-step. Then it answers the project's review questions from the evidence: yes, no
-or unclear, with the facts behind each answer and what is still missing. Last
-come strengths, gaps and risks. A blocker, such as a public company or no usable
-address, puts the lead on hold whatever its score.
+step, then strengths, gaps and risks. A blocker, such as a public company or no
+usable address, puts the lead on hold whatever its score. There is no checklist
+to tick.
 
 **Why this could fit** is one honest sentence built from their real numbers.
 
@@ -241,7 +240,8 @@ you decide. Thirty seconds there beats any rubric.
 
 Then press one of two buttons at the bottom:
 
-**Shortlist** — the engine will write this one an email. In LCX Clipping you
+**Shortlist** — its email is drafted straight away and appears in Outreach,
+under Drafts, within minutes, waiting for your approval. In LCX Clipping you
 will rarely need it: every lead scoring above 20 is shortlisted automatically
 after each refresh, and its dialog says so. If you move one back to review,
 that stands; the rule never shortlists it again.
@@ -261,18 +261,17 @@ Every email lives here, in folders.
 | Folder | What is in it |
 |---|---|
 | **Drafts** | Written by the engine. Nothing has been sent. Waiting for you. |
-| **Approved** | You said yes. Waiting for the next send run. |
+| **Approved** | You said yes. It goes out within minutes, inside the day's sending limit. |
 | **Sent** | Gone. |
 | **Replies** | Came back, not yet judged. |
 | **Positive** / **Negative** | Replies you or the triage step have labelled. |
 | **Attention** | Something went wrong with a send. Look at these. |
 | **Cancelled** | Withdrawn before sending. |
 
-Two buttons at the top right:
-
-**Draft emails** writes a first email for every shortlisted lead that does not
-have one yet. **Draft follow-ups** writes the follow-ups that have come due.
-Both only create drafts; neither sends anything.
+Nothing here needs a button to get it going. A shortlisted lead's email is
+drafted into Drafts within minutes, and in LCX Clipping a follow-up that falls
+due is drafted the same way. The one button at the top right, **Footer**, sets
+the sign-off every email ends with.
 
 
 # Approving one email
@@ -306,25 +305,20 @@ the evidence before it was kept. A written draft is approved on its own, never
 in a batch, because a random sample cannot stand for a sentence written once
 for one company.
 
-**Approve for sending** records your name against the email and moves it to
-Approved.
+**Approve and send** records your name against the email and sends it.
 
 **Cancel draft** throws it away.
 
 **Stop follow-ups** ends the whole thread with that company. No further follow-up
 will ever be drafted for them.
 
-## Approving does not send
+## Approving sends
 
-Approving marks an email as ready. The send happens when someone runs this in a
-terminal:
-
-```
-SEGMENT_SLUG=lcx-clipping python tools/outreach.py send
-```
-
-It sends only approved emails, within the daily cap, never to an address that
-failed verification. Nothing on any screen can send an email.
+Approving is the decision to send. The email goes out within minutes, from the
+project's connected mailbox, inside the day's sending limit and each mailbox's
+warm-up, and never to an address that failed verification. When the day's limit
+is used up, it goes out first thing the next day. Until a mailbox is connected
+(see *What only you can do*), approved emails wait in Approved.
 
 
 # Approving many at once
@@ -391,8 +385,8 @@ out-of-office lets it resume. This is enforced in the database, not just in the
 app, so a follow-up cannot be sent to someone who has already written back even
 if something else goes wrong.
 
-Follow-ups are drafts like any other email and need the same approval. Press
-**Draft follow-ups** to write the ones that are due, then read and approve them.
+Follow-ups are drafts like any other email and need the same approval. They are
+drafted by themselves when they fall due; read and approve them like any other.
 
 To stop a thread by hand, open any message in it and press **Stop follow-ups**.
 
@@ -492,9 +486,9 @@ that is a signal to fix the enrichment, not the rubric.
 These are built into the database, not just into the screens. They hold even if
 the app has a bug.
 
-**No email is ever sent that a person has not read.** Approval means a human read
-that exact text. There is no automatic send, no scheduled send, no "approve all
-without looking".
+**No email is ever sent that a person has not approved.** Approval means a human
+read that exact text, and approving is what sends it. Nothing goes out that
+nobody approved, and there is no "approve all without looking".
 
 **One thread per company, ever.** An opener and at most two follow-ups. Checked
 across every project, not just the one you are in, and it survives resets and
@@ -531,15 +525,14 @@ in `.env`, then one browser consent per mailbox:
 SEGMENT_SLUG=lcx-clipping python tools/outreach.py auth --mailbox main
 ```
 
+Sending happens on the server, so put the same values in Render's Environment
+tab: the address, the Google client ID and secret, and the token that `auth`
+wrote (the variable name is listed by `python tools/outreach.py mailboxes`).
+
 Use addresses on a sending domain that belongs to LCX alone, not the main company
 domain, so a bad week never touches everyday mail.
 
-**3. Draft the emails.** In LCX Clipping every lead scoring above 20 is
-shortlisted automatically, so go to Outreach and press **Draft emails**. Each
-press drafts up to 20, and a draft whose opening line Groq wrote is approved
-on its own. In the TVF projects, shortlist leads by hand first.
-
-**4. Connect Apollo**, for the Universal project. In Apollo: Settings →
+**3. Connect Apollo**, for the Universal project. In Apollo: Settings →
 Integrations → API Keys → Create new key, tick the five endpoints the Apollo
 search page lists (or turn on *Set as master key*), then put the key in `.env`
 as `APOLLO_API_KEY` and in Render's Environment tab. Until then the page shows
@@ -551,8 +544,10 @@ webhook so a failed overnight run reaches you.
 
 # If something looks wrong
 
-**"I approved it but nothing was sent."** Approving does not send. Someone runs
-the send command. Check the Approved folder; that is where approved emails wait.
+**"I approved it but nothing was sent."** Approving sends within minutes. If it is
+still in Approved, either no mailbox is connected yet (see *What only you can
+do*) or today's sending limit is used up and it goes out tomorrow. A send that
+failed is in Attention, with the reason.
 
 **"The screen is blank / says it cannot reach the database."** The free cloud
 instance goes to sleep when it is idle and takes a few seconds to wake. Reload

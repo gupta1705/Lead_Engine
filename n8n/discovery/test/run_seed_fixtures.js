@@ -195,7 +195,7 @@ check("dedupes a member repeated across regions",
 check("EXCLUDES associate members -- vendors, not IP-owning producers",
   !aicpNames.includes("Acme Payroll Services")
   && !aicpNames.includes("Gotham Post & Finishing"),
-  "the review checklist rules out service vendors explicitly");
+  "the TVF brief rules out service vendors explicitly");
 check("decodes HTML entities in names",
   aicpNames.includes("O'Brien Films"));
 check("domain left null -- the listing does not link out",

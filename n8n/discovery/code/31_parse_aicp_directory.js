@@ -31,15 +31,15 @@ const MARKUP = /<h4[^>]*class="[^"]*font-semiBold[^"]*"[^>]*>([\s\S]*?)<\/h4>\s*
 
 // Member types that are production companies. AICP also lists associate
 // members -- insurers, equipment houses, payroll firms, post facilities --
-// which are vendors to the industry, not IP-owning producers, and the review
-// checklist explicitly rules them out.
+// which are vendors to the industry, not IP-owning producers, and the TVF
+// brief explicitly rules them out.
 // The directory publishes a member type per company, and it is far more
 // informative than a keyword match. Measured against the live page (282
 // members, 2026-08-27): a bare `includes('production company')` admits
 // "Post Production Company", "Production Service Company", "Editorial Company"
 // and "Audio Post Production" -- shops that finish other people's work rather
-// than own IP. The review checklist rules exactly those out
-// ("NOT corporate/service video"), so the filter uses two rules instead of one.
+// than own IP. The TVF brief rules exactly those out (it wants companies that
+// own IP, not corporate or service video), so the filter uses two rules, not one.
 //
 // SERVICE_ONLY: the type STARTS with a finishing/service discipline.
 // MAKES_CONTENT: it also names real production, which rescues the legitimate

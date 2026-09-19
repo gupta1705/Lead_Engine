@@ -189,9 +189,9 @@ follow-up must point at its own company's opener, and a follow-up can never
 be claimed for sending once the company has replied or the thread was
 stopped. `outreach.py pull` pauses a thread the moment a reply lands; an
 auto-reply (triaged neutral) lets it resume, a real answer ends it. Anyone
-can press **Stop follow-ups** on a message. Follow-ups are drafted daily at
-03:30 UTC (or with **Draft follow-ups** in Outreach) and approved like any
-other email. The daily send cap counts them.
+can press **Stop follow-ups** on a message. Follow-ups are drafted by
+themselves when they fall due and approved like any other email; approving
+sends them. The daily send cap counts them.
 
 **Batch approval.** In Drafts, tick the drafts and press **Approve
 selected**. The server draws a random spot-check sample (at least three, or

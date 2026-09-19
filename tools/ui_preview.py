@@ -50,12 +50,14 @@ def generate(out, slug):
             if r["id"] not in seen:
                 seen.add(r["id"]); leads.append(r)
     fx["leads"] = leads
-    # decided leads first (there are few and they carry the richest evidence),
-    # then the open pool in score order, capped so the snapshot stays small
+    # decided leads first (they carry the richest evidence), then the open pool in score order,
+    # at most 250 of each so the snapshot stays small. A single cap of 400 was spent entirely on
+    # LCX's 451 shortlisted leads, and the To review list, which the manual photographs, had none.
     open_ = {"discovered", "enriched", "scored", "ready_for_review"}
     ordered = sorted((r for r in leads if r["status"] != "archived"),
                      key=lambda r: (1 if r["status"] in open_ else 0, -(float(r["fit_score"] or 0))))
-    detail_ids = [r["id"] for r in ordered][:400]
+    detail_ids = ([r["id"] for r in ordered if r["status"] not in open_][:250]
+                  + [r["id"] for r in ordered if r["status"] in open_][:250])
     fx["details"] = {}
     for i, lid in enumerate(detail_ids):
         fx["details"][lid] = main.lead(lid)

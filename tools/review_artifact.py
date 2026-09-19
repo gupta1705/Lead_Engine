@@ -204,12 +204,6 @@ h1{font-size:clamp(30px,4.4vw,46px); line-height:1.05; margin:12px 0 10px;
 .res dd{margin:0; word-break:break-word;}
 .res dd.warn{color:var(--critical); font-weight:500;}
 
-/* checklist */
-.check{list-style:none; margin:0; padding:0; display:grid; gap:9px;}
-.check li{display:flex; gap:11px; align-items:flex-start; font-size:14.5px;}
-.check .box{flex:none; width:15px; height:15px; border:1.5px solid var(--muted);
-  border-radius:2px; margin-top:3px;}
-
 /* sql */
 .sql{background:var(--surface-2); border:1px solid var(--rule-soft); border-radius:2px;
   padding:12px 14px; font-family:"IBM Plex Mono",monospace; font-size:11.5px;
@@ -240,7 +234,6 @@ def fetch():
             cur.execute("""
                 select e.id, e.name, e.domain, e.fit_score, e.score_breakdown, e.metadata,
                        e.status, e.status_reason,
-                       s.config->'review_checklist' as checklist,
                        s.config->>'score_threshold_review' as t_review,
                        s.config->>'score_threshold_priority' as t_priority
                 from entities e join segments s on s.id = e.segment_id
@@ -315,7 +308,6 @@ def render_criteria(bd, unverified):
 def render(rows, generated_at):
     t_review = float(rows[0]["t_review"])
     t_priority = float(rows[0]["t_priority"])
-    checklist = as_obj(rows[0]["checklist"])
 
     n_priority = sum(1 for r in rows if float(r["fit_score"]) >= t_priority)
     n_short = sum(1 for r in rows if r["status"] == "shortlisted")
@@ -402,9 +394,8 @@ def render(rows, generated_at):
                 % ("ok" if ok else "no",
                    "Shortlisted" if ok else "Rejected", tail))
         else:
-            checks = "".join(
-                '<li><span class="box"></span><span>%s</span></li>' % esc(c["label"])
-                for c in checklist)
+            # the review checklist that used to sit above this was removed on
+            # 2026-09-19 (the owner: it "serves no point")
             q = "&#39;"
             sql_lines = [
                 "<b>shortlist</b>  update entities set status={q}shortlisted{q}",
@@ -416,10 +407,8 @@ def render(rows, generated_at):
             ]
             sql_block = "\n".join(sql_lines).format(q=q, eid=esc(r["id"]))
             right_blocks = (
-                '<div class="blk"><h3>Human judgement &mdash; never auto-enforced</h3>'
-                '<ul class="check">%s</ul></div>'
                 '<div class="blk"><h3>Disposition</h3>'
-                '<pre class="sql">%s</pre></div>' % (checks, sql_block))
+                '<pre class="sql">%s</pre></div>' % sql_block)
 
         cards.append("""
 <article class="card{rejcls}" id="c{i}">
