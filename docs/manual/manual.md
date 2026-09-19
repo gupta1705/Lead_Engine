@@ -57,17 +57,20 @@ Down the left is the menu. Five places, and you will live in three of them.
 | Where | What it is for |
 |---|---|
 | **Board** | The pipeline at a glance. Cards move left to right as you decide on them. |
-| **Leads** | The full list, with search and filters. Better than the board once you have hundreds. |
+| **Leads** | Every lead, whatever its status, with search and filters. Better than the board once you have hundreds. |
 | **Outreach** | Every email. Drafts waiting for you, approved ones, sent ones, and replies. |
-| **Reports** | Are we finding enough? Are we contacting enough? Is the scoring working? |
-| **Operations** | Run the engine by hand, see what is scheduled, check the mailboxes. |
+| **Reports** | Where every company sits. Are we contacting enough? Are they replying? |
+| **Operations** | Run the weekly refresh by hand, see what runs by itself and how it went, check the mailboxes. |
 
-Below those: **Generate leads** starts a harvest, and **Project settings** shows
-the rubric this project scores against.
+The number next to **Outreach** is what is waiting for you there: drafts to
+approve, replies nobody has marked yet, and sends that failed.
+
+Across the top is only your account menu, with your email and **Log out**. The
+app is light or dark to match your computer's setting.
 
 The Universal project has a different menu: **Apollo search** sits at the top,
-because that is where its leads come from, and Outreach, Operations and Generate
-leads are not there.
+because that is where its leads come from, then Board and Leads. Outreach,
+Reports and Operations are not there.
 
 ## Switching between projects
 
@@ -105,29 +108,33 @@ project menu and it opens on **Apollo search**.
 finds companies. Type in the search bar, or set filters on the left, then press
 **Search**. The filters carry the names Apollo gives them:
 
-- **Person**: name, job titles (with or without similar titles), management
-  level, where they live, email status.
+- **Person**: name, job titles, management level, where they live, email
+  status. Once you enter a job title, **Include people with similar titles**
+  appears to widen it.
 - **Company**: HQ location (a company search can also leave locations out),
   number of employees, industry and keywords, revenue, company domains, and
   domains to leave out.
 - **Technologies** the company uses, **funding**, **job postings**, and
   **headcount growth** over 6, 12 or 24 months.
-- **Company lookalikes**: press **Lookalikes** on a company to find others like it.
+- **Company**, in a people search: the companies you picked with **People
+  here** (below).
+- **Company lookalikes**, in a company search: press **Lookalikes** on a company
+  to find others like it.
 
-A few of Apollo's filters exist only inside its own app: buying intent,
-departments, past job titles and some others. The bottom of the filter column
-names them, so nobody goes looking.
-
-**What it costs.** The credits left show at the top right.
+**What it costs.** Once Apollo is connected, the credits left show at the top
+right. Until then, a box at the top of the page says it is not connected and
+lists the steps.
 
 | | Apollo credits |
 |---|---|
-| Searching people | none |
+| Searching people (25 a page) | none |
 | Saving a person (reveals their name, work email and LinkedIn) | 1 each, only when Apollo finds them |
-| One page of company results | 1 |
+| One page of company results (100 companies) | 1 |
 | Saving companies | none |
 
-Saving people always asks first, and says the most it can cost.
+A page of companies costs one credit whatever its size, so a company search
+always brings back a full page of 100. Saving people always asks first, and
+says the most it can cost.
 
 **Saving.** Tick the people or companies worth keeping and press **Save**. Each
 company becomes a lead and each person a contact on it, on this project's Board
@@ -152,7 +159,10 @@ you to press Search, because it costs a credit.
 Four columns, left to right. A lead only ever moves forward.
 
 **To review** — the engine found it and scored it. Nobody has decided yet. This
-is your inbox.
+is your inbox. It starts at the project's review line, 25 points; leads below
+the line are still in Leads. In LCX Clipping everything above 20 is shortlisted
+already, so To review shows every lead that is left, whatever its score, for
+you to pick by hand.
 
 **Shortlisted** — you said yes, or in LCX Clipping it scored above 20. It gets
 an email.
@@ -163,31 +173,44 @@ thread with this company, ever.
 **In conversation** — they replied and the reply was a real one. Your job now,
 not the tool's.
 
-Above the columns are a search box and three filters: score, source, and
-**Contactable only**, which hides everything the engine has no address for.
+A rejected lead leaves the board. To find one, open Leads and set Status to
+Rejected.
+
+The Universal project sends no email, so its board has only To review and
+Shortlisted.
+
+Above the columns is one search box.
 
 ## Reading a card
 
 Each card shows the person first when the engine could work out who is behind
 the show, and the show or company underneath. Below that are the numbers that
 made it interesting: subscribers, how much short-form it publishes, how many
-episodes, how often.
+episodes, how often. Then a few tags: which source found it (only in projects
+with more than one source), the kind of lead, and the place.
 
-On the bottom row: the lead's key (like `LCX-CCAB`, the name you can quote to a
-colleague), a priority arrow, and the fit score, **out of 100** and explained in
-full inside the lead. 25 and up is worth a look; 45 and up is the priority band.
+On the bottom row: the fit score, **out of 100** and explained in full inside
+the lead, and a round badge for the person the email goes to. A grey person
+icon means there is no address yet. 25 and up is worth a look; 45 and up is the
+priority band. Universal leads have no score.
 
 
 # The leads list
 
 ![The same leads as a list, with filters](img/04-leads.png){width=full}
 
-The board is nice for twenty leads. Past that, use this.
+The board is nice for twenty leads. Past that, use this. It is the whole pool:
+every lead, whatever its status, best score first.
 
 Search matches the show name, the host's name and the website. The filters along
-the top narrow by status, by score, by which connector found it, and by whether
-there is a contact. **Export this view** downloads exactly what you are looking
-at as a spreadsheet.
+the top narrow by status and, in projects with more than one source, by which
+connector found it. A status is in the list only while some lead has it.
+
+The **Contact** column shows the address a draft would actually use, with the
+person's name when one is known. "No address" means there is none yet.
+
+**Export this view** downloads exactly what the list shows, search included, as
+a spreadsheet named after the project. It is hidden when the list is empty.
 
 Click anywhere on a row to open it.
 
@@ -198,58 +221,72 @@ This is the main job. Click any row or card.
 
 ![Everything the engine knows, and the two buttons that matter](img/05-lead.png){width=full}
 
+At the top are the lead's status and a link to the company's website, labelled
+with its domain.
+
 Read it top to bottom:
 
-**Analysis** comes first. It gives the engine's verdict and one suggested next
-step, then strengths, gaps and risks. A blocker, such as a public company or no
-usable address, puts the lead on hold whatever its score. There is no checklist
-to tick.
-
-**Why this could fit** is one honest sentence built from their real numbers.
-
-**Evidence** is the raw facts, each one a thing the engine actually observed:
-subscribers, videos, how many of the last 50 uploads were long-form, how many
-were shorts, the average length, how often they publish, and any sign they spend
-money (sponsors, Patreon, merch, a paid newsletter). Evidence withdrawn on review
-stays listed, struck through, with the reason.
+**Analysis** comes first. One line gives the engine's verdict, such as "Strong
+lead" or "Hold: no usable email address". Then one suggested next step, then
+strengths and gaps, each naming the criterion and its points (the reasons are in
+the score breakdown), then risks. A blocker, such as a public company or no
+usable address, puts the lead on hold whatever its score. Evidence withdrawn on
+review shows up as a risk, with the reason. There is no checklist to tick.
+Universal leads have no score, so they have no verdict line.
 
 **Score breakdown** shows every criterion: what it is worth, what this lead
-earned, why, and a link to the evidence. Each criterion is in one of three
-states:
+earned, why (the facts the engine observed, such as subscribers or how many
+recent uploads were shorts), and a link to the evidence. Each criterion is in
+one of three states:
 
 - **Found** — evidence earned points. The source is linked.
 - **Checked, nothing found** — a pass looked (it read their website, searched
   the news, profiled the channel) and found nothing. It scores 0, and that zero
   means something.
 - **Not checked yet** — nobody has looked. It also scores 0 for now, so the
-  score is a floor: checking can only raise it. The row says what would check
-  it: an Operations job, or what to look at by hand.
+  score is a floor: checking can only raise it. The weekly refresh does the
+  checking; where a person can check by hand, the row says what to look at.
 
-The bar above the table shows how much of the score has actually been checked.
-When most of the points are unchecked, the analysis says **Too little checked to
-trust the score**. The score is the points earned out of the rubric's 110,
-scaled to 100, plus any adjustments.
+The bar above the table shows how much of the score has actually been checked,
+and the key under it names the three states. When most of the points are
+unchecked, the analysis says **Too little checked to trust the score**. The
+score is the points earned out of the rubric's 110, scaled to 100, plus any
+adjustments.
+
+**Research notes** appear only on the TVF leads that were researched by hand.
+They start with "Why it could fit", then who owns the company and any caveats.
+
+**Decision note** appears only when a decision carries a note, such as your
+reason for rejecting it or the reason it was shortlisted automatically, with its
+date.
 
 On the right, **Contacts** lists every address, best first. **Drafts use this**
 marks the address the email goes to. Addresses that cannot be used, such as a
 website template's placeholder or a scraping artefact, are struck through with
 the reason. Below them are the other ways in: a phone number, people listed
 without an address, the contact page, social profiles, the channel or feed, and
-what has already been tried. Open the website or channel and look at it before
-you decide. Thirty seconds there beats any rubric.
+what has already been tried. Under it, **Details** shows anything else known
+about the lead, such as where it is; it appears only when there is something to
+show. Open the website or channel and look at it before you decide. Thirty seconds
+there beats any rubric.
 
 Then press one of two buttons at the bottom:
 
 **Shortlist** — its email is drafted straight away and appears in Outreach,
 under Drafts, within minutes, waiting for your approval. In LCX Clipping you
 will rarely need it: every lead scoring above 20 is shortlisted automatically
-after each refresh, and its dialog says so. If you move one back to review,
-that stands; the rule never shortlists it again.
+after each refresh, and its decision note says so. If you send one back to
+review with **Undo decision**, that stands; the rule never shortlists it again.
 
-**Reject** — it leaves the pipeline. A rejected lead is shielded permanently: no
-later harvest, re-import or reset will bring it back. If you reject something by
-mistake, reopen it from the Leads list with the status filter set to Rejected and
-use the status dropdown at the top right of the dialog.
+**Reject** — it leaves the pipeline. It asks for a reason, which is kept with
+the decision. A rejected lead is shielded permanently: no later harvest,
+re-import or reset will bring it back. If you reject something by mistake,
+reopen it from the Leads list with Status set to Rejected and press **Undo
+decision**.
+
+Rejecting a lead, or undoing a shortlist, withdraws its waiting email straight
+away, whether it is a draft or already approved, so nothing goes out to a
+company you have just turned down. Rejecting also stops any follow-ups.
 
 
 # Outreach
@@ -263,10 +300,11 @@ Every email lives here, in folders.
 | **Drafts** | Written by the engine. Nothing has been sent. Waiting for you. |
 | **Approved** | You said yes. It goes out within minutes, inside the day's sending limit. |
 | **Sent** | Gone. |
-| **Replies** | Came back, not yet judged. |
-| **Positive** / **Negative** | Replies you or the triage step have labelled. |
-| **Attention** | Something went wrong with a send. Look at these. |
-| **Cancelled** | Withdrawn before sending. |
+| **Replies** | Every reply, with its mark: Positive, Negative, or Needs triage if nobody has judged it yet. |
+| **Attention** | A send whose outcome is not known. Look at these. The folder shows only when something is in it. |
+
+Each row shows the company (the show, in LCX Clipping), the contact, the subject
+and when. A reply's mark sits in front of its subject.
 
 Nothing here needs a button to get it going. A shortlisted lead's email is
 drafted into Drafts within minutes, and in LCX Clipping a follow-up that falls
@@ -281,7 +319,8 @@ Click any row in Drafts.
 ![A draft, with the Approve button](img/07-draft.png){width=full}
 
 The subject and the body are editable. Change anything you like: the whole point
-is that what you approve is what goes out, word for word.
+is that what you approve is what goes out, word for word. On the right are the
+company and the address it goes to.
 
 Notice what is personal in it. The greeting is the first name of the person the
 email goes to, never the show's or the company's name. In LCX Clipping the
@@ -299,18 +338,23 @@ on its website, its work and its founders, and it never names anything that is
 not on record. With a named person the email opens "Hello Becky, I trust you
 are well."; with none, "Hello,".
 
-Some drafts carry a **Written** mark: a model wrote the opening sentence from
-that same evidence and nothing else, with every number in it checked against
-the evidence before it was kept. A written draft is approved on its own, never
-in a batch, because a random sample cannot stand for a sentence written once
-for one company.
+Some drafts say **Written by a model** in their details: a model wrote the
+opening sentence from that same evidence and nothing else, with every number in
+it checked against the evidence before it was kept. A written draft is approved
+on its own, never in a batch, because a random sample cannot stand for a
+sentence written once for one company.
 
-**Approve and send** records your name against the email and sends it.
+**Approve and send** records your name against the email and sends it. It is
+the only button on a draft. If you do not want to write to a company at all,
+reject the lead: its draft goes with it.
 
-**Cancel draft** throws it away.
+**Withdraw approval**, on an approved email that has not gone yet, takes your
+yes back. For a first email, as long as the lead stays shortlisted, a new one is
+written and waits in Drafts. Withdrawing a follow-up ends the thread.
 
-**Stop follow-ups** ends the whole thread with that company. No further follow-up
-will ever be drafted for them.
+**Stop follow-ups** (LCX Clipping, on a sent email or a follow-up draft) ends
+the whole thread with that company. No further follow-up will ever be drafted
+for them.
 
 ## Approving sends
 
@@ -327,7 +371,8 @@ Reading six hundred emails one at a time is not realistic, so the app has a
 second route that is still honest about what you read.
 
 1. Tick the checkbox on each draft you want, or the one in the header to take
-   the whole page.
+   one batch, the first 100 drafts. Untick the header box to clear the
+   selection.
 2. A bar appears at the top. Press **Approve N selected**.
 3. The server picks a random sample from your selection and shows you those.
 
@@ -355,8 +400,9 @@ Press **Footer** at the top of the Outreach screen.
 
 ![Your name, your address, and the block every email ends with](img/09-footer.png){width=full}
 
-Fill in your name, your title and your postal address. The preview underneath
-shows exactly how the block will read.
+Fill in your name, your title and your postal address. In the footer text,
+`{{sender_name}}`, `{{sender_title}}` and `{{postal_address}}` stand for those
+three. The preview underneath shows exactly how the block will read.
 
 Two things it will not let you do:
 
@@ -366,9 +412,9 @@ Two things it will not let you do:
   hearing from you. It is the law, and it is the difference between a reply and
   a spam report.
 
-When you save, it offers to put the new footer on the drafts already waiting for
-approval. Only the footer is replaced; anything you wrote by hand above it stays
-exactly as you wrote it. Emails already sent are never touched.
+When you save, the drafts already waiting for approval get the new footer too.
+Only the footer is replaced; anything you wrote by hand above it stays exactly
+as you wrote it. Emails already sent are never touched.
 
 
 # Follow-ups
@@ -388,7 +434,8 @@ if something else goes wrong.
 Follow-ups are drafts like any other email and need the same approval. They are
 drafted by themselves when they fall due; read and approve them like any other.
 
-To stop a thread by hand, open any message in it and press **Stop follow-ups**.
+To stop a thread by hand, open its sent email, or a follow-up waiting in Drafts,
+and press **Stop follow-ups**. Rejecting the lead stops it too.
 
 The TVF projects do not use follow-ups at all. One email per company, full stop.
 
@@ -399,7 +446,9 @@ When someone writes back, their reply appears in **Replies**. Open it.
 
 ![A reply, with the two buttons that close the loop](img/12-reply.png){width=full}
 
-You mark it **Positive** or **Negative**.
+You mark it **Positive** or **Negative**. The reply stays in Replies either way,
+with its mark in front of the subject; one nobody has marked yet says **Needs
+triage** and counts in the number next to Outreach.
 
 Positive moves the company to **In conversation** on the board and hands it to
 you. Negative closes it out. Either way the follow-up thread stops.
@@ -416,33 +465,41 @@ invalid, the thread ends, and no mailbox writes to that address again.
 
 ![Run the engine by hand, and see what it has been doing](img/10-operations.png){width=full}
 
-## Running a step
+## Running the refresh by hand
 
-Each button runs one piece of the engine and streams its log to the screen. They
-come in four groups:
+There is one button: **Run weekly refresh**. It runs this project's weekly
+refresh now instead of waiting for its day. The refresh finds new candidates (in
+LCX Clipping and Startup Acquisitions), fills in what is missing (the contact
+address, the website, the evidence the scoring needs), then scores everything
+again and applies the gates. Its steps run one at a time.
 
-**Discover** goes out and finds new candidates: YouTube channels, Apple Podcasts
-shows, production companies from Wikidata, the TVF pool import.
-
-**Enrich** fills in what is missing: the contact address, the channel behind a
-website, the evidence the scoring needs.
-
-**Process** turns raw finds into scored leads: deduplicate, promote, score, apply
-the gates.
-
-**Outreach** drafts the emails.
-
-You do not normally need any of these. The schedule runs them for you. Use them
+You do not normally need it. The schedule runs it for you once a week. Use it
 when you want more leads today, or when you have changed something and want to
 see the effect now.
 
-Only one job runs at a time. The log panel stays on screen afterwards so you can
-read what happened.
+Only one refresh runs at a time: a second click while one is running is refused.
+
+Whenever something is running, its log streams at the bottom of the page, with
+a **Stop** button. A send has no Stop button: it stops only by finishing.
+
+## Automatic runs
+
+One row for each thing that runs by itself, with when it runs (in UTC), when it
+last ran ("by hand" if a person started it) and how that went:
+
+- **Weekly refresh**: Tuesday 02:00 for US Production Houses, Wednesday 02:00
+  for LCX Clipping, Thursday 02:00 for Startup Acquisitions.
+- **Drafting and sending**: every 15 minutes, when there is work.
+
+A failed run says which step failed; hold the mouse over it to read the error.
+If no alert webhook is set up, the panel says that failures show only here.
 
 ## Mailboxes
 
-The Mailboxes panel shows each sending address, how much it can send today, how
-much it has already sent, and how much room is left.
+This panel appears only in projects with several mailboxes (LCX Clipping). It
+shows each sending address, how much it can send today, how much it has already
+sent, and how much room is left. A mailbox that is not connected yet says what
+to set.
 
 New mailboxes **warm up**: ten emails a day to start, five more every two days,
 up to forty. Three warm mailboxes give 120 a day, which is also the project
@@ -453,13 +510,6 @@ Openers are spread across whichever mailbox has the most room. A follow-up alway
 leaves from the mailbox that sent its opener, because a thread belongs to one
 mailbox.
 
-## Schedule and recent runs
-
-**Unattended schedule** is what runs without anyone watching, in UTC.
-
-**Recent runs** is the history: every scheduled or manual run, and the exact step
-that failed if one did.
-
 
 # Reports
 
@@ -468,17 +518,16 @@ that failed if one did.
 **Status overview** — every company ever found for this project, and where it
 sits now.
 
-**v1 KPIs** — the numbers the plan is judged on. The target is 15 to 20 companies
-contacted a week.
+**Outreach results** — says "Nothing sent yet." until the first email goes out.
+Then: the companies contacted in the last 7 days (follow-ups not counted), the
+reply rate and the positive rate, and in LCX Clipping the follow-ups sent. The
+target is 15 to 20 companies contacted a week.
 
-**Score distribution** — the open pool by score. A tall bar at zero is not a pile
-of bad companies; it is companies the engine could not judge yet.
+**By source** — which connectors are earning their place: for each one, how
+many companies it found, how many can be contacted, and how many were
+shortlisted. It shows only in projects with more than one source.
 
-**Evidence coverage** — how many companies can actually be scored on each
-criterion. A criterion nobody can be scored on is points nobody can earn, and
-that is a signal to fix the enrichment, not the rubric.
-
-**By source** — which connectors are earning their place.
+The Universal project has no Reports page.
 
 
 # The rules that never bend
@@ -536,7 +585,12 @@ domain, so a bad week never touches everyday mail.
 Integrations → API Keys → Create new key, tick the five endpoints the Apollo
 search page lists (or turn on *Set as master key*), then put the key in `.env`
 as `APOLLO_API_KEY` and in Render's Environment tab. Until then the page shows
-these steps where the results would be.
+these steps at the top.
+
+**4. Put the YouTube key on the server.** In Render's Environment tab, set
+`YOUTUBE_API_KEY` (the same Google key as in `.env`). Without it, LCX Clipping's
+weekly refresh stops at its YouTube step. It has failed that way since
+2026-09-16, and Operations shows it under Automatic runs.
 
 Optional, and worth having later: an Anthropic key for reply triage, and an alert
 webhook so a failed overnight run reaches you.
@@ -546,8 +600,9 @@ webhook so a failed overnight run reaches you.
 
 **"I approved it but nothing was sent."** Approving sends within minutes. If it is
 still in Approved, either no mailbox is connected yet (see *What only you can
-do*) or today's sending limit is used up and it goes out tomorrow. A send that
-failed is in Attention, with the reason.
+do*) or today's sending limit is used up and it goes out tomorrow. A send the
+checks refused stays in Approved, with the reason under its subject. A send
+whose outcome is not known is in Attention.
 
 **"The screen is blank / says it cannot reach the database."** The free cloud
 instance goes to sleep when it is idle and takes a few seconds to wake. Reload
@@ -556,8 +611,8 @@ once. If it persists, check Operations for a failed run.
 **"A lead has no contact."** The engine only uses addresses that companies have
 published themselves. If nobody published one, open the lead: **Contacts** shows
 every other way in it found (a phone number, the contact page, social profiles)
-and what it already tried. **Find contacts on sites** reads the website of every
-lead without a usable address once, shortlisted leads included.
+and what it already tried. The weekly refresh reads the website of every lead
+without a usable address once, shortlisted leads included.
 
 **"The greeting says 'Hi there' or just 'Hello,'."** That means no person could be
 named for the address the email goes to, and the engine will not guess. When the
@@ -569,8 +624,13 @@ like info@, the greeting uses their first name. "Hi there" is correct behaviour;
 placeholder, a sender that still says `SET_ME`, an address that failed
 verification, or a company whose status has moved on since the draft was written.
 
-**"I rejected something by mistake."** Leads list, status filter to Rejected, open
-it, and change the status with the dropdown at the top right of the dialog.
+**"I rejected something by mistake."** Leads list, Status set to Rejected, open
+it, and press **Undo decision**. It goes back to To review.
+
+**"Operations says the weekly refresh failed."** The row names the step it
+stopped at; hold the mouse over it to read the error. If LCX Clipping's refresh
+failed at its YouTube step, the server has no YouTube key yet (see *What only
+you can do*).
 
 
 # Words used here
@@ -578,10 +638,10 @@ it, and change the status with the dropdown at the top right of the dialog.
 **Project (segment)** — one sales motion with its own leads, rubric, templates
 and mailboxes. Switch with the project name at the top of the sidebar.
 
-**Lead** — one company, show or creator. Has a key like `LCX-CCAB`.
+**Lead** — one company, show or creator.
 
-**Fit score** — out of 100: the points earned out of the rubric's 110 (Project
-settings), scaled to 100, plus adjustments. Every point is explained in the
+**Fit score** — out of 100: the points earned out of the rubric's 110, scaled to
+100, plus adjustments. Every point is explained in the
 lead dialog, along with the points nobody has checked yet.
 
 **Gate** — a hard disqualifier. Fires only on confirmed evidence, never on

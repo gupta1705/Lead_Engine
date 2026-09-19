@@ -30,7 +30,7 @@ to the database by `sql/03d_segment_lcx_clipping.sql` (regenerate with
 |---|---|---|
 | Discover | `tools/discover_podcasts.py` | Keyless. Search terms x store countries against Apple's public podcast search, then each new show's RSS feed: catalogue size, cadence, episode length, categories, language, the published business address, budget signals in the show notes, a YouTube link. Computes the scoring inputs it can settle. |
 | Discover | `tools/discover_wikidata_channels.py` | Production companies worldwide with a YouTube channel on Wikidata, US first; the same 3-unit profile. |
-| Discover | `tools/import_pool.py` | Carries TVF's production houses and contacts into this segment; one-off. |
+| Discover | `tools/import_pool.py` | Carries TVF's production houses and contacts into this segment; one-off, from a terminal. |
 | Discover | `tools/discover_youtube_channels.py` | Channel search (100 quota units each), then statistics and the last 50 uploads with durations (3 units per channel). Shorts gap, cadence, audience band, video-first. |
 | Promote | `tools/run_chain.py` with `SEGMENT_SLUG=lcx-clipping` | The same self-exclusion, promote, dedupe, zero-unverified, score and gate chain as TVF. The chain SQL now reads its segment from the session. |
 | Enrich | `tools/enrich_clipping.py` | Lifts the evidence, finds the person behind the show (`metadata.host`), creates the contact, corrects contacts that carried the show's name, reads the website's front page for a YouTube link, profiles the channel. |
@@ -40,6 +40,11 @@ to the database by `sql/03d_segment_lcx_clipping.sql` (regenerate with
 The weekly refresh for the segment (Wednesday 02:00 UTC) is
 `discover_podcasts, discover_youtube, discover_wikidata_channels, promote_chain, enrich_clipping, enrich_contacts, promote_chain`.
 It runs from the in-app scheduler; nothing in this segment needs the office n8n.
+Until 2026-09-19 Operations showed it as Tuesday (the page counted days from
+Sunday); it has always run on Wednesday. Its `discover_youtube` step needs
+`YOUTUBE_API_KEY` in Render's Environment tab: without it the refresh has
+stopped there since 2026-09-16, and Operations → Automatic runs shows
+"Failed at discover_youtube".
 
 ## The rubric
 
@@ -61,8 +66,10 @@ subscribers). Thresholds: reviewable at 25, priority at 45, like TVF.
 
 ## Running it
 
-From the portal: pick **LCX Clipping** in the Projects menu, then Generate leads runs
-any job, or Operations shows them all. From a terminal:
+From the portal: pick **LCX Clipping** with the project switcher at the top of
+the sidebar, then **Operations → Run weekly refresh** runs the whole refresh now.
+Its steps are not offered one by one in the portal (2026-09-19). One step at a
+time, from a terminal:
 
 ```bash
 SEGMENT_SLUG=lcx-clipping python tools/discover_podcasts.py --max-searches 60 --limit-feeds 300
@@ -102,8 +109,8 @@ rows and its own daily cap.
 
 ## The portal
 
-The main portal lists every segment under Projects; switching changes every
-screen. A separate clipping-only portal is the same image with two variables,
+The main portal lists every segment in the project switcher at the top of the
+sidebar; switching changes every screen. A separate clipping-only portal is the same image with two variables,
 `deploy/render.lcx-clipping.yaml` (Blueprint Path on Render). See
 `docs/DEPLOY.md`.
 
@@ -172,7 +179,7 @@ United States first**:
 | Wikidata | `tools/discover_wikidata_channels.py`: film, TV and animation companies that list a YouTube channel (P2397), with country and website; each channel profiled for the shorts gap. `kind = production_house`. |
 | TVF pool | `tools/import_pool.py --from us-production-houses`: TVF's US production houses with their contacts, carried over; the enrichment pass reads each website's front page for a YouTube link (robots honoured) and profiles the channel. |
 | Studio template | `clipping_studio_v1`, chosen automatically when `metadata.kind` is `production_house`. |
-| Weekly refresh | now runs the Wikidata harvest as well. The pool import is a one-off from Generate leads; `import_pool.py --repair` re-derives a carried row's country and reachability from its origin if the rules change. |
+| Weekly refresh | now runs the Wikidata harvest as well. The pool import is a one-off, run from a terminal; `import_pool.py --repair` re-derives a carried row's country and reachability from its origin if the rules change. |
 | Revisiting rows | `enrich_clipping.py` stamps `clipping_enrich_version`; bumping the constant makes the weekly refresh revisit every row under new host and contact rules without repeating any network call. Transient site or channel failures are retried after a week; only definitive answers are final. |
 
 ## Follow-ups and batch approval (2026-09-10)
@@ -189,11 +196,14 @@ follow-up must point at its own company's opener, and a follow-up can never
 be claimed for sending once the company has replied or the thread was
 stopped. `outreach.py pull` pauses a thread the moment a reply lands; an
 auto-reply (triaged neutral) lets it resume, a real answer ends it. Anyone
-can press **Stop follow-ups** on a message. Follow-ups are drafted by
-themselves when they fall due and approved like any other email; approving
-sends them. The daily send cap counts them.
+can press **Stop follow-ups** on a sent email or a follow-up draft, and
+rejecting the lead stops the thread too. Follow-ups are drafted by the
+fifteen-minute drafting and sending run when they fall due (since 2026-09-19;
+the separate daily follow-ups run went) and approved like any other email;
+approving sends them. The daily send cap counts them.
 
-**Batch approval.** In Drafts, tick the drafts and press **Approve
+**Batch approval.** In Drafts, tick the drafts (the header box takes the first
+`max_batch`, 100, and unticking it clears the selection) and press **Approve
 selected**. The server draws a random spot-check sample (at least three, or
 a tenth of the batch), and the approval stays locked until each sampled
 draft has been opened and ticked. The sample is signed with the batch, so it
@@ -203,8 +213,9 @@ sendable state) and the failures are listed, not approved. Each approved row
 records who approved it, when, whether in a batch and whether it was in the
 sample; each batch is a row in `outreach_approval_batches`.
 
-Reports now count companies contacted and follow-ups separately, and the
-reply and positive rates are per company, so follow-ups cannot inflate them.
+Reports count companies contacted and follow-ups separately (Outreach results:
+Contacted, 7 days, and Follow-ups sent), and the reply and positive rates are
+per company, so follow-ups cannot inflate them.
 `python tools/test_outreach_policy.py` exercises every rule above against
 the live database inside a transaction it rolls back.
 
@@ -231,10 +242,12 @@ name is shared, so the mailboxes should belong to the same person or desk.
 **The footer is one setting for the whole segment.** Sign-off, postal address
 and the line that lets someone out used to be four lines copied into every
 template. They are now `outreach.footer.text`, edited in the app under
-**Outreach -> Footer**; every template ends with `{{footer}}`. Saving it also
-offers to put the new footer on the drafts already waiting for approval --
-only the footer is swapped, so anything written by hand above it survives
-untouched. The save is refused unless what comes out carries a postal address
+**Outreach -> Footer**; every template ends with `{{footer}}`, and the footer
+itself takes `{{sender_name}}`, `{{sender_title}}` and `{{postal_address}}`.
+Saving it also puts the new footer on the drafts already waiting for approval
+(always, since 2026-09-19; it used to be a checkbox) -- only the footer is
+swapped, so anything written by hand above it survives untouched, and a draft
+whose footer was edited by hand is left alone. The save is refused unless what comes out carries a postal address
 and a way off the list: both are required of commercial email, and both are
 what keep a sending domain alive. `sql/25_outreach_footer.sql` lifted the
 first version of the text out of the templates verbatim, so nothing about
@@ -349,8 +362,8 @@ rule end to end against the database.
 Owner's brief: "Instead of shortlisting i want you to automatically shortlist
 anyone with score above 20." Every lead in review with a fit score strictly
 above 20 is shortlisted by the last step of the promote chain
-(`sql/14_auto_shortlist.sql`), so it happens after every refresh and every
-re-score without anyone pressing anything. The rule is config
+(`sql/14_auto_shortlist.sql`), so it happens every time the chain runs (twice
+in each weekly refresh) without anyone pressing anything. The rule is config
 (`auto_shortlist`: `enabled`, `min_score`) and is on for this segment only;
 the TVF segments still shortlist by hand.
 
@@ -375,6 +388,12 @@ Groq wrote is approved on its own, never in a batch.
 255 contactable leads are therefore up to 255 individual approvals unless
 `batch_approval.allow_generated` is turned on. `tools/test_auto_shortlist.py`
 covers the rule (13 checks, rolled back).
+
+**On the board (2026-09-19).** In this segment the To review column starts at
+0, not at the review line of 25: everything above 20 is shortlisted already, so
+that floor left the column empty for good. It shows every lead still in review,
+whatever its score, for a person to pick by hand. An auto-shortlisted lead's
+dialog shows the status reason, with its date, as its Decision note.
 
 ## Not built yet, by decision
 - Sample-first outreach: a "needs sample" state where the draft waits until

@@ -786,7 +786,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
    it. Built from the same tokens as every other page. */
 .project-switch[data-prefix="UNI"] .project-avatar { background: linear-gradient(135deg, #6E5DC6, #0C66E4); }
 .uni-status { display: inline-flex; align-items: center; gap: 8px; margin-right: 4px; }
-#uniTabs { overflow: visible; }
+/* the active tab's underline overhangs the row by 2px: an auto overflow drew a stray scrollbar */
+#uniTabs, #folderTabs { overflow: visible; }
+#folderTabs { flex-wrap: wrap; }
 /* the Leads table leaves out what would read the same on every row: the score in a project
    with no rubric, the status when one status is picked, the source where there is only one */
 #leadsTable.unscored .col-score, #leadsTable.one-status .col-status,

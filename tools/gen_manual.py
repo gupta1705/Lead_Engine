@@ -114,7 +114,7 @@ def build_outreach(fx):
                         "sent_at": (now - timedelta(hours=6)).isoformat(),
                         "created_at": (now - timedelta(hours=6)).isoformat(),
                         "approved_at": None, "approved_by": None, "approval_mode": None,
-                        "spot_checked": None, "folder": "positive"})
+                        "spot_checked": None, "folder": "inbox"})
     counts = {}
     for r in out:
         counts[r["folder"]] = counts.get(r["folder"], 0) + 1
@@ -190,7 +190,7 @@ def _(page):
 @shot("07-draft", 1180)
 def _(page):
     home(page, "outreach")
-    page.evaluate("document.querySelector('#outreachBody tr[data-id] td:nth-child(5)').click()")
+    page.evaluate("document.querySelector('#outreachBody tr[data-id] td:nth-child(4)').click()")
     page.wait_for_selector("#modalRoot .modal-body", timeout=15000)
     page.wait_for_timeout(600)
 
@@ -230,10 +230,10 @@ def _(page):
     home(page, "outreach")
     page.evaluate("""(() => {
       const t = [...document.querySelectorAll('#folderTabs [role=tab], #folderTabs button, #folderTabs a')]
-        .find(e => /positive/i.test(e.textContent)); if (t) t.click();
+        .find(e => /replies/i.test(e.textContent)); if (t) t.click();
     })()""")
     page.wait_for_timeout(900)
-    page.evaluate("document.querySelector('#outreachBody tr[data-id] td:nth-child(5)').click()")
+    page.evaluate("document.querySelector('#outreachBody tr[data-id] td:nth-child(4)').click()")
     page.wait_for_selector("#modalRoot .modal-body", timeout=15000)
     page.wait_for_timeout(600)
 

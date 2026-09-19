@@ -156,6 +156,41 @@ def main():
                         break
             check("ten kicks in a row: one run started, one more round, then done",
                   (started.count(True), count["n"], slug in s._kicking), (1, 2, False))
+
+            # taking a lead off the shortlist takes its waiting email with it (2026-09-19): the
+            # Cancel draft button went, and nothing may go out to a company a person just refused
+            import main as app_main
+            app_main.cursor = cursor
+            e3, c3 = lead(seg_id, "shortlisted")
+            m3 = mail(e3, c3, "drafted")
+            out = app_main.decide(str(e3), {"decision": "reject", "reason": "not a fit"})
+            cur.execute("select status from outreach where id = %s", (m3,))
+            check("rejecting a shortlisted lead withdraws its waiting draft",
+                  (out["status"], out["withdrawn"], cur.fetchone()["status"]), ("rejected", 1, "cancelled"))
+            e4, c4 = lead(seg_id, "shortlisted")
+            m4 = mail(e4, c4, "approved")
+            out = app_main.decide(str(e4), {"decision": "reset"})
+            cur.execute("select status from outreach where id = %s", (m4,))
+            check("moving an approved lead back to review withdraws its email too",
+                  (out["status"], out["withdrawn"], cur.fetchone()["status"]), ("ready_for_review", 1, "cancelled"))
+
+            # one weekly refresh at a time: six clicks in six seconds once queued six (2026-09-17)
+            ran = {"n": 0}
+
+            def slow_steps(pipeline, steps, trigger, segment):
+                ran["n"] += 1
+                time.sleep(0.4)
+            s._run_steps = slow_steps
+            s.pipelines = lambda segment=None: {"weekly_refresh": ["promote_chain"]}
+            threads = [threading.Thread(target=s.run_pipeline, args=("weekly_refresh", "manual", slug)) for _ in range(6)]
+            for t in threads:
+                t.start()
+            time.sleep(0.1)
+            busy = s.is_running(slug, "weekly_refresh")
+            for t in threads:
+                t.join()
+            check("six starts at once: one weekly refresh runs, the rest are refused",
+                  (ran["n"], busy, s.is_running(slug, "weekly_refresh")), (1, True, False))
     finally:
         conn.rollback()
         conn.close()

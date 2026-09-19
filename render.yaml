@@ -22,6 +22,12 @@
 # Optional values are added later in the dashboard (service -> Environment):
 #   ALERT_WEBHOOK_URL, GMAIL_SENDER_ADDRESS, GOOGLE_OAUTH_CLIENT_ID,
 #   GOOGLE_OAUTH_CLIENT_SECRET, GMAIL_TOKEN_JSON, ANTHROPIC_API_KEY.
+# Needed by particular projects:
+#   YOUTUBE_API_KEY   LCX's weekly refresh stops at its YouTube step without it
+#                     (Operations -> Automatic runs shows "Failed at discover_youtube").
+#   GROQ_API_KEY      drafts get their model-written lines; without it they use
+#                     the plain template wording.
+#   APOLLO_API_KEY    the Universal project's Apollo search page.
 
 services:
   - type: web

@@ -62,7 +62,9 @@ the first runs gave: "Cred's", "Four Years", "Tearful Goodbye", the creditor
 instead of the debtor, the acquirer instead of the acqui-hired.
 
 Weekly refresh, Thursday 02:00 UTC: `discover_startup_news, promote_chain,
-enrich_startups, enrich_contacts, promote_chain`.
+enrich_startups, enrich_contacts, promote_chain`. (Operations showed it as
+Wednesday until 2026-09-19, counting days from Sunday; it has always run on
+Thursday.)
 
 ## The rubric
 
@@ -85,8 +87,9 @@ at 25, priority at 45.
 ## Running it
 
 From the portal: pick the startup project from the project switcher at the
-top of the sidebar, then **Generate leads** runs any job, or Operations shows
-them all. From a terminal:
+top of the sidebar, then **Operations → Run weekly refresh** runs the whole
+refresh now. The backfill, and the steps one at a time, run from a terminal
+(the portal's backfill and per-step buttons went on 2026-09-19):
 
 ```bash
 SEGMENT_SLUG=startup-acquisitions python tools/discover_startup_news.py --backfill
