@@ -159,6 +159,10 @@ def offline():
     check("a saved company row keeps only safe links, real numbers and plain text", row,
           {"id": OID[8], "name": "X", "website_url": "https://www.x.example/about", "founded_year": 2014,
            "primary_domain": "x.example"})
+    check("company search's organization_revenue is read as the revenue the page shows",
+          apollo.org_row({"id": OID[8], "name": "X", "organization_revenue": 2500000.0,
+                          "organization_revenue_printed": "2.5M"}),
+          {"id": OID[8], "name": "X", "annual_revenue": 2500000, "annual_revenue_printed": "2.5M"})
 
     def match(i, email="x%d@firm.com", status="verified"):
         return {"id": PID[i], "first_name": "P%d" % i, "last_name": "Q", "name": "P%d Q" % i,

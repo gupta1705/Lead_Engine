@@ -429,6 +429,10 @@ ORG_FIELDS = ("id", "name", "website_url", "primary_domain", "linkedin_url", "tw
 
 
 ORG_NUMBERS = ("founded_year", "estimated_num_employees", "annual_revenue", "total_funding", "alexa_ranking")
+# Company search answers with organization_revenue*; enrichment and the people endpoints use
+# annual_revenue*. Same number, two names, so the page and the detail rows read one of them.
+ORG_ALIASES = {"annual_revenue": "organization_revenue",
+               "annual_revenue_printed": "organization_revenue_printed"}
 ORG_TEXT_LISTS = ("languages", "industries", "keywords")
 
 
@@ -445,6 +449,8 @@ def org_row(o):
     out = {}
     for k in ORG_FIELDS:
         v = o.get(k)
+        if v in (None, "", [], {}) and k in ORG_ALIASES:
+            v = o.get(ORG_ALIASES[k])
         if v in (None, "", [], {}):
             continue
         if k.endswith("_url"):
