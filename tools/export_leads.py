@@ -81,7 +81,11 @@ def obj(v):
     return json.loads(v) if isinstance(v, str) else (v or {})
 
 
-def fetch(min_score, source, status=None, q=None):
+HAS_ADDRESS = ("exists (select 1 from contacts c where c.entity_id = e.id"
+               " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
+
+
+def fetch(min_score, source, status=None, q=None, contact=None):
     from run_sql import load_db_url
     import psycopg2
     where = ["s.slug = %s"]
@@ -96,6 +100,11 @@ def fetch(min_score, source, status=None, q=None):
         # the same match the Leads search makes (app/main.py leads())
         where.append("(e.name ilike %s or e.domain ilike %s or e.metadata->'host'->>'name' ilike %s)")
         params += ["%" + q + "%"] * 3
+    # the Leads page's contact filter, by the same test the drafting step makes (sql/28)
+    if contact == "yes":
+        where.append(HAS_ADDRESS)
+    elif contact == "no":
+        where.append("not " + HAS_ADDRESS)
     # status filter: the web UI exports a shortlist, the CLI exports everything
     if status and status != "all":
         if status == "open":
@@ -222,6 +231,8 @@ def main():
     ap.add_argument("--status", default=None,
                     help="shortlisted | rejected | open | all "
                          "(default: every row in the segment)")
+    ap.add_argument("--contact", default=None, choices=["yes", "no"],
+                    help="yes: only companies with an address a draft could use; no: only those without")
     args = ap.parse_args()
 
     try:
@@ -231,7 +242,7 @@ def main():
     except ImportError:
         sys.exit("openpyxl not installed:  pip install openpyxl")
 
-    rows = fetch(args.min_score, args.source, args.status, args.q)
+    rows = fetch(args.min_score, args.source, args.status, args.q, args.contact)
     if not rows:
         print("no rows matched"); return 1
 

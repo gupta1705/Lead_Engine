@@ -209,6 +209,13 @@ connector found it. A status is in the list only while some lead has it.
 The **Contact** column shows the address a draft would actually use, with the
 person's name when one is known. "No address" means there is none yet.
 
+The last filter splits the list by exactly that: **Has an address** is what can
+be written to today, **No address yet** is the work left, and each option
+carries its own count. It uses the same test the drafting step makes, so a lead
+in "Has an address" is a lead that can be drafted. It appears only when the
+current selection holds some of each — filtering a list where every lead already
+has an address would do nothing, so it stays out of the way.
+
 **Export this view** downloads exactly what the list shows, search included, as
 a spreadsheet named after the project. It is hidden when the list is empty.
 

@@ -173,7 +173,7 @@ const post = (path, body) => api(path, { method: "POST",
 const state = {
   route: null, user: null, sources: [], segment: null, segments: [],
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD }, cols: {}, token: 0 },
-  leads: { filters: { q: "", status: "all", source: "" },
+  leads: { filters: { q: "", status: "all", source: "", contact: "" },
            page: 0, perPage: 50, total: 0, rows: [], token: 0 },
   outreach: { folder: "drafts", rows: [], counts: {}, token: 0, busy: false, selected: new Set() },
   ops: { timer: null },
@@ -473,6 +473,7 @@ function leadsQuery() {
   p.set("status", f.status);
   if (f.q) p.set("q", f.q);
   if (f.source) p.set("source", f.source);
+  if (f.contact) p.set("contact", f.contact);
   p.set("limit", state.leads.perPage);
   p.set("offset", state.leads.page * state.leads.perPage);
   return p.toString();
@@ -499,6 +500,12 @@ async function loadLeads() {
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="6">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
   $("#leadsTable").classList.toggle("one-status", state.leads.filters.status !== "all");
+  // The filter shows only where it can change what is on screen: a selection that is
+  // all addresses, or none, has nothing to narrow.
+  const split = $("#leadsContact");
+  split.hidden = !(d.with_address && d.without_address) && !state.leads.filters.contact;
+  split.options[1].textContent = `Has an address (${(d.with_address || 0).toLocaleString()})`;
+  split.options[2].textContent = `No address yet (${(d.without_address || 0).toLocaleString()})`;
   delegateOpen("#leadsBody", (id) => go("lead/" + id));
   const from = d.total ? state.leads.page * state.leads.perPage + 1 : 0;
   const to = Math.min((state.leads.page + 1) * state.leads.perPage, d.total);
@@ -515,6 +522,7 @@ function syncExportLinks() {
   q.set("status", l.status);
   if (l.q) q.set("q", l.q);
   if (l.source) q.set("source", l.source);
+  if (l.contact) q.set("contact", l.contact);
   $("#leadsExport").href = "/api/export.xlsx?" + q.toString();
 }
 
@@ -1710,6 +1718,7 @@ function bindShell() {
 function syncLeadControls() {
   const f = state.leads.filters;
   $("#leadsSearch").value = f.q; $("#leadsStatus").value = f.status; $("#leadsSource").value = f.source;
+  $("#leadsContact").value = f.contact;
 }
 function bindFilters() {
   let t;
@@ -1718,6 +1727,7 @@ function bindFilters() {
   $("#leadsSearch").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { l.q = e.target.value.trim(); state.leads.page = 0; loadLeads(); }, 250); });
   $("#leadsStatus").addEventListener("change", (e) => { l.status = e.target.value; state.leads.page = 0; loadLeads(); });
   $("#leadsSource").addEventListener("change", (e) => { l.source = e.target.value; state.leads.page = 0; loadLeads(); });
+  $("#leadsContact").addEventListener("change", (e) => { l.contact = e.target.value; state.leads.page = 0; loadLeads(); });
   $("#leadsPrev").addEventListener("click", () => { state.leads.page--; loadLeads(); });
   $("#leadsNext").addEventListener("click", () => { state.leads.page++; loadLeads(); });
 }

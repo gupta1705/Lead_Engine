@@ -308,8 +308,15 @@ def stats(segment: str = Depends(current_segment)):
 
 
 # ---------------------------------------------------------------------- list
+# An address a draft could actually use: the same test the drafting step makes
+# (contact_rank, sql/28), so "Has an address" here and "can be written to"
+# there are the same sentence.
+HAS_ADDRESS = ("exists (select 1 from contacts c where c.entity_id = e.id"
+               " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
+
+
 @app.get("/api/leads")
-def leads(q: str = "", source: str = "", status: str = "open",
+def leads(q: str = "", source: str = "", status: str = "open", contact: str = "",
           min_score: float = 0, limit: int = 100, offset: int = 0,
           segment: str = Depends(current_segment)):
     where = ["e.segment_id = (select id from segments where slug = %s)"]
@@ -332,7 +339,15 @@ def leads(q: str = "", source: str = "", status: str = "open",
         where.append("coalesce(e.fit_score,0) >= %s")
         params.append(min_score)
     order = "e.fit_score desc nulls last, e.name"
+    # The contact filter is kept out of `clause` so the counts below can say how
+    # the CURRENT selection splits -- which is what decides whether the filter is
+    # worth showing at all.
     clause = " and ".join(where)
+    rows_clause = clause
+    if contact == "yes":
+        rows_clause += " and " + HAS_ADDRESS
+    elif contact == "no":
+        rows_clause += " and not " + HAS_ADDRESS
 
     # Segment 3: the UI's card_fields are metadata paths the segment config
     # names; select them as columns so cards never need the whole metadata.
@@ -361,15 +376,21 @@ def leads(q: str = "", source: str = "", status: str = "open",
             "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
             "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
             "   c.created_at, c.id limit 1) as contact_name"
-            " from entities e where " + clause +
+            " from entities e where " + rows_clause +
             " order by " + order + " limit %s offset %s",
             params + [min(limit, 500), offset])
         rows = [dict(r) for r in cur.fetchall()]
         for r in rows:
             r["fields"] = [r.pop("f%d" % i) for i in range(len(fields))]
-        cur.execute("select count(*) as n from entities e where " + clause, params)
-        total = cur.fetchone()["n"]
-    return {"total": total, "rows": rows}
+        cur.execute("select count(*) filter (where " + HAS_ADDRESS + ") as with_address,"
+                    " count(*) filter (where not " + HAS_ADDRESS + ") as without_address"
+                    " from entities e where " + clause, params)
+        split = cur.fetchone()
+        total = (split["with_address"] if contact == "yes" else
+                 split["without_address"] if contact == "no" else
+                 split["with_address"] + split["without_address"])
+    return {"total": total, "rows": rows,
+            "with_address": split["with_address"], "without_address": split["without_address"]}
 
 
 # -------------------------------------------------------------------- detail
@@ -477,7 +498,7 @@ def decide(lead_id: str, body: dict = Body(...)):
 # -------------------------------------------------------------------- export
 @app.get("/api/export.xlsx")
 def export(status: str = "shortlisted", min_score: float = 0, source: str = "", q: str = "",
-           segment: str = Depends(current_segment)):
+           contact: str = "", segment: str = Depends(current_segment)):
     """The owner's 17-column sheet, generated live from the current selection.
 
     Takes the same filters the review queue is showing, because a reviewer who
@@ -499,6 +520,8 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = "", 
         cmd += ["--source", source]
     if q:
         cmd += ["--q", q]
+    if contact in ("yes", "no"):
+        cmd += ["--contact", contact]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO,
                        env={**os.environ, "SEGMENT_SLUG": segment})
     if not os.path.exists(tmp):

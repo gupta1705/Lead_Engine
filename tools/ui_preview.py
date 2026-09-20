@@ -158,9 +158,15 @@ MOCK_JS = r"""
       if (qq) rows = rows.filter((r) => (r.name || "").toLowerCase().includes(qq) || (r.domain || "").toLowerCase().includes(qq));
       if (src) rows = rows.filter((r) => r.source === src);
       if (min) rows = rows.filter((r) => (+r.fit_score || 0) >= min);
+      // the contact filter, and the split the page needs to decide whether to offer it
+      const withAddr = rows.filter((r) => !!r.email).length, withoutAddr = rows.length - withAddr;
+      const contact = q.get("contact") || "";
+      if (contact === "yes") rows = rows.filter((r) => !!r.email);
+      if (contact === "no") rows = rows.filter((r) => !r.email);
       rows.sort((a, b) => (+b.fit_score || 0) - (+a.fit_score || 0) || a.name.localeCompare(b.name));
       const off = +(q.get("offset") || 0), lim = +(q.get("limit") || 100);
-      return json({ total: rows.length, rows: rows.slice(off, off + lim) });
+      return json({ total: rows.length, rows: rows.slice(off, off + lim),
+                    with_address: withAddr, without_address: withoutAddr });
     }
     if ((m = p.match(/^\/api\/leads\/([^/]+)\/decision$/))) {
       const id = m[1], map = { shortlist: "shortlisted", reject: "rejected", reset: "ready_for_review" };
