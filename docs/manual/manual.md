@@ -473,6 +473,13 @@ LCX Clipping and Startup Acquisitions), fills in what is missing (the contact
 address, the website, the evidence the scoring needs), then scores everything
 again and applies the gates. Its steps run one at a time.
 
+In **US Production Houses** one of those steps asks Apollo. A lead whose own
+website published no address gets one free search on its domain for the roles
+that project targets, and the best person's work address costs one credit. A run
+stops at 150 credits, shortlisted leads are served first, and a company Apollo
+does not know is left for a month. No other project spends a credit: that is a
+setting in the project's own config, and it is on for this one only.
+
 You do not normally need it. The schedule runs it for you once a week. Use it
 when you want more leads today, or when you have changed something and want to
 see the effect now.
@@ -557,6 +564,12 @@ true of them.
 **Only public first-party pages are read, and robots.txt is honoured.** No
 LinkedIn scraping. No CAPTCHA bypass. No buying scraped lists.
 
+**Credits are spent only where you turned them on.** Apollo costs money per
+person revealed, so a project spends nothing unless its own config says it may.
+US Production Houses may; LCX Clipping, Startup Acquisitions and Universal's
+automatic steps may not. Searching costs nothing anywhere, and on the Universal
+page you see what a save will cost before you agree to it.
+
 
 # What only you can do
 
@@ -581,11 +594,13 @@ wrote (the variable name is listed by `python tools/outreach.py mailboxes`).
 Use addresses on a sending domain that belongs to LCX alone, not the main company
 domain, so a bad week never touches everyday mail.
 
-**3. Connect Apollo**, for the Universal project. In Apollo: Settings →
-Integrations → API Keys → Create new key, tick the five endpoints the Apollo
-search page lists (or turn on *Set as master key*), then put the key in `.env`
-as `APOLLO_API_KEY` and in Render's Environment tab. Until then the page shows
-these steps at the top.
+**3. Connect Apollo**, for the Universal project and for the addresses the
+weekly refresh buys in US Production Houses. In Apollo: Settings → Integrations
+→ API Keys → Create new key, tick the five endpoints the Apollo search page
+lists (or turn on *Set as master key*), then put the key in `.env` as
+`APOLLO_API_KEY` and in Render's Environment tab. Until then the page shows
+these steps at the top, and the refresh's Apollo step finds no key and stops
+short of spending anything.
 
 **4. Put the YouTube key on the server.** In Render's Environment tab, set
 `YOUTUBE_API_KEY` (the same Google key as in `.env`). Without it, LCX Clipping's

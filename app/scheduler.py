@@ -78,6 +78,7 @@ PIPELINES = {
         "resolve_domains",    # fill missing websites
         "enrich_aicp",        # directory detail: emails, named people
         "enrich_contacts",    # site-scrape contacts for whoever still lacks one
+        "enrich_apollo",      # Apollo's address for whoever the site did not name (credits: config-gated)
         "qualify_sites",      # team size, invitations, genre, platform credits
         "news_sweep",         # per-company IP/distribution evidence
         "promote_chain",      # re-score with the new evidence, re-apply gates

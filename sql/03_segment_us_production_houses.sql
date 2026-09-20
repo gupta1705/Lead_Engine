@@ -314,11 +314,15 @@ values (
   },
   "enrichment": {
     "provider": "apollo",
+    "enabled": true,
+    "credits_per_run": 150,
+    "verified_only": true,
+    "recheck_after_days": 30,
     "contact_method": "apollo_org_match_then_people_search",
     "email_verifier": "apollo",
     "fallback": "site_scrape_then_human_confirm",
     "fallback_enabled": false,
-    "guidance": "Apollo is the enrichment and verification backbone (owner decision 2026-08-20): organization match by domain, then people search filtered to target_contact_roles, then Apollo verification status mapped onto contacts.email_status. Hunter (pattern oracle) and Reoon (verifier) were dropped from the critical path on the same date, and the pattern-guess hedge they required is deleted with them. The site-scrape path survives only as backlog item B1, disabled by default: it is pulled into the ladder only if Checkpoint 2 (P17) shows Apollo missing more than roughly 30 percent of 2-10-person shops. Nothing reads this block until P16 -- it records the decision, it is not live wiring."
+    "guidance": "Apollo is the enrichment and verification backbone (owner decision 2026-08-20): organization match by domain, then people search filtered to target_contact_roles, then Apollo verification status mapped onto contacts.email_status. Hunter (pattern oracle) and Reoon (verifier) were dropped from the critical path on the same date, and the pattern-guess hedge they required is deleted with them. The site-scrape path survives only as backlog item B1, disabled by default: it is pulled into the ladder only if Checkpoint 2 (P17) shows Apollo missing more than roughly 30 percent of 2-10-person shops. Live since 2026-09-20 (tools/enrich_apollo.py, the enrich_apollo step of the weekly refresh): open leads with a website and no address get one Apollo search on their domain, filtered to target_contact_roles, and the best person is revealed for 1 credit. enabled gates the spending and is true for this segment only -- the decision that day was production houses, not clipping or startups. credits_per_run caps a run, verified_only asks Apollo for addresses it has checked, recheck_after_days is how long a company Apollo did not know is left alone."
   },
   "outreach": {
     "sender": {

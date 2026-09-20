@@ -114,6 +114,15 @@ JOBS = {
         "desc": "Polite site-scrape of companies with no contact yet.",
         "cmd": [PY, "tools/enrich_sitescrape.py", "--limit", "200", "--workers", "8"],
     },
+    "enrich_apollo": {
+        "label": "Ask Apollo for the missing addresses",
+        "group": "Enrich",
+        "desc": "Leads with a website and nobody to write to: one free search on the domain for the "
+                "target roles, then 1 credit for the best person's work address. Capped per run, and "
+                "only for a segment whose config enables it.",
+        "cmd": [PY, "tools/enrich_apollo.py", "--limit", "120", "--budget", "150"],
+        "segments": ["us-production-houses"],
+    },
     "qualify_sites": {
         "label": "Qualify from sites",
         "group": "Enrich",

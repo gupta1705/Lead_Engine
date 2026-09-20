@@ -26,8 +26,15 @@ The default `weekly_refresh` runs **Tuesday 02:00 UTC**, a day after the Monday
 harvest lands, so the freshly harvested rows are waiting.
 
 `weekly_refresh` = promote/score/gate → resolve domains → AICP enrich → site
-contacts → qualify → news sweep → promote/score/gate again (re-score on the new
-evidence). A step that fails stops the pipeline and fires an alert.
+contacts → **Apollo addresses** → qualify → news sweep → promote/score/gate
+again (re-score on the new evidence). A step that fails stops the pipeline and
+fires an alert.
+
+The Apollo step (`tools/enrich_apollo.py`, live 2026-09-20) runs after the site
+scrape has had its turn, so a credit is only ever spent on a company that
+published nothing. It is gated by the segment config (`enrichment.enabled`,
+true for us-production-houses alone), capped per run (`credits_per_run`, 150),
+and it refuses to write a person whose current employer is no longer that lead.
 
 ## Observability — "a run in the dark leaves a trail"
 

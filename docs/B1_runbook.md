@@ -1,4 +1,10 @@
-# B1 — Site-scrape enrichment (replaces P16 while Apollo is unavailable)
+# B1 — Site-scrape enrichment (the first ladder rung; P16 follows it)
+
+> **2026-09-20: Apollo is available again.** P16 shipped as
+> `tools/enrich_apollo.py` and runs in the weekly refresh straight after this
+> scrape, on the leads it could not find an address for. The order matters and
+> has not changed: a company's own published address is free and is tried
+> first; Apollo is asked only about whoever is left, at one credit a person.
 
 Reads a company's **own website** and extracts the contact details they have
 chosen to publish. No API key, no subscription, no quota.
