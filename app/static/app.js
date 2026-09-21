@@ -747,7 +747,8 @@ async function loadOutreach() {
   try { d = await api("/api/outreach?folder=" + encodeURIComponent(o.folder)); }
   catch (e) { return toast("Could not load outreach: " + e.message, true); }
   // can an approval go out from here? (a connected mailbox) -- it words what "approve" does
-  api("/api/mailboxes").then((m) => { o.canSend = !!m.can_send; o.paused = m.paused || null; }).catch(() => {});
+  api("/api/mailboxes").then((m) => { o.canSend = !!m.can_send; o.paused = m.paused || null; renderSendCounter(m); })
+    .catch(() => { $("#sendCounter").hidden = true; });
   if (token !== o.token) return;
   o.rows = d.rows; o.counts = d.counts || {};
   const present = new Set(d.rows.map((r) => r.id));
@@ -1079,6 +1080,31 @@ async function loadSchedule() {
       <td>${result(x.run)}</td></tr>`).join("") + "</tbody>";
   $("#runsSub").textContent = "What runs by itself, and how its last run went. Times are UTC." + (d.webhook_configured ? ""
     : " Failures show only here: set ALERT_WEBHOOK_URL on the server to get a Slack or Discord ping.");
+}
+
+/* The day's sending counter on the Outreach page (owner, 2026-09-21): how many emails left
+ * today out of the daily limit, and when the count starts again. The day is the database's,
+ * UTC, so it resets at midnight UTC -- shown in the viewer's own clock (05:30 in India). */
+function renderSendCounter(m) {
+  const el = $("#sendCounter");
+  if (!m || m.limit_today == null) { el.hidden = true; return; }
+  const resets = m.resets_at ? new Date(m.resets_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  const sent = m.sent_today || 0, limit = m.limit_today || 0;
+  let text, tone = "", title = "Emails this project has sent today, out of its daily limit. The count starts again at " + resets + ".";
+  if (m.paused) {
+    text = "Sending paused"; tone = "paused";
+    title = "Approved emails wait in Approved: " + m.paused;
+  } else if (sent >= limit) {
+    text = `${sent} of ${limit} sent today`; tone = "full";
+    title = "Today's limit is reached. Approved emails go out after " + resets + ".";
+  } else {
+    text = `${sent} of ${limit} sent today`;
+    if (!m.can_send) { tone = "idle"; title += " No mailbox is connected on the server yet, so nothing goes out."; }
+  }
+  el.className = "send-counter" + (tone ? " " + tone : "");
+  el.innerHTML = `<b>${esc(text)}</b>${m.paused ? "" : `<span class="muted"> · resets ${esc(resets)}</span>`}`;
+  el.title = title;
+  el.hidden = false;
 }
 
 /* Mailbox rotation and warm-up (LCX). With one mailbox there is nothing to show that

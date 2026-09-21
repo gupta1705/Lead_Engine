@@ -369,7 +369,10 @@ for them.
 
 Approving is the decision to send. The email goes out within minutes, from the
 project's connected mailbox, inside the day's sending limit and each mailbox's
-warm-up, and never to an address that failed verification. When the day's limit
+warm-up, and never to an address that failed verification. The counter at the
+top of Outreach shows how many have gone out today against that limit (35 a day
+in US Production Houses) and when the count starts again: midnight UTC, which is
+5:30 am in India. When the day's limit
 is used up, it goes out first thing the next day. Until a mailbox is connected
 (see *What only you can do*), approved emails wait in Approved.
 

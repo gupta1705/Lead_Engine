@@ -218,9 +218,17 @@ MOCK_JS = r"""
       return json({ ok: true, preview: resolved, rebuilt: FX.footer.drafts_pending || 0,
                     hand_edited: 0, failed: 0 });
     }
-    if (p === "/api/mailboxes") return json(FX.mailboxes || { segment_cap: 20, rotation: false, mailboxes: [
-      { key: "default", email_env: "GMAIL_SENDER_ADDRESS", daily_cap: 20, warmup: null, enabled: true,
-        cap_today: 20, sent_today: 0, remaining: 20, last_address: null, warmup_day: 0, first_sent: null }] });
+    if (p === "/api/mailboxes") {
+      // the day's counter: what was sent today in the fixture, against the project's limit
+      const cap = FX.segment.daily_send_cap || 35;
+      const sentToday = FX.outreach.rows.filter((r) => r.status === "sent" && r.sent_at
+        && String(r.sent_at).slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+      const tomorrow = new Date(); tomorrow.setUTCHours(24, 0, 0, 0);
+      return json(FX.mailboxes || { segment_cap: cap, rotation: false, paused: FX.segment.sending_paused || null,
+        sent_today: sentToday, limit_today: cap, resets_at: tomorrow.toISOString(), can_send: true, mailboxes: [
+        { key: "default", email_env: "GMAIL_SENDER_ADDRESS", daily_cap: cap, warmup: null, enabled: true, connected: true,
+          cap_today: cap, sent_today: sentToday, remaining: cap - sentToday, last_address: null, warmup_day: 0, first_sent: null }] });
+    }
     if (p === "/api/outreach/batch/sample") {
       const all = body.ids || [];
       const gen = new Set(all.filter((id) => (FX.outreach.rows.find((r) => r.id === id) || {}).generated));

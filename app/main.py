@@ -887,8 +887,16 @@ def mailboxes_state(segment: str = Depends(current_segment)):
         row["first_sent"] = st["first_sent"].isoformat() if st.get("first_sent") else None
         row["connected"] = bool(st.get("enabled")) and _scheduler.mailbox_connected(st)
         out.append(row)
-    return {"segment_cap": int(cfg.get("daily_send_cap", 20)), "rotation": bool(cfg.get("mailboxes")),
+    # The day's counter on the Outreach page (owner, 2026-09-21: "display that counter"). The day is the
+    # database's -- UTC -- so it resets at midnight UTC, 05:30 in India; resets_at says exactly when.
+    segment_cap = int(cfg.get("daily_send_cap", 20))
+    now = _dt.datetime.now(_dt.timezone.utc)
+    return {"segment_cap": segment_cap, "rotation": bool(cfg.get("mailboxes")),
             "mailboxes": out, "paused": pol.sending_paused(cfg),
+            "sent_today": sum(int(r.get("sent_today") or 0) for r in out),
+            "limit_today": min(segment_cap, sum(int(r.get("cap_today") or 0) for r in out if r.get("enabled"))),
+            "resets_at": _dt.datetime.combine(now.date() + _dt.timedelta(days=1), _dt.time(0),
+                                              tzinfo=_dt.timezone.utc).isoformat(),
             "can_send": any(r["connected"] for r in out) and not pol.sending_paused(cfg)}
 
 
