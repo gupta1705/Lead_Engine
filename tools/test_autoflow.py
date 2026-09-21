@@ -168,6 +168,15 @@ def main():
             cur.execute("update outreach set sent_at = sent_at + interval '1 day' where status = 'sent' and entity_id in"
                         " (select id from entities where segment_id = %s)", (seg_id,))
 
+            # after a restart (every deploy) each segment gets one round at once, not at the next quarter hour
+            kicked = []
+            real_kick, real_segments = s.kick_outreach, s.segments
+            s.kick_outreach = lambda seg, trigger="manual": kicked.append((seg, trigger))
+            s.segments = lambda: [slug, quiet]
+            check("a restart sends what was approved while it was down: one round per segment, at once",
+                  (s.catch_up(), kicked), ([slug, quiet], [(slug, "startup"), (quiet, "startup")]))
+            s.kick_outreach, s.segments = real_kick, real_segments
+
             # ten shortlists in a row are one or two runs, not ten
             count = {"n": 0}
 

@@ -372,9 +372,23 @@ class Scheduler:
             return False
         return True
 
+    def catch_up(self):
+        """One outreach round for every segment, right after the server starts. A restart (every deploy)
+        otherwise left an approval waiting for the next quarter-hour tick: on 2026-09-21 the first real
+        email waited from its 09:19 deploy to the 09:30 tick. -> the segments kicked."""
+        segments = self.segments()
+        for segment in segments:
+            self.kick_outreach(segment, "startup")
+        return segments
+
     def _loop(self):
         # settle: let the web server finish starting before the first check
         self._stop.wait(20)
+        if not self._stop.is_set():
+            try:
+                self.catch_up()                 # whatever was approved while the server was restarting
+            except Exception as e:              # never let the catch-up stop the loop from starting
+                print("[scheduler] catch-up after start failed: %r" % e, flush=True)
         while not self._stop.is_set():
             now = _now()
             minute_key = now.strftime("%Y-%m-%d %H:%M")
