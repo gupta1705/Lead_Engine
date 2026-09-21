@@ -1394,7 +1394,7 @@ function uniCurrentFilters() {
   if (q) out.q_text = q;                  // read on the server as what they do and where (tools/apollo.py)
   return out;
 }
-async function uniSearch(page) {
+async function uniSearch(page, asTyped) {
   const u = state.uni;
   if (!uniUsable()) return toast("Connect Apollo first: the steps are at the top of this page.", true);
   u.q[u.kind] = $("#uniQuery").value.trim();
@@ -1403,8 +1403,10 @@ async function uniSearch(page) {
   const token = ++u.token, btn = $("#uniGo");
   btn.classList.add("loading");
   try {
-    const d = await post("/api/universal/search", { kind: u.kind, filters, page: page || 1 });
+    const d = await post("/api/universal/search", { kind: u.kind, filters, page: page || 1, as_typed: !!asTyped });
     if (token !== u.token) return;
+    // a likely typo: a company search is held unsearched (no credit), a people search says so when empty
+    u.suggest = d.did_you_mean || null; u.held = !!d.held; u.typed = u.q[u.kind];
     u.rows = (u.kind === "people" ? d.people : d.companies) || [];
     u.total = d.total || 0; u.page = d.page || 1; u.perPage = d.per_page || 25;
     u.totalPages = Math.min(500, d.total_pages || Math.ceil(u.total / u.perPage) || 1);
@@ -1412,9 +1414,20 @@ async function uniSearch(page) {
     u.readAs = d.read_as || ""; u.readAsKind = u.kind;
     uniPersist(); renderUniTabs();
     renderUniResults();
-    if (u.kind === "companies") uniLoadStatus();             // that page cost a credit: show the new balance
+    if (u.kind === "companies" && !u.held) uniLoadStatus();  // that page cost a credit: show the new balance
   } catch (e) { toast(e.message, true); }
   finally { btn.classList.remove("loading"); }
+}
+/* An empty result, with a spelling suggestion when the words look mistyped. A held company search was never
+   sent to Apollo (it would have cost a credit to find nothing: "UAE Restraunts", 2026-09-21). */
+function uniEmptyRow(cols, nobody) {
+  const u = state.uni;
+  const typo = u.suggest ? `<a href="#" data-suggest>${esc(u.suggest)}</a>` : "";
+  if (u.held && typo) {
+    return `<tr class="empty-row"><td colspan="${cols}">Not searched yet, so no credit spent. Did you mean ${typo}?
+      Or <a href="#" data-as-typed>search “${esc(u.typed || "")}” as typed</a>.</td></tr>`;
+  }
+  return `<tr class="empty-row"><td colspan="${cols}">${nobody}${typo ? ` Did you mean ${typo}?` : ""} Remove a filter or two.</td></tr>`;
 }
 function renderUniResults() {
   const u = state.uni, head = $("#uniHead"), body = $("#uniBody");
@@ -1436,7 +1449,7 @@ function renderUniResults() {
       <td>${esc(p.company || "")}</td>
       <td>${p.has_email ? `<span class="lozenge success">Has email</span>` : `<span class="lozenge">No email</span>`}</td>
       <td>${p.saved ? `<span class="lozenge inprogress">Saved</span>` : ""}</td></tr>`).join("")
-      : `<tr class="empty-row"><td colspan="6">Nobody matches. Remove a filter or two.</td></tr>`;
+      : uniEmptyRow(6, "Nobody matches.");
   } else {
     head.innerHTML = `<tr>${selAll}<th>Company</th><th>Website</th><th>LinkedIn</th><th>Founded</th><th>Phone</th><th></th></tr>`;
     body.innerHTML = u.rows.length ? u.rows.map((c) => {
@@ -1451,7 +1464,7 @@ function renderUniResults() {
       <td class="nowrap uni-row-actions">${c.saved ? statusLozenge(c.saved) : ""}
         <button class="btn subtle compact" data-people="${esc(c.id)}" data-name="${esc(c.name)}" title="People search, limited to this company (free)">People here</button>
         <button class="btn subtle compact" data-like="${esc(c.id)}" data-name="${esc(c.name)}" title="Use as a lookalike seed">Lookalikes</button></td></tr>`;
-    }).join("") : `<tr class="empty-row"><td colspan="7">No company matches. Remove a filter or two.</td></tr>`;
+    }).join("") : uniEmptyRow(7, "No company matches.");
   }
   const from = u.total ? (u.page - 1) * u.perPage + 1 : 0, to = Math.min(u.page * u.perPage, u.total);
   $("#uniInfo").textContent = u.total ? `${from.toLocaleString()}–${to.toLocaleString()} of ${u.total.toLocaleString()}${u.total > 500 * u.perPage ? " (Apollo shows the first 500 pages)" : ""}` : "";
@@ -1703,6 +1716,10 @@ function bindUniversal() {
     }
   });
   res.addEventListener("click", (e) => {
+    const sg = e.target.closest("[data-suggest]");
+    if (sg) { e.preventDefault(); $("#uniQuery").value = u.suggest || ""; return uniSearch(1); }
+    const typed = e.target.closest("[data-as-typed]");
+    if (typed) { e.preventDefault(); return uniSearch(1, true); }
     const p = e.target.closest("[data-people]");
     if (p) return uniPeopleAt([[p.dataset.people, p.dataset.name]]);
     const l = e.target.closest("[data-like]");

@@ -254,6 +254,16 @@ def offline():
           {"q_organization_keyword_tags": ["lead generation agencies", "lead generation agency"]})
     check("  a modifier alone is not a job (marketing agencies)", rd(apollo.P, "marketing agencies")[0],
           {"q_organization_keyword_tags": ["marketing agencies", "marketing agency"]})
+    # a typo is caught before a paid page is spent on it (owner, 2026-09-21: "UAE Restraunts" found nothing)
+    for text, want in (("UAE Restraunts", "UAE Restaurants"), ("resteraunts in Dubai", "restaurants in Dubai"),
+                       ("hotles in UAE", "hotels in UAE"), ("arcaeds in the US", "arcades in the US"),
+                       ("animaton studios", "animation studios"), ("prodcution houses in India", "production houses in India"),
+                       ("arcades in Califronia", "arcades in California"), ("cofee shops", "coffee shops")):
+        check("  typo: %r -> %r" % (text, want), apollo.did_you_mean(text), want)
+    real_words = ["UAE restaurants", "US arcades", "esports teams", "golf courses", "yacht charters", "karaoke bars",
+                  "saloons in Texas", "producers at animation studios in California", "heads of partnerships",
+                  "Netflix studios", "Bollywood production houses", "clipping agencies", "wedding planners in Dubai"]
+    check("  real words are never questioned", [t for t in real_words if apollo.did_you_mean(t)], [])
     check("a saved search's summary starts with the words searched",
           apollo.describe(apollo.C, {"q_text": "US arcades", "organization_num_employees_ranges": ["1,10"]}),
           "Companies · “US arcades” · # of employees: 1-10")

@@ -90,6 +90,13 @@ def build_router(cursor):
         with cursor() as cur:
             _, cfg = segment(cur)
         people_per = int((cfg.get("apollo") or {}).get("per_page") or 25)
+        q_text = (b.get("filters") or {}).get("q_text")
+        suggestion = apollo.did_you_mean(q_text) if kind in ("people", "companies") else None
+        if kind == "companies" and suggestion and not b.get("as_typed"):
+            # a page of companies costs a credit whatever it finds, so a likely typo is asked about first
+            # and Apollo is not called (owner, 2026-09-21: "UAE Restraunts" found nothing and cost one)
+            return {"companies": [], "total": 0, "page": 1, "total_pages": 0, "held": True,
+                    "did_you_mean": suggestion, "read_as": ""}
         try:
             if kind == "people":
                 out = apollo.search_people(b.get("filters") or {}, b.get("page") or 1, people_per)
@@ -115,7 +122,8 @@ def build_router(cursor):
             status(force=True)                              # a page of companies cost a credit
         # how the search bar's words were read ("companies tagged "arcade" or "arcades", based in United
         # States"), so the page can say what was searched rather than leave the reading hidden
-        out["read_as"] = apollo.read_search_text(kind, (b.get("filters") or {}).get("q_text"))[1]
+        out["read_as"] = apollo.read_search_text(kind, q_text)[1]
+        out["did_you_mean"] = suggestion                    # shown beside an empty result: free to try
         return out
 
     @r.post("/api/universal/save")

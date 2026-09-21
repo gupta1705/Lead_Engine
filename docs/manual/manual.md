@@ -123,6 +123,12 @@ included), what the company does becomes the same company tags as above, and the
 place is the employer's HQ. Until 21 September the words went to profile
 keywords, which matched company names: *producers in California* found staff at a
 food firm called Flavor Producers; read as a title it finds 36,594 producers.
+**Typos are caught before they cost anything.** Apollo matches tags word for word,
+so *UAE Restraunts* finds nothing, while *UAE restaurants* finds thousands. When a
+word looks mistyped, a company search is not sent (no credit spent) and the page
+asks: *Did you mean UAE Restaurants?*, with a link to search that, or to search
+what you typed after all. A people search is free, so it runs and shows the same
+suggestion if it finds nobody.
 After each search, a line under the bar says exactly how it was read, for example
 *Searched people titled "producer", at companies tagged "animation studios" or
 "animation studio", based in California*. To find one company by its name, use

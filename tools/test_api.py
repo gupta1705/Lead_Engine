@@ -515,6 +515,19 @@ def main_():
               (200, ["ZZ Arcade Co"]))
         check("  read as a segment and a place", r.json().get("read_as", "").lower().count("arcade") > 0
               and "united states" in r.json().get("read_as", "").lower(), True)
+        # a likely typo in a paid company search is asked about first, and Apollo is not called
+        paid_before = fake.calls.count("/mixed_companies/search")
+        r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "companies", "filters": {"q_text": "UAE Restraunts"}})
+        check("a company search with a typo is held: no Apollo call, no credit, a suggestion",
+              (r.status_code, r.json().get("held"), r.json().get("did_you_mean"), fake.calls.count("/mixed_companies/search") - paid_before),
+              (200, True, "UAE Restaurants", 0))
+        r = call("POST", "/api/universal/search", cookies=tvf,
+                 json={"kind": "companies", "filters": {"q_text": "UAE Restraunts"}, "as_typed": True})
+        check("  searched as typed when asked: Apollo is called", (r.status_code, bool(r.json().get("held")),
+              fake.calls.count("/mixed_companies/search") - paid_before), (200, False, 1))
+        r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "UAE Restraunts"}})
+        check("  a people search (free) runs, with the suggestion beside it",
+              (r.status_code, bool(r.json().get("held")), r.json().get("did_you_mean")), (200, False, "UAE Restaurants"))
         check("a search with no kind: 400", call("POST", "/api/universal/search", cookies=tvf, json={}).status_code, 400)
         check("a filter Apollo would refuse: 400", call("POST", "/api/universal/search", cookies=tvf,
                                                         json={"kind": "companies", "filters": {"revenue_range": {"min": -5}}}).status_code, 400)

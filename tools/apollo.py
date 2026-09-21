@@ -451,6 +451,133 @@ def people_titles(text):
     return titles, " ".join(kept).replace(" , ", ", ").strip(" ,").strip()
 
 
+# Words searches are made of, for catching a typo BEFORE a paid page is spent on it (owner, 2026-09-21:
+# "UAE Restraunts" found nothing and cost a credit; "UAE restaurants" has thousands). Singular, lower
+# case; plurals come from word_forms. Not a dictionary: a word missing here is only questioned when it is
+# one slip away from a word that is here, and the person can always search it as typed.
+TAG_WORDS = set("""
+restaurant cafe coffee bakery bar pub brewery winery distillery catering caterer hotel motel resort hostel
+hospitality food beverage grocery supermarket deli pizzeria pizza burger sushi dining diner bistro eatery
+nightclub club lounge kitchen chef confectionery dessert juice tea chocolate butcher seafood halal vegan
+organic dairy meat poultry farm farming agriculture agritech fishery bollywood hollywood tollywood
+arcade amusement park theme bowling alley cinema theater theatre film movie studio animation production
+media entertainment music record label radio television broadcast broadcasting streaming podcast
+publishing publisher magazine newspaper news journalism gaming game esports casino gambling betting
+lottery event festival concert venue ticketing talent agency advertising marketing branding design
+creative digital content social influencer photography photographer video videography art gallery museum
+culture sport fitness gym yoga pilates martial dance wellness spa salon barber beauty cosmetics skincare
+fashion apparel clothing textile footwear jewelry jewellery watch luxury accessory eyewear toy hobby craft
+trampoline karting laser escape room water zoo aquarium family kids children comedy drama documentary
+retail retailer store shop boutique ecommerce marketplace wholesale wholesaler distributor distribution
+import export trading franchise mall outlet convenience pharmacy florist furniture homeware decor interior
+appliance electronics hardware bookstore stationery gift pet veterinary
+consulting consultancy consultant legal law lawyer accounting accountant audit tax finance financial bank
+banking insurance investment investor venture capital equity fintech payment crypto blockchain wealth
+asset fund lending loan mortgage credit brokerage broker estate property realty construction contractor
+builder architecture architect engineering engineer plumbing electrical roofing landscaping cleaning
+laundry security staffing recruitment recruiting outsourcing logistics shipping freight courier delivery
+transport transportation trucking warehouse warehousing supply chain moving storage travel tourism tour
+airline aviation airport cruise car auto automotive dealership rental taxi parking fuel oil energy solar
+renewable wind electric utility waste recycling environmental mining metal steel chemical plastic
+packaging printing paper manufacturing manufacturer factory industrial machinery equipment tool
+aerospace defense defence marine shipbuilding
+healthcare health hospital clinic medical dental dentist pharma pharmaceutical biotech biotechnology
+laboratory diagnostics telehealth nursing care elderly senior childcare daycare physiotherapy therapy
+mental optician optometry
+education edtech school university college academy training tutoring coaching learning preschool
+kindergarten institute
+software saas technology tech cloud data analytics intelligence machine cybersecurity app mobile web
+internet hosting telecom telecommunication network networking semiconductor robotics platform startup
+developer development
+nonprofit charity foundation government public religious church mosque temple association community
+cooperative society union
+company business firm group house office center centre service solution system brand chain holding
+enterprise partner supplier provider maker producer creator channel youtube clipping clip streamer
+indie independent premium budget casual fine quick small medium large global international local adult
+based located near
+team league player crew collective hub lab home garden space villa apartment coworking wedding bridal party
+dealer operator vendor seller trader exporter importer trainer teacher tutor doctor physician nurse coach
+instructor organizer organiser owner mechanic garage repair tailor laundromat optical dojo jeweller jeweler
+golf tennis football soccer cricket basketball baseball hockey rugby swimming cycling running boxing
+wrestling racing motorsport anime manga comic virtual reality metaverse youtuber tiktok instagram vintage
+thrift secondhand wash tire tyre vehicle bike bicycle motorcycle scooter boat yacht camping outdoor hiking
+new top best leading major emerging growing funded early stage series seed bootstrapped owned operated
+saloon wine mine line cake bread beer spirit course charter yacht rent lease class camp
+""".split())
+_KNOWN = None
+
+
+def _known_words():
+    """Every form the typo check accepts as written: the words above and their plurals, the job words,
+    the joiners, and each word of the places the bar knows."""
+    global _KNOWN
+    if _KNOWN is None:
+        words = set()
+        for w in TAG_WORDS | TITLE_ROLES | TITLE_MODIFIERS:
+            words.update(word_forms(w))
+        words |= _JOINERS
+        for p in _PLACES:
+            words.update(p.split())
+        _KNOWN = (words, sorted(w for w in words if len(w) > 3))
+    return _KNOWN
+
+
+def _slips(a, b):
+    """Edits between two words: insert, delete, substitute, or swap two neighbours (optimal alignment)."""
+    d = [[i + j if not i * j else 0 for j in range(len(b) + 1)] for i in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+    return d[-1][-1]
+
+
+def _typo_of(word, cand):
+    """Is `word` a typo of `cand`? One slip always is. Up to three is, for a word of eight letters or more
+    that starts as `cand` does and is still 84% alike, or keeps its first four and last two letters:
+    "restraunts" (3 slips) is restaurants, "courses" is not couriers, "charters" is not charities."""
+    import difflib
+    n = _slips(word, cand)
+    if n == 0:
+        return False
+    if n == 1:
+        return True
+    if n <= 3 and len(word) >= 8 and word[:3] == cand[:3]:
+        r = max(difflib.SequenceMatcher(None, word, cand).ratio(), difflib.SequenceMatcher(None, cand, word).ratio())
+        return r >= 0.84 or (word[:4] == cand[:4] and word[-2:] == cand[-2:])
+    return False
+
+
+def did_you_mean(text):
+    """The search bar's text with its likely typos fixed, or None: "UAE Restraunts" -> "UAE Restaurants".
+    A word is changed only when it is not a known one and is a typo of one (_typo_of); words of three
+    letters or fewer, and anything with a digit, are left alone."""
+    import difflib
+    s = " ".join(str(text or "").split())
+    if not s:
+        return None
+    known, candidates = _known_words()
+    out, changed = [], False
+    for tok in s.split(" "):
+        core = tok.strip(",.;:!?()\"'")
+        low = core.lower()
+        fix = None
+        if len(low) > 3 and low.isalpha() and low not in known:
+            near = [c for c in difflib.get_close_matches(low, candidates, n=6, cutoff=0.7) if _typo_of(low, c)]
+            m = sorted(near, key=lambda c: (_slips(low, c), -difflib.SequenceMatcher(None, low, c).ratio()))[:1]
+            if m:
+                fix = _PLACES.get(m[0]) or m[0]           # a place keeps its own spelling: California
+                if core[:1].isupper() and fix[:1].islower():
+                    fix = fix[:1].upper() + fix[1:]
+        if fix and fix.lower() != low:
+            out.append(tok.replace(core, fix))
+            changed = True
+        else:
+            out.append(tok)
+    return " ".join(out) if changed else None
+
+
 def read_search_text(kind, text):
     """The search bar's text as Apollo filters, and how it was read, for the page to show.
     -> (filters, read_as). "US arcades" -> tags arcade/arcades, HQ in the United States;
