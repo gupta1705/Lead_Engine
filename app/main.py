@@ -879,6 +879,11 @@ def mailboxes_state(segment: str = Depends(current_segment)):
         except ValueError as e:
             raise HTTPException(500, "config outreach.mailboxes is invalid: %s" % e)
         status = pol.mailbox_status(cur, segment, boxes, _dt.datetime.now(_dt.timezone.utc).date())
+        # approved and waiting to go out: past today's room they go from tomorrow on, oldest first
+        cur.execute("select count(*) as n from outreach o join entities e on e.id = o.entity_id"
+                    " where e.segment_id = (select id from segments where slug = %s)"
+                    "   and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null", (segment,))
+        approved_waiting = cur.fetchone()["n"]
     keep = ("key", "email_env", "daily_cap", "warmup", "enabled", "cap_today", "sent_today",
             "remaining", "last_address", "warmup_day")
     out = []
@@ -894,6 +899,7 @@ def mailboxes_state(segment: str = Depends(current_segment)):
     return {"segment_cap": segment_cap, "rotation": bool(cfg.get("mailboxes")),
             "mailboxes": out, "paused": pol.sending_paused(cfg),
             "sent_today": sum(int(r.get("sent_today") or 0) for r in out),
+            "approved_waiting": int(approved_waiting),
             "limit_today": min(segment_cap, sum(int(r.get("cap_today") or 0) for r in out if r.get("enabled"))),
             "resets_at": _dt.datetime.combine(now.date() + _dt.timedelta(days=1), _dt.time(0),
                                               tzinfo=_dt.timezone.utc).isoformat(),

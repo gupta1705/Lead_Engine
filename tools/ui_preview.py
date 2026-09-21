@@ -225,7 +225,9 @@ MOCK_JS = r"""
         && String(r.sent_at).slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
       const tomorrow = new Date(); tomorrow.setUTCHours(24, 0, 0, 0);
       return json(FX.mailboxes || { segment_cap: cap, rotation: false, paused: FX.segment.sending_paused || null,
-        sent_today: sentToday, limit_today: cap, resets_at: tomorrow.toISOString(), can_send: true, mailboxes: [
+        sent_today: sentToday, limit_today: cap, resets_at: tomorrow.toISOString(), can_send: true,
+        approved_waiting: FX.outreach.rows.filter((r) => r.direction !== "inbound" && r.status === "approved").length,
+        mailboxes: [
         { key: "default", email_env: "GMAIL_SENDER_ADDRESS", daily_cap: cap, warmup: null, enabled: true, connected: true,
           cap_today: cap, sent_today: sentToday, remaining: cap - sentToday, last_address: null, warmup_day: 0, first_sent: null }] });
     }

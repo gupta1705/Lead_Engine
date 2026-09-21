@@ -372,7 +372,13 @@ project's connected mailbox, inside the day's sending limit and each mailbox's
 warm-up, and never to an address that failed verification. The counter at the
 top of Outreach shows how many have gone out today against that limit (35 a day
 in US Production Houses) and when the count starts again: midnight UTC, which is
-5:30 am in India. When the day's limit
+5:30 am in India.
+
+Approve as many as you like. Anything past the day's limit waits in Approved and
+goes out from the next day on, oldest first, a day's limit at a time, until the
+queue is empty. The counter says how many are waiting ("31 more from
+tomorrow"), and holding the mouse over it says how many days the queue will
+take. When the day's limit
 is used up, it goes out first thing the next day. Until a mailbox is connected
 (see *What only you can do*), approved emails wait in Approved.
 

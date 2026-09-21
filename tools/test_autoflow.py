@@ -152,6 +152,14 @@ def main():
                 e2, c2 = lead(seg_id, "contacted")
                 mail(e2, c2, "sent", sent_today=True)
             check("the day's cap is used up: it waits for tomorrow's tick", s.outreach_work(slug)["send"], False)
+            # the owner's rule (2026-09-21): past the day's limit, the rest go out from the next day on.
+            # Tomorrow is simulated by moving today's sends to yesterday: the waiting email is sent again.
+            cur.execute("update outreach set sent_at = sent_at - interval '1 day' where status = 'sent' and entity_id in"
+                        " (select id from entities where segment_id = %s)", (seg_id,))
+            check("the next day the count starts again and the waiting email goes out",
+                  s.outreach_work(slug)["send"], True)
+            cur.execute("update outreach set sent_at = sent_at + interval '1 day' where status = 'sent' and entity_id in"
+                        " (select id from entities where segment_id = %s)", (seg_id,))
 
             # ten shortlists in a row are one or two runs, not ten
             count = {"n": 0}

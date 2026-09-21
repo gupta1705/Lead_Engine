@@ -1101,8 +1101,18 @@ function renderSendCounter(m) {
     text = `${sent} of ${limit} sent today`;
     if (!m.can_send) { tone = "idle"; title += " No mailbox is connected on the server yet, so nothing goes out."; }
   }
+  // the queue: approved emails past today's room go out from tomorrow on, oldest first, a day's limit at a time
+  const waiting = m.approved_waiting || 0, room = Math.max(0, limit - sent);
+  const later = m.paused ? waiting : Math.max(0, waiting - room);
+  let queue = "";
+  if (later && limit) {
+    const days = m.paused ? 0 : Math.ceil(later / limit);
+    queue = m.paused ? ` · ${later} approved waiting` : ` · ${later} more from tomorrow`;
+    title += m.paused ? "" : ` ${waiting} approved: ${Math.min(waiting, room)} go out today, the other ${later} ` +
+      (days > 1 ? `over the next ${days} days` : "tomorrow") + `, ${limit} a day, oldest first.`;
+  }
   el.className = "send-counter" + (tone ? " " + tone : "");
-  el.innerHTML = `<b>${esc(text)}</b>${m.paused ? "" : `<span class="muted"> · resets ${esc(resets)}</span>`}`;
+  el.innerHTML = `<b>${esc(text)}</b>${esc(queue)}${m.paused ? "" : `<span class="muted"> · resets ${esc(resets)}</span>`}`;
   el.title = title;
   el.hidden = false;
 }
