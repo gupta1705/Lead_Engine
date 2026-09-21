@@ -333,7 +333,8 @@ set config = '{
   "enrichment": {
     "provider": "apollo",
     "enabled": true,
-    "score_over": 30,
+    "score_over": 22.5,
+    "find_website_by_name": true,
     "credits_per_run": 150,
     "verified_only": true,
     "recheck_after_days": 30,
@@ -341,7 +342,7 @@ set config = '{
     "email_verifier": "apollo",
     "fallback": "site_scrape_then_human_confirm",
     "fallback_enabled": false,
-    "guidance": "Apollo is the enrichment and verification backbone (owner decision 2026-08-20): organization match by domain, then people search filtered to target_contact_roles, then Apollo verification status mapped onto contacts.email_status. Hunter (pattern oracle) and Reoon (verifier) were dropped from the critical path on the same date, and the pattern-guess hedge they required is deleted with them. The site-scrape path survives only as backlog item B1, disabled by default: it is pulled into the ladder only if Checkpoint 2 (P17) shows Apollo missing more than roughly 30 percent of 2-10-person shops. Live since 2026-09-20 (tools/enrich_apollo.py, the enrich_apollo step of the weekly refresh): open leads with a website and no address get one Apollo search on their domain, filtered to target_contact_roles, and the best person is revealed for 1 credit. enabled gates the spending and is true for this segment only -- the decision that day was production houses, not clipping or startups. credits_per_run caps a run, verified_only asks Apollo for addresses it has checked, recheck_after_days is how long a company Apollo did not know is left alone. score_over (2026-09-21, the owner: if a company has a score over 30, Apollo should find its contact address) limits the spending to leads scoring above it; a written address also earns the lead its reachable_decision_maker points and re-scores it."
+    "guidance": "Apollo is the enrichment and verification backbone (owner decision 2026-08-20): organization match by domain, then people search filtered to target_contact_roles, then Apollo verification status mapped onto contacts.email_status. Hunter (pattern oracle) and Reoon (verifier) were dropped from the critical path on the same date, and the pattern-guess hedge they required is deleted with them. The site-scrape path survives only as backlog item B1, disabled by default: it is pulled into the ladder only if Checkpoint 2 (P17) shows Apollo missing more than roughly 30 percent of 2-10-person shops. Live since 2026-09-20 (tools/enrich_apollo.py, the enrich_apollo step of the weekly refresh): open leads with a website and no address get one Apollo search on their domain, filtered to target_contact_roles, and the best person is revealed for 1 credit. enabled gates the spending and is true for this segment only -- the decision that day was production houses, not clipping or startups. credits_per_run caps a run, verified_only asks Apollo for addresses it has checked, recheck_after_days is how long a company Apollo did not know is left alone. score_over limits the spending to leads scoring above it: the owner set 30 on 2026-09-21 and lowered it to 22.5 the same day (any lead over 22.5 with no contacts: find and add them), because a company with nobody to write to is missing the 10 contact points. A written address earns the lead those points and re-scores it. find_website_by_name looks a lead without a website up in Apollo by its exact name (1 credit) and takes the website only when exactly one company carries that name and no other lead holds it."
   },
   "outreach": {
     "sender": {

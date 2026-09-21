@@ -47,6 +47,11 @@ def offline():
           ea.pick([hit("Executive Producer", i=3), hit("Founder", i=4)], ROLES)[1], "a Founder")
     check("no target role: any senior title, and the reason says so",
           ea.pick([hit("Office Assistant", i=5), hit("Managing Director", i=6)], ROLES)[1], "a senior title")
+    tvf = ["Founder", "Co-Founder", "Head of Development", "Development Executive", "Executive Producer",
+           "Head of Acquisitions", "Head of Distribution"]
+    check("no exact role: the title sharing most words with the roles wins (Severin Films, 2026-09-21)",
+          ea.pick([hit("Head of QC, Licensor and Elements Research", i=9), hit("Acquisitions/Producer", i=10)],
+                  tvf)[0]["title"], "Acquisitions/Producer")
     check("nobody at all", ea.pick([], ROLES), (None, None))
 
     print("\n-- the searches, narrowest first (all free)")
@@ -76,6 +81,39 @@ def offline():
     check("no target roles configured: one search, no title filter and no status filter",
           [sorted(c.keys()) for c in calls], [["q_organization_domains_list"]])
 
+    calls[:] = []
+    answers = [[], [hit("Executive Producer", email=False, i=7)], [hit("Managing Director", i=8)]]
+    apollo.search_people = lambda f, p, n: stub(f, p, n, answers[len(calls)])
+    people, _ = ea.search("imaginaryforces.com", ROLES, True)
+    check("the right role with no address does not end the search: a senior person with one is found",
+          [p["id"] for p in people], [hit("", i=8)["id"]])
+    calls[:] = []
+    answers = [[], [hit("Executive Producer", email=False, i=7)], []]
+    apollo.search_people = lambda f, p, n: stub(f, p, n, answers[len(calls)])
+    people, _ = ea.search("imaginaryforces.com", ROLES, True)
+    check("nobody anywhere has an address: the role match is still reported, so the lead says why",
+          [p["id"] for p in people], [hit("", i=7)["id"]])
+
+    print("\n-- a lead with no website, looked up by its name (1 credit)")
+    check("a headline's '<place>-based' and the legal words go; the industry word stays",
+          [ea.name_key(n) for n in ("Atlanta-Based Freeli Films, LLC", "Sentient Entertainment", "The Asylum",
+                                    "Los Angeles-based Temple Hill Entertainment")],
+          ["freeli films", "sentient entertainment", "asylum", "temple hill entertainment"])
+    org = lambda name, dom, i: {"id": "%024x" % (0xe000 + i), "name": name, "primary_domain": dom}
+    apollo.search_companies = lambda f, p, n: {"companies": [org("Freeli Films", "freelifilms.com", 1),
+                                                             org("Freeli Films Group", "freeligroup.com", 2)]}
+    check("exactly one company carries the exact name: that one",
+          ea.find_company("Atlanta-Based Freeli Films")[0]["primary_domain"], "freelifilms.com")
+    apollo.search_companies = lambda f, p, n: {"companies": [org("Sentient Entertainment", "sentient.tv", 1),
+                                                             org("Sentient Entertainment", "sentientent.com", 2)]}
+    check("two companies share the name: neither, and a person decides",
+          ea.find_company("Sentient Entertainment"), (None, "2 companies in Apollo are named 'sentient entertainment'"
+                                                            " -- left for a person"))
+    apollo.search_companies = lambda f, p, n: {"companies": [org("Premeditated Productions", "facebook.com", 1)]}
+    check("a platform is not a company's website", ea.find_company("Premeditated Productions")[0], None)
+    apollo.search_companies = lambda f, p, n: {"companies": [org("Premeditated Media", "premeditated.media", 1)]}
+    check("a near name is not the name", ea.find_company("Premeditated Productions")[0], None)
+
     print("\n-- the reveal has to have landed at this company")
     def person(domain=None, email=None, name="Firm"):
         return {"name": "P Q", "email": email,
@@ -86,6 +124,17 @@ def offline():
           ea.same_company(person(None, "p@firm.com"), "firm.com"), True)
     check("moved on: employer and address both elsewhere",
           ea.same_company(person("other.com", "p@other.com"), "firm.com"), False)
+    severin = person("severinfilms.com", "kl@severinfilms.com", "Severin Films LLC")
+    check("Apollo's own website for the company counts when it was searched there",
+          (ea.same_company(severin, "severin-films.com"), ea.same_company(severin, "severin-films.com",
+                                                                        "severinfilms.com")), (False, True))
+
+    calls[:] = []
+    apollo.search_people = lambda f, p, n: stub(f, p, n, [hit("Acquisitions/Producer")])
+    ea.search("severin-films.com", ROLES, True, org_id="672c5f34b0a5ee00014985cb")
+    check("searching Apollo's record of the company: by its id, not the lead's website",
+          (calls[0].get("organization_ids"), "q_organization_domains_list" in calls[0]),
+          (["672c5f34b0a5ee00014985cb"], False))
 
     print("\n-- the gate that keeps credits where the owner put them")
     check("a segment with no enrichment block spends nothing",
@@ -107,6 +156,8 @@ def offline():
           ea.contact_value({"name": "Nina Shah", "email": "n@x.com", "email_status": "catch_all"}), 0.5)
     check("an address with nobody's name on it: half",
           ea.contact_value({"name": "", "email": "n@x.com", "email_status": "valid"}), 0.5)
+    check("an address Apollo has not verified: half, as the rubric says",
+          ea.contact_value({"name": "Nina Shah", "email": "n@x.com", "email_status": "unverified"}), 0.5)
     check("nothing to write to: nothing", ea.contact_value({"name": "Nina Shah", "email": None}), 0.0)
     import dbconn
     keep = (dbconn.Db, apollo.key_is_set, ea.segment_config, sys.argv)
@@ -254,6 +305,28 @@ def database():
         cur.execute("select (metadata->'scoring_inputs'->>'reachable_decision_maker')::numeric from entities"
                     " where id = %s", (above,))
         check("and the 1.0 stays", float(cur.fetchone()[0]), 1.0)
+
+        print("\n-- no website: the lead is included only when the config says to look it up by name")
+        nosite = lead("Premeditated Productions", None, "shortlisted")
+        cur.execute("update entities set fit_score = 29.6 where id = %s", (nosite,))
+        check("find_website_by_name off: a lead without a website is not offered",
+              "Premeditated Productions" in [r[1] for r in ea.candidates(db, False, 50, 30, True, 22.5)], False)
+        check("on: it is, when it scores over the line",
+              "Premeditated Productions" in [r[1] for r in ea.candidates(db, False, 50, 30, True, 22.5, True)], True)
+        got = ea.give_website(db, nosite, {"id": "%024x" % 0xe101, "name": "Premeditated Productions",
+                                           "primary_domain": "https://www.premeditatedproductions.com/"})
+        cur.execute("select domain, metadata->>'domain_resolution' from entities where id = %s", (nosite,))
+        check("the website Apollo knows is written, with where it came from",
+              (got, cur.fetchone()), ("premeditatedproductions.com",
+                                      ("premeditatedproductions.com",
+                                       "apollo company search: Premeditated Productions (%024x)" % 0xe101)))
+        twin = lead("Premeditated Prods", None, "ready_for_review")
+        check("a website another lead already holds is not written: the same company twice is a merge",
+              ea.give_website(db, twin, {"id": "%024x" % 0xe102, "name": "Premeditated Prods",
+                                         "primary_domain": "premeditatedproductions.com"}), None)
+        cur.execute("select domain, metadata->>'domain_conflict' from entities where id = %s", (twin,))
+        check("and the lead says why", cur.fetchone(),
+              (None, "premeditatedproductions.com already belongs to Premeditated Productions"))
     finally:
         conn.rollback()
         cur.close()

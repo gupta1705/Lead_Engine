@@ -35,14 +35,22 @@ RULES, each one an invariant the rest of the engine already keeps:
     only, so running this by hand against another segment spends nothing.
   * OPEN LEADS ONLY (ready_for_review, shortlisted). A rejected or archived
     lead is never enriched: the rejection is a shield, not a pause.
-  * ONLY LEADS WORTH IT. score_over in the config (30 for production houses,
-    the owner's rule on 2026-09-21: "if a company has a score over 30 apollo
-    should find their contact addresses") keeps credits off the long tail --
-    before it, a run took the best 120 by score whatever they scored, which
-    meant paying for companies at 0-9.
+  * ONLY LEADS WORTH IT. score_over in the config keeps credits off the long
+    tail -- before it, a run took the best 120 by score whatever they scored,
+    which meant paying for companies at 0-9. The owner set it to 30 on
+    2026-09-21 and lowered it the same day to 22.5: "any lead over 22.5 with
+    no contacts find and add them". A company with nobody to write to is
+    missing the 10 contact points, so 22.5 is roughly 30 once it has someone.
+  * NO WEBSITE IS NOT A DEAD END (find_website_by_name). The lead is looked up
+    by its name in Apollo's company search, 1 credit, and accepted only when
+    exactly one company carries that exact name ("Atlanta-Based Freeli Films"
+    is looked up as "freeli films") with a website that is not a platform's.
+    The website is written to the lead unless another lead already holds it,
+    which is the same company twice and a merge for a person -- the rule
+    tools/resolve_domains.py keeps.
   * THE ADDRESS COUNTS. A written contact earns the rubric's
-    reachable_decision_maker (10 points; 1.0 a named person, 0.5 a catch-all),
-    on the scale sql/10_enrich_template.sql set for Apollo contacts, and the
+    reachable_decision_maker (10 points; 1.0 a named person whose address
+    Apollo verified, 0.5 any other address), on the rubric's own scale, and the
     lead is re-scored on the spot. Never lowered: a finding from AICP or the
     site that is worth more stays.
   * THE PERSON HAS TO STILL WORK THERE. Apollo's domain filter counts past
@@ -115,18 +123,20 @@ def enrich_block(cfg):
             "verified_only": b.get("verified_only") is not False,
             "credits_per_run": int(b.get("credits_per_run") or DEFAULT_BUDGET),
             "stale_days": int(b.get("recheck_after_days") or STALE_DAYS),
-            "score_over": over}
+            "score_over": over,
+            "by_name": b.get("find_website_by_name") is True}
 
 
 def contact_value(person):
-    """reachable_decision_maker for what Apollo gave, on the scale sql/10_enrich_template.sql set for
-    Apollo contacts: 1.0 a named person with a real address, 0.5 an address Apollo calls catch-all
-    (it may land anywhere), 0 nobody."""
+    """reachable_decision_maker for what Apollo gave, on the rubric's own scale ("1.0 if a target-role
+    contact has a valid email, 0.5 if catch-all, else 0"; sql/10_enrich_template.sql): 1.0 a named
+    person whose address Apollo has verified, 0.5 an address it has not (catch-all, unverified, or
+    nobody's name on it), 0 nothing to write to."""
     if not person or not person.get("email"):
         return 0.0
-    if person.get("email_status") == "catch_all" or not person.get("name"):
-        return 0.5
-    return 1.0
+    if person.get("email_status") == "valid" and person.get("name"):
+        return 1.0
+    return 0.5
 
 
 def credit_contact(cur, eid, value):
@@ -159,31 +169,53 @@ def role_rank(title, roles):
     return 0, None
 
 
+def role_words(roles):
+    """The words the target roles are made of: founder, head, development, executive, producer..."""
+    return {w for r in roles for w in re.findall(r"[a-z]+", str(r or "").lower())
+            if len(w) > 2 and w not in ("the", "and")}
+
+
 def pick(people, roles):
-    """The one person to pay for: an address first, then the closest role, then any senior title."""
+    """The one person to pay for: an address first, then the closest role, then the title sharing most
+    words with the target roles, then any senior title. The word overlap replaced a title-length tiebreak
+    that chose Severin Films' Head of QC over its Acquisitions/Producer."""
+    words = role_words(roles)
     best, best_key, matched = None, None, None
     for p in people:
-        rank, role = role_rank(p.get("title"), roles)
-        senior = 1 if SENIOR_RE.search(p.get("title") or "") else 0
-        key = (1 if p.get("has_email") else 0, rank, senior, len(p.get("title") or ""))
+        title = p.get("title") or ""
+        rank, role = role_rank(title, roles)
+        overlap = len(words & set(re.findall(r"[a-z]+", title.lower())))
+        senior = 1 if SENIOR_RE.search(title) else 0
+        key = (1 if p.get("has_email") else 0, rank, overlap, senior)
         if best_key is None or key > best_key:
             best, best_key, matched = p, key, role
     if not best:
         return None, None
-    why = ("a %s" % matched) if matched else ("a senior title" if best_key[2] else "the only person Apollo lists")
+    why = (("a %s" % matched) if matched else "a title close to the target roles" if best_key[2]
+           else "a senior title" if best_key[3] else "the only person Apollo lists")
     return best, why
 
 
-def same_company(person, domain):
-    """Apollo's domain filter counts past employers, so check the reveal actually landed there."""
+def same_company(person, domain, also=None):
+    """Apollo's domain filter counts past employers, so check the reveal actually landed there. `also` is
+    the website Apollo files the same company under, when that differs from the lead's (Severin Films:
+    severin-films.com on the lead, severinfilms.com in Apollo)."""
     def near(a, b):
         return bool(a) and bool(b) and (a == b or a.endswith("." + b) or b.endswith("." + a))
     org = person.get("organization") or {}
     d = store.norm_domain(org.get("primary_domain") or org.get("website_url"))
-    if near(d, domain):
-        return True
     email = (person.get("email") or "").lower()
-    return near(email.split("@")[-1] if "@" in email else None, domain)
+    at = email.split("@")[-1] if "@" in email else None
+    return any(near(d, x) or near(at, x) for x in (domain, also) if x)
+
+
+def headcount(domain):
+    """Free: how many people Apollo lists at the website at all, so "nobody" and "nobody worth a credit"
+    read differently in the log."""
+    try:
+        return apollo.search_people({"q_organization_domains_list": [domain]}, 1, 1)["total"]
+    except apollo.ApolloError:
+        return None
 
 
 NO_EMAIL_SQL = """
@@ -197,16 +229,18 @@ UNNAMED_SQL = """
                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)"""
 
 
-def candidates(db, unnamed, limit, stale_days, recheck, score_over=None):
-    """Open leads with a website that Apollo could put a person behind -- and, when the config
-    sets score_over, only the ones scoring above it (owner, 2026-09-21: "if a company has a score
-    over 30 apollo should find their contact addresses"). Shortlisted first, then best score."""
+def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name=False):
+    """Open leads that Apollo could put a person behind -- and, when the config sets score_over, only
+    the ones scoring above it (owner, 2026-09-21: "any lead over 22.5 with no contacts find and add
+    them"). A lead without a website is included only when by_name is on: it is looked up by its
+    name first. Shortlisted first, then best score."""
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=stale_days)).replace(microsecond=0).isoformat()
     sql = """
         select e.id, e.name, e.domain, e.status, e.fit_score
         from entities e join segments s on s.id = e.segment_id
-        where s.slug = %s and e.status = any(%s) and e.domain is not null
-    """ + (UNNAMED_SQL if unnamed else NO_EMAIL_SQL) + ("" if recheck else """
+        where s.slug = %s and e.status = any(%s)
+    """ + ("" if (by_name and not unnamed) else "  and e.domain is not null\n") + (
+        UNNAMED_SQL if unnamed else NO_EMAIL_SQL) + ("" if recheck else """
           and coalesce(e.metadata->>'apollo_checked_at', '') < %s""") + ("" if score_over is None else """
           and coalesce(e.fit_score, 0) > %s""") + """
         order by case when e.status = 'shortlisted' then 0 else 1 end,
@@ -217,13 +251,16 @@ def candidates(db, unnamed, limit, stale_days, recheck, score_over=None):
     return db.run(lambda cur: (cur.execute(sql, args), cur.fetchall())[1])
 
 
-def stamp(db, eid, outcome, person=None, credits=0.0):
-    """What happened to this lead, on the lead, with its date."""
+def stamp(db, eid, outcome, person=None, credits=0.0, via=None):
+    """What happened to this lead, on the lead, with its date. `via` is the website Apollo files the
+    company under, when the person was found there rather than at the lead's own."""
     patch = {"apollo_checked": "%s:%s" % (STAMP, outcome), "apollo_checked_at": now_iso()}
     if person:
         patch["apollo_enrich"] = {"at": patch["apollo_checked_at"], "person": person.get("apollo_id"),
                                   "name": person.get("name"), "title": person.get("title"),
                                   "email_status": person.get("apollo_email_status"), "credits": credits}
+        if via:
+            patch["apollo_enrich"]["apollo_domain"] = via
 
     def write(cur):
         cur.execute("update entities set metadata = coalesce(metadata, '{}'::jsonb) where id = %s and metadata is null",
@@ -240,26 +277,84 @@ def stamp(db, eid, outcome, person=None, credits=0.0):
     return db.run(write)
 
 
-def search(domain, roles, verified_only):
-    """Free. Narrowest first: the target roles with an address on file, then the roles, then anyone senior."""
-    base = {"q_organization_domains_list": [domain]}
+def search(domain, roles, verified_only, org_id=None):
+    """Free. Narrowest first: the target roles with an address on file, then the roles, then anyone senior.
+    A pass that finds people but nobody with an address does not end the search -- Imaginary Forces had
+    two executive producers with no address and a senior person with one, and the first build stopped at
+    the producers. Only when no pass has anyone with an address is the first set of people returned.
+    org_id searches Apollo's own record of the company instead of the lead's website."""
+    base = {"organization_ids": [org_id]} if org_id else {"q_organization_domains_list": [domain]}
     passes = []
     if roles:
         if verified_only:
             passes.append(dict(base, person_titles=roles, contact_email_status=["verified"]))
         passes.append(dict(base, person_titles=roles))
     passes.append(dict(base, contact_email_status=["verified"]) if verified_only else dict(base))
+    fallback = None
     for i, filters in enumerate(passes):
         out = apollo.search_people(filters, 1, 10)
         people = out["people"]
-        if people:
-            # the widest pass is anyone at the company: only a senior title is worth a credit there
-            if i == len(passes) - 1 and roles:
-                people = [p for p in people if SENIOR_RE.search(p.get("title") or "")]
-                if not people:
-                    continue
+        # the widest pass is anyone at the company: only a senior title is worth a credit there
+        if i == len(passes) - 1 and roles:
+            people = [p for p in people if SENIOR_RE.search(p.get("title") or "")]
+        if not people:
+            continue
+        if any(p.get("has_email") for p in people):
             return people, out["total"]
-    return [], 0
+        fallback = fallback or (people, out["total"])
+    return fallback or ([], 0)
+
+
+# Words that say what kind of company it is legally, not which company. Industry words stay:
+# "Sentient Entertainment" and "Sentient" are not the same name.
+LEGAL_WORDS = {"inc", "llc", "ltd", "limited", "corp", "corporation", "co", "company", "incorporated",
+               "the", "plc", "lp", "llp"}
+
+
+def name_key(name):
+    """A company name reduced to what identifies it: "Atlanta-Based Freeli Films, LLC" -> "freeli films".
+    The "<place>-based" prefix is how a headline introduces a company, and the news connector kept it."""
+    s = re.sub(r"^[a-z .'&-]+?-based\s+", "", str(name or "").strip(), flags=re.I).lower()
+    return " ".join(w for w in re.findall(r"[a-z0-9]+", s) if w not in LEGAL_WORDS)
+
+
+def find_company(name):
+    """1 credit (a company search page). The company's own record in Apollo -- only when exactly one
+    company is named exactly this, with a website of its own. -> (org, None) or (None, why)."""
+    import resolve_domains
+    key = name_key(name)
+    if len(key) < 3:
+        return None, "the name is too short to look up"
+    out = apollo.search_companies({"q_organization_name": key}, 1, 10)
+    same = [c for c in out["companies"]
+            if name_key(c.get("name")) == key and c.get("primary_domain")
+            and not resolve_domains.is_third_party(c.get("primary_domain"))]
+    if len(same) == 1:
+        return same[0], None
+    if not same:
+        return None, "Apollo has no company named exactly %r" % key
+    return None, "%d companies in Apollo are named %r -- left for a person" % (len(same), key)
+
+
+def give_website(db, eid, org):
+    """The lead's website, from Apollo's record of it -- unless another lead already has that website:
+    then it is the same company under a second row, a merge for a person (tools/resolve_domains.py keeps
+    the same rule, after that collision stopped two weekly refreshes). -> True when written."""
+    dom = store.norm_domain(org.get("primary_domain"))
+
+    def write(cur):
+        cur.execute("select name from entities where domain = %s and id <> %s"
+                    " and segment_id = (select segment_id from entities where id = %s)", (dom, eid, eid))
+        other = cur.fetchone()
+        if other:
+            cur.execute("update entities set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{domain_conflict}',"
+                        " to_jsonb(%s::text)) where id = %s", ("%s already belongs to %s" % (dom, other[0]), eid))
+            return False
+        cur.execute("update entities set domain = %s, metadata = jsonb_set(coalesce(metadata, '{}'::jsonb),"
+                    " '{domain_resolution}', to_jsonb(%s::text)), updated_at = now() where id = %s and domain is null",
+                    (dom, "apollo company search: %s (%s)" % (org.get("name"), org.get("id")), eid))
+        return cur.rowcount == 1
+    return dom if db.run(write) else None
 
 
 def main():
@@ -271,6 +366,8 @@ def main():
     ap.add_argument("--recheck", action="store_true", help="leads checked recently too")
     ap.add_argument("--score-over", type=float, default=None,
                     help="only leads scoring above this (default: the config's score_over)")
+    ap.add_argument("--lead", action="append", default=[],
+                    help="only leads whose name contains this (repeatable): one company on request")
     ap.add_argument("--dry-run", action="store_true", help="search only; reveal nothing, spend nothing")
     args = ap.parse_args()
 
@@ -303,7 +400,9 @@ def main():
         budget = int(left)
     over = args.score_over if args.score_over is not None else block["score_over"]
     above = "" if over is None else " scoring over %g" % over
-    rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck, over)
+    rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck, over, block["by_name"])
+    if args.lead:
+        rows = [r for r in rows if any(x.lower() in (r[1] or "").lower() for x in args.lead)]
     if not rows:
         log("nothing to enrich -- every open lead%s here already has %s, or Apollo was asked about it"
             " in the last %d days" % (above, "a named person" if args.unnamed else "an address", block["stale_days"]))
@@ -317,12 +416,48 @@ def main():
         log("  credits left before this run: %s\n" % left)
 
     spent = 0.0
-    stats = {"written": 0, "named": 0, "no_email": 0, "unknown": 0, "elsewhere": 0, "error": 0, "left": 0}
+    stats = {"written": 0, "named": 0, "no_email": 0, "unknown": 0, "elsewhere": 0, "error": 0, "left": 0,
+             "websites": 0, "no_company": 0}
     for done, (eid, name, domain, status, score) in enumerate(rows):
         if not args.dry_run and spent + 1 > budget:
             stats["left"] = len(rows) - done
             log("\n  budget reached -- %d lead(s) left for the next run" % stats["left"])
             break
+        looked_up, also = False, None          # looked up by name this time; Apollo's other website for it
+        if not domain:
+            # no website: find the company in Apollo by its name first (a company search page, 1 credit)
+            if args.dry_run:
+                log("  %-34s %-16s no website: would look %r up by name (1 credit)"
+                    % (name[:34], status, name_key(name)))
+                continue
+            looked_up = True
+            try:
+                org, why = find_company(name)
+                spent += 1
+            except apollo.ApolloError as e:
+                log("  %-34s company lookup failed: %s" % (name[:34], e))
+                stats["error"] += 1
+                if e.status in (401, 403):
+                    db.close(); return 1
+                continue
+            if not org:
+                log("  %-34s %-16s no website, and %s" % (name[:34], status, why))
+                stats["no_company"] += 1
+                stamp(db, eid, "no-company")
+                continue
+            domain = give_website(db, eid, org)
+            if not domain:
+                log("  %-34s %-16s Apollo's website for it, %s, is already another lead's -- left for a person"
+                    % (name[:34], status, org.get("primary_domain")))
+                stats["no_company"] += 1
+                stamp(db, eid, "website-conflict")
+                continue
+            stats["websites"] += 1
+            log("  %-34s %-16s website found: %s (Apollo: %s)" % (name[:34], status, domain, org.get("name")))
+            if spent + 1 > budget:
+                stats["left"] = len(rows) - done
+                log("\n  budget reached -- %d lead(s) left for the next run" % stats["left"])
+                break
         try:
             people, total = search(domain, roles, block["verified_only"])
         except apollo.ApolloError as e:
@@ -346,8 +481,33 @@ def main():
         finally:
             time.sleep(DELAY)
 
+        if not people and block["by_name"] and not looked_up:
+            # Apollo may file the company under another website (Severin Films: severinfilms.com in
+            # Apollo, severin-films.com on the lead). Its own record, found by the exact name, is searched.
+            if args.dry_run:
+                log("  %-34s %-16s nobody at %s: would look %r up by name (1 credit)"
+                    % (name[:34], status, domain, name_key(name)))
+                continue
+            try:
+                org, _why = find_company(name)
+                spent += 1
+            except apollo.ApolloError:
+                org = None
+            alt = store.norm_domain((org or {}).get("primary_domain"))
+            if org and alt and alt != domain:
+                try:
+                    people, total = search(domain, roles, block["verified_only"], org_id=org["id"])
+                except apollo.ApolloError:
+                    people = []
+                if people:
+                    also = alt
+                    log("  %-34s %-16s nobody at %s, but Apollo files it under %s"
+                        % (name[:34], status, domain, alt))
         if not people:
-            log("  %-34s %-16s Apollo knows nobody at %s" % (name[:34], status, domain))
+            n = headcount(domain)
+            log("  %-34s %-16s %s" % (name[:34], status,
+                "Apollo knows nobody at %s" % domain if not n else
+                "Apollo lists %d people at %s, none in a target role or senior with an address" % (n, domain)))
             stats["unknown"] += 1
             if not args.dry_run:
                 stamp(db, eid, "none")
@@ -380,7 +540,7 @@ def main():
             stats["unknown"] += 1
             stamp(db, eid, "none")
             continue
-        if not same_company(person, domain):
+        if not same_company(person, domain, also):
             org = (person.get("organization") or {}).get("name") or "somewhere else"
             log("  %-34s %-16s %s works at %s now -- not written"
                 % (name[:34], status, person.get("name") or shown, org))
@@ -392,7 +552,7 @@ def main():
             stats["no_email"] += 1
             stamp(db, eid, "no-email", person=person, credits=rep.get("credits") or 0)
             continue
-        what, rescored = stamp(db, eid, "written", person=person, credits=rep.get("credits") or 0)
+        what, rescored = stamp(db, eid, "written", person=person, credits=rep.get("credits") or 0, via=also)
         stats["written"] += 1
         stats["named"] += 1 if person.get("name") else 0
         log("  %-34s %-16s %s, %s  <%s>  %s%s%s"
@@ -407,6 +567,8 @@ def main():
     db.close()
 
     log("\n  addresses written       : %d" % stats["written"])
+    if stats["websites"] or stats["no_company"]:
+        log("  websites found by name  : %d  (not found or not certain: %d)" % (stats["websites"], stats["no_company"]))
     log("  no address on file      : %d" % stats["no_email"])
     log("  Apollo knows nobody     : %d" % stats["unknown"])
     log("  had moved on            : %d" % stats["elsewhere"])

@@ -481,9 +481,11 @@ address, the website, the evidence the scoring needs), then scores everything
 again and applies the gates. Its steps run one at a time.
 
 In **US Production Houses** one of those steps asks Apollo. Every company scoring
-**over 30** whose own website published no address gets one free search on its
-domain for the roles that project targets, and the best person's work address
-costs one credit. Companies at 30 or below are not paid for. The address also
+**over 22.5** with nobody to write to gets one free search on its domain for the
+roles that project targets, and the best person's work address costs one credit.
+A company with no website is first looked up in Apollo by its exact name (one
+credit), and only a single exact match is trusted. Companies at 22.5 or below are
+not paid for. The address also
 counts toward the score: a named person is worth the rubric's 10 points for a
 reachable decision-maker, and the lead is re-scored as soon as it is found. A run
 stops at 150 credits, shortlisted leads are served first, and a company Apollo
