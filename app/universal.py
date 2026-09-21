@@ -122,7 +122,9 @@ def build_router(cursor):
             status(force=True)                              # a page of companies cost a credit
         # how the search bar's words were read ("companies tagged "arcade" or "arcades", based in United
         # States"), so the page can say what was searched rather than leave the reading hidden
-        out["read_as"] = apollo.read_search_text(kind, q_text)[1]
+        bar, out["read_as"] = apollo.read_search_text(kind, q_text, panel=b.get("filters") or {})
+        # no job typed: the decision makers were searched, and the page offers everyone instead (free)
+        out["decision_makers"] = "person_seniorities" in bar
         out["did_you_mean"] = suggestion                    # shown beside an empty result: free to try
         return out
 

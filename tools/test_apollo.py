@@ -246,14 +246,34 @@ def offline():
         f = rd(apollo.P, text)[0]
         check("  %r -> titles %s" % (text, titles), (f.get("person_titles"), f.get("q_organization_keyword_tags")),
               (titles, tags))
-    check("people: no job in the words, the words are what the company does",
-          rd(apollo.P, "US arcades"),
-          ({"organization_locations": ["United States"], "q_organization_keyword_tags": ["arcades", "arcade"]},
-           "people at companies tagged “arcades” or “arcade”, based in United States"))
-    check("  'lead' alone is not a job (lead generation agencies)", rd(apollo.P, "lead generation agencies")[0],
-          {"q_organization_keyword_tags": ["lead generation agencies", "lead generation agency"]})
-    check("  a modifier alone is not a job (marketing agencies)", rd(apollo.P, "marketing agencies")[0],
-          {"q_organization_keyword_tags": ["marketing agencies", "marketing agency"]})
+    # no job in the words: the decision makers, not everyone (owner, 2026-09-21: "implement your tip")
+    check("people: no job typed, the words are what the company does, and the decision makers are searched",
+          rd(apollo.P, "UAE restaurants"),
+          ({"organization_locations": ["United Arab Emirates"], "q_organization_keyword_tags": ["restaurants", "restaurant"],
+            "person_seniorities": ["owner", "founder", "c_suite"]},
+           "decision makers (owners, founders, C-suite) at companies tagged “restaurants” or “restaurant”,"
+           " based in United Arab Emirates"))
+    check("  'everyone at ...' searches everyone",
+          rd(apollo.P, "everyone at UAE restaurants"),
+          ({"organization_locations": ["United Arab Emirates"], "q_organization_keyword_tags": ["restaurants", "restaurant"]},
+           "everyone at companies tagged “restaurants” or “restaurant”, based in United Arab Emirates"))
+    check("  and so does 'all staff at ...'", "person_seniorities" in rd(apollo.P, "all staff at US arcades")[0], False)
+    check("  a typed job replaces it", rd(apollo.P, "owners of restaurants in Dubai")[0],
+          {"organization_locations": ["Dubai"], "person_titles": ["owner"],
+           "q_organization_keyword_tags": ["restaurants", "restaurant"]})
+    check("  a management level chosen in the panel replaces it",
+          apollo.build_query(apollo.P, {"q_text": "UAE restaurants", "person_seniorities": ["director"]}).count(
+              ("person_seniorities[]", "owner")), 0)
+    check("  so does a job title chosen in the panel",
+          "person_seniorities" in apollo._with_search_text(apollo.P, {"q_text": "UAE restaurants", "person_titles": ["chef"]}), False)
+    check("  a company search is never narrowed to people", "person_seniorities" in rd(apollo.C, "UAE restaurants")[0], False)
+    check("  and neither is a people search with no words (the panel alone)", apollo._with_search_text(apollo.P, {
+        "organization_locations": ["Dubai"]}), {"organization_locations": ["Dubai"]})
+    lg, mk = rd(apollo.P, "lead generation agencies")[0], rd(apollo.P, "marketing agencies")[0]
+    check("  'lead' alone is not a job (lead generation agencies)",
+          (lg.get("person_titles"), lg["q_organization_keyword_tags"]), (None, ["lead generation agencies", "lead generation agency"]))
+    check("  a modifier alone is not a job (marketing agencies)",
+          (mk.get("person_titles"), mk["q_organization_keyword_tags"]), (None, ["marketing agencies", "marketing agency"]))
     # a typo is caught before a paid page is spent on it (owner, 2026-09-21: "UAE Restraunts" found nothing)
     for text, want in (("UAE Restraunts", "UAE Restaurants"), ("resteraunts in Dubai", "restaurants in Dubai"),
                        ("hotles in UAE", "hotels in UAE"), ("arcaeds in the US", "arcades in the US"),

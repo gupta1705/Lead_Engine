@@ -503,6 +503,7 @@ wrestling racing motorsport anime manga comic virtual reality metaverse youtuber
 thrift secondhand wash tire tyre vehicle bike bicycle motorcycle scooter boat yacht camping outdoor hiking
 new top best leading major emerging growing funded early stage series seed bootstrapped owned operated
 saloon wine mine line cake bread beer spirit course charter yacht rent lease class camp
+everyone everybody anyone anybody all staff employee worker work working
 """.split())
 _KNOWN = None
 
@@ -578,13 +579,30 @@ def did_you_mean(text):
     return " ".join(out) if changed else None
 
 
-def read_search_text(kind, text):
+# A people search that names no job finds the people who decide (owner, 2026-09-21: "implement your tip",
+# the tip being to say the job). Measured live that day, "UAE restaurants" is 168,306 people -- cost
+# controllers, HR partners, bar managers -- and 2,144 owners, founders and C-suite (Mamafri's MD, Nolu's
+# founder). Apollo's own "head", "partner" and "director" levels let in head chefs and HR business
+# partners, so they are not part of it. Typing a job, "everyone at ...", or a job title or management
+# level in the panel, replaces it.
+DECISION_MAKERS = ["owner", "founder", "c_suite"]
+_EVERYONE = re.compile(r"^(?:everyone|everybody|anyone|anybody|all(?:\s+(?:the\s+)?(?:staff|employees|people))?|staff|"
+                       r"employees|workers)\b[\s,]*(?:(?:who\s+works?\s+|working\s+)?(?:at|in|of|from)\b)?\s*", re.I)
+
+
+def read_search_text(kind, text, panel=None):
     """The search bar's text as Apollo filters, and how it was read, for the page to show.
     -> (filters, read_as). "US arcades" -> tags arcade/arcades, HQ in the United States;
-    "animation studios in California" -> tags animation studio(s), HQ in California."""
+    "animation studios in California" -> tags animation studio(s), HQ in California. `panel` is the
+    rest of the search: a job title or management level chosen there replaces the decision-maker default."""
     s = " ".join(str(text or "").split())[:200]
     if not s:
         return {}, ""
+    everyone = False
+    if kind == P:
+        m = _EVERYONE.match(s)
+        if m and m.group(0).strip():
+            everyone, s = True, s[m.end():].strip()
     places = []
     m = re.search(r"\s+(?:based in|located in|in|from)\s+(?:the\s+)?(.+)$", s, re.I)   # "... in (the) US"
     if m:
@@ -623,7 +641,14 @@ def read_search_text(kind, text):
             out["person_titles"] = titles
         if tags:
             out["q_organization_keyword_tags"] = tags
-        who = ("people titled " + " or ".join("“%s”" % t for t in titles)) if titles else "people"
+        chosen = any((panel or {}).get(k) for k in ("person_titles", "person_seniorities"))
+        if not titles and not everyone and not chosen:
+            out["person_seniorities"] = list(DECISION_MAKERS)
+            who = "decision makers (owners, founders, C-suite)"
+        elif titles:
+            who = "people titled " + " or ".join("“%s”" % t for t in titles)
+        else:
+            who = "everyone" if everyone else "people"
         if tags:
             who += (", at " if titles else " at ") + "companies tagged " + " or ".join("“%s”" % t for t in tags)
         said.append(who)
@@ -639,7 +664,7 @@ def _with_search_text(kind, filters):
     text = f.pop("q_text", None)
     if not text:
         return f
-    got, _ = read_search_text(kind, text)
+    got, _ = read_search_text(kind, text, panel=f)
     for k, v in got.items():
         if isinstance(v, list):
             f[k] = list(dict.fromkeys(list(f.get(k) or []) + v))

@@ -1296,12 +1296,13 @@ function renderUniTabs() {
   $$("#uniTabs [data-kind]").forEach((b) => { const on = b.dataset.kind === u.kind; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
   $("#uniQuery").value = u.q[u.kind] || "";
   // the bar reads what they do and where (owner, 2026-09-21: "US Arcades", a segment, not a company name)
-  $("#uniQuery").placeholder = u.kind === "people" ? "Job, company type and place: producers at animation studios in California"
+  $("#uniQuery").placeholder = u.kind === "people" ? "Job, company type and place: owners of restaurants in Dubai"
                                                    : "What they do and where: US arcades, animation studios in California";
   $("#uniCost").innerHTML = icon("info", 14) + (u.kind === "people"
-    ? `<span>Searching people is free. Saving a person reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.</span>`
+    ? `<span>Searching people is free; with no job typed it finds the decision makers (owners, founders, C-suite). Saving a person reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.</span>`
     : `<span>Each page of company results costs <strong>1 Apollo credit</strong>. Saving companies is free. To find one company by name, use Company name under Filters.</span>`)
-    + (u.readAs && u.readAsKind === u.kind ? `<span class="uni-readas">Searched ${esc(u.readAs)}.</span>` : "");
+    + (u.readAs && u.readAsKind === u.kind ? `<span class="uni-readas">Searched ${esc(u.readAs)}.${
+      u.kind === "people" && u.decisionMakers ? ` <a href="#" data-everyone>Search everyone instead</a>` : ""}</span>` : "");
   $("#uniGo").textContent = u.kind === "people" ? "Search" : "Search · 1 credit";
 }
 
@@ -1407,6 +1408,7 @@ async function uniSearch(page, asTyped) {
     if (token !== u.token) return;
     // a likely typo: a company search is held unsearched (no credit), a people search says so when empty
     u.suggest = d.did_you_mean || null; u.held = !!d.held; u.typed = u.q[u.kind];
+    u.decisionMakers = !!d.decision_makers;                  // no job typed: owners, founders, C-suite
     u.rows = (u.kind === "people" ? d.people : d.companies) || [];
     u.total = d.total || 0; u.page = d.page || 1; u.perPage = d.per_page || 25;
     u.totalPages = Math.min(500, d.total_pages || Math.ceil(u.total / u.perPage) || 1);
@@ -1646,6 +1648,13 @@ function uniSaveSearchDialog() {
 function bindUniversal() {
   const u = state.uni, fl = $("#uniFilters");
   $("#uniForm").addEventListener("submit", (e) => { e.preventDefault(); uniSearch(1); });
+  // the decision-maker default, widened in one click: "UAE restaurants" -> "everyone at UAE restaurants"
+  $("#uniCost").addEventListener("click", (e) => {
+    if (!e.target.closest("[data-everyone]")) return;
+    e.preventDefault();
+    $("#uniQuery").value = "everyone at " + (state.uni.typed || $("#uniQuery").value).trim();
+    uniSearch(1);
+  });
   $("#uniQuery").addEventListener("input", (e) => { u.q[u.kind] = e.target.value; uniPersist(); });
   $$("#uniTabs [data-kind]").forEach((b) => b.addEventListener("click", () => {
     if (u.kind === b.dataset.kind) return;

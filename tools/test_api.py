@@ -528,6 +528,11 @@ def main_():
         r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "UAE Restraunts"}})
         check("  a people search (free) runs, with the suggestion beside it",
               (r.status_code, bool(r.json().get("held")), r.json().get("did_you_mean")), (200, False, "UAE Restaurants"))
+        r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "UAE restaurants"}})
+        check("a people search with no job: decision makers, and the page is told so",
+              (r.status_code, r.json().get("decision_makers"), r.json().get("read_as", "").startswith("decision makers")), (200, True, True))
+        r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "owners of restaurants in Dubai"}})
+        check("  with a job typed: that job, no default", (r.status_code, r.json().get("decision_makers")), (200, False))
         check("a search with no kind: 400", call("POST", "/api/universal/search", cookies=tvf, json={}).status_code, 400)
         check("a filter Apollo would refuse: 400", call("POST", "/api/universal/search", cookies=tvf,
                                                         json={"kind": "companies", "filters": {"revenue_range": {"min": -5}}}).status_code, 400)

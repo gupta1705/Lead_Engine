@@ -123,6 +123,14 @@ included), what the company does becomes the same company tags as above, and the
 place is the employer's HQ. Until 21 September the words went to profile
 keywords, which matched company names: *producers in California* found staff at a
 food firm called Flavor Producers; read as a title it finds 36,594 producers.
+**No job typed? You get the people who decide.** A people search that names no
+job, like *UAE restaurants*, finds the owners, founders and C-suite of those
+companies, not everyone on the payroll: 2,144 decision makers instead of 168,306
+people, cost controllers and bar managers among them. The line under the bar says
+so, with a **Search everyone instead** link. You can also type *everyone at UAE
+restaurants*, or pick a job title or management level under Filters; either one
+replaces the default.
+
 **Typos are caught before they cost anything.** Apollo matches tags word for word,
 so *UAE Restraunts* finds nothing, while *UAE restaurants* finds thousands. When a
 word looks mistyped, a company search is not sent (no credit spent) and the page
