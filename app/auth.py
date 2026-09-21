@@ -14,8 +14,9 @@ cleverness:
   * httpOnly + SameSite=Lax cookies; Secure is added automatically when the
     request arrived over HTTPS (the Caddy/cloud step), never on plain
     localhost where it would break login entirely.
-  * login rate limiting: 10 attempts per IP per 5 minutes, in memory --
-    enough to make online guessing pointless against bcrypt.
+  * login rate limiting: 10 failed attempts per 5 minutes, counted per
+    visitor address AND per account, in memory -- enough to make online
+    guessing pointless against bcrypt (see _attempt_keys for which address).
   * FIRST-RUN SETUP: while app_users is empty, /login offers "create the
     owner account" and the setup endpoint works exactly once. The owner
     types their own password into their own app; no default credential ever
@@ -88,15 +89,36 @@ def parse_cookie(value, lookup_hash):
     return email
 
 
-def _rate_limited(ip):
+def _attempt_keys(request, email):
+    """What a failed login counts against. The FIRST hop of X-Forwarded-For is whatever the client
+    wrote, and keying on it alone let a made-up header reset the count on every guess (found
+    2026-09-21). The LAST hop is the address the nearest proxy itself saw (Render appends it, Caddy
+    writes only it), which a client cannot choose; the account is counted too, so neither a forged
+    header nor a pool of addresses buys more than ten guesses at one password in five minutes."""
+    fwd = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    peer = request.client.host if request.client else "?"
+    keys = {"ip:" + (fwd[-1] if fwd else peer), "ip:" + (fwd[0] if fwd else peer)}
+    if email:
+        keys.add("email:" + email)
+    return keys
+
+
+def _rate_limited(keys):
     now = time.time()
-    hits = [t for t in _ATTEMPTS.get(ip, []) if now - t < 300]
-    _ATTEMPTS[ip] = hits
-    return len(hits) >= 10
+    if len(_ATTEMPTS) > 5000:                    # forget keys with nothing recent, so the table stays small
+        for k in [k for k, v in _ATTEMPTS.items() if not any(now - t < 300 for t in v)]:
+            del _ATTEMPTS[k]
+    limited = False
+    for key in keys:
+        hits = [t for t in _ATTEMPTS.get(key, []) if now - t < 300]
+        _ATTEMPTS[key] = hits
+        limited = limited or len(hits) >= 10
+    return limited
 
 
-def _record_attempt(ip):
-    _ATTEMPTS.setdefault(ip, []).append(time.time())
+def _record_attempt(keys):
+    for key in keys:
+        _ATTEMPTS.setdefault(key, []).append(time.time())
 
 
 def build_router(cursor):
@@ -141,16 +163,14 @@ def build_router(cursor):
 
     @r.post("/api/auth/login")
     def login(request: Request, body: dict = Body(...)):
-        # Behind Caddy every request arrives from the proxy's address; the
-        # first hop of X-Forwarded-For is the real visitor, and rate-limiting
-        # on the proxy IP would lock the whole team out after ten bad tries.
-        fwd = request.headers.get("x-forwarded-for", "")
-        ip = (fwd.split(",")[0].strip() if fwd else
-              (request.client.host if request.client else "?"))
-        if _rate_limited(ip):
-            raise HTTPException(429, "too many attempts -- wait five minutes")
+        # Behind a proxy every request arrives from the proxy's own address, so
+        # counting that would lock the whole team out after ten bad tries: the
+        # visitor comes from X-Forwarded-For, read as _attempt_keys explains.
         email = ((body or {}).get("email") or "").strip().lower()
         password = (body or {}).get("password") or ""
+        keys = _attempt_keys(request, email)
+        if _rate_limited(keys):
+            raise HTTPException(429, "too many attempts -- wait five minutes")
         user = get_user(email)
         # bcrypt against a constant hash when the user is unknown, so the
         # response time does not reveal which emails exist
@@ -158,7 +178,7 @@ def build_router(cursor):
                   "$2b$12$C6UzMDM.H6dfI/f/IKcEeO7ZBpUFoV7c6zZ7bIOZK9CmO6GZuKZfa")
         ok = bcrypt.checkpw(password.encode(), target.encode()) and user is not None
         if not ok:
-            _record_attempt(ip)
+            _record_attempt(keys)
             raise HTTPException(401, "wrong email or password")
         with cursor() as cur:
             cur.execute("update app_users set last_login_at = now()"

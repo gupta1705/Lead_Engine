@@ -536,8 +536,9 @@ function syncExportLinks() {
 const STATE_CLS = { found: "success", none: "", unchecked: "moved" };
 function srcLinks(sources) {
   if (!sources || !sources.length) return "";
-  return `<div class="crit-src">${sources.map((s) => s.url
-    ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}${s.date ? " · " + esc(s.date) : ""} ${icon("external", 12)}</a>`
+  // safeUrl: a source link is http(s) or nothing -- a stored javascript: link would run as the app
+  return `<div class="crit-src">${sources.map((s) => safeUrl(s.url)
+    ? `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">${esc(s.label)}${s.date ? " · " + esc(s.date) : ""} ${icon("external", 12)}</a>`
     : `<span>${esc(s.label)}${s.date ? " · " + esc(s.date) : ""}</span>`).join("")}</div>`;
 }
 function checkHint(c) {
@@ -607,8 +608,10 @@ function renderContacts(d) {
       </div></div>`).join("");
   const glyphs = { phone: "user", people: "users", website: "globe", channel: "play", podcast: "play", app: "link", social: "link" };
   const routes = (cr.routes || []).map((r) => {
+    // a route links out only by http(s) or tel: -- anything else is shown as text
+    const href = /^tel:[+\d\s().-]+$/i.test(String(r.url || "")) ? String(r.url) : safeUrl(r.url);
     const body = r.people ? r.people.map((p) => `${esc(p.name)}${p.role ? ` <span class="muted">(${esc(p.role)})</span>` : ""}`).join(", ")
-      : r.url ? `<a href="${esc(r.url)}"${String(r.url).startsWith("tel:") ? "" : ` target="_blank" rel="noopener"`}>${esc(r.value)}</a>` : esc(r.value || "");
+      : href ? `<a href="${esc(href)}"${href.startsWith("tel:") ? "" : ` target="_blank" rel="noopener"`}>${esc(r.value)}</a>` : esc(r.value || "");
     return `<li>${icon(glyphs[r.kind] || "link", 14)}<span><span class="muted">${esc(r.label)}:</span> ${body}</span></li>`;
   }).join("");
   return `${people || `<p class="muted small" style="margin:0 0 8px">No email address on record.</p>`}

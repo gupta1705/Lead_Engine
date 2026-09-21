@@ -60,11 +60,24 @@ AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup"
                "/api/health")
 
 
+SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
+                    "Referrer-Policy": "same-origin"}
+
+
 @app.middleware("http")
 async def auth_wall(request, call_next):
     from starlette.responses import JSONResponse, RedirectResponse
     import auth as _auth
-    path = request.url.path
+    # The path the router serves, NOT request.url.path: Starlette rebuilds request.url from the Host
+    # header, so "Host: x/api/health#" made /api/leads look like the public /api/health and walked
+    # past this wall (found 2026-09-21; Render's edge refuses such a Host, the code no longer relies on it).
+    path = request.scope.get("path") or "/"
+    # A write from another site is refused outright. SameSite=Lax already keeps the cookie off it in
+    # every current browser; this does not depend on that, or on onrender.com being a public suffix.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        site = request.headers.get("sec-fetch-site")
+        if site and site not in ("same-origin", "none"):
+            return JSONResponse({"detail": "a request from another site is refused"}, status_code=403)
     request.state.user = None
     request.state.segment = _segment_for(request)
     token = request.cookies.get(_auth.COOKIE)
@@ -77,10 +90,22 @@ async def auth_wall(request, call_next):
                 return row["password_hash"] if row else None
         request.state.user = _auth.parse_cookie(token, lookup)
     if path in AUTH_EXEMPT or request.state.user:
-        return await call_next(request)
+        response = await call_next(request)
+        for k, v in SECURITY_HEADERS.items():
+            response.headers.setdefault(k, v)
+        return response
     if path.startswith("/api/"):
         return JSONResponse({"detail": "not signed in"}, status_code=401)
     return RedirectResponse("/login", status_code=302)
+
+
+def _id(value, what="lead"):
+    """A row id from the URL, or 404: a malformed one used to reach Postgres and come back a 500."""
+    import uuid as _uuid
+    try:
+        return str(_uuid.UUID(str(value)))
+    except ValueError:
+        raise HTTPException(404, "no such %s" % what)
 
 _POOL = None
 _LAST_USED = {}            # id(conn) -> monotonic time of its last good use
@@ -326,6 +351,7 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
           segment: str = Depends(current_segment)):
     where = ["e.segment_id = (select id from segments where slug = %s)"]
     params = [segment]
+    limit, offset = max(0, min(limit, 500)), max(0, offset)      # a negative one was a 500
 
     if status == "open":
         where.append("e.status in " + OPEN_STATUSES)
@@ -383,7 +409,7 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             "   c.created_at, c.id limit 1) as contact_name"
             " from entities e where " + rows_clause +
             " order by " + order + " limit %s offset %s",
-            params + [min(limit, 500), offset])
+            params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
         for r in rows:
             r["fields"] = [r.pop("f%d" % i) for i in range(len(fields))]
@@ -401,6 +427,7 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
 # -------------------------------------------------------------------- detail
 @app.get("/api/leads/{lead_id}")
 def lead(lead_id: str):
+    lead_id = _id(lead_id)
     with cursor() as cur:
         cur.execute(
             "select e.*, s.slug as segment_slug, s.config as segment_config"
@@ -461,6 +488,7 @@ def decide(lead_id: str, body: dict = Body(...)):
     Rejected rows are never deleted -- they are the shield that stops a later
     harvest resurfacing a company someone already refused (Invariant 4).
     """
+    lead_id = _id(lead_id)
     decision = (body or {}).get("decision")
     reason = ((body or {}).get("reason") or "").strip() or None
     mapping = {"shortlist": "shortlisted", "reject": "rejected",
@@ -565,8 +593,12 @@ def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment
 def outreach_edit(oid: str, body: dict = Body(...)):
     """Edit a draft's subject/body. Approval means a human read THIS text, so
     editing is only legal while the row is still a draft."""
+    oid = _id(oid, "draft")
     subject = (body or {}).get("subject")
     text = (body or {}).get("body")
+    if subject is not None and ("\n" in str(subject) or "\r" in str(subject)):
+        # one line, always: the sender refuses a subject with a line break in it
+        raise HTTPException(400, "the subject must be one line")
     with cursor() as cur:
         cur.execute(
             "update outreach set subject = coalesce(%s, subject),"
@@ -587,6 +619,7 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
     company. mark_positive / mark_negative: the human verdict on a reply; on
     positive the company moves to in_conversation. Both verdicts stop the
     thread."""
+    oid = _id(oid, "message")
     pol = _policy()
     action = (body or {}).get("action")
     user = getattr(request.state, "user", None) or "unknown"
