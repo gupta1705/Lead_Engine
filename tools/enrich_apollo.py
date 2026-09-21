@@ -35,6 +35,16 @@ RULES, each one an invariant the rest of the engine already keeps:
     only, so running this by hand against another segment spends nothing.
   * OPEN LEADS ONLY (ready_for_review, shortlisted). A rejected or archived
     lead is never enriched: the rejection is a shield, not a pause.
+  * ONLY LEADS WORTH IT. score_over in the config (30 for production houses,
+    the owner's rule on 2026-09-21: "if a company has a score over 30 apollo
+    should find their contact addresses") keeps credits off the long tail --
+    before it, a run took the best 120 by score whatever they scored, which
+    meant paying for companies at 0-9.
+  * THE ADDRESS COUNTS. A written contact earns the rubric's
+    reachable_decision_maker (10 points; 1.0 a named person, 0.5 a catch-all),
+    on the scale sql/10_enrich_template.sql set for Apollo contacts, and the
+    lead is re-scored on the spot. Never lowered: a finding from AICP or the
+    site that is worth more stays.
   * THE PERSON HAS TO STILL WORK THERE. Apollo's domain filter counts past
     employers too, so a revealed person whose employer and address both sit at
     some other domain is not written. The credit is spent either way; the
@@ -96,11 +106,44 @@ def segment_config(db):
 def enrich_block(cfg):
     """The enrichment block, with the defaults this tool runs on."""
     b = dict((cfg or {}).get("enrichment") or {})
+    try:
+        over = float(b["score_over"]) if b.get("score_over") is not None else None
+    except (TypeError, ValueError):
+        over = None
     return {"provider": b.get("provider"),
             "enabled": b.get("enabled") is True,
             "verified_only": b.get("verified_only") is not False,
             "credits_per_run": int(b.get("credits_per_run") or DEFAULT_BUDGET),
-            "stale_days": int(b.get("recheck_after_days") or STALE_DAYS)}
+            "stale_days": int(b.get("recheck_after_days") or STALE_DAYS),
+            "score_over": over}
+
+
+def contact_value(person):
+    """reachable_decision_maker for what Apollo gave, on the scale sql/10_enrich_template.sql set for
+    Apollo contacts: 1.0 a named person with a real address, 0.5 an address Apollo calls catch-all
+    (it may land anywhere), 0 nobody."""
+    if not person or not person.get("email"):
+        return 0.0
+    if person.get("email_status") == "catch_all" or not person.get("name"):
+        return 0.5
+    return 1.0
+
+
+def credit_contact(cur, eid, value):
+    """Give the lead the contact points its new address earns, and re-score it. Never lowers:
+    an AICP or site-scrape finding worth more stays. -> (old score, new score), or None."""
+    cur.execute("select (metadata->'scoring_inputs'->>'reachable_decision_maker')::numeric,"
+                " coalesce(metadata->'unverified_inputs', '[]'::jsonb) ? 'reachable_decision_maker',"
+                " fit_score from entities where id = %s", (eid,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    current, defaulted, before = row[0], row[1], row[2]
+    if current is not None and not defaulted and float(current) >= value:
+        return None
+    cur.execute("select set_scoring_input(%s, 'reachable_decision_maker', to_jsonb(%s::numeric))", (eid, value))
+    cur.execute("select score_entity(%s)", (eid,))
+    return before, cur.fetchone()[0]
 
 
 def role_rank(title, roles):
@@ -154,20 +197,23 @@ UNNAMED_SQL = """
                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)"""
 
 
-def candidates(db, unnamed, limit, stale_days, recheck):
-    """Open leads with a website that Apollo could put a person behind.
-    Shortlisted first: those are the ones drafting is waiting on."""
+def candidates(db, unnamed, limit, stale_days, recheck, score_over=None):
+    """Open leads with a website that Apollo could put a person behind -- and, when the config
+    sets score_over, only the ones scoring above it (owner, 2026-09-21: "if a company has a score
+    over 30 apollo should find their contact addresses"). Shortlisted first, then best score."""
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=stale_days)).replace(microsecond=0).isoformat()
     sql = """
         select e.id, e.name, e.domain, e.status, e.fit_score
         from entities e join segments s on s.id = e.segment_id
         where s.slug = %s and e.status = any(%s) and e.domain is not null
     """ + (UNNAMED_SQL if unnamed else NO_EMAIL_SQL) + ("" if recheck else """
-          and coalesce(e.metadata->>'apollo_checked_at', '') < %s""") + """
+          and coalesce(e.metadata->>'apollo_checked_at', '') < %s""") + ("" if score_over is None else """
+          and coalesce(e.fit_score, 0) > %s""") + """
         order by case when e.status = 'shortlisted' then 0 else 1 end,
                  e.fit_score desc nulls last, e.name
         limit %s"""
-    args = (SEGMENT, OPEN_STATUSES) + (() if recheck else (cutoff,)) + (limit,)
+    args = ((SEGMENT, OPEN_STATUSES) + (() if recheck else (cutoff,))
+            + (() if score_over is None else (score_over,)) + (limit,))
     return db.run(lambda cur: (cur.execute(sql, args), cur.fetchall())[1])
 
 
@@ -185,8 +231,12 @@ def stamp(db, eid, outcome, person=None, credits=0.0):
         cur.execute("update entities set metadata = metadata || %s::jsonb, updated_at = now() where id = %s",
                     (json.dumps(patch), eid))
         if person:
-            return store.upsert_person(cur, eid, person)
-        return None
+            what = store.upsert_person(cur, eid, person)
+            # the address is evidence the rubric pays for (reachable_decision_maker, 10 points):
+            # the lead is re-scored now, not at the next refresh
+            rescored = credit_contact(cur, eid, contact_value(person)) if person.get("email") else None
+            return what, rescored
+        return None, None
     return db.run(write)
 
 
@@ -219,6 +269,8 @@ def main():
     ap.add_argument("--unnamed", action="store_true",
                     help="leads that have an inbox but nobody's name: put a person in front of info@")
     ap.add_argument("--recheck", action="store_true", help="leads checked recently too")
+    ap.add_argument("--score-over", type=float, default=None,
+                    help="only leads scoring above this (default: the config's score_over)")
     ap.add_argument("--dry-run", action="store_true", help="search only; reveal nothing, spend nothing")
     args = ap.parse_args()
 
@@ -249,14 +301,16 @@ def main():
         log("credits unknown (%s)" % e)
     if left is not None and left < budget:
         budget = int(left)
-    rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck)
+    over = args.score_over if args.score_over is not None else block["score_over"]
+    above = "" if over is None else " scoring over %g" % over
+    rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck, over)
     if not rows:
-        log("nothing to enrich -- every open lead here already has %s"
-            % ("a named person" if args.unnamed else "an address"))
+        log("nothing to enrich -- every open lead%s here already has %s, or Apollo was asked about it"
+            " in the last %d days" % (above, "a named person" if args.unnamed else "an address", block["stale_days"]))
         db.close(); return 0
 
-    log("apollo enrichment -- %s | %d lead(s)%s | budget %d credit(s)%s"
-        % (SEGMENT, len(rows), " without a name on the inbox" if args.unnamed else " with nothing to write to",
+    log("apollo enrichment -- %s | %d lead(s)%s%s | budget %d credit(s)%s"
+        % (SEGMENT, len(rows), above, " without a name on the inbox" if args.unnamed else " with nothing to write to",
            budget, "  [DRY RUN: nothing is revealed]" if args.dry_run else ""))
     log("  roles: %s" % (", ".join(roles) if roles else "(any senior title)"))
     if left is not None:
@@ -338,12 +392,13 @@ def main():
             stats["no_email"] += 1
             stamp(db, eid, "no-email", person=person, credits=rep.get("credits") or 0)
             continue
-        what = stamp(db, eid, "written", person=person, credits=rep.get("credits") or 0)
+        what, rescored = stamp(db, eid, "written", person=person, credits=rep.get("credits") or 0)
         stats["written"] += 1
         stats["named"] += 1 if person.get("name") else 0
-        log("  %-34s %-16s %s, %s  <%s>  %s%s"
+        log("  %-34s %-16s %s, %s  <%s>  %s%s%s"
             % (name[:34], status, person.get("name") or "(no name)", person.get("title") or "no title",
-               person.get("email"), person.get("email_status"), "" if what == "added" else "  (already known)"))
+               person.get("email"), person.get("email_status"), "" if what == "added" else "  (already known)",
+               "  score %s -> %s" % rescored if rescored else ""))
 
     if not args.dry_run and stats["written"]:
         n = db.run(lambda cur: (cur.execute("select refresh_primary_contacts(%s)", (SEGMENT,)),

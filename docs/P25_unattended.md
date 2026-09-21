@@ -33,8 +33,11 @@ fires an alert.
 The Apollo step (`tools/enrich_apollo.py`, live 2026-09-20) runs after the site
 scrape has had its turn, so a credit is only ever spent on a company that
 published nothing. It is gated by the segment config (`enrichment.enabled`,
-true for us-production-houses alone), capped per run (`credits_per_run`, 150),
-and it refuses to write a person whose current employer is no longer that lead.
+true for us-production-houses alone), limited to leads scoring over
+`score_over` (30, the owner's rule of 2026-09-21), capped per run
+(`credits_per_run`, 150), and it refuses to write a person whose current
+employer is no longer that lead. A written address sets
+`reachable_decision_maker` and re-scores the lead on the spot.
 
 ## Observability — "a run in the dark leaves a trail"
 

@@ -94,8 +94,20 @@ def offline():
           ea.enrich_block({"enrichment": {"provider": "apollo"}})["enabled"], False)
     blk = ea.enrich_block({"enrichment": {"provider": "apollo", "enabled": True, "credits_per_run": 40}})
     check("enabled: the run's ceiling and the defaults around it",
-          (blk["enabled"], blk["credits_per_run"], blk["verified_only"], blk["stale_days"]),
-          (True, 40, True, 30))
+          (blk["enabled"], blk["credits_per_run"], blk["verified_only"], blk["stale_days"], blk["score_over"]),
+          (True, 40, True, 30, None))
+    check("score_over is read as a number, and nonsense is no threshold rather than a crash",
+          [ea.enrich_block({"enrichment": {"score_over": v}})["score_over"] for v in (30, "30", "thirty")],
+          [30.0, 30.0, None])
+
+    print("\n-- what an address is worth to the score (reachable_decision_maker)")
+    check("a named person with a verified address: full marks",
+          ea.contact_value({"name": "Nina Shah", "email": "n@x.com", "email_status": "valid"}), 1.0)
+    check("a catch-all address may land anywhere: half",
+          ea.contact_value({"name": "Nina Shah", "email": "n@x.com", "email_status": "catch_all"}), 0.5)
+    check("an address with nobody's name on it: half",
+          ea.contact_value({"name": "", "email": "n@x.com", "email_status": "valid"}), 0.5)
+    check("nothing to write to: nothing", ea.contact_value({"name": "Nina Shah", "email": None}), 0.0)
     import dbconn
     keep = (dbconn.Db, apollo.key_is_set, ea.segment_config, sys.argv)
     dbconn.Db = lambda *a, **k: FakeDb(None)
@@ -138,8 +150,12 @@ def database():
     try:
         slug = "zz-test-enrich-" + uuid.uuid4().hex[:6]
         ea.SEGMENT = slug
-        cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'test', 'company',"
-                    " '{\"enrichment\": {\"provider\": \"apollo\", \"enabled\": true}}') returning id", (slug,))
+        rubric = [{"key": "reachable_decision_maker", "points": 10,
+                   "input": "metadata.scoring_inputs.reachable_decision_maker"},
+                  {"key": "genre_fit", "points": 10, "input": "metadata.scoring_inputs.genre_fit"}]
+        cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'test', 'company', %s::jsonb)"
+                    " returning id", (slug, json.dumps({"enrichment": {"provider": "apollo", "enabled": True},
+                                                          "rubric": rubric})))
         seg = cur.fetchone()[0]
 
         def lead(name, domain, status, meta="{}"):
@@ -183,7 +199,7 @@ def database():
                     "title": "Head of Development", "email": "nina@nothing.example", "email_status": "valid",
                     "apollo_email_status": "verified", "linkedin_url": "https://www.linkedin.com/in/nina",
                     "organization": {"name": "Nothing To Write To", "primary_domain": "nothing.example"}}
-        what = ea.stamp(db, nothing, "written", person=revealed, credits=1)
+        what, _ = ea.stamp(db, nothing, "written", person=revealed, credits=1)
         cur.execute("select full_name, email, email_status, source, verifier from contacts where entity_id = %s",
                     (nothing,))
         check("the address is written as a contact of the lead, verified by Apollo",
@@ -207,6 +223,37 @@ def database():
         cur.execute("select c.email from contacts c where c.entity_id = %s and c.is_primary", (inbox,))
         check("the named person becomes the one a draft writes to; info@ stays on the lead",
               cur.fetchone()[0], "nina@inbox.example")
+
+        print("\n-- the owner's rule: Apollo is for companies scoring over 30")
+        at30 = lead("Exactly Thirty", "thirty.example", "ready_for_review")
+        above = lead("Just Over", "over.example", "ready_for_review")
+        below = lead("Well Under", "under.example", "ready_for_review")
+        for eid, score in ((at30, 30), (above, 30.5), (below, 12)):
+            cur.execute("update entities set fit_score = %s where id = %s", (score, eid))
+        got = [r[1] for r in ea.candidates(db, False, 50, 30, True, 30)]
+        check("over 30 means over: 30.5 is asked about, 30 and 12 are not",
+              [n for n in got if n in ("Exactly Thirty", "Just Over", "Well Under")], ["Just Over"])
+        check("no threshold configured: every open lead without an address, as before",
+              {"Exactly Thirty", "Just Over", "Well Under"} <= {r[1] for r in ea.candidates(db, False, 50, 30, True)},
+              True)
+
+        print("\n-- a written address is scored, never marked down")
+        cur.execute("update entities set metadata = metadata || %s::jsonb where id = %s",
+                    (json.dumps({"scoring_inputs": {"reachable_decision_maker": 0, "genre_fit": 1},
+                                 "unverified_inputs": ["reachable_decision_maker"]}), above))
+        cur.execute("select score_entity(%s)", (above,))
+        before = cur.fetchone()[0]
+        moved = ea.credit_contact(cur, above, 1.0)
+        cur.execute("select metadata->'scoring_inputs'->>'reachable_decision_maker',"
+                    " metadata->'unverified_inputs' ? 'reachable_decision_maker', fit_score from entities where id = %s",
+                    (above,))
+        rdm, still_defaulted, after = cur.fetchone()
+        check("the defaulted 0 becomes 1.0, stops being 'not checked', and the score goes up",
+              (float(rdm), still_defaulted, moved is not None and float(after) > float(before)), (1.0, False, True))
+        check("a catch-all later does not mark a named person down", ea.credit_contact(cur, above, 0.5), None)
+        cur.execute("select (metadata->'scoring_inputs'->>'reachable_decision_maker')::numeric from entities"
+                    " where id = %s", (above,))
+        check("and the 1.0 stays", float(cur.fetchone()[0]), 1.0)
     finally:
         conn.rollback()
         cur.close()

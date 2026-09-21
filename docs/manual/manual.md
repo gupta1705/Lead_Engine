@@ -480,9 +480,12 @@ LCX Clipping and Startup Acquisitions), fills in what is missing (the contact
 address, the website, the evidence the scoring needs), then scores everything
 again and applies the gates. Its steps run one at a time.
 
-In **US Production Houses** one of those steps asks Apollo. A lead whose own
-website published no address gets one free search on its domain for the roles
-that project targets, and the best person's work address costs one credit. A run
+In **US Production Houses** one of those steps asks Apollo. Every company scoring
+**over 30** whose own website published no address gets one free search on its
+domain for the roles that project targets, and the best person's work address
+costs one credit. Companies at 30 or below are not paid for. The address also
+counts toward the score: a named person is worth the rubric's 10 points for a
+reachable decision-maker, and the lead is re-scored as soon as it is found. A run
 stops at 150 credits, shortlisted leads are served first, and a company Apollo
 does not know is left for a month. No other project spends a credit: that is a
 setting in the project's own config, and it is on for this one only.
