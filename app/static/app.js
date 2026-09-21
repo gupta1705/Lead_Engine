@@ -1239,6 +1239,11 @@ function uniRestore() {
   if (s.picked && typeof s.picked === "object") u.picked = s.picked;
 }
 function uniConnected() { const s = state.uni.status; return !!(s && s.key_set && s.connected); }
+/* Can a search be tried? Yes while the status is still loading, and yes when Apollo could not be asked
+   (connected: null -- busy, timed out); no only when the key is missing or Apollo refused it. The
+   Search button used to stay off until the ~3 s status check answered, and for good when Apollo was
+   busy: typing and pressing Search did nothing (owner, 2026-09-21: "universal section is not working"). */
+function uniUsable() { const s = state.uni.status; return !s || (!!s.key_set && s.connected !== false); }
 
 async function loadUniversal() {
   const u = state.uni;
@@ -1266,7 +1271,12 @@ function renderUniStatus() {
   const probs = (s.problems || []).map((p) => `<li>${esc(p)}</li>`).join("");
   const eps = (u.endpoints || []).map((e) => `<code>${esc(e.replace(/^api\/v1\//, ""))}</code>`).join(", ");
   const setup = $("#uniSetup");
-  if (!s.key_set || !s.connected) {
+  $("#uniGo").disabled = !uniUsable();
+  if (s.key_set && s.connected == null) {
+    // Apollo could not be asked just now (busy, slow): not a refused key, so searching stays on
+    setup.innerHTML = `<div class="section-msg">${icon("info", 24)}<div><div class="title">Apollo did not answer the check just now</div>
+      <div class="text">Searching still works; the credits show once Apollo answers.${probs ? `<ul class="uni-problems">${probs}</ul>` : ""}</div></div></div>`;
+  } else if (!s.key_set || !s.connected) {
     setup.innerHTML = `<div class="section-msg warning">${icon("warn", 24)}<div>
       <div class="title">${s.key_set ? "Apollo refused the key" : "Connect Apollo to search"}</div>
       <div class="text"><ol class="uni-steps">
@@ -1279,14 +1289,14 @@ function renderUniStatus() {
   } else {
     setup.innerHTML = "";
   }
-  $("#uniGo").disabled = !uniConnected();
+  $("#uniGo").disabled = !uniUsable();
 }
 function renderUniTabs() {
   const u = state.uni;
   $$("#uniTabs [data-kind]").forEach((b) => { const on = b.dataset.kind === u.kind; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
   $("#uniQuery").value = u.q[u.kind] || "";
   // the bar reads what they do and where (owner, 2026-09-21: "US Arcades", a segment, not a company name)
-  $("#uniQuery").placeholder = u.kind === "people" ? "Who and where: producers in Los Angeles, US arcades"
+  $("#uniQuery").placeholder = u.kind === "people" ? "Job, company type and place: producers at animation studios in California"
                                                    : "What they do and where: US arcades, animation studios in California";
   $("#uniCost").innerHTML = icon("info", 14) + (u.kind === "people"
     ? `<span>Searching people is free. Saving a person reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.</span>`
@@ -1386,7 +1396,7 @@ function uniCurrentFilters() {
 }
 async function uniSearch(page) {
   const u = state.uni;
-  if (!uniConnected()) return toast("Connect Apollo first: the steps are at the top of this page.", true);
+  if (!uniUsable()) return toast("Connect Apollo first: the steps are at the top of this page.", true);
   u.q[u.kind] = $("#uniQuery").value.trim();
   const filters = uniCurrentFilters();
   if (!Object.keys(filters).length) return toast("Add a filter, or type something to search for.", true);
@@ -1410,7 +1420,7 @@ function renderUniResults() {
   const u = state.uni, head = $("#uniHead"), body = $("#uniBody");
   if (!u.searched || u.resultKind !== u.kind) {
     head.innerHTML = "";
-    body.innerHTML = uniConnected() ? `<tr class="empty-row"><td>Choose filters on the left or type in the search bar, then Search.</td></tr>` : "";
+    body.innerHTML = uniUsable() ? `<tr class="empty-row"><td>Choose filters on the left or type in the search bar, then Search.</td></tr>` : "";
     $("#uniPager").hidden = true; renderUniBatch(); return;
   }
   const selectable = u.rows.filter((r) => !r.saved);

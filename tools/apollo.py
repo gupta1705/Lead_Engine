@@ -203,7 +203,9 @@ FILTERS = [
     {"key": "organization_num_employees_ranges", "label": "# of employees", "for": [P, C], "type": "choice",
      "param": "organization_num_employees_ranges[]", "options": EMPLOYEE_RANGES, "group": "Company",
      "help": "Any of these headcount bands."},
-    {"key": "q_organization_keyword_tags", "label": "Industry & keywords", "for": [C], "type": "list",
+    # people too (measured live 2026-09-21: producers + tag "animation" in California = 4,465, DreamWorks and
+    # Renegade Animation, where the profile keyword "animation studios" beside a title found none)
+    {"key": "q_organization_keyword_tags", "label": "Industry & keywords", "for": [P, C], "type": "list",
      "param": "q_organization_keyword_tags[]", "group": "Company",
      "help": "Industries or keywords tied to the company: mining, film production, animation."},
     {"key": "revenue_range", "label": "Revenue (USD)", "for": [P, C], "type": "range", "param": "revenue_range",
@@ -371,6 +373,84 @@ def word_forms(phrase):
     return [p] if other == p else [p, other]
 
 
+# People: the job in the words is a TITLE, the rest is what the company does (owner, 2026-09-21: "universal
+# section is not working"). Measured live that day, "producers in California" as profile keywords found
+# Flavor Producers and Producers Dairy Foods; as the title "producer" it found 36,594 producers, and with
+# "animation" beside it, DreamWorks Animation's. A title is a run of words ending in a role ("executive
+# producers", "senior marketing managers", "heads of partnerships"); a modifier alone is not one.
+TITLE_ROLES = {
+    "producer", "director", "founder", "co-founder", "cofounder", "owner", "partner", "president", "ceo", "cto",
+    "cfo", "coo", "cmo", "cro", "cpo", "cco", "chairman", "chairwoman", "chairperson", "manager", "executive",
+    "officer", "head", "vp", "svp", "evp", "avp", "showrunner", "writer", "editor", "agent", "buyer",
+    "strategist", "coordinator", "consultant", "principal", "animator", "recruiter", "marketer", "publicist",
+    "attorney", "lawyer", "counsel", "controller", "supervisor", "administrator", "entrepreneur", "investor",
+    "curator", "programmer", "commissioner", "scout", "booker", "promoter", "planner", "designer", "engineer",
+    "developer", "artist", "analyst", "specialist", "associate", "assistant",
+}
+TITLE_MODIFIERS = {
+    "executive", "senior", "sr", "junior", "jr", "associate", "assistant", "supervising", "managing", "general",
+    "line", "co", "lead", "chief", "head", "vice", "deputy", "principal", "global", "regional", "national",
+    "international", "technical", "creative", "casting", "art", "music", "content", "marketing", "sales",
+    "brand", "product", "digital", "post", "production", "development", "business", "operations", "finance",
+    "financial", "partnerships", "partnership", "strategy", "strategic", "communications", "social", "media",
+    "commercial", "legal", "talent", "account", "accounts", "program", "programming", "project", "events",
+    "event", "hr", "people", "growth", "revenue", "investment", "acquisitions", "acquisition", "licensing",
+    "distribution", "story", "visual",
+}
+_HEAD_OF = {"head", "vp", "svp", "evp", "avp", "director", "president", "chief", "manager", "officer"}
+_JOINERS = {"at", "of", "for", "with", "and", "or", "&", "in", "from", "the", "a", "an", "who", "that", ","}
+
+
+def _one(word):
+    """A role word in the singular: producers -> producer, CEOs -> ceo, heads -> head."""
+    w = word.lower().strip(",.;:")
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 3 and w[:-1] in TITLE_ROLES | TITLE_MODIFIERS:
+        return w[:-1]
+    if w.endswith("s") and w[:-1] in ("ceo", "cto", "cfo", "coo", "cmo", "vp", "svp", "evp", "avp"):
+        return w[:-1]
+    return w
+
+
+def people_titles(text):
+    """-> (titles, the other words): "heads of partnerships at animation studios" ->
+    (["head of partnerships"], "animation studios"); "animation producers and directors" ->
+    (["producer", "director"], "animation"); "US arcades" (no role) -> ([], "US arcades")."""
+    words = [w for w in str(text or "").replace(",", " , ").split()]
+    titles, rest, i = [], [], 0
+    while i < len(words):
+        j = i
+        while j < len(words) and (_one(words[j]) in TITLE_ROLES or words[j].lower() in TITLE_MODIFIERS):
+            j += 1
+        # the longest run of title words that ends in a role
+        end = j
+        while end > i and _one(words[end - 1]) not in TITLE_ROLES:
+            end -= 1
+        if end > i:
+            phrase = [w.lower() for w in words[i:end - 1]] + [_one(words[end - 1])]
+            k = end
+            if _one(words[end - 1]) in _HEAD_OF and k + 1 < len(words) and words[k].lower() == "of":
+                m = k + 1                                   # "head of partnerships", up to the next joiner
+                while m < len(words) and words[m].lower() not in _JOINERS:
+                    m += 1
+                if m > k + 1:
+                    phrase += ["of"] + [w.lower() for w in words[k + 1:m]]
+                    k = m
+            t = " ".join(phrase)
+            if t not in titles:
+                titles.append(t)
+            i = k
+            continue
+        rest.append(words[i])
+        i += 1
+    if not titles:
+        return [], " ".join(words).replace(" , ", ", ").strip(" ,")
+    # joiners go, but "or" and commas stay: they separate one kind of company from the next
+    kept = [w for w in rest if w.lower() not in _JOINERS or w.lower() in ("or", ",")]
+    return titles, " ".join(kept).replace(" , ", ", ").strip(" ,").strip()
+
+
 def read_search_text(kind, text):
     """The search bar's text as Apollo filters, and how it was read, for the page to show.
     -> (filters, read_as). "US arcades" -> tags arcade/arcades, HQ in the United States;
@@ -407,13 +487,22 @@ def read_search_text(kind, text):
         else:
             said.append("companies")
     else:
-        if rest:
-            out["q_keywords"] = rest
-            said.append("people whose profile mentions “%s”" % rest)
-        else:
-            said.append("people")
+        # the job is a title; what the company does goes to the same company tags the Companies tab uses
+        titles, other = people_titles(rest)
+        tags = []
+        for part in re.split(r"\s*(?:,|;|\bor\b)\s*", other, flags=re.I):
+            tags += [t for t in word_forms(part) if t not in tags]
+        if titles:
+            out["person_titles"] = titles
+        if tags:
+            out["q_organization_keyword_tags"] = tags
+        who = ("people titled " + " or ".join("“%s”" % t for t in titles)) if titles else "people"
+        if tags:
+            who += (", at " if titles else " at ") + "companies tagged " + " or ".join("“%s”" % t for t in tags)
+        said.append(who)
     if places:
-        said.append(("based in " if kind == C else "at companies based in ") + " or ".join(places))
+        said.append(("based in " if kind == C or out.get("q_organization_keyword_tags") else "at companies based in ")
+                    + " or ".join(places))
     return out, ", ".join(said)
 
 
@@ -545,6 +634,10 @@ def describe(kind, filters):
     ids = [k for k in ("organization_ids", "lookalike_organization_ids") if (filters or {}).get(k)]
     for k in ids:
         parts.append("%s: %d picked" % (FILTER_BY_KEY[k]["label"], len(filters[k])))
+    # the search bar's words first: a saved "US arcades, 1-10 people" read back as only "# of employees: 1-10"
+    text = " ".join(str((filters or {}).get("q_text") or "").split())
+    if text:
+        parts.insert(0, "“%s”" % text[:80])
     return ("People" if kind == P else "Companies") + (" · " + " · ".join(parts) if parts else "")
 
 
@@ -716,9 +809,12 @@ def person_record(m):
 
 
 # ------------------------------------------------------------ account checks
+STATUS_TIMEOUT = 10     # seconds: the page's "is Apollo connected" check must not hang the page
+
+
 def credits():
     """0 credits. -> {"lead_credits_left", "lead_credits_limit", "cycle_ends"} or raises."""
-    d = _call("POST", "/usage_stats/credit_usage_stats")
+    d = _call("POST", "/usage_stats/credit_usage_stats", timeout=STATUS_TIMEOUT)
     lead = ((d.get("credit_usage_stats") or {}).get("lead_credit") or {})
     cycle = d.get("current_credit_cycle") or {}
     return {"lead_credits_left": lead.get("left_over"), "lead_credits_limit": lead.get("limit"),
@@ -727,29 +823,45 @@ def credits():
 
 def profile():
     """0 credits. Who the key acts as (Apollo: the workspace's longest-standing admin)."""
-    d = _call("GET", "/users/api_profile")
+    d = _call("GET", "/users/api_profile", timeout=STATUS_TIMEOUT)
     return {"name": " ".join(x for x in (d.get("first_name"), d.get("last_name")) if x) or None,
             "email": d.get("email"), "team_id": d.get("team_id")}
 
 
+def _transient(e):
+    """Apollo busy or out of reach (rate limit, its own error, a timeout), as opposed to refusing the key."""
+    return e.status in (0, 429) or (e.status or 0) >= 500
+
+
 def status():
-    """What the page shows before anyone searches. Never raises."""
+    """What the page shows before anyone searches. Never raises.
+    connected: True (a check answered), False (Apollo refused the key: 401), or None (Apollo could not be
+    asked just now: rate limit, timeout, its own error). None is NOT "refused": the page keeps Search on,
+    and the search itself says what is wrong. A busy Apollo used to read as "refused the key" and switch
+    the whole page off (owner, 2026-09-21: "universal section is not working")."""
     out = {"key_set": key_is_set(), "connected": False, "profile": None, "credits": None, "problems": []}
     if not out["key_set"]:
         return out
+    out["connected"] = None
     try:
         out["profile"] = profile()
         out["connected"] = True
     except ApolloError as e:
         out["problems"].append("Profile: %s" % e)
-        if e.status in (0, 401):
+        if e.status == 401:
+            out["connected"] = False
             return out
-        out["connected"] = e.status == 403          # the key works; this endpoint is not in its scope
+        if e.status == 403:
+            out["connected"] = True                 # the key works; this endpoint is not in its scope
     try:
         out["credits"] = credits()
         out["connected"] = True
     except ApolloError as e:
         out["problems"].append("Credits: %s" % e)
+        if e.status == 401:
+            out["connected"] = False
+        elif out["connected"] is None and not _transient(e):
+            out["connected"] = True                 # it answered, just not with the credits: the key works
     return out
 
 

@@ -114,11 +114,19 @@ arcades*, *Indian production houses*. The place becomes the HQ location filter
 (a country, a nationality like "Indian", a US state, a city, or anything after
 "in"), and the rest becomes Apollo's industry and keyword tags, searched in both
 singular and plural. Commas or "or" search several segments at once (*arcades,
-bowling alleys*). In a people search the place is the employer's HQ and the rest
-is words on their profile. After each search, a line under the bar says exactly
-how it was read, for example *Searched companies tagged "arcades" or "arcade",
-based in United States*. To find one company by its name, use **Company name**
-under Filters.
+bowling alleys*).
+
+**In a people search, say the job too:** *producers at animation studios in
+California*, *heads of partnerships at production companies*, *founders of gaming
+startups in India*. The job becomes Apollo's job-title filter (similar titles
+included), what the company does becomes the same company tags as above, and the
+place is the employer's HQ. Until 21 September the words went to profile
+keywords, which matched company names: *producers in California* found staff at a
+food firm called Flavor Producers; read as a title it finds 36,594 producers.
+After each search, a line under the bar says exactly how it was read, for example
+*Searched people titled "producer", at companies tagged "animation studios" or
+"animation studio", based in California*. To find one company by its name, use
+**Company name** under Filters.
 
 The filters carry the names Apollo gives them:
 

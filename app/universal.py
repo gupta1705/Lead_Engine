@@ -34,7 +34,9 @@ import apollo_store  # noqa: E402
 SLUG = "universal"
 _STATUS = {"at": 0.0, "value": None}
 _LOCK = threading.Lock()
-STATUS_TTL = 60          # seconds: the status panel costs two Apollo calls (0 credits, but rate-limited)
+# seconds: the status panel costs two Apollo calls (0 credits, but rate-limited, and ~3 s). The credits are
+# refreshed right after anything that spends one (a company page, a reveal), so 5 minutes loses nothing.
+STATUS_TTL = 300
 
 
 def _apollo_http(e):
@@ -62,7 +64,9 @@ def build_router(cursor):
 
     def status(force=False):
         with _LOCK:
-            if force or time.monotonic() - _STATUS["at"] > STATUS_TTL or _STATUS["value"] is None:
+            # a check Apollo could not answer (busy, timed out) is asked again soon, not in five minutes
+            ttl = STATUS_TTL if (_STATUS["value"] or {}).get("connected") is not None else 20
+            if force or time.monotonic() - _STATUS["at"] > ttl or _STATUS["value"] is None:
                 _STATUS["value"] = apollo.status()
                 _STATUS["at"] = time.monotonic()
             return _STATUS["value"]

@@ -220,10 +220,48 @@ def offline():
     check("a place alone is a location search", rd(apollo.C, "California")[0], {"organization_locations": ["California"]})
     check("a word inside a name is not a place: Indiana is not India",
           rd(apollo.C, "Indiana arcades")[0]["organization_locations"], ["Indiana"])
-    check("people: the place is the employer's HQ, the rest profile words",
+    # people (owner, 2026-09-21: "universal section is not working"): profile keywords found Flavor Producers
+    # for "producers in California"; the job is a title, what the company does its tags, the place its HQ
+    check("people: the job is a title, the place the employer's HQ",
           rd(apollo.P, "producers in Los Angeles"),
-          ({"organization_locations": ["Los Angeles"], "q_keywords": "producers"},
-           "people whose profile mentions “producers”, at companies based in Los Angeles"))
+          ({"organization_locations": ["Los Angeles"], "person_titles": ["producer"]},
+           "people titled “producer”, at companies based in Los Angeles"))
+    check("people: title, company tags and place, read back in words",
+          rd(apollo.P, "heads of partnerships at animation studios in California"),
+          ({"organization_locations": ["California"], "person_titles": ["head of partnerships"],
+            "q_organization_keyword_tags": ["animation studios", "animation studio"]},
+           "people titled “head of partnerships”, at companies tagged “animation studios” or “animation studio”,"
+           " based in California"))
+    for text, titles, tags in (
+            ("executive producers", ["executive producer"], None),
+            ("senior marketing managers", ["senior marketing manager"], None),
+            ("animation producers and directors", ["producer", "director"], ["animation", "animations"]),
+            ("founders of gaming startups", ["founder"], ["gaming startups", "gaming startup"]),
+            ("director of development at production companies", ["director of development"],
+             ["production companies", "production company"]),
+            ("CEOs", ["ceo"], None),
+            ("VP of marketing", ["vp of marketing"], None),
+            ("producers at animation studios or VFX houses", ["producer"],
+             ["animation studios", "animation studio", "vfx houses", "vfx house"])):
+        f = rd(apollo.P, text)[0]
+        check("  %r -> titles %s" % (text, titles), (f.get("person_titles"), f.get("q_organization_keyword_tags")),
+              (titles, tags))
+    check("people: no job in the words, the words are what the company does",
+          rd(apollo.P, "US arcades"),
+          ({"organization_locations": ["United States"], "q_organization_keyword_tags": ["arcades", "arcade"]},
+           "people at companies tagged “arcades” or “arcade”, based in United States"))
+    check("  'lead' alone is not a job (lead generation agencies)", rd(apollo.P, "lead generation agencies")[0],
+          {"q_organization_keyword_tags": ["lead generation agencies", "lead generation agency"]})
+    check("  a modifier alone is not a job (marketing agencies)", rd(apollo.P, "marketing agencies")[0],
+          {"q_organization_keyword_tags": ["marketing agencies", "marketing agency"]})
+    check("a saved search's summary starts with the words searched",
+          apollo.describe(apollo.C, {"q_text": "US arcades", "organization_num_employees_ranges": ["1,10"]}),
+          "Companies · “US arcades” · # of employees: 1-10")
+    q = apollo.build_query(apollo.P, {"q_text": "producers at animation studios in California"})
+    check("  a people search sends Apollo titles and company tags",
+          sorted(q), sorted([("person_titles[]", "producer"), ("q_organization_keyword_tags[]", "animation studios"),
+                             ("q_organization_keyword_tags[]", "animation studio"),
+                             ("organization_locations[]", "California"), ("page", "1"), ("per_page", "25")]))
     check("the other number of a word, and none where it would be wrong",
           [apollo.word_forms(w) for w in ("studio", "agency", "companies", "boss", "status")],
           [["studio", "studios"], ["agency", "agencies"], ["companies", "company"], ["boss", "bosses"], ["status"]])
@@ -257,6 +295,23 @@ def offline():
         "message": "{\"message\": \"The maximum number of api calls allowed for api/v1/mixed_people/api_search is 600 "
                    "times per hour.\"}"}, "")[0].startswith("Apollo's rate limit is used up for now. The maximum"), True)
     check("422", ex(422, {"error": "Invalid parameters"}, "")[0], "Apollo could not use those filters: Invalid parameters")
+
+    print("\n-- the connection check: busy is not refused (owner, 2026-09-21: the page switched itself off)")
+    real_key_set = apollo.key_is_set
+    apollo.key_is_set = lambda: True
+    for label, errs, want in (
+            ("both checks rate-limited: unknown, not refused", [429, 429], None),
+            ("both checks timed out: unknown", [0, 0], None),
+            ("Apollo's own error on both: unknown", [503, 500], None),
+            ("the key refused (401): refused", [401], False),
+            ("profile out of the key's scope (403), credits fine: connected", [403, None], True),
+            ("profile busy, credits fine: connected", [429, None], True)):
+        answers = [apollo.ApolloError("x", status=s) if s is not None else
+                   {"credit_usage_stats": {"lead_credit": {"left_over": 5}}} for s in errs]
+        apollo._call = Stub(answers)
+        s = apollo.status()
+        check("  " + label, s["connected"], want)
+    apollo.key_is_set = real_key_set
 
     print("\n-- no key: nothing is called")
     real_env = apollo.env
