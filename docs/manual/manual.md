@@ -337,10 +337,13 @@ opening sentence is their own numbers, and the offer names their actual most
 recent episode. None of that was invented; all of it came from the evidence on
 the lead. Internal research notes never go into an email.
 
-Production-house emails follow the owner's template, in four paragraphs: who
-Kartikeya is and what TVF makes; which is why this company caught our attention;
-the partnership and why it fits; a short call. They are signed "Warm regards,
-Kartikeya, Business Development and IP Strategy". The wording for the company's
+Production-house emails follow the owner's template, in four paragraphs: who we
+are and what TVF makes; which is why this company caught our attention; the
+partnership and why it fits; a short call. Since 21 September they are written
+by Vedansh on Kartikeya's behalf: the opening reads "I'm writing on behalf of
+Kartikeya, who leads Business Development and IP Strategy at The Viral Fever
+(TVF)…", and the sign-off is whoever the Footer names ("Warm regards, Vedansh
+Gupta, Outreach Consultant"). The wording for the company's
 lane (animation, documentary, digital-first, drama or general) is the owner's
 own. The second paragraph is written from what the company says about itself
 on its website, its work and its founders, and it never names anything that is

@@ -220,20 +220,24 @@ def main():
         raise RuntimeError("model down")
     s5, b5 = email("Taste In Motion, Inc.", taste, "Becky Donahue", "becky@tasteinmotion.com", gen=boom)
     checks = [
-        ("a named person: the samples' greeting", b1.startswith("Hello Becky,\n\nI trust you are well.\n\nI am Kartikeya,"
-                                                               " and I lead Business Development and IP Strategy at The "
-                                                               "Viral Fever (TVF), one of India's leading"), True),
+        # 2026-09-21, the owner: Vedansh sends, on Kartikeya's behalf -- the opening names Kartikeya, the sign-off is
+        # whoever the footer says
+        ("a named person: the samples' greeting, on Kartikeya's behalf",
+         b1.startswith("Hello Becky,\n\nI trust you are well.\n\nI'm writing on behalf of Kartikeya, who leads Business "
+                       "Development and IP Strategy at The Viral Fever (TVF), one of India's leading"), True),
         ("a named person: the samples' subject", s1.startswith("From TVF in India — On "), True),
         ("four paragraphs, then the sign-off", b1.split("\n\nWarm regards,")[0].count("\n\n"), 5),
         ("paragraph two is about them", "\n\nWhich is why Taste In Motion caught my attention." in b1
          or "\n\nWhich is why Taste In Motion drew me in." in b1, True),
-        ("the owner's sign-off, then the address and the way out",
-         "Warm regards,\nKartikeya\nBusiness Development and IP Strategy\n\n" + ADDR in b1, True),
+        ("the footer's sign-off, then the address and the way out",
+         "Warm regards,\n%s\n%s\n\n%s" % (real["sender"]["name"], real["sender"]["title"], ADDR) in b1, True),
         ("their city in the ask", "work around your schedule in LA." in b1, True),
         ("the research note never reaches the email", "INTERNAL" in b1 + b4 + b5, False),
-        ("nobody named: the samples' plain greeting", b2.startswith("Hello,\n\nI am Kartikeya, and I handle Business "
-                                                                    "Development and IP Strategy at The Viral Fever (TVF, "
-                                                                    "India)"), True),
+        ("nobody named: the samples' plain greeting, on Kartikeya's behalf",
+         b2.startswith("Hello,\n\nI'm writing on behalf of Kartikeya, who handles Business Development and IP Strategy "
+                       "at The Viral Fever (TVF, India)"), True),
+        ("the opening never runs the footer's title into a sentence ('I lead Outreach Consultant')",
+         ("I lead " + real["sender"]["title"]) in b1 + b2 or ("I handle " + real["sender"]["title"]) in b1 + b2, False),
         ("nobody named: the samples' subject and close", (s2.startswith("On "),
                                                          "Either way, I would love to hear from you." in b2), (True, True)),
         ("an animation studio gets the animation lane", ("extending it into animation" in b3, "kids and family" in b3),
