@@ -109,6 +109,9 @@ def build_router(cursor):
                     c["saved"] = have.get(c["id"])          # the lead's status, or None
         if kind == "companies":
             status(force=True)                              # a page of companies cost a credit
+        # how the search bar's words were read ("companies tagged "arcade" or "arcades", based in United
+        # States"), so the page can say what was searched rather than leave the reading hidden
+        out["read_as"] = apollo.read_search_text(kind, (b.get("filters") or {}).get("q_text"))[1]
         return out
 
     @r.post("/api/universal/save")

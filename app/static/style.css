@@ -804,9 +804,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .uni-query svg { position: absolute; left: 10px; top: 11px; color: var(--icon-subtle); pointer-events: none; }
 .uni-query input { padding-left: 36px; }
 .uni-searchbar .btn { height: 40px; }
-.uni-cost { display: flex; align-items: center; gap: 6px; margin: 8px 0 16px;
+.uni-cost { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 16px;
   font-size: 12px; line-height: 16px; color: var(--text-subtlest); }
 .uni-cost svg { flex: none; }
+.uni-cost .uni-readas { color: var(--text); margin-left: 4px; }
 .uni-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; align-items: start; }
 .uni-filters { position: sticky; top: 8px; max-height: calc(100vh - 140px); overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }

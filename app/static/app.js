@@ -1273,10 +1273,13 @@ function renderUniTabs() {
   const u = state.uni;
   $$("#uniTabs [data-kind]").forEach((b) => { const on = b.dataset.kind === u.kind; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
   $("#uniQuery").value = u.q[u.kind] || "";
-  $("#uniQuery").placeholder = u.kind === "people" ? "Search people: any words on their Apollo profile" : "Search companies by name";
+  // the bar reads what they do and where (owner, 2026-09-21: "US Arcades", a segment, not a company name)
+  $("#uniQuery").placeholder = u.kind === "people" ? "Who and where: producers in Los Angeles, US arcades"
+                                                   : "What they do and where: US arcades, animation studios in California";
   $("#uniCost").innerHTML = icon("info", 14) + (u.kind === "people"
     ? `<span>Searching people is free. Saving a person reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.</span>`
-    : `<span>Each page of company results costs <strong>1 Apollo credit</strong>. Saving companies is free.</span>`);
+    : `<span>Each page of company results costs <strong>1 Apollo credit</strong>. Saving companies is free. To find one company by name, use Company name under Filters.</span>`)
+    + (u.readAs && u.readAsKind === u.kind ? `<span class="uni-readas">Searched ${esc(u.readAs)}.</span>` : "");
   $("#uniGo").textContent = u.kind === "people" ? "Search" : "Search · 1 credit";
 }
 
@@ -1366,7 +1369,7 @@ function uniCurrentFilters() {
     } else out[f.key] = v;
   });
   const q = (u.q[u.kind] || "").trim();
-  if (q) out[u.kind === "people" ? "q_keywords" : "q_organization_name"] = q;
+  if (q) out.q_text = q;                  // read on the server as what they do and where (tools/apollo.py)
   return out;
 }
 async function uniSearch(page) {
@@ -1384,7 +1387,8 @@ async function uniSearch(page) {
     u.total = d.total || 0; u.page = d.page || 1; u.perPage = d.per_page || 25;
     u.totalPages = Math.min(500, d.total_pages || Math.ceil(u.total / u.perPage) || 1);
     u.searched = true; u.resultKind = u.kind; u.lastFilters = filters; u.selected.clear();
-    uniPersist();
+    u.readAs = d.read_as || ""; u.readAsKind = u.kind;
+    uniPersist(); renderUniTabs();
     renderUniResults();
     if (u.kind === "companies") uniLoadStatus();             // that page cost a credit: show the new balance
   } catch (e) { toast(e.message, true); }
@@ -1573,8 +1577,10 @@ function uniApplySaved(s) {
   if (!s) return;
   const u = state.uni, f = Object.assign({}, s.filters || {});
   u.kind = s.kind;
-  u.q[s.kind] = f.q_keywords || f.q_organization_name || "";
-  delete f.q_keywords; delete f.q_organization_name;
+  // the bar's words (q_text since 2026-09-21; q_keywords before). A company search saved with the old
+  // name search keeps q_organization_name, which is now the Company name filter, so it means the same
+  u.q[s.kind] = f.q_text || f.q_keywords || "";
+  delete f.q_text; delete f.q_keywords;
   u.filters[s.kind] = f;
   uniPersist(); renderUniTabs(); renderUniFilters();
   if (s.kind === "people") uniSearch(1);                      // free, so it runs straight away

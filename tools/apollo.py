@@ -176,8 +176,9 @@ FILTERS = [
     {"key": "q_keywords", "label": "Keywords", "for": [P], "type": "text", "param": "q_keywords",
      "group": "Search", "help": "Words to match anywhere on the person's Apollo profile."},
     {"key": "q_organization_name", "label": "Company name", "for": [C], "type": "text",
-     "param": "q_organization_name", "group": "Search",
-     "help": "Part of the company's name: \"marketing\" finds NY Marketing Unlimited."},
+     "param": "q_organization_name", "group": "Company",
+     "help": "Part of the company's name: \"marketing\" finds NY Marketing Unlimited. The search bar searches "
+             "what companies do and where; this is the name search."},
     {"key": "q_person_name", "label": "Name", "for": [P], "type": "text", "param": "q_person_name",
      "group": "Person", "help": "People whose name contains every word you type."},
     {"key": "person_titles", "label": "Job titles", "for": [P], "type": "list", "param": "person_titles[]",
@@ -287,12 +288,159 @@ def _num(v, signed=False):
     return n
 
 
+# ------------------------------------------------------------ the search bar
+# What the search bar means (owner, 2026-09-21): "when i want to search using apollo i meant a domain such
+# as say US Arcades that segment not just the company name". Typed text is read as WHAT THE COMPANIES DO
+# and WHERE: the place goes to the HQ location filter, the rest to Apollo's industry & keyword tags
+# (companies) or to profile keywords (people). A name search is the Company name filter in the panel.
+# Measured live that day: name "arcade" in the US found Arcade Beauty and Arcade Therapeutics (509);
+# the tag "arcade" found Dave & Buster's, Bowlero, Lucky Strike, Sega of America (2,130). Several tags
+# match ANY of them (arcade + arcades: 8,029), so a word is searched in both its singular and plural.
+PLACE_WORDS = {
+    "us": "United States", "u.s.": "United States", "u.s": "United States", "usa": "United States",
+    "u.s.a.": "United States", "u.s.a": "United States", "america": "United States", "american": "United States",
+    "united states": "United States", "united states of america": "United States",
+    "uk": "United Kingdom", "u.k.": "United Kingdom", "britain": "United Kingdom", "british": "United Kingdom",
+    "great britain": "United Kingdom", "united kingdom": "United Kingdom", "england": "England",
+    "uae": "United Arab Emirates", "united arab emirates": "United Arab Emirates", "nz": "New Zealand",
+    "indian": "India", "canadian": "Canada", "australian": "Australia", "german": "Germany", "french": "France",
+    "spanish": "Spain", "italian": "Italy", "japanese": "Japan", "korean": "South Korea", "korea": "South Korea",
+    "chinese": "China", "mexican": "Mexico", "brazilian": "Brazil", "irish": "Ireland", "dutch": "Netherlands",
+    "swedish": "Sweden", "singaporean": "Singapore", "european": "Europe", "asian": "Asia",
+}
+PLACE_NAMES = [
+    # countries and regions people actually search by
+    "India", "Canada", "Australia", "New Zealand", "Germany", "France", "Spain", "Italy", "Portugal",
+    "Netherlands", "Belgium", "Switzerland", "Austria", "Ireland", "Scotland", "Wales", "Sweden", "Norway",
+    "Denmark", "Finland", "Poland", "Japan", "South Korea", "China", "Hong Kong", "Taiwan", "Singapore",
+    "Malaysia", "Indonesia", "Philippines", "Thailand", "Vietnam", "Pakistan", "Bangladesh", "Sri Lanka",
+    "Nepal", "Saudi Arabia", "Qatar", "Israel", "Turkey", "Egypt", "Nigeria", "Kenya", "South Africa",
+    "Mexico", "Brazil", "Argentina", "Chile", "Colombia", "Peru", "Europe", "Asia", "Africa",
+    "Latin America", "Middle East", "North America",
+    # US states and DC
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
+    "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky",
+    "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri",
+    "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York",
+    "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island",
+    "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+    "West Virginia", "Wisconsin", "Wyoming", "District of Columbia",
+    # cities that come up in this work
+    "Los Angeles", "San Francisco", "Chicago", "Atlanta", "Austin", "Boston", "Seattle", "Miami",
+    "London", "Toronto", "Vancouver", "Sydney", "Mumbai", "Delhi", "New Delhi", "Bangalore", "Bengaluru",
+    "Hyderabad", "Chennai", "Pune", "Kolkata", "Dubai", "Tokyo", "Seoul", "Berlin", "Paris",
+]
+_PLACES = dict(PLACE_WORDS, **{p.lower(): p for p in PLACE_NAMES})
+_PLACE_MAX_WORDS = max(len(k.split()) for k in _PLACES)
+
+
+def _take_place(words, at_start):
+    """A known place at the start or the end of the words: (place, words left) or (None, words)."""
+    for n in range(min(_PLACE_MAX_WORDS, len(words)), 0, -1):
+        part = words[:n] if at_start else words[-n:]
+        key = " ".join(part).lower().strip(",")
+        if key in _PLACES:
+            return _PLACES[key], (words[n:] if at_start else words[:-n])
+    return None, words
+
+
+def word_forms(phrase):
+    """The phrase and the same with its last word in the other number: arcades -> arcade, studio -> studios."""
+    p = " ".join(str(phrase or "").lower().split())
+    if not p:
+        return []
+    words = p.split()
+    last = words[-1]
+    if len(last) > 3 and last.endswith("ies"):
+        alt = last[:-3] + "y"                       # agencies -> agency
+    elif last.endswith("ss"):
+        alt = last + "es"                           # boss -> bosses
+    elif last.endswith(("us", "is")):
+        alt = None                                  # status, analysis: no safe other form
+    elif len(last) > 3 and last.endswith("s"):
+        alt = last[:-1]                             # arcades -> arcade, studios -> studio
+    elif last.endswith(("x", "ch", "sh")):
+        alt = last + "es"
+    elif last.endswith("y") and len(last) > 2 and last[-2] not in "aeiou":
+        alt = last[:-1] + "ies"                     # agency -> agencies
+    else:
+        alt = last + "s"                            # arcade -> arcades
+    if not alt:
+        return [p]
+    other = " ".join(words[:-1] + [alt])
+    return [p] if other == p else [p, other]
+
+
+def read_search_text(kind, text):
+    """The search bar's text as Apollo filters, and how it was read, for the page to show.
+    -> (filters, read_as). "US arcades" -> tags arcade/arcades, HQ in the United States;
+    "animation studios in California" -> tags animation studio(s), HQ in California."""
+    s = " ".join(str(text or "").split())[:200]
+    if not s:
+        return {}, ""
+    places = []
+    m = re.search(r"\s+(?:based in|located in|in|from)\s+(?:the\s+)?(.+)$", s, re.I)   # "... in (the) US"
+    if m:
+        places.append(_PLACES.get(m.group(1).lower().strip(" ,."), m.group(1).strip(" ,.")))
+        s = s[:m.start()]
+    m = re.match(r"^(.+?)-based\s+(.+)$", s, re.I)                            # "Atlanta-based arcades"
+    if m:
+        places.append(_PLACES.get(m.group(1).lower(), m.group(1).strip()))
+        s = m.group(2)
+    words = s.split()
+    for at_start in (True, False):                                            # "US arcades", "arcades USA"
+        place, words = _take_place(words, at_start)
+        if place:
+            places.append(place)
+    rest = " ".join(words).strip(" ,")
+    places = list(dict.fromkeys(p for p in places if p))
+    out, said = {}, []
+    if places:
+        out["organization_locations"] = places
+    if kind == C:
+        tags = []
+        for part in re.split(r"\s*(?:,|;|\bor\b)\s*", rest, flags=re.I):
+            tags += [t for t in word_forms(part) if t not in tags]
+        if tags:
+            out["q_organization_keyword_tags"] = tags
+            said.append("companies tagged " + " or ".join("“%s”" % t for t in tags))
+        else:
+            said.append("companies")
+    else:
+        if rest:
+            out["q_keywords"] = rest
+            said.append("people whose profile mentions “%s”" % rest)
+        else:
+            said.append("people")
+    if places:
+        said.append(("based in " if kind == C else "at companies based in ") + " or ".join(places))
+    return out, ", ".join(said)
+
+
+def _with_search_text(kind, filters):
+    """filters with the bar's q_text read into real ones; anything set in the panel is kept alongside."""
+    f = dict(filters or {})
+    text = f.pop("q_text", None)
+    if not text:
+        return f
+    got, _ = read_search_text(kind, text)
+    for k, v in got.items():
+        if isinstance(v, list):
+            f[k] = list(dict.fromkeys(list(f.get(k) or []) + v))
+        elif f.get(k):
+            f[k] = "%s %s" % (f[k], v)
+        else:
+            f[k] = v
+    return f
+
+
 def build_query(kind, filters, page=1, per_page=25):
     """The search's query parameters, as Apollo documents them ("person_titles[]" repeated,
     "revenue_range[min]"), from the page's filters. Raises ValueError on anything it cannot
     send as asked -- a filter is never dropped quietly."""
     if kind not in (P, C):
         raise ValueError("search people or companies")
+    filters = _with_search_text(kind, filters)      # the search bar's words, read as what they do and where
     q = []
     for k, v in (filters or {}).items():
         f = FILTER_BY_KEY.get(k)

@@ -106,14 +106,28 @@ project menu and it opens on **Apollo search**.
 
 **Two searches, as in Apollo's own app.** *People* finds people; *Companies*
 finds companies. Type in the search bar, or set filters on the left, then press
-**Search**. The filters carry the names Apollo gives them:
+**Search**.
+
+**The search bar reads what they do and where.** Type a segment, the way you
+would say it: *US arcades*, *animation studios in California*, *Atlanta-based
+arcades*, *Indian production houses*. The place becomes the HQ location filter
+(a country, a nationality like "Indian", a US state, a city, or anything after
+"in"), and the rest becomes Apollo's industry and keyword tags, searched in both
+singular and plural. Commas or "or" search several segments at once (*arcades,
+bowling alleys*). In a people search the place is the employer's HQ and the rest
+is words on their profile. After each search, a line under the bar says exactly
+how it was read, for example *Searched companies tagged "arcades" or "arcade",
+based in United States*. To find one company by its name, use **Company name**
+under Filters.
+
+The filters carry the names Apollo gives them:
 
 - **Person**: name, job titles, management level, where they live, email
   status. Once you enter a job title, **Include people with similar titles**
   appears to widen it.
-- **Company**: HQ location (a company search can also leave locations out),
-  number of employees, industry and keywords, revenue, company domains, and
-  domains to leave out.
+- **Company**: company name, HQ location (a company search can also leave
+  locations out), number of employees, industry and keywords, revenue, company
+  domains, and domains to leave out.
 - **Technologies** the company uses, **funding**, **job postings**, and
   **headcount growth** over 6, 12 or 24 months.
 - **Company**, in a people search: the companies you picked with **People

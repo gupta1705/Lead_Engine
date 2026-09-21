@@ -266,7 +266,8 @@ MOCK_JS = r"""
             return { id: hex(0xa0000 + k), first_name: first[k % 10], last_name_obfuscated: "Ex***e", title: titles[k % titles.length],
               has_email: k % 4 !== 3, company: "Example Studio " + (1 + (k % 7)),
               saved: A.saved.has(hex(0xa0000 + k)) }; });
-          return json({ total: 1234, page, per_page: per, people });
+          return json({ total: 1234, page, per_page: per, people,
+            read_as: f.q_text ? "people whose profile mentions “" + f.q_text + "” (the pretend Apollo does not read places)" : "" });
         }
         A.spent += 1;
         const companies = Array.from({ length: per }, (_, i) => { const k = (page - 1) * per + i;
@@ -274,7 +275,8 @@ MOCK_JS = r"""
             website_url: "https://studio" + (1 + k) + ".example", linkedin_url: "https://www.linkedin.com/company/example",
             founded_year: 2000 + (k % 25), phone: "+91 22 0000 00" + String(k % 100).padStart(2, "0"),
             in_apollo_account: k === 2, saved: A.saved.has(hex(0xb0000 + k)) ? "ready_for_review" : null }; });
-        return json({ total: 311, page, per_page: per, total_pages: Math.ceil(311 / per), companies });
+        return json({ total: 311, page, per_page: per, total_pages: Math.ceil(311 / per), companies,
+          read_as: f.q_text ? "companies tagged “" + f.q_text + "” (the pretend Apollo does not read places)" : "" });
       }
       if (p === "/api/universal/save") {
         const ids = body.kind === "people" ? (body.ids || []) : (body.companies || []).map((c) => c.id);

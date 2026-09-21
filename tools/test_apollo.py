@@ -197,6 +197,45 @@ def offline():
         got = e.status
     check("reveal: a failure on the first batch is raised (nothing was charged)", got, 403)
 
+    print("\n-- the search bar: what they do, and where (owner, 2026-09-21: \"US Arcades\", a segment)")
+    rd = apollo.read_search_text
+    check("US Arcades: HQ in the United States, tagged arcade either way", rd(apollo.C, "US Arcades"),
+          ({"organization_locations": ["United States"], "q_organization_keyword_tags": ["arcades", "arcade"]},
+           "companies tagged “arcades” or “arcade”, based in United States"))
+    check("a place after 'in', 'the' dropped", rd(apollo.C, "arcades in the US")[0]["organization_locations"],
+          ["United States"])
+    check("a state after 'in', with a two-word segment",
+          rd(apollo.C, "animation studios in California")[0],
+          {"organization_locations": ["California"], "q_organization_keyword_tags": ["animation studios", "animation studio"]})
+    check("any place after 'in', even one not on the list",
+          rd(apollo.C, "arcades in Boise")[0]["organization_locations"], ["Boise"])
+    check("a headline's '<place>-based'", rd(apollo.C, "Atlanta-based arcades")[0],
+          {"organization_locations": ["Atlanta"], "q_organization_keyword_tags": ["arcades", "arcade"]})
+    check("a nationality is a country", rd(apollo.C, "Indian production houses")[0],
+          {"organization_locations": ["India"], "q_organization_keyword_tags": ["production houses", "production house"]})
+    check("a place at the end", rd(apollo.C, "arcades USA")[0]["organization_locations"], ["United States"])
+    check("several segments, commas or 'or'", rd(apollo.C, "arcades, bowling alleys or trampoline parks")[0]
+          ["q_organization_keyword_tags"],
+          ["arcades", "arcade", "bowling alleys", "bowling alley", "trampoline parks", "trampoline park"])
+    check("a place alone is a location search", rd(apollo.C, "California")[0], {"organization_locations": ["California"]})
+    check("a word inside a name is not a place: Indiana is not India",
+          rd(apollo.C, "Indiana arcades")[0]["organization_locations"], ["Indiana"])
+    check("people: the place is the employer's HQ, the rest profile words",
+          rd(apollo.P, "producers in Los Angeles"),
+          ({"organization_locations": ["Los Angeles"], "q_keywords": "producers"},
+           "people whose profile mentions “producers”, at companies based in Los Angeles"))
+    check("the other number of a word, and none where it would be wrong",
+          [apollo.word_forms(w) for w in ("studio", "agency", "companies", "boss", "status")],
+          [["studio", "studios"], ["agency", "agencies"], ["companies", "company"], ["boss", "bosses"], ["status"]])
+    q = apollo.build_query(apollo.C, {"q_text": "US arcades", "organization_num_employees_ranges": ["11,50"]})
+    check("the bar's text becomes Apollo's own parameters, beside the panel's filters",
+          sorted(q), sorted([("q_organization_keyword_tags[]", "arcades"), ("q_organization_keyword_tags[]", "arcade"),
+                             ("organization_locations[]", "United States"),
+                             ("organization_num_employees_ranges[]", "11,50"), ("page", "1"), ("per_page", "25")]))
+    check("a location set in the panel is kept alongside the bar's",
+          apollo._with_search_text(apollo.C, {"q_text": "US arcades", "organization_locations": ["Canada"]})
+          ["organization_locations"], ["Canada", "United States"])
+
     print("\n-- people as the lead store keeps them")
     p = apollo.person_record(match(3, status="extrapolated"))
     check("an extrapolated email is kept as unverified", (p["email"], p["email_status"]), ("x3@firm.com", "unverified"))
