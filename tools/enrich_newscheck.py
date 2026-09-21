@@ -321,6 +321,9 @@ def main():
                     "update entities set metadata = metadata ||"
                     " jsonb_build_object('news_evidence', %s::jsonb)"
                     " where id = %s", (_json.dumps(evidence), _e))
+                # re-score here: the chain's score_segment skips shortlisted rows, which this sweep
+                # includes (--shortlisted), so their number went stale (2026-09-21)
+                cur.execute("select score_entity(%s)", (_e,))
             cur.execute("update entities set metadata = jsonb_set(metadata,"
                         " '{news_checked}', to_jsonb(%s::text)) where id = %s",
                         (STAMP, _e))

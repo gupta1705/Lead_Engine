@@ -10,8 +10,9 @@ row, re-shortlist a lead somebody put back, act for a segment that has not
 turned it on, or keep acting after it has been turned off. Each of those is a
 row below.
 
-The rule is set inside the transaction, so the test does not depend on the
-live config. Running the step also shortlists the real qualifying rows inside
+The LCX rule is set inside the transaction, so those cases do not depend on
+the live config; the US Production Houses cases check its live rule (on, at
+30 -- owner, 2026-09-21). Running the step also shortlists the real qualifying rows inside
 the transaction; the checks only look at the rows this test creates, and the
 rollback at the end undoes everything. Exit code 1 on any failure.
 """
@@ -43,8 +44,14 @@ def main():
     try:
         cur.execute("select id from segments where slug = %s", (SEG,))
         seg_id = cur.fetchone()[0]
-        cur.execute("select id from segments where slug = 'us-production-houses'")
-        tvf_id = cur.fetchone()[0]
+        cur.execute("select id, config -> 'auto_shortlist' from segments where slug = 'us-production-houses'")
+        tvf_id, tvf_rule = cur.fetchone()
+        # a segment that has never had the rule: US Production Houses was that segment until the owner
+        # turned the rule on for it at 30 (2026-09-21), so the "untouched" case gets a throwaway one
+        bare_slug = "zz-test-no-rule-" + uuid.uuid4().hex[:6]
+        cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'test', 'company', '{}')"
+                    " returning id", (bare_slug,))
+        bare_id = cur.fetchone()[0]
         cur.execute("update segments set config = jsonb_set(config, '{auto_shortlist}', %s::jsonb)"
                     " where id = %s", ('{"enabled": true, "min_score": 20}', seg_id))
 
@@ -73,7 +80,7 @@ def main():
         archived = lead(seg_id, "archived", 95)
         put_back = lead(seg_id, "ready_for_review", 60,
                         {"auto_shortlisted_at": "2026-09-01T00:00:00+00:00"})
-        tvf_lead = lead(tvf_id, "ready_for_review", 90)
+        bare_lead = lead(bare_id, "ready_for_review", 90)
 
         print("-- the rule, for the segment that has it on")
         run(SEG)
@@ -97,8 +104,19 @@ def main():
         check("shortlists nothing new", cur.fetchone()[0] == before)
 
         print("\n-- other segments, and off")
+        run(bare_slug)
+        check("a segment without the rule is untouched", row(bare_lead)[0] == "ready_for_review", row(bare_lead))
+
+        # US Production Houses, by its live rule (owner, 2026-09-21: "short list all companies with a
+        # score over 30"): exactly 30 stays in review, anything over it is shortlisted
+        check("US Production Houses has the rule on, at 30",
+              (tvf_rule or {}).get("enabled") is True and float((tvf_rule or {}).get("min_score") or 0) == 30,
+              tvf_rule)
+        at_line = lead(tvf_id, "ready_for_review", 30)
+        over_line = lead(tvf_id, "ready_for_review", 30.5)
         run("us-production-houses")
-        check("a segment without the rule is untouched", row(tvf_lead)[0] == "ready_for_review", row(tvf_lead))
+        check("  a score of exactly 30 stays in review", row(at_line)[0] == "ready_for_review", row(at_line))
+        check("  30.5 is shortlisted", row(over_line)[0] == "shortlisted", row(over_line))
         cur.execute("update segments set config = jsonb_set(config, '{auto_shortlist,enabled}', 'false')"
                     " where id = %s", (seg_id,))
         late = lead(seg_id, "ready_for_review", 70)

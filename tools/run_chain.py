@@ -29,6 +29,13 @@ STEPS = [
     ("merge duplicates", ["sql/05c_merge_name_duplicates.sql"]),
     ("zero unverified",  ["sql/04b_zero_unverified.sql"]),
     ("score",            ["-c", "select count(*) from score_segment('%s');" % SEGMENT]),
+    # score_segment leaves shortlisted rows alone, but the news sweep and the site pass both write
+    # evidence onto them without re-scoring (2026-09-21: Electric Entertainment's co-production
+    # headline sat at 40.91 when its evidence gave 68.18). The number is refreshed, the status never
+    # is: score_entity only ever advances discovered/enriched rows.
+    ("score shortlisted", ["-c", "select count(score_entity(e.id)) from entities e join segments s"
+                                 " on s.id = e.segment_id where s.slug = '%s' and e.status = 'shortlisted';"
+                                 % SEGMENT]),
     ("apply gates",      ["sql/13_apply_gates.sql"]),
     # one primary contact per company, the best-ranked one (sql/28), after whatever the
     # enrichment passes added; the drafts and the lists read the same ranking (2026-09-17)
