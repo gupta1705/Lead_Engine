@@ -649,7 +649,7 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(409, "row is not in a state that allows " + action)
     # approved: it is sent now, not when someone next opens a terminal (app/scheduler.py)
     _scheduler.kick_outreach(segment, "manual")
-    return {"ok": True, "can_send": _can_send(segment)}
+    return {"ok": True, "can_send": _can_send(segment), "paused": _send_paused(segment)}
 
 
 @app.post("/api/outreach/batch/sample")
@@ -709,19 +709,32 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         batch_id, approved = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
     if approved:
         _scheduler.kick_outreach(segment, "manual")          # approved means sent: no terminal step
-    return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment)}
+    return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment),
+            "paused": _send_paused(segment)}
 
 
 def _can_send(segment):
-    """Is a mailbox connected for this segment on this server? The page words an approval by it:
-    "sending now" or "sends as soon as a mailbox is connected"."""
+    """Is a mailbox connected for this segment on this server, and is sending not paused? The page
+    words an approval by it: "sending now", "sends as soon as a mailbox is connected", or "waits:
+    sending is paused" (_send_paused)."""
     try:
         with cursor() as cur:
             cfg = _policy().outreach_config(cur, segment)
+        if _policy().sending_paused(cfg):
+            return False
         return any(mb["enabled"] and _scheduler.mailbox_connected(mb)
                    for mb in _policy().mailbox_list(cfg, segment))
     except Exception:
         return False
+
+
+def _send_paused(segment):
+    """Why sending is paused for this segment (outreach.sending_paused), or None."""
+    try:
+        with cursor() as cur:
+            return _policy().sending_paused(_policy().outreach_config(cur, segment))
+    except Exception:
+        return None
 
 
 def _render():
@@ -875,7 +888,8 @@ def mailboxes_state(segment: str = Depends(current_segment)):
         row["connected"] = bool(st.get("enabled")) and _scheduler.mailbox_connected(st)
         out.append(row)
     return {"segment_cap": int(cfg.get("daily_send_cap", 20)), "rotation": bool(cfg.get("mailboxes")),
-            "mailboxes": out, "can_send": any(r["connected"] for r in out)}
+            "mailboxes": out, "paused": pol.sending_paused(cfg),
+            "can_send": any(r["connected"] for r in out) and not pol.sending_paused(cfg)}
 
 
 # ------------------------------------------------------------------ kpis

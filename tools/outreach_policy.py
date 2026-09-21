@@ -370,6 +370,17 @@ def mailbox_list(outreach_cfg, segment):
     return out
 
 
+def sending_paused(cfg):
+    """Why sending is paused for this segment, or None. outreach.sending_paused (owner, 2026-09-21:
+    "temporarily block sending emails from anything else other than us production houses").
+    Only the send stops: drafting and approval carry on, and an approved email waits in Approved
+    until the pause is lifted. Checked by the scheduler before it sends, by `outreach.py send`
+    itself, and by the page when it says what approving will do."""
+    if not (cfg or {}).get("sending_paused"):
+        return None
+    return str(cfg.get("sending_paused_reason") or "sending is paused for this project")
+
+
 def cap_today(mb, first_sent, today):
     """Warm-up: start_cap until the mailbox has sent, then +step every
     every_days counted from its first sending day, never above daily_cap."""

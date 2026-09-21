@@ -747,7 +747,7 @@ async function loadOutreach() {
   try { d = await api("/api/outreach?folder=" + encodeURIComponent(o.folder)); }
   catch (e) { return toast("Could not load outreach: " + e.message, true); }
   // can an approval go out from here? (a connected mailbox) -- it words what "approve" does
-  api("/api/mailboxes").then((m) => { o.canSend = !!m.can_send; }).catch(() => {});
+  api("/api/mailboxes").then((m) => { o.canSend = !!m.can_send; o.paused = m.paused || null; }).catch(() => {});
   if (token !== o.token) return;
   o.rows = d.rows; o.counts = d.counts || {};
   const present = new Set(d.rows.map((r) => r.id));
@@ -850,6 +850,7 @@ async function startBatch() {
       o.selected.clear();
       flag("Approved " + r.approved + " draft" + (r.approved === 1 ? "" : "s"), {
         desc: r.skipped.length ? r.skipped.length + " skipped: " + [...new Set(r.skipped.map((x) => x.reason))].join("; ")
+                               : r.paused ? "They wait in Approved: sending is paused for this project."
                                : (r.can_send ? "They go out within minutes, inside today's sending limit."
                                              : "They go out as soon as a mailbox is connected."),
         kind: r.skipped.length ? "info" : "" });
@@ -968,7 +969,7 @@ function openMessage(id) {
       </div>
     </div>
     <div class="modal-foot">
-      <span class="left">${r.status === "approved" ? (o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : ""}</span>
+      <span class="left">${r.status === "approved" ? (o.paused ? "Approved. It waits here: sending is paused for this project." : o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : ""}</span>
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
       ${isDraft ? `<button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
@@ -991,7 +992,8 @@ function openMessage(id) {
       const msg = { approve: res.can_send ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",
         mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped" }[b.dataset.act];
       const desc = b.dataset.act === "approve"
-        ? r.company + (res.can_send ? ": it goes out within minutes." : ": it goes out as soon as a mailbox is connected.")
+        ? r.company + (res.paused ? ": it waits in Approved, because sending is paused for this project."
+                       : res.can_send ? ": it goes out within minutes." : ": it goes out as soon as a mailbox is connected.")
         : b.dataset.act === "stop_sequence"
         ? (res.cancelled ? res.cancelled + " pending follow-up" + (res.cancelled === 1 ? "" : "s") + " cancelled." : "No further follow-ups will be drafted.")
         : res.entity_promoted === false ? "Reply recorded; the company was not in a state that could be promoted." : r.company;

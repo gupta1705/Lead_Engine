@@ -295,14 +295,15 @@ class Scheduler:
             approved = cur.fetchone() is not None
             boxes = pol.mailbox_list(cfg, segment)
             connected = [mb["key"] for mb in boxes if mb["enabled"] and self.mailbox_connected(mb)]
+            paused = pol.sending_paused(cfg)                 # the owner's pause: approved emails wait
             room = 0
-            if approved and connected and "SET_ME" not in json.dumps(cfg.get("sender") or {}):
+            if approved and connected and not paused and "SET_ME" not in json.dumps(cfg.get("sender") or {}):
                 status = pol.mailbox_status(cur, segment, boxes, now.date())
                 sent_today = sum(st["sent_today"] for st in status)
                 room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),
                            sum(st["remaining"] for st in status if st["key"] in connected))
         return {"draft": draft, "followups": followups, "approved": approved, "connected": connected,
-                "send": approved and room > 0}
+                "paused": bool(paused), "send": approved and room > 0}
 
     def outreach_tick(self, segment, trigger="schedule"):
         """Draft what needs drafting, send what is approved. -> "idle" | "ok" | "skipped" | "failed"."""

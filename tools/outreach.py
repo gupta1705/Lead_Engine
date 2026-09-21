@@ -386,6 +386,12 @@ def cmd_send(args):
     from dbconn import Db
     db = Db()
     cfg = load_outreach_config(db)
+    paused = pol.sending_paused(cfg)
+    if paused:
+        # not a failure: approved emails wait in Approved until the pause is lifted in the config
+        log("not sending for %s: %s (config outreach.sending_paused)" % (SEGMENT, paused))
+        db.close()
+        return 0
     if "SET_ME" in json.dumps(cfg.get("sender", {})):
         sys.exit("refusing to send: config outreach.sender still contains SET_ME")
     connected = {mb["key"]: env(mb["email_env"]).strip() for mb in MAILBOXES

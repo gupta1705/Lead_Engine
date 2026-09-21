@@ -64,6 +64,10 @@ def main():
     for k in saved_env:
         os.environ.pop(k, None)
     s = sched.Scheduler(cursor, FakeOps(), "us-production-houses")
+    # "connected" is decided by this test alone, not by the machine it runs on: since 2026-09-21 the
+    # laptop has a real Gmail token (.gmail_token.json) and address in .env, which the scheduler would
+    # otherwise find and count as a connected mailbox
+    s.mailbox_connected = lambda mb: bool(os.environ.get(mb["email_env"])) and bool(os.environ.get(mb["token_env"]))
     try:
         with cursor() as cur:
             def segment(config):
@@ -134,6 +138,15 @@ def main():
             check("a sender still saying SET_ME: nothing is sent", s.outreach_work(slug)["send"], False)
             cur.execute("update segments set config = jsonb_set(config, '{outreach,sender,name}', '\"Kay\"')"
                         " where id = %s", (seg_id,))
+
+            # the owner's pause (2026-09-21): only US Production Houses sends for now
+            cur.execute("update segments set config = jsonb_set(config, '{outreach,sending_paused}', 'true')"
+                        " where id = %s", (seg_id,))
+            w = s.outreach_work(slug)
+            check("sending paused for the project: the approved email waits, drafting carries on",
+                  (w["paused"], w["send"], w["connected"]), (True, False, ["default"]))
+            cur.execute("update segments set config = config #- '{outreach,sending_paused}' where id = %s", (seg_id,))
+            check("the pause lifted: it is sent again", s.outreach_work(slug)["send"], True)
 
             for _ in range(2):                                  # the day's cap of 2 already used
                 e2, c2 = lead(seg_id, "contacted")

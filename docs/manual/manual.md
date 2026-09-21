@@ -373,6 +373,12 @@ warm-up, and never to an address that failed verification. When the day's limit
 is used up, it goes out first thing the next day. Until a mailbox is connected
 (see *What only you can do*), approved emails wait in Approved.
 
+**Sending is paused in LCX Clipping and Startup Acquisitions** (since 21
+September): only US Production Houses sends for now. In those two projects you
+can still draft and approve; approving says the email waits, and it stays in
+Approved until the pause is lifted. The pause is a setting in each project's
+config (`outreach.sending_paused`), so lifting it is a one-line change.
+
 
 # Approving many at once
 
