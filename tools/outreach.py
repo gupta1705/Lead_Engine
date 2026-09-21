@@ -129,7 +129,8 @@ def cmd_draft(args):
     openers = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]
     tpl = requested or next((t for t in openers if not t.get("when")), openers[0])
     sender = cfg["sender"]
-    if "SET_ME" in json.dumps(sender) and not args.dry_run:
+    import outreach_policy as _pol
+    if _pol.sender_unset(sender) and not args.dry_run:
         log("NOTE: sender.name / postal_address still say SET_ME in config.")
         log("      Drafts will render with those placeholders visible, which")
         log("      is safe -- approval will catch them -- but fix the config")
@@ -392,7 +393,7 @@ def cmd_send(args):
         log("not sending for %s: %s (config outreach.sending_paused)" % (SEGMENT, paused))
         db.close()
         return 0
-    if "SET_ME" in json.dumps(cfg.get("sender", {})):
+    if pol.sender_unset(cfg.get("sender")):
         sys.exit("refusing to send: config outreach.sender still contains SET_ME")
     connected = {mb["key"]: env(mb["email_env"]).strip() for mb in MAILBOXES
                  if mb["enabled"] and mailbox_connected(mb)}

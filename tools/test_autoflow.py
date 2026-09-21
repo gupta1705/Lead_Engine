@@ -133,6 +133,13 @@ def main():
             s._ops.calls.clear()
             check("the tick sends it", (s.outreach_tick(slug, "manual"), s._ops.calls), ("ok", [("send_outreach", slug)]))
 
+            # the note that explains SET_ME is not a sender field: it must never block a send (2026-09-21: it
+            # did, and the first approved email sat in Approved with the footer filled in)
+            cur.execute("update segments set config = jsonb_set(config, '{outreach,sender,guidance}',"
+                        " '\"postal_address MUST be set before the first send (approval refuses SET_ME)\"')"
+                        " where id = %s", (seg_id,))
+            check("a note that mentions SET_ME does not stop a real sender from sending",
+                  s.outreach_work(slug)["send"], True)
             cur.execute("update segments set config = jsonb_set(config, '{outreach,sender,name}', '\"SET_ME\"')"
                         " where id = %s", (seg_id,))
             check("a sender still saying SET_ME: nothing is sent", s.outreach_work(slug)["send"], False)

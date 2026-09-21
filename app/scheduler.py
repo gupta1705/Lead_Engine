@@ -297,7 +297,7 @@ class Scheduler:
             connected = [mb["key"] for mb in boxes if mb["enabled"] and self.mailbox_connected(mb)]
             paused = pol.sending_paused(cfg)                 # the owner's pause: approved emails wait
             room = 0
-            if approved and connected and not paused and "SET_ME" not in json.dumps(cfg.get("sender") or {}):
+            if approved and connected and not paused and not pol.sender_unset(cfg.get("sender")):
                 status = pol.mailbox_status(cur, segment, boxes, now.date())
                 sent_today = sum(st["sent_today"] for st in status)
                 room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),

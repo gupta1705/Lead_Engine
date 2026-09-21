@@ -370,6 +370,19 @@ def mailbox_list(outreach_cfg, segment):
     return out
 
 
+SENDER_FIELDS = ("name", "title", "postal_address", "email_env")
+
+
+def sender_unset(sender):
+    """Does a real sender field still hold the SET_ME placeholder? Only the fields an email carries are
+    looked at -- never sender.guidance, whose own text explains SET_ME. Scanning the whole block with
+    json.dumps (as the scheduler and `outreach.py send` did) meant the note alone blocked every send:
+    the first approved email of 2026-09-21 sat in Approved with the footer filled in and the mailbox
+    connected, because the guidance mentions the word."""
+    s = sender or {}
+    return any("SET_ME" in str(s.get(k) or "") for k in SENDER_FIELDS)
+
+
 def sending_paused(cfg):
     """Why sending is paused for this segment, or None. outreach.sending_paused (owner, 2026-09-21:
     "temporarily block sending emails from anything else other than us production houses").
