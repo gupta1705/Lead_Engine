@@ -847,7 +847,10 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
     review = num(lead.cfg.get("score_threshold_review")) or 25
     priority = num(lead.cfg.get("score_threshold_priority")) or 60
     auto = lead.cfg.get("auto_shortlist") or {}
-    line = num(auto.get("min_score")) if auto.get("enabled") and auto.get("min_score") is not None else review
+    # the lower of the two lines: an automatic line under the review line (LCX, 20) lowers the bar,
+    # one above it (production houses, 30) leaves a person free to shortlist from the review line up
+    line = (min(review, num(auto.get("min_score"))) if auto.get("enabled") and auto.get("min_score") is not None
+            else review)
     if row.get("status") == "shortlisted" and score is not None and score < line:
         risks.append({"level": "warning", "title": "Shortlisted below the review line",
                       "detail": "Its score is %s, under the %s line." % (pts(score), pts(line))})

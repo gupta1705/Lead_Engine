@@ -183,7 +183,8 @@ def segment_rows(force=False):
                             " config->>'score_threshold_priority' as priority,"
                                                        " config->'outreach'->'follow_ups' as follow_ups,"
                             " config->'outreach'->'batch_approval' as batch_approval,"
-                            " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist"
+                            " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
+                            " config->'auto_shortlist'->>'min_score' as auto_min"
                             " from segments where is_active order by slug")
                 rows = [dict(r) for r in cur.fetchall()]
             if SEGMENTS_ALLOWED:
@@ -224,6 +225,10 @@ def segment_info(slug):
             "ui": ui_for(row),
             "thresholds": {"review": float(row["review"] or 25), "priority": float(row["priority"] or 45)},
             "auto_shortlist": bool(row.get("auto_shortlist")),
+            # where the automatic line sits: below the review line (LCX, 20 < 25) the To review column
+            # holds only what the line left behind; above it (production houses, 30 > 25) there is a
+            # band between the two that a person still reviews
+            "auto_shortlist_min": float(row["auto_min"]) if row.get("auto_shortlist") and row.get("auto_min") else None,
             "outreach_policy": outreach_policy_info(row)}
 
 

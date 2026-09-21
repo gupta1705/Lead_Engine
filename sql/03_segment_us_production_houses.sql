@@ -312,6 +312,11 @@ values (
     ],
     "guidance": "TVF and its affiliates must never enter the lead pool. This is not hypothetical: the first live YouTube run on 2026-08-24 surfaced The Viral Fever own channel among 125 candidates. It was caught only because 13.1M subscribers tripped the major_or_oversized gate - a smaller affiliate channel, a regional spinoff, or a partner shop would have sailed through, been scored, reviewed, and eventually put on a send list. Matching is deliberately conservative: domains match on exact host or subdomain, name_patterns match as whole words against a lowercased entity name. Note the absence of a bare tvf pattern - it would match TVFoods, TVFirst and similar unrelated names, and a self-exclusion rule that quietly deletes real leads is worse than the problem it solves. Add specific affiliate names here as they come up rather than broadening the patterns."
   },
+  "auto_shortlist": {
+    "enabled": true,
+    "min_score": 30,
+    "guidance": "Owner decision 2026-09-21: automatically shortlist all companies with a score over 30. Every ready_for_review lead with fit_score strictly above min_score is shortlisted by the last step of the promote chain (sql/14_auto_shortlist.sql), the same rule LCX clipping has run at 20 since 2026-09-14. Leads between the review threshold (25) and 30 stay in To review for a person. Rejected, archived and contacted rows are never touched, and a lead a person moves back to review is never shortlisted again (metadata.auto_shortlisted_at). Shortlisting sends nothing: the draft it leads to still needs approval. Set enabled to false to go back to shortlisting by hand."
+  },
   "enrichment": {
     "provider": "apollo",
     "enabled": true,

@@ -356,10 +356,12 @@ function applySegment(seg) {
   $("#leadsSummaryCol").textContent = ui.summary_label || "Summary";
   const ent = ui.entity_label || "company";
   $("#outreachEntityCol").textContent = ent.charAt(0).toUpperCase() + ent.slice(1);
-  /* The board's To review column starts at the review threshold. Where auto-shortlist is on
-     (LCX), everything above its line is shortlisted already, so a floor would empty the column
-     for good: it shows every lead a person may still pick by hand. */
-  state.board.filters.min_score = seg.auto_shortlist ? 0 : REVIEW_THRESHOLD;
+  /* The board's To review column starts at the review threshold. Where the automatic line sits
+     at or below it (LCX: 20 against 25), everything the floor would show is shortlisted already,
+     so the column shows every lead a person may still pick by hand. Where the line sits above it
+     (production houses: 30 against 25), the band between the two is what a person reviews. */
+  const autoLine = seg.auto_shortlist ? (seg.auto_shortlist_min == null ? 0 : seg.auto_shortlist_min) : null;
+  state.board.filters.min_score = autoLine !== null && autoLine <= REVIEW_THRESHOLD ? 0 : REVIEW_THRESHOLD;
   $$(".side-item[data-route]").forEach((b) => { b.hidden = !routeAllowed(b.dataset.route); });
   COLUMNS = outreachOn() ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== "contacted" && c.key !== "in_conversation");
   $("#leadsTable").classList.toggle("unscored", unscoredProject());
