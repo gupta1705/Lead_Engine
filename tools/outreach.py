@@ -114,6 +114,8 @@ def mailbox_connected(mb):
 # tools/draft_render.py, because the app renders the same emails when the
 # footer changes. Importing the names keeps this file reading as it did.
 from draft_render import build_context, pick_template, render_message  # noqa: E402
+from outreach_policy import OUT_TODAY_SQL, TAKEN_AT_SEND  # noqa: E402
+from outreach_policy import DUPLICATE_SQL as _DUPLICATE_SQL  # noqa: E402
 
 
 def cmd_draft(args):
@@ -175,17 +177,24 @@ def cmd_draft(args):
     elif llm.policy(cfg) or llm.partner_policy(cfg):
         log("  GROQ_API_KEY is not set, so %s is the built-in one\n" % part)
 
-    made = 0
+    made = skipped = 0
     for eid, company, meta, cid, cname, email, csource in rows:
-        meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
-        tpl = requested or pick_template(cfg, meta)
-        # only a template that actually uses {{hook}} is worth a model call
-        use_gen = gen if "{{hook}}" in (tpl.get("body") or "") else None
-        ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen,
-                            contact_source=csource)
-        # the production-house templates differ by whether the email greets a person by name
-        tpl = requested or pick_template(cfg, meta, ctx)
-        subject, body = render_message(tpl, ctx)
+        try:
+            meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
+            tpl = requested or pick_template(cfg, meta)
+            # only a template that actually uses {{hook}} is worth a model call
+            use_gen = gen if "{{hook}}" in (tpl.get("body") or "") else None
+            ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen,
+                                contact_source=csource)
+            # the production-house templates differ by whether the email greets a person by name
+            tpl = requested or pick_template(cfg, meta, ctx)
+            subject, body = render_message(tpl, ctx)
+        except Exception as e:
+            # one lead that cannot be drafted (a stray {{word}} in its site text, say) is skipped and
+            # named; it used to stop the run, and every lead after it went undrafted (2026-09-21)
+            skipped += 1
+            log("  %-32s SKIPPED: could not draft it: %s" % (company[:32], str(e)[:120]))
+            continue
         written = ctx.get("generated_hook") or None
         log("  %-32s -> %-34s [%s]%s" % (company[:32], email, tpl["key"],
                                          "  written" if written else ""))
@@ -205,8 +214,8 @@ def cmd_draft(args):
         if st["ok"]:
             log("  written drafts are approved one at a time unless the segment's"
                 " batch_approval.allow_generated says otherwise")
-    log("\n%d draft(s) created. Review and approve them in the UI (Outreach tab)"
-        % made)
+    log("\n%d draft(s) created%s. Review and approve them in the UI (Outreach tab)"
+        % (made, (", %d lead(s) skipped -- see above" % skipped) if skipped else ""))
     return 0
 
 
@@ -443,7 +452,7 @@ def cmd_send(args):
         log("nothing approved to send"); db.close(); return 0
 
     email_re = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", re.I)
-    services, sent, by_box = {}, 0, {}
+    services, sent, by_box, signin_failed = {}, 0, {}, []
 
     def park(oid, why):
         """Take the row out of the sendable set, visibly, without burning cap."""
@@ -481,10 +490,21 @@ def cmd_send(args):
             problem = "recipient failed verification"
         elif re.search(r"{{\w+}}", (subject or "") + (body or "")):
             problem = "unfilled {{placeholder}} in subject or body"
+        elif re.search(r"[\r\n]", subject or ""):
+            # the email library refuses it (an embedded header), and that used to happen after the claim,
+            # leaving the row stuck in 'sending' and the rest of the run unsent (found 2026-09-21)
+            problem = "the subject has a line break in it"
         elif step == 0 and ent_status not in ("shortlisted", "contacted"):
             problem = "entity is now '%s' -- approval predates that decision" % ent_status
         elif step > 0 and not thread_id:
             problem = "the opener has no Gmail thread to follow up in"
+        elif step == 0:
+            # one opener per inbox and per company, not per lead row: one address filed under two
+            # leads, or one company found under two websites, must not get two first emails
+            # ("you won't hear from me again", 2026-09-21)
+            problem = db.run(lambda cur, _o=oid, _m=email: (cur.execute(_DUPLICATE_SQL, {
+                "oid": _o, "email": _m, "statuses": TAKEN_AT_SEND}),
+                                                           cur.fetchone())[1][0])
         if problem:
             log("  %-32s PARKED: %s" % (company[:32], problem))
             park(oid, problem)
@@ -505,11 +525,21 @@ def cmd_send(args):
                 log("  every connected mailbox is at today's cap")
                 break
 
-        # 2. claim, and take the mailbox the database settled on
-        claimed = db.run(lambda cur, _o=oid, _k=mb_key, _a=connected[mb_key]: (cur.execute(
-            "update outreach set status='sending', sender_mailbox=%s, sender_address=%s, updated_at=now()"
-            " where id=%s and status='approved' returning sender_mailbox", (_k, _a, _o)),
-            cur.fetchone())[1])
+        # 2. claim, and take the mailbox the database settled on. One claim at a time per segment,
+        #    counted against the day's cap as it stands NOW: two runs at once (a deploy's old and new
+        #    server, a terminal run) each took the whole day's budget from their own start
+        def claim(cur, _o=oid, _k=mb_key, _a=connected[mb_key]):
+            cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send:" + SEGMENT,))
+            cur.execute(OUT_TODAY_SQL, (SEGMENT,))
+            if cur.fetchone()[0] >= daily_cap:
+                return "cap"
+            cur.execute("update outreach set status='sending', sender_mailbox=%s, sender_address=%s, updated_at=now()"
+                        " where id=%s and status='approved' returning sender_mailbox", (_k, _a, _o))
+            return cur.fetchone()
+        claimed = db.run(claim)
+        if claimed == "cap":
+            log("  the day's cap of %d is reached (counting every run's sends)" % daily_cap)
+            break
         if not claimed:
             if step > 0:
                 log("  %-32s follow-up %d refused by the database guard" % (company[:32], step))
@@ -525,13 +555,43 @@ def cmd_send(args):
                 " updated_at=now() where id=%s and status='sending'", (_o,)))
             continue
         sender_addr = connected[mb_key]
+
+        def unclaim(why=None, _o=oid):
+            """Nothing reached Gmail: back to Approved. With a reason it is parked for a person to look at."""
+            db.run(lambda cur: cur.execute(
+                "update outreach set status='approved', sender_mailbox=null, sender_address=null,"
+                " send_error=%s, updated_at=now() where id=%s and status='sending'", (why, _o)))
+
         if mb_key not in services:
-            services[mb_key] = gmail_service(mbmap[mb_key])
+            try:
+                services[mb_key] = gmail_service(mbmap[mb_key])
+            except (Exception, SystemExit) as e:
+                # a revoked or expired sign-in, or a rotated client secret: the email goes back to
+                # Approved untouched (it used to stay in 'sending' for good), this mailbox sits the rest
+                # of the run out, and the run ends failed so the owner is told
+                unclaim()
+                signin_failed.append(mb_key)
+                log("  mailbox %s: Gmail sign-in failed (%s) -- %s goes back to Approved"
+                    % (mb_key, str(e)[:120], company[:32]))
+                connected.pop(mb_key, None)
+                remaining[mb_key] = 0
+                if not connected:
+                    break
+                continue
         svc = services[mb_key]
 
         # 3. send
-        msg = MIMEText(body)
-        msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
+        try:
+            msg = MIMEText(body)
+            msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
+            # our own Message-ID, one per row: an unknown outcome can be settled by searching Sent for
+            # rfc822msgid:<tvf-...>, and a transport-level resend of the same POST is recognisable.
+            # The row id without its dashes keeps the header on one line (folded at 78 characters)
+            msg["Message-ID"] = "<tvf-%s@%s>" % (str(oid).replace("-", ""), sender_addr.rsplit("@", 1)[-1])
+        except Exception as e:
+            unclaim("could not build the message: %s" % str(e)[:300])
+            log("  %-32s PARKED: could not build the message: %s" % (company[:32], str(e)[:70]))
+            continue
         request_body = {}
         if step > 0:
             request_body["threadId"] = thread_id
@@ -553,6 +613,27 @@ def cmd_send(args):
         try:
             resp = svc.users().messages().send(userId="me", body=request_body).execute()
         except Exception as e:
+            code = getattr(getattr(e, "resp", None), "status", None)
+            code = int(code) if str(code or "").isdigit() else None
+            if type(e).__name__ == "RefreshError" or (code and 400 <= code < 500):
+                # Gmail answered and refused: nothing went out. Only a timeout or a server error is a
+                # real unknown; calling a refusal "unknown" wedged every row a run touched (2026-09-21)
+                if type(e).__name__ == "RefreshError" or code in (401, 403, 429):
+                    # the mailbox, not the email (sign-in, permission, rate or daily limit): the email
+                    # goes back to Approved untouched and the mailbox sits the rest of the run out
+                    unclaim()
+                    signin_failed.append(mb_key)
+                    log("  mailbox %s: Gmail refused (%s: %s) -- %s goes back to Approved"
+                        % (mb_key, code or "sign-in", str(e)[:100], company[:32]))
+                    connected.pop(mb_key, None)
+                    remaining[mb_key] = 0
+                    if not connected:
+                        break
+                    continue
+                unclaim("Gmail refused this email (%s): %s" % (code, str(e)[:300]))
+                remaining[mb_key] = remaining.get(mb_key, 0) + 1
+                log("  %-32s PARKED: Gmail refused it (%s)" % (company[:32], code))
+                continue
             log("  %-32s UNKNOWN OUTCOME via %s: %s" % (company[:32], mb_key, str(e)[:70]))
             db.run(lambda cur, _o=oid, _err=str(e)[:400]: cur.execute(
                 "update outreach set status='send_unknown', send_error=%s,"
@@ -574,6 +655,14 @@ def cmd_send(args):
     db.close()
     log("\n%d sent this run (%s); %d sent today in the segment (ceiling %d)"
         % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none", sent_today + sent, daily_cap))
+    if signin_failed:
+        # a failed step is what raises the alert and shows on Operations: sign in again with
+        # `python tools/outreach.py auth`, then update the mailbox's token variable on the server
+        boxes = list(dict.fromkeys(signin_failed))
+        log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
+            " `python tools/outreach.py auth`, then update %s"
+            " on the server" % (", ".join(boxes), ", ".join(mbmap[k]["token_env"] for k in boxes if k in mbmap)))
+        return 1
     return 0
 
 
@@ -601,6 +690,9 @@ def cmd_pull(args):
         from outreach o join entities e on e.id = o.entity_id
         where o.status = 'sent' and o.direction = 'outbound' and o.gmail_thread_id is not null
           and e.segment_id = (select id from segments where slug = %s)
+          -- recent threads only: it runs hourly now (app/scheduler.py), and a reply after two months
+          -- is rare enough not to read every thread ever sent, every hour
+          and o.sent_at > now() - interval '60 days'
     """, (MAILBOXES[0]["key"], SEGMENT)), cur.fetchall())[1])
     if not threads:
         log("no sent threads to poll"); db.close(); return 0

@@ -13,9 +13,10 @@ app unless a terminal command is shown.
 | Tue 02:00 UTC | `weekly_refresh`: promote → enrich → score again → gates | app scheduler, unattended |
 | Wed / Thu 02:00 UTC | LCX's and Startups' own `weekly_refresh`, harvests included | app scheduler, unattended |
 | Every 15 min | Drafting and sending, when there is work | app scheduler, unattended |
+| Hourly | Replies and bounces fetched from each sent thread's mailbox (`outreach.py pull`, read-only), while there are threads from the last 60 days | app scheduler, unattended (since 2026-09-21) |
 | **Tue/Wed** | **Review the band** (below) | **you, ~1.5 h** |
 | **Wed** | **Approve drafts, send** (below) | **you, ~45 min** |
-| Daily | Replies pulled and triaged (once Gmail + Anthropic keys are in): `tools/outreach.py pull`, then `triage` | you, from a terminal |
+| As needed | Replies triaged by a model (needs an Anthropic key): `tools/outreach.py triage`; otherwise mark them in Replies | you |
 | **Fri** | **Triage folder + KPIs** (below) | **you, ~30 min** |
 
 Operations → *Automatic runs* shows each of the scheduler's rows with its day

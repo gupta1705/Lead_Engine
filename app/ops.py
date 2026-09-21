@@ -142,6 +142,14 @@ JOBS = {
     # after a shortlist, after an approval, and every fifteen minutes (app/scheduler.py outreach_tick) --
     # so they are "hidden": not on the Operations page, not runnable from it. Approval stays the human
     # decision on every email; send only ever sends what a person approved.
+    "pull_replies": {
+        "label": "Fetch replies",
+        "group": "Outreach",
+        "desc": "Replies and bounces to sent emails, read from each thread's mailbox: a reply pauses "
+                "the follow-ups, a bounce marks the address. Reads Gmail, never sends. Hourly, by itself.",
+        "cmd": [PY, "tools/outreach.py", "pull"],
+        "hidden": True,
+    },
     "draft_outreach": {
         "label": "Draft outreach emails",
         "group": "Outreach",

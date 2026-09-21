@@ -244,10 +244,51 @@ def verify_sample(ids, sample, token, secret, user, segment):
     return hmac.compare_digest(sig, want)
 
 
+# One first email per inbox and per company, not per lead row (2026-09-21): the same address filed
+# under two leads (a podcast network's one inbox behind four shows), or one company found under two
+# websites (Close-Up Productions: closeupprod.com and closeupproductions.com), must not get two
+# openers. -> the reason, or NULL. `statuses` says what counts as taken: approval also counts other
+# approved rows; the sender counts only what has gone or may have gone.
+DUPLICATE_SQL = """
+select case
+  when exists (
+    select 1 from outreach o2
+    join contacts c2 on c2.id = o2.contact_id
+    join entities e2 on e2.id = o2.entity_id
+    where lower(c2.email) = lower(coalesce(%(email)s, c.email))
+      and o2.id <> o.id and o2.entity_id <> o.entity_id and e2.segment_id = e.segment_id
+      and o2.direction = 'outbound' and coalesce(o2.sequence_step, 0) = 0
+      and o2.status = any(%(statuses)s))
+    then 'this address already has a first email from us, under another lead'
+  when exists (
+    select 1 from outreach o2 join entities e2 on e2.id = o2.entity_id
+    where e2.segment_id = e.segment_id and lower(e2.name) = lower(e.name) and e2.id <> e.id
+      and o2.direction = 'outbound' and coalesce(o2.sequence_step, 0) = 0
+      and o2.status = any(%(statuses)s))
+    then 'a company of the same name already has a first email from us'
+  end
+from outreach o
+join entities e on e.id = o.entity_id
+left join contacts c on c.id = o.contact_id
+where o.id = %(oid)s
+"""
+TAKEN_AT_APPROVAL = ["approved", "sending", "sent", "send_unknown"]
+TAKEN_AT_SEND = ["sending", "sent", "send_unknown"]
+
+# What has gone out today, or may have: the cap counts a send whose outcome is unknown, and one in
+# flight in another run. The day is the database's, UTC, as everywhere else.
+OUT_TODAY_SQL = """
+select count(*) from outreach o
+join entities e on e.id = o.entity_id
+where e.segment_id = (select id from segments where slug = %s)
+  and o.direction = 'outbound' and o.status in ('sent', 'sending', 'send_unknown')
+  and coalesce(o.sent_at, o.updated_at)::date = current_date
+"""
+
 CHECK_SQL = """
 select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
        o.generated_hook, c.email, c.email_status,
-       e.status as entity_status, s.slug
+       e.status as entity_status, s.slug, e.name as entity_name
 from outreach o
 join entities e on e.id = o.entity_id
 join segments s on s.id = e.segment_id
@@ -272,6 +313,7 @@ def check_drafts(cur, ids, segment, policy=None):
         row = dict(zip(cols, r)) if not isinstance(r, dict) else dict(r)
         found[str(row["id"])] = row
     ok, skipped = [], []
+    chosen = set()               # addresses and company names already approvable in THIS call (a batch)
     for i in ids:
         r = found.get(i)
         reason = None
@@ -283,6 +325,8 @@ def check_drafts(cur, ids, segment, policy=None):
             reason = "not a draft any more (%s)" % r["status"]
         elif not (r["subject"] or "").strip():
             reason = "empty subject"
+        elif "\n" in (r["subject"] or "") or "\r" in (r["subject"] or ""):
+            reason = "the subject has a line break in it"           # the sender would refuse it (2026-09-21)
         elif PLACEHOLDER_RE.search((r["subject"] or "") + (r["body"] or "")):
             reason = "unfilled {{placeholder}}"
         elif "SET_ME" in (r["subject"] or "") + (r["body"] or ""):
@@ -297,6 +341,17 @@ def check_drafts(cur, ids, segment, policy=None):
             reason = "company is now '%s'" % r["entity_status"]
         elif policy and not policy["allow_generated"] and r["generated_hook"]:
             reason = "its opening line was written by a model; approve it on its own"
+        elif not (r["body"] or "").strip():
+            reason = "empty body"
+        elif r["sequence_step"] == 0:
+            cur.execute(DUPLICATE_SQL, {"oid": i, "email": None, "statuses": TAKEN_AT_APPROVAL})
+            dup = cur.fetchone()
+            reason = (dup[0] if not isinstance(dup, dict) else list(dup.values())[0]) if dup else None
+            keys = {"email:" + r["email"].strip().lower(), "name:" + (r["entity_name"] or "").strip().lower()}
+            if not reason and keys & chosen:
+                reason = "another selected draft goes to the same address or company"
+            if not reason:
+                chosen |= keys
         if reason:
             skipped.append({"id": i, "reason": reason})
         else:

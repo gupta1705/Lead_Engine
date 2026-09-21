@@ -65,6 +65,18 @@ select 1 from outreach o join entities e on e.id = o.entity_id
 where e.segment_id = (select id from segments where slug = %s)
   and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null
 limit 1"""
+# Replies and bounces reach the app only through `outreach.py pull`, which nothing ran: Replies stayed
+# empty, a reply never paused a follow-up and a bounce never marked its address (found 2026-09-21).
+# Pulled hourly while a segment has recent sent threads (the window cmd_pull reads, 60 days).
+PULL_DUE_SQL = """
+select exists (select 1 from outreach o join entities e on e.id = o.entity_id
+               where e.segment_id = (select id from segments where slug = %(segment)s)
+                 and o.direction = 'outbound' and o.status = 'sent' and o.gmail_thread_id is not null
+                 and o.sent_at > now() - interval '60 days')
+   and not exists (select 1 from pipeline_runs r
+                   where r.segment = %(segment)s and r.step = 'pull_replies' and r.status = 'ok'
+                     and r.started_at > now() - make_interval(mins => %(every)s)) as due"""
+PULL_EVERY_MINUTES = 60
 TICK_MINUTES = 15
 
 # Pipelines: an ordered list of ops-job keys. A pipeline fails at the first
@@ -296,6 +308,11 @@ class Scheduler:
             boxes = pol.mailbox_list(cfg, segment)
             connected = [mb["key"] for mb in boxes if mb["enabled"] and self.mailbox_connected(mb)]
             paused = pol.sending_paused(cfg)                 # the owner's pause: approved emails wait
+            pull = False
+            if connected:                                    # reading replies is not sending: a pause does not stop it
+                cur.execute(PULL_DUE_SQL, {"segment": segment, "every": PULL_EVERY_MINUTES})
+                row = cur.fetchone()
+                pull = bool(row["due"] if isinstance(row, dict) else row[0])
             room = 0
             if approved and connected and not paused and not pol.sender_unset(cfg.get("sender")):
                 status = pol.mailbox_status(cur, segment, boxes, now.date())
@@ -303,36 +320,40 @@ class Scheduler:
                 room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),
                            sum(st["remaining"] for st in status if st["key"] in connected))
         return {"draft": draft, "followups": followups, "approved": approved, "connected": connected,
-                "paused": bool(paused), "send": approved and room > 0}
+                "paused": bool(paused), "send": approved and room > 0, "pull": pull}
 
     def outreach_tick(self, segment, trigger="schedule"):
         """Draft what needs drafting, send what is approved. -> "idle" | "ok" | "skipped" | "failed"."""
         work = self.outreach_work(segment)
         if not work:
             return "idle"
-        steps = ([("draft_followups", work["followups"]), ("draft_outreach", work["draft"]),
-                  ("send_outreach", work["send"])])
+        # replies first: a reply that arrived pauses the follow-ups the next step would draft
+        steps = ([("pull_replies", work.get("pull")), ("draft_followups", work["followups"]),
+                  ("draft_outreach", work["draft"]), ("send_outreach", work["send"])])
         steps = [k for k, needed in steps if needed]
         if not steps:
             return "idle"
         print("[outreach] %s (%s): %s" % (segment, trigger, ", ".join(steps)), flush=True)
         pid = self._open("outreach", None, trigger, segment)
-        env, outcome = {"SEGMENT_SLUG": segment}, "ok"
+        env, outcome, failed = {"SEGMENT_SLUG": segment}, "ok", []
         for key in steps:
             sid = self._open("outreach", key, trigger, segment)
             rc, logpath = self._ops.run_blocking(key, wait_slot=600, env=env)
             if rc is None:
                 self._close(sid, "skipped", "the job slot stayed busy; the next tick tries again")
-                outcome = "skipped"
+                outcome = "skipped" if outcome == "ok" else outcome
                 continue
             if rc != 0:
                 tail = self._logtail(logpath)
                 self._close(sid, "failed", tail)
-                self._close(pid, "failed", "stopped at step '%s'" % key)
                 self.alert("TVF Lead Engine [%s]: outreach step '%s' FAILED.\n%s" % (segment, key, tail[-400:]))
-                return "failed"
+                # the steps are independent: a drafting step that failed (one lead that could not be
+                # drafted) used to stop the run before its send, holding every approved email (2026-09-21)
+                failed.append(key)
+                outcome = "failed"
+                continue
             self._close(sid, "ok")
-        self._close(pid, outcome)
+        self._close(pid, outcome, ("failed at step(s) %s" % ", ".join("'%s'" % k for k in failed)) if failed else None)
         return outcome
 
     def kick_outreach(self, segment, trigger="manual"):
@@ -375,10 +396,12 @@ class Scheduler:
     def catch_up(self):
         """One outreach round for every segment, right after the server starts. A restart (every deploy)
         otherwise left an approval waiting for the next quarter-hour tick: on 2026-09-21 the first real
-        email waited from its 09:19 deploy to the 09:30 tick. -> the segments kicked."""
+        email waited from its 09:19 deploy to the 09:30 tick. -> the segments kicked.
+        Recorded as "schedule": pipeline_runs.trigger accepts only schedule and manual, and a "startup"
+        row was refused, so the round ran with no line in the run history."""
         segments = self.segments()
         for segment in segments:
-            self.kick_outreach(segment, "startup")
+            self.kick_outreach(segment, "schedule")
         return segments
 
     def _loop(self):

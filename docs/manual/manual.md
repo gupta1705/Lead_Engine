@@ -399,6 +399,20 @@ take. When the day's limit
 is used up, it goes out first thing the next day. Until a mailbox is connected
 (see *What only you can do*), approved emails wait in Approved.
 
+**One first email per inbox and per company.** An address that already has a
+first email from us, under any lead in the project, is not written to again, and
+neither is a company of the same name found under a second website. Approving
+such a draft says why it cannot be approved; if two slip through together, the
+second is held back at sending with the reason. That keeps the footer's promise:
+"you won't hear from me again".
+
+**When Gmail says no.** If Gmail refuses one email, it is held back in Approved
+with Gmail's reason instead of being sent. If Gmail refuses the mailbox itself
+(its sign-in has expired or been revoked, or a sending limit is hit), the email
+goes back to Approved untouched, sending stops for that run, and Operations
+shows the run as failed. After a sign-in problem, sign the mailbox in again (see
+*What only you can do*) and approved emails go out on the next run.
+
 **Sending is paused in LCX Clipping and Startup Acquisitions** (since 21
 September): only US Production Houses sends for now. In those two projects you
 can still draft and approve; approving says the email waits, and it stays in
@@ -483,7 +497,10 @@ The TVF projects do not use follow-ups at all. One email per company, full stop.
 
 # Replies
 
-When someone writes back, their reply appears in **Replies**. Open it.
+When someone writes back, their reply appears in **Replies** within the hour:
+the engine reads each sent thread's mailbox hourly, by itself. It only reads; a
+bounce ("address not found") marks that address so nothing is written to it
+again. Open a reply.
 
 ![A reply, with the two buttons that close the loop](img/12-reply.png){width=full}
 

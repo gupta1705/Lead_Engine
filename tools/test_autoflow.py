@@ -41,11 +41,11 @@ class FakeOps:
     """Stands in for app/ops.py: records the jobs the flow runs, succeeds."""
 
     def __init__(self):
-        self.calls = []
+        self.calls, self.fail = [], set()
 
     def run_blocking(self, key, wait_slot=0, env=None):
         self.calls.append((key, (env or {}).get("SEGMENT_SLUG")))
-        return 0, None
+        return (1 if key in self.fail else 0), None
 
     def io_open(self, path, mode):
         raise OSError("no log in the test")
@@ -132,6 +132,14 @@ def main():
             check("a connected mailbox: the approved email is sent", (w["connected"], w["send"]), (["default"], True))
             s._ops.calls.clear()
             check("the tick sends it", (s.outreach_tick(slug, "manual"), s._ops.calls), ("ok", [("send_outreach", slug)]))
+            # a drafting step that fails must not hold back the approved email behind it (2026-09-21)
+            lead(seg_id, "shortlisted")                         # needs a draft
+            s._ops.calls.clear()
+            s._ops.fail = {"draft_outreach"}
+            check("drafting fails: the run says failed, and the approved email is still sent",
+                  (s.outreach_tick(slug, "manual"), s._ops.calls),
+                  ("failed", [("draft_outreach", slug), ("send_outreach", slug)]))
+            s._ops.fail = set()
 
             # the note that explains SET_ME is not a sender field: it must never block a send (2026-09-21: it
             # did, and the first approved email sat in Approved with the footer filled in)
@@ -168,14 +176,42 @@ def main():
             cur.execute("update outreach set sent_at = sent_at + interval '1 day' where status = 'sent' and entity_id in"
                         " (select id from entities where segment_id = %s)", (seg_id,))
 
+            # replies are fetched by themselves, hourly, while there are recent sent threads (2026-09-21)
+            check("no sent thread yet: no reply fetch", s.outreach_work(slug)["pull"], False)
+            e5, c5 = lead(seg_id, "contacted")
+            m5 = mail(e5, c5, "sent", sent_today=True)
+            cur.execute("update outreach set gmail_thread_id = 'zz-thread' where id = %s", (m5,))
+            check("a sent thread: replies are due to be fetched", s.outreach_work(slug)["pull"], True)
+            cur.execute("update segments set config = jsonb_set(config, '{outreach,sending_paused}', 'true')"
+                        " where id = %s", (seg_id,))
+            check("  a sending pause does not stop reading replies", s.outreach_work(slug)["pull"], True)
+            cur.execute("update segments set config = config #- '{outreach,sending_paused}' where id = %s", (seg_id,))
+            cur.execute("insert into pipeline_runs (pipeline, step, trigger, status, segment, finished_at)"
+                        " values ('outreach', 'pull_replies', 'schedule', 'ok', %s, now())", (slug,))
+            check("  fetched in the last hour: not again yet", s.outreach_work(slug)["pull"], False)
+            cur.execute("update pipeline_runs set started_at = now() - interval '61 minutes' where segment = %s"
+                        " and step = 'pull_replies'", (slug,))
+            check("  an hour later: due again", s.outreach_work(slug)["pull"], True)
+            s._ops.calls.clear()
+            s.outreach_tick(slug, "manual")
+            check("  and the tick fetches replies first", s._ops.calls[:1], [("pull_replies", slug)])
+            cur.execute("update outreach set gmail_thread_id = null where id = %s", (m5,))
+
             # after a restart (every deploy) each segment gets one round at once, not at the next quarter hour
             kicked = []
             real_kick, real_segments = s.kick_outreach, s.segments
             s.kick_outreach = lambda seg, trigger="manual": kicked.append((seg, trigger))
             s.segments = lambda: [slug, quiet]
             check("a restart sends what was approved while it was down: one round per segment, at once",
-                  (s.catch_up(), kicked), ([slug, quiet], [(slug, "startup"), (quiet, "startup")]))
+                  (s.catch_up(), [seg for seg, _ in kicked]), ([slug, quiet], [slug, quiet]))
             s.kick_outreach, s.segments = real_kick, real_segments
+            # every trigger the flow records must be one pipeline_runs accepts: a refused one ("startup",
+            # 2026-09-21) let the round run but left no line in the run history
+            for trigger in sorted({t for _, t in kicked} | {"schedule", "manual"}):
+                cur.execute("savepoint trig")
+                check("the run history accepts the trigger %r" % trigger,
+                      s._open("outreach", None, trigger, slug) is not None, True)
+                cur.execute("rollback to savepoint trig")
 
             # ten shortlists in a row are one or two runs, not ten
             count = {"n": 0}
