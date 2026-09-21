@@ -766,7 +766,10 @@ async function loadOutreach() {
       <td><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
       <td><div class="truncate" style="max-width:420px">${r.direction === "inbound" ? mailLozenge(r) + " " : ""}${stepLozenge(r)}${esc(r.subject || "(no subject)")}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
-      <td class="secondary nowrap" title="${esc(fmtDate(r.sent_at || r.created_at))}">${rel(r.sent_at || r.created_at)}</td>
+      ${(() => {   // when it last moved: sent, approved, or written -- not the draft's age on every tab
+        const at = r.sent_at || (r.status === "approved" ? r.approved_at : null) || r.created_at;
+        const what = r.sent_at ? "Sent" : r.status === "approved" && r.approved_at ? "Approved" : r.direction === "inbound" ? "Received" : "Written";
+        return `<td class="secondary nowrap" title="${esc(what + " " + fmtDate(at))}">${rel(at)}</td>`; })()}
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="5">${o.folder === "drafts"
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
@@ -1091,28 +1094,34 @@ function renderSendCounter(m) {
   const resets = m.resets_at ? new Date(m.resets_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
   const sent = m.sent_today || 0, limit = m.limit_today || 0;
   let text, tone = "", title = "Emails this project has sent today, out of its daily limit. The count starts again at " + resets + ".";
+  // held: nothing goes out today whatever the count says -- paused, or no mailbox on the server (2026-09-21: an
+  // approval sat in Approved and the page gave no visible reason; the tooltip was the only place that said it)
+  const held = !!m.paused || !m.can_send;
   if (m.paused) {
     text = "Sending paused"; tone = "paused";
     title = "Approved emails wait in Approved: " + m.paused;
+  } else if (!m.can_send) {
+    text = "Not sending: no mailbox connected on the server"; tone = "idle";
+    title = "Approved emails wait in Approved until the Gmail values are added in Render's Environment settings "
+      + "(GMAIL_SENDER_ADDRESS, GMAIL_TOKEN_JSON, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET).";
   } else if (sent >= limit) {
     text = `${sent} of ${limit} sent today`; tone = "full";
     title = "Today's limit is reached. Approved emails go out after " + resets + ".";
   } else {
     text = `${sent} of ${limit} sent today`;
-    if (!m.can_send) { tone = "idle"; title += " No mailbox is connected on the server yet, so nothing goes out."; }
   }
   // the queue: approved emails past today's room go out from tomorrow on, oldest first, a day's limit at a time
   const waiting = m.approved_waiting || 0, room = Math.max(0, limit - sent);
-  const later = m.paused ? waiting : Math.max(0, waiting - room);
+  const later = held ? waiting : Math.max(0, waiting - room);
   let queue = "";
   if (later && limit) {
-    const days = m.paused ? 0 : Math.ceil(later / limit);
-    queue = m.paused ? ` · ${later} approved waiting` : ` · ${later} more from tomorrow`;
-    title += m.paused ? "" : ` ${waiting} approved: ${Math.min(waiting, room)} go out today, the other ${later} ` +
+    const days = held ? 0 : Math.ceil(later / limit);
+    queue = held ? ` · ${later} approved waiting` : ` · ${later} more from tomorrow`;
+    title += held ? "" : ` ${waiting} approved: ${Math.min(waiting, room)} go out today, the other ${later} ` +
       (days > 1 ? `over the next ${days} days` : "tomorrow") + `, ${limit} a day, oldest first.`;
   }
   el.className = "send-counter" + (tone ? " " + tone : "");
-  el.innerHTML = `<b>${esc(text)}</b>${esc(queue)}${m.paused ? "" : `<span class="muted"> · resets ${esc(resets)}</span>`}`;
+  el.innerHTML = `<b>${esc(text)}</b>${esc(queue)}${held ? "" : `<span class="muted"> · resets ${esc(resets)}</span>`}`;
   el.title = title;
   el.hidden = false;
 }

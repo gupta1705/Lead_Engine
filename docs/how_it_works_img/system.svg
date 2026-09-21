@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 450" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#44546F"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="450" fill="#FFFFFF"/>
+
+  <!-- you -->
+  <rect x="20" y="105" width="140" height="100" rx="10" fill="#FFF7D6" stroke="#E2B203" stroke-width="2"/>
+  <text x="90" y="145" font-size="19" font-weight="700" fill="#172B4D" text-anchor="middle">You</text>
+  <text x="90" y="168" font-size="14" fill="#44546F" text-anchor="middle">in a web browser,</text>
+  <text x="90" y="187" font-size="14" fill="#44546F" text-anchor="middle">after logging in</text>
+
+  <!-- the app -->
+  <rect x="200" y="30" width="530" height="240" rx="12" fill="#E9F2FF" stroke="#0C66E4" stroke-width="2"/>
+  <text x="222" y="60" font-size="19" font-weight="700" fill="#172B4D">TVF Lead Engine</text>
+  <text x="222" y="81" font-size="14" fill="#44546F">the web app, running in the cloud on Render, day and night</text>
+
+  <rect x="222" y="100" width="150" height="100" rx="8" fill="#FFFFFF" stroke="#85B8FF" stroke-width="1.5"/>
+  <text x="297" y="133" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">Pages</text>
+  <text x="297" y="155" font-size="13.5" fill="#44546F" text-anchor="middle">what you see and</text>
+  <text x="297" y="173" font-size="13.5" fill="#44546F" text-anchor="middle">click: board, leads,</text>
+  <text x="297" y="191" font-size="13.5" fill="#44546F" text-anchor="middle">outreach</text>
+
+  <rect x="390" y="100" width="150" height="100" rx="8" fill="#FFFFFF" stroke="#85B8FF" stroke-width="1.5"/>
+  <text x="465" y="133" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">Server</text>
+  <text x="465" y="155" font-size="13.5" fill="#44546F" text-anchor="middle">the program that</text>
+  <text x="465" y="173" font-size="13.5" fill="#44546F" text-anchor="middle">does the work</text>
+  <text x="465" y="191" font-size="13.5" fill="#44546F" text-anchor="middle">(written in Python)</text>
+
+  <rect x="558" y="100" width="150" height="100" rx="8" fill="#FFFFFF" stroke="#85B8FF" stroke-width="1.5"/>
+  <text x="633" y="133" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">Scheduler</text>
+  <text x="633" y="155" font-size="13.5" fill="#44546F" text-anchor="middle">the clock: weekly</text>
+  <text x="633" y="173" font-size="13.5" fill="#44546F" text-anchor="middle">refresh, and email</text>
+  <text x="633" y="191" font-size="13.5" fill="#44546F" text-anchor="middle">every 15 minutes</text>
+
+  <text x="222" y="238" font-size="13.5" fill="#44546F">Code history on GitHub. Every change is tested, then goes live automatically.</text>
+
+  <!-- you <-> pages -->
+  <line x1="162" y1="155" x2="218" y2="155" stroke="#44546F" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+
+  <!-- database -->
+  <rect x="770" y="95" width="210" height="120" rx="10" fill="#DCFFF1" stroke="#22A06B" stroke-width="2"/>
+  <text x="875" y="130" font-size="18" font-weight="700" fill="#172B4D" text-anchor="middle">Database</text>
+  <text x="875" y="151" font-size="13.5" fill="#44546F" text-anchor="middle">(Supabase) every</text>
+  <text x="875" y="170" font-size="13.5" fill="#44546F" text-anchor="middle">company, contact,</text>
+  <text x="875" y="189" font-size="13.5" fill="#44546F" text-anchor="middle">email and decision</text>
+  <line x1="732" y1="155" x2="766" y2="155" stroke="#44546F" stroke-width="2" marker-start="url(#a)" marker-end="url(#a)"/>
+
+  <!-- outside services -->
+  <line x1="465" y1="270" x2="465" y2="300" stroke="#44546F" stroke-width="2"/>
+  <line x1="132" y1="300" x2="867" y2="300" stroke="#44546F" stroke-width="2"/>
+  <line x1="132" y1="300" x2="132" y2="326" stroke="#44546F" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="377" y1="300" x2="377" y2="326" stroke="#44546F" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="622" y1="300" x2="622" y2="326" stroke="#44546F" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="867" y1="300" x2="867" y2="326" stroke="#44546F" stroke-width="2" marker-end="url(#a)"/>
+  <text x="480" y="292" font-size="13" fill="#626F86">outside services, reached through their APIs</text>
+
+  <rect x="20" y="330" width="225" height="100" rx="10" fill="#F7F8F9" stroke="#C1C7D0" stroke-width="1.5"/>
+  <text x="132" y="362" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">Apollo</text>
+  <text x="132" y="384" font-size="13.5" fill="#44546F" text-anchor="middle">finds people and companies,</text>
+  <text x="132" y="402" font-size="13.5" fill="#44546F" text-anchor="middle">gives verified work emails</text>
+  <text x="132" y="420" font-size="13.5" fill="#44546F" text-anchor="middle">(paid in credits)</text>
+
+  <rect x="265" y="330" width="225" height="100" rx="10" fill="#F7F8F9" stroke="#C1C7D0" stroke-width="1.5"/>
+  <text x="377" y="362" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">Gmail</text>
+  <text x="377" y="384" font-size="13.5" fill="#44546F" text-anchor="middle">sends the approved emails</text>
+  <text x="377" y="402" font-size="13.5" fill="#44546F" text-anchor="middle">from one real mailbox and</text>
+  <text x="377" y="420" font-size="13.5" fill="#44546F" text-anchor="middle">brings replies back</text>
+
+  <rect x="510" y="330" width="225" height="100" rx="10" fill="#F7F8F9" stroke="#C1C7D0" stroke-width="1.5"/>
+  <text x="622" y="362" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">Public sources</text>
+  <text x="622" y="384" font-size="13.5" fill="#44546F" text-anchor="middle">YouTube, podcasts, Google</text>
+  <text x="622" y="402" font-size="13.5" fill="#44546F" text-anchor="middle">News, Wikidata, company</text>
+  <text x="622" y="420" font-size="13.5" fill="#44546F" text-anchor="middle">websites, directories</text>
+
+  <rect x="755" y="330" width="225" height="100" rx="10" fill="#F7F8F9" stroke="#C1C7D0" stroke-width="1.5"/>
+  <text x="867" y="362" font-size="16.5" font-weight="700" fill="#172B4D" text-anchor="middle">AI writer (Groq)</text>
+  <text x="867" y="384" font-size="13.5" fill="#44546F" text-anchor="middle">drafts the one paragraph</text>
+  <text x="867" y="402" font-size="13.5" fill="#44546F" text-anchor="middle">about each company;</text>
+  <text x="867" y="420" font-size="13.5" fill="#44546F" text-anchor="middle">a person still approves</text>
+</svg>

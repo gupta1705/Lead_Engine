@@ -191,7 +191,8 @@ MOCK_JS = r"""
     }
     if ((m = p.match(/^\/api\/outreach\/([^/]+)\/decision$/))) {
       const r = FX.outreach.rows.find((x) => x.id === m[1]); if (!r) return json({ detail: "no such row" }, 404);
-      if (body.action === "approve") r.status = "approved"; else if (body.action === "cancel") r.status = "cancelled";
+      if (body.action === "approve") { r.status = "approved"; r.approved_at = new Date().toISOString(); }
+      else if (body.action === "cancel") r.status = "cancelled";
       else if (body.action === "mark_positive") { r.triage = "positive"; r.status = "triaged"; return json({ ok: true, entity_promoted: true }); }
       else if (body.action === "mark_negative") { r.triage = "negative"; r.status = "triaged"; }
       return json({ ok: true });
