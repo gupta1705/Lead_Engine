@@ -137,7 +137,9 @@ def build_html(md_text, title, subtitle, author, base):
     for c in chapters:                       # anchors for the contents page
         html = html.replace("<h1>%s</h1>" % c, '<h1 id="%s">%s</h1>' % (slug(c), c), 1)
     html = inline_images(html, base)
-    toc = "".join('<li><a href="#%s">%s</a></li>' % (slug(c), c) for c in chapters)
+    # a contents page listing one chapter is a wasted page: it appears from two upwards
+    toc = ("<section class=\"toc\"><h2>Contents</h2><ol>%s</ol></section>"
+           % "".join('<li><a href="#%s">%s</a></li>' % (slug(c), c) for c in chapters)) if len(chapters) > 1 else ""
     today = dt.date.today().strftime("%d %B %Y")
     return """<!doctype html><html><head><meta charset="utf-8">
 <title>%s</title><style>%s</style></head><body>
@@ -148,7 +150,7 @@ def build_html(md_text, title, subtitle, author, base):
   <div class="rule"></div>
   <div class="meta">%s<br>%s</div>
 </section>
-<section class="toc"><h2>Contents</h2><ol>%s</ol></section>
+%s
 %s
 </body></html>""" % (title, CSS, author or "Internal", title, subtitle or "",
                      author or "", today, toc, html)
