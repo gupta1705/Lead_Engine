@@ -76,7 +76,7 @@ def generate(out, slug):
         rows += d["rows"]; counts = d["counts"]
     fx["outreach"] = {"rows": rows, "counts": counts}
     fx["mailboxes"] = main.mailboxes_state(req, segment=slug) if fx["segment"]["slug"] != "universal" else None
-    fx["me_mailboxes"] = {"mailboxes": [], "web_connect": False}
+    fx["me_mailboxes"] = {"mailboxes": []}
     fx["footer"] = main.footer_get(segment=slug)
     fx["schedule"] = main.schedule_state(segment=slug)
     fx["ops"] = {"busy": None}
@@ -152,7 +152,7 @@ MOCK_JS = r"""
     if (p === "/api/segment/select") return json({ ok: true });
     if (p === "/api/auth/logout") return json({ ok: true });
     if (p === "/api/health") return json({ ok: true });
-    // one account per person (2026-09-26): name and title, password, and your Gmail list
+    // one account per person (2026-09-26): name and title, password, and your sending address (read-only)
     if (p === "/api/auth/profile") {
       const name = String(body.name || "").trim(), title = String(body.title || "").trim();
       if (!name || !title) return json({ detail: "Your name and your title, as they should read under your emails." }, 400);
@@ -164,12 +164,7 @@ MOCK_JS = r"""
       FX.auth.must_change_password = false;
       return json({ ok: true });
     }
-    if (p === "/api/me/mailboxes") return json(FX.me_mailboxes || { mailboxes: [], web_connect: false });
-    if (p.startsWith("/api/mailboxes/") && method === "DELETE") {
-      const id = p.split("/").pop();
-      if (FX.me_mailboxes) FX.me_mailboxes.mailboxes = FX.me_mailboxes.mailboxes.filter((b) => b.id !== id);
-      return json({ ok: true });
-    }
+    if (p === "/api/me/mailboxes") return json(FX.me_mailboxes || { mailboxes: [] });
     if (p === "/api/stats") return json(FX.stats);
     if (p === "/api/kpis") return json(FX.kpis);
     if (p === "/api/schedule") return json(FX.schedule);

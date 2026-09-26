@@ -22,12 +22,9 @@
 # Optional values are added later in the dashboard (service -> Environment):
 #   ALERT_WEBHOOK_URL, GMAIL_SENDER_ADDRESS, GOOGLE_OAUTH_CLIENT_ID,
 #   GOOGLE_OAUTH_CLIENT_SECRET, GMAIL_TOKEN_JSON, ANTHROPIC_API_KEY.
-#   GOOGLE_OAUTH_WEB_CLIENT_ID, GOOGLE_OAUTH_WEB_CLIENT_SECRET (2026-09-26): a Google OAuth
-#   client of type "Web application" with the redirect URI
-#   https://tvf-lead-engine.onrender.com/api/mailboxes/callback -- what lets each person
-#   connect their own Gmail from the app (app/mailbox_connect.py). Their sign-ins are kept
-#   encrypted with a key derived from SESSION_SECRET: regenerating SESSION_SECRET means
-#   everyone connects their Gmail again (and signs in again).
+#   Each person's sending address (2026-09-26) needs nothing here: the owner links it with
+#   `tools/users.py gmail`, sealed for this server's key, which comes from SESSION_SECRET --
+#   regenerating SESSION_SECRET means linking every address again (and everyone signs in again).
 # Needed by particular projects:
 #   YOUTUBE_API_KEY   LCX's weekly refresh stops at its YouTube step without it
 #                     (Operations -> Automatic runs shows "Failed at discover_youtube").

@@ -2,17 +2,18 @@
 """mailbox_store.py -- the Gmail addresses people connect in the app (owner, 2026-09-26).
 
 One login per person, each linked to one or more Gmail addresses, each address with its own
-daily limit (35). A person connects an address from the app (Account menu -> Your Gmail), which
-runs Google's own sign-in (app/mailbox_connect.py); the lasting sign-in Google hands back is kept
-here, one row per address in user_mailboxes (sql/30).
+daily limit (35). The owner links them -- "I will manually connect the email id they will use to
+send" -- on the laptop: `python tools/users.py gmail <person>` runs Google's own sign-in in a
+browser, and the lasting sign-in Google hands back is kept here, one row per address in
+user_mailboxes (sql/30).
 
-THE SIGN-IN IS ENCRYPTED, with a key derived from the server's SESSION_SECRET, so the database
-on its own cannot send mail as anyone: a leaked dump or a stray query result is useless without
-the server's secret. The laptop's .env has a different SESSION_SECRET from Render's, so a sign-in
-saved by the server is only readable by the server. That is deliberate: sending happens there.
+THE SIGN-IN ONLY THE SERVER CAN READ. The laptop seals it with the server's public key (seal());
+after its first refresh the server keeps it encrypted with a key from its own SESSION_SECRET
+(encrypt()). Either way the database on its own cannot send mail as anyone: a leaked dump or a
+stray query result is useless without the server's secret, which the laptop does not have either.
 
-Shared by the app (connect, status, the Outreach counters) and tools/outreach.py (send, pull).
-Works with the app's dict cursor and the tools' tuple cursor alike.
+Shared by the app (status, the Outreach counters), tools/users.py (linking) and tools/outreach.py
+(send, pull). Works with the app's dict cursor and the tools' tuple cursor alike.
 """
 import base64
 import hashlib
@@ -50,11 +51,66 @@ def encrypt(creds, secret=None):
     return _fernet(secret).encrypt(json.dumps(creds).encode()).decode()
 
 
+# SEALED FOR THE SERVER (owner, 2026-09-26: "I will manually connect the email id they will use to
+# send"). The owner connects each person's sending address on the laptop (tools/users.py gmail), whose
+# .env has a different SESSION_SECRET from Render's, so the laptop cannot use the key above. It seals
+# the sign-in for the server instead: a one-off X25519 key agreed with the server's public key, HKDF to
+# a Fernet key -- the construction of a libsodium sealed box, from the cryptography package's own
+# primitives. Only the server, whose private key comes from its SESSION_SECRET, can open it. The laptop
+# gets the public key from the live site over HTTPS (/api/mailboxes/server-key).
+SEALED = "x25519:"
+
+
+def _server_private(secret=None):
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    raw = secret if isinstance(secret, bytes) else (secret.encode() if secret else _secret())
+    return X25519PrivateKey.from_private_bytes(hashlib.sha256(b"tvf-mailbox-x25519:" + raw).digest())
+
+
+def _raw(public_key):
+    from cryptography.hazmat.primitives import serialization
+    return public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+
+def server_public_key(secret=None):
+    """This server's public key, base64: what the laptop seals a sign-in with."""
+    return base64.b64encode(_raw(_server_private(secret).public_key())).decode()
+
+
+def _sealing_fernet(shared, one_off_public, server_public):
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None,
+               info=b"tvf-mailbox-seal" + one_off_public + server_public).derive(shared)
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def seal(creds, server_public_b64):
+    """The sign-in, readable only by the server whose public key this is -> token_enc text."""
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+    server_public = base64.b64decode(server_public_b64)
+    one_off = X25519PrivateKey.generate()
+    shared = one_off.exchange(X25519PublicKey.from_public_bytes(server_public))
+    one_off_public = _raw(one_off.public_key())
+    box = _sealing_fernet(shared, one_off_public, server_public).encrypt(json.dumps(creds).encode()).decode()
+    return SEALED + base64.urlsafe_b64encode(one_off_public).decode() + ":" + box
+
+
 def decrypt(token_enc, secret=None):
-    """-> the authorized-user dict, or None when it cannot be read (another server's key, damage)."""
+    """-> the authorized-user dict, or None when it cannot be read (another server's key, damage).
+    Reads both forms: sealed on the laptop for this server, or encrypted here after a refresh."""
     from cryptography.fernet import InvalidToken
+    text = str(token_enc or "")
     try:
-        return json.loads(_fernet(secret).decrypt(str(token_enc or "").encode()).decode())
+        if text.startswith(SEALED):
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+            one_off_b64, box = text[len(SEALED):].split(":", 1)
+            one_off_public = base64.urlsafe_b64decode(one_off_b64)
+            private = _server_private(secret)
+            shared = private.exchange(X25519PublicKey.from_public_bytes(one_off_public))
+            return json.loads(_sealing_fernet(shared, one_off_public, _raw(private.public_key())).decrypt(box.encode()))
+        return json.loads(_fernet(secret).decrypt(text.encode()).decode())
     except (InvalidToken, ValueError, TypeError):
         return None
 
@@ -113,21 +169,24 @@ def mailboxes(cur, user_email=None, with_token=False):
     return rows
 
 
-def save(cur, user_email, address, creds):
-    """Keep the sign-in for an address, for this person. An address someone else connected is
-    refused (ValueError): one address, one owner, or "reached out by" would say two things."""
+def save(cur, user_email, address, creds=None, token_enc=None, daily_cap=None, move=False):
+    """Keep the sign-in for an address, for this person: `creds` encrypted here, or `token_enc` already
+    sealed for the server. An address linked to someone else is refused (ValueError) unless `move`:
+    one address, one person, or "reached out by" would say two things."""
     address = address.strip().lower()
+    token = token_enc or encrypt(creds)
     cur.execute("select id, user_email from user_mailboxes where lower(address) = %s", (address,))
     got = _rows(cur)
-    if got and got[0]["user_email"].lower() != user_email.lower():
-        raise ValueError("%s is already connected by %s" % (address, got[0]["user_email"]))
+    if got and got[0]["user_email"].lower() != user_email.lower() and not move:
+        raise ValueError("%s is already linked to %s" % (address, got[0]["user_email"]))
     if got:
-        cur.execute("update user_mailboxes set token_enc = %s, enabled = true, last_error = null, last_error_at = null,"
-                    " connected_at = now(), updated_at = now() where id = %s returning id",
-                    (encrypt(creds), got[0]["id"]))
+        cur.execute("update user_mailboxes set user_email = %s, token_enc = %s, enabled = true, last_error = null,"
+                    " last_error_at = null, daily_cap = coalesce(%s, daily_cap), connected_at = now(), updated_at = now()"
+                    " where id = %s returning id", (user_email.lower(), token, daily_cap, got[0]["id"]))
     else:
-        cur.execute("insert into user_mailboxes (user_email, address, token_enc) values (%s, %s, %s) returning id",
-                    (user_email.lower(), address, encrypt(creds)))
+        cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap)"
+                    " values (%s, %s, %s, coalesce(%s, %s)) returning id",
+                    (user_email.lower(), address, token, daily_cap, DEFAULT_CAP))
     return str(_rows(cur)[0]["id"])
 
 
@@ -144,10 +203,10 @@ def mark_error(cur, mailbox_id, message):
                 (str(message)[:300], str(mailbox_id)))
 
 
-def remove(cur, mailbox_id, user_email):
-    """Disconnect one of this person's own addresses. -> the row removed, or None."""
-    cur.execute("delete from user_mailboxes where id::text = %s and lower(user_email) = lower(%s)"
-                " returning id, address, token_enc", (str(mailbox_id), user_email))
+def remove(cur, address):
+    """Unlink a sending address. -> the row removed ({address, user_email, token_enc}), or None."""
+    cur.execute("delete from user_mailboxes where lower(address) = lower(%s) returning address, user_email, token_enc",
+                (address.strip(),))
     got = _rows(cur)
     return got[0] if got else None
 

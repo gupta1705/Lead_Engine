@@ -331,18 +331,19 @@ python tools/users.py team a@theviralfever.com b@theviralfever.com [--remove old
 
 It asks once for a starting password that works for each person's first
 sign-in only: the app then refuses everything until they choose their own, and
-asks for their name and title (the sign-off on the emails they approve, which
-go out from their own Gmail, connected from the account menu).
+asks for their name and title (the sign-off on the emails they approve).
+`users.py gmail <login>` links the address a person sends from: Google's
+sign-in opens in a browser on your machine, you sign in to that address, and the
+sign-in is sealed with the live server's public key (fetched over HTTPS), so only
+the server can read it.
 `users.py list` shows everyone, whether they have signed in yet and their
 connected Gmail; `add` / `passwd` do one person (`--starting` for a one-time
 password), and reset sessions; `remove` deletes a member (never the owner;
 `team --remove` can, and hands ownership to the first person listed).
 
-**People's own Gmail** needs a Google OAuth client of type **Web application**
-with the redirect URI `https://<your host>/api/mailboxes/callback`, in
-`GOOGLE_OAUTH_WEB_CLIENT_ID` / `GOOGLE_OAUTH_WEB_CLIENT_SECRET`. Their sign-ins
-are stored encrypted with a key derived from `SESSION_SECRET`: rotating that
-secret means everyone signs in and connects their Gmail again.
+**Sending addresses** are stored sealed for, then encrypted by, a key derived
+from `SESSION_SECRET`: rotating that secret means every address is linked again
+(`users.py gmail`), and everyone signs in again.
 
 **How it holds up.** Passwords are bcrypt (cost 12). Sessions are signed
 cookies (HMAC-SHA256) that are httpOnly, SameSite=Lax, and automatically

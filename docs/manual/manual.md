@@ -45,20 +45,34 @@ python tools/users.py team suhasc@theviralfever.com kartikeyap@theviralfever.com
 
 It asks for one **starting password**, twice, and never puts it in a command.
 Tell each person the site address and that password. It works once: their first
-sign-in asks for **their own password** (ten characters or more), **their name
-and title** (they sign every email that person approves), and then to **connect
-their Gmail**. Until the starting password is replaced, the app refuses to do
-anything else for that login. Adding `--remove old@theviralfever.com` to the
-same command takes someone's login away; their past approvals and sent emails
-stay in the history.
+sign-in asks for **their own password** (ten characters or more) and **their name
+and title** (they sign every email that person approves). Until the starting
+password is replaced, the app refuses to do anything else for that login. Adding
+`--remove old@theviralfever.com` to the same command takes someone's login away;
+their past approvals and sent emails stay in the history.
+
+**The owner links each person's sending address**, once per address, on their
+own machine:
+
+```
+python tools/users.py gmail suhasc@theviralfever.com
+```
+
+A browser opens on Google's own sign-in; sign in to the address that person
+will send from (it can be their own or another one). That's all: the address is
+linked to them, and the emails they approve go out from it. Nobody else connects
+anything. Run it again to add a second address for the same person, or to
+refresh one whose sign-in stopped working; `--move` moves an address to another
+person; `gmail-remove <address>` unlinks one.
 
 `users.py list` shows who has access, whether they have signed in yet and which
-Gmail addresses they have connected; `add` and `passwd` (with `--starting` for a
-one-time password) do the same for one person.
+addresses they send from; `add` and `passwd` (with `--starting` for a one-time
+password) do the same as `team` for one person.
 
-**Your account menu** (your initials, top right) holds **Your Gmail**, **Your
-name and title** and **Change password**. Changing your password keeps you
-signed in where you are and signs you out everywhere else.
+**Your account menu** (your initials, top right) holds **Your sending address**
+(where your emails go out from, and today's count), **Your name and title** and
+**Change password**. Changing your password keeps you signed in where you are and
+signs you out everywhere else.
 
 There is no "sign up" link and no password reset by email. That is deliberate.
 Everything in this tool sits behind that one login, including every screen,
@@ -424,13 +438,11 @@ for them.
 ## Approving sends
 
 Approving is the decision to send, and in US Production Houses **it goes out from
-your own Gmail**, signed with your own name and title. Each person connects their
-Gmail once (account menu, **Your Gmail**, then **Connect your Gmail**): Google's
-own screen shows exactly what is allowed, which is sending and reading replies
-for that one address and nothing else, and it can be taken back at any time from
-the Google account. You can connect more than one address. Each one sends **up to
-35 a day**, and an approval goes out from whichever of yours has the most room
-left. Nobody's approval ever leaves from somebody else's address.
+your own sending address**, signed with your own name and title. The owner links
+that address to your login (see *Getting in*); you connect nothing. A person can
+have more than one. Each address sends **up to 35 a day**, and an approval goes
+out from whichever of yours has the most room left. Nobody's approval ever
+leaves from somebody else's address.
 
 **What you see is what goes out.** A draft is shown to you as you would send it:
 your name and title in the sign-off. Kartikeya sees his own emails in his own
@@ -439,11 +451,11 @@ line from the original samples) rather than "on behalf of Kartikeya". Approving
 stores exactly the text you read. Approving needs your name and title; if you
 have not set them, it says so.
 
-**Sending today**, at the top of Outreach, lists everyone: each of their Gmail
+**Sending today**, at the top of Outreach, lists everyone: each of their sending
 addresses with today's count out of its limit (for example `3/35`), anyone who
-has not connected one yet, and how many of their approvals are waiting. The
-counts start again at midnight UTC, which is 5:30 am in India. An approval by
-someone with no Gmail connected waits in Approved until they connect one.
+has none linked yet, and how many of their approvals are waiting. The counts
+start again at midnight UTC, which is 5:30 am in India. An approval by someone
+with no sending address waits in Approved until the owner links one.
 
 In the other projects the email goes out from the project's own mailbox, inside
 the day's sending limit and each mailbox's warm-up, and the counter at the top of
@@ -709,17 +721,13 @@ card.
 the Outreach screen. Until this is done, no email can be approved: the check
 refuses a draft that still says `SET_ME`.
 
-**2. Let people connect their own Gmail (US Production Houses).** Once, in
-Google Cloud (the same project as the existing client, `TVFLeadgenerator`):
-**APIs & Services → Credentials → Create credentials → OAuth client ID →
-Application type: Web application**, name it `Lead Engine web`, and under
-**Authorized redirect URIs** add exactly
-`https://tvf-lead-engine.onrender.com/api/mailboxes/callback`. Create, then put
-its Client ID and Client secret in Render's Environment tab as
-`GOOGLE_OAUTH_WEB_CLIENT_ID` and `GOOGLE_OAUTH_WEB_CLIENT_SECRET`. From then on
-each person connects their own Gmail from the app; nobody touches Render again
-for it. Because the consent screen is **Internal**, only theviralfever.com
-addresses can be connected.
+**2. Link each person's sending address (US Production Houses).**
+`python tools/users.py gmail <their login>` on your machine, once per address
+(see *Getting in*). It uses the Google client already in `.env`, and nothing
+needs adding to Render. Because the consent screen is **Internal**, only
+theviralfever.com addresses can be linked. If a sending address's sign-in stops
+working (a password change, access removed), Sending today marks it, its
+emails wait, and running the same command again fixes it.
 
 **3. Connect a project mailbox (LCX Clipping).** A Gmail OAuth client in Google
 Cloud, then the address in `.env`, then one browser consent per mailbox:

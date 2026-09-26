@@ -57,7 +57,8 @@ app = FastAPI(title="TVF Lead Engine", docs_url=None, redoc_url=None, openapi_ur
 # fully self-contained (inline CSS) precisely so nothing else needs to be on
 # the public side of this wall.
 AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup",
-               "/api/health")
+               "/api/health",
+               "/api/mailboxes/server-key")   # a public key, for the owner's laptop (app/mailbox_connect.py)
 # what a person still on a starting password may call: the screen that replaces it
 MUST_CHANGE_OK = ("/api/auth/state", "/api/auth/password", "/api/auth/profile", "/api/auth/logout",
                   "/api/health")
@@ -1086,9 +1087,7 @@ def _approver_mailboxes(cur, cfg, segment, me):
     accounts.sort(key=lambda a: (not a["me"], a["name"].lower()))           # yours first
     mine = next((a for a in accounts if a["me"]), {"mailboxes": [], "approved_waiting": 0})
     now = _dt.datetime.now(_dt.timezone.utc)
-    import mailbox_connect
     return {"mode": "approver", "paused": paused, "accounts": accounts,
-            "web_connect": bool(mailbox_connect.web_client()),
             "approved_waiting": sum(waiting.values()),
             "resets_at": _dt.datetime.combine(now.date() + _dt.timedelta(days=1), _dt.time(0),
                                               tzinfo=_dt.timezone.utc).isoformat(),
@@ -1197,7 +1196,7 @@ app.include_router(_ops_module.build_router())
 import universal as _universal_module          # the Universal project's Apollo search page
 app.include_router(_universal_module.build_router(cursor))
 
-import mailbox_connect as _mailbox_connect_module   # "Connect your Gmail", one account per person
+import mailbox_connect as _mailbox_connect_module   # each person's sending address, linked by the owner
 app.include_router(_mailbox_connect_module.build_router(cursor))
 
 # ---------------------------------------------------------------- scheduler

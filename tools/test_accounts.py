@@ -4,16 +4,17 @@
     python tools/test_accounts.py
 
 The real app runs in-process (FastAPI's TestClient) against the real database inside ONE transaction that
-is rolled back: throwaway people, a throwaway project in "send from the approver" mode, drafts, Gmail
-connections. Google is a stand-in (the sign-in exchange, the profile, the revoke), so nothing leaves the
-machine, and the encryption key is a test one. Checked:
+is rolled back: throwaway people, a throwaway project in "send from the approver" mode, drafts, sending
+addresses. Google is a stand-in (the owner's sign-in in tools/users.py gmail, the profile), so nothing
+leaves the machine, and the server's secret is a test one. Checked:
 
   * a starting password opens nothing but the screen that replaces it; changing it keeps this session and
     ends the others; the rules on a new password; name and title
   * each person sees a draft as THEY would send it (their sign-off, Kartikeya his own first-person line),
     saving an edit stores the project's own form, approving stores theirs and needs a name and title
-  * "Connect your Gmail": the signed state, the exchange, the address saved encrypted to that person, one
-    address one owner, disconnecting only your own, and nothing working without the web client
+  * the owner links each person's sending address (users.py gmail): sealed with the server's public key
+    so only the server reads it, one address one person (--move to change), refresh and --cap; people
+    have nothing to connect in the app
   * the Sending today list, "reached out by" on leads, the lead dialog and the per-person report
 
 Exit code 1 on any failure.
@@ -21,8 +22,6 @@ Exit code 1 on any failure.
 import json
 import os
 import sys
-import time
-import urllib.parse
 import uuid
 from pathlib import Path
 
@@ -31,8 +30,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "app"))
 os.environ["SCHEDULER_ENABLED"] = "0"
 os.environ["SESSION_SECRET"] = "zz-accounts-test-" + uuid.uuid4().hex     # a test key: cookies and sign-ins
-for k in ("GOOGLE_OAUTH_WEB_CLIENT_ID", "GOOGLE_OAUTH_WEB_CLIENT_SECRET", "PUBLIC_BASE_URL"):
-    os.environ.pop(k, None)
+os.environ.pop("PUBLIC_BASE_URL", None)
 
 import bcrypt  # noqa: E402
 import psycopg2  # noqa: E402
@@ -41,7 +39,6 @@ from run_sql import load_db_url  # noqa: E402
 
 import main  # noqa: E402
 import auth  # noqa: E402
-import mailbox_connect  # noqa: E402
 import mailbox_store as store  # noqa: E402
 import draft_render as dr  # noqa: E402
 
@@ -92,6 +89,19 @@ def pure():
     check("the refresh token is not in the stored text", "zz-refresh" in blob, False)
     check("another server's key cannot read it", store.decrypt(blob, secret=b"another-secret"), None)
     check("damage reads as nothing, not a crash", store.decrypt("not-a-token"), None)
+    print("\n-- sealed on the laptop for the server: only the server's secret opens it")
+    server_secret, laptop_secret = b"the-server-secret", b"the-laptop-secret"
+    key = store.server_public_key(server_secret)
+    check("the server's public key: the same every time from the same secret",
+          (key == store.server_public_key(server_secret), key == store.server_public_key(laptop_secret)), (True, False))
+    sealed = store.seal(creds, key)
+    check("sealed with it, the refresh token is not in the stored text", ("zz-refresh" in sealed, sealed.startswith(store.SEALED)),
+          (False, True))
+    check("the server opens it", store.decrypt(sealed, secret=server_secret), creds)
+    check("the laptop cannot, though it sealed it", store.decrypt(sealed, secret=laptop_secret), None)
+    check("sealing twice gives two different texts (a new one-off key each time)", store.seal(creds, key) != sealed, True)
+    tampered = sealed[:-6] + ("A" if sealed[-6] != "A" else "B") + sealed[-5:]
+    check("a changed character: refused, not misread", store.decrypt(tampered, secret=server_secret), None)
 
     print("\n-- a draft as each person would send it (tools/draft_render.py)")
     cfg = {"send_from": "approver",
@@ -130,15 +140,6 @@ def api():
     main._SEG_CACHE.update(at=0.0, rows=[])
     kicks = []
     main._scheduler.kick_outreach = lambda seg, trigger="manual": kicks.append((seg, trigger))
-    google = {"calls": [], "token": None, "profile": None}
-
-    def fake_post(url, fields, timeout=20):
-        google["calls"].append((url, dict(fields)))
-        if url == mailbox_connect.TOKEN_URL:
-            return google["token"]
-        return 200, {}
-    mailbox_connect._post_form = fake_post
-    mailbox_connect._get_json = lambda url, token, timeout=20: google["profile"]
     client = TestClient(main.app, follow_redirects=False, raise_server_exceptions=False)
 
     def call(method, url, cookies=None, **kw):
@@ -259,75 +260,117 @@ def api():
         check("  no Gmail connected: it cannot go out yet, and the answer says so",
               (r.json()["can_send"], r.json()["sends_from"]), (False, []))
 
-        # ------------------------------------------------------------ Gmail
-        print("\n-- Connect your Gmail")
-        r = call("GET", "/api/mailboxes/connect", cookies=a)
-        loc = r.headers.get("location", "")
-        check("without the web client: back to the page, which says why", (r.status_code, loc.startswith("/?gmail=error")),
-              (302, True))
-        os.environ["GOOGLE_OAUTH_WEB_CLIENT_ID"] = "zz-web.apps.googleusercontent.com"
-        os.environ["GOOGLE_OAUTH_WEB_CLIENT_SECRET"] = "zz-web-secret"
-        r = call("GET", "/api/mailboxes/connect", cookies=a, headers={"x-forwarded-proto": "https", "host": "leads.zz.example"})
-        loc = urllib.parse.urlparse(r.headers.get("location", ""))
-        q = dict(urllib.parse.parse_qsl(loc.query))
-        check("with it: off to Google's own sign-in", (r.status_code, loc.netloc, q.get("client_id"), q.get("scope"),
-              q.get("access_type"), q.get("redirect_uri")),
-              (302, "accounts.google.com", "zz-web.apps.googleusercontent.com", store.GMAIL_SCOPE, "offline",
-               "https://leads.zz.example/api/mailboxes/callback"))
-        state = q.get("state")
-        cb = lambda cookies, **params: call("GET", "/api/mailboxes/callback?" + urllib.parse.urlencode(params),
-                                            cookies=cookies, headers={"x-forwarded-proto": "https", "host": "leads.zz.example"})
-        google["token"] = (200, {"access_token": "ya29.zz", "refresh_token": "1//zz-asha", "scope": store.GMAIL_SCOPE})
+        # ------------------------------------------------------------ sending addresses
+        # owner, 2026-09-26: "no need for them to connect their gmails. I will manually connect the email id
+        # they will use to send" -- the owner links each address on the laptop (tools/users.py gmail)
+        print("\n-- the owner links each person's sending address (tools/users.py gmail)")
+        r = call("GET", "/api/mailboxes/server-key")
+        check("the server's public key is public, and the one its secret gives", (r.status_code, r.json().get("x25519")),
+              (200, store.server_public_key()))
+        check("people have nothing to connect: no connect, callback or disconnect in the app",
+              [call(m, u, cookies=a).status_code in (404, 405) for m, u in
+               (("GET", "/api/mailboxes/connect"), ("GET", "/api/mailboxes/callback?code=x"), ("DELETE", "/api/mailboxes/x"))],
+              [True, True, True])
+
+        import users
+        import googleapiclient.discovery as gdisc
         a_gmail = "asha.%s@zz-mail.example" % tag
-        google["profile"] = (200, {"emailAddress": a_gmail.upper()})
-        r = cb(k, code="c", state=state)
-        check("someone else finishing Asha's sign-in is refused", r.headers.get("location", "").startswith("/?gmail=error"), True)
-        r = cb(a, code="c", state="1.x.forged")
-        check("a forged state is refused", r.headers.get("location", "").startswith("/?gmail=error"), True)
-        google["calls"].clear()
-        r = cb(a, code="the-code", state=state)
-        check("Asha's own: saved, back to the page saying so", r.headers.get("location", "").startswith("/?gmail=connected"), True)
-        exch = next((f for u, f in google["calls"] if u == mailbox_connect.TOKEN_URL), {})
-        check("  the code was exchanged with the same redirect", (exch.get("code"), exch.get("redirect_uri"),
-              exch.get("grant_type")), ("the-code", "https://leads.zz.example/api/mailboxes/callback", "authorization_code"))
-        cur.execute("select user_email, address, token_enc, daily_cap from user_mailboxes where lower(address) = %s", (a_gmail,))
-        row = cur.fetchone()
-        check("  kept for Asha, address in lower case, 35 a day", (row[0], row[1], row[3]), (a_email, a_gmail, 35))
-        check("  the sign-in is encrypted, and reads back", ("1//zz-asha" in row[2], (store.decrypt(row[2]) or {}).get("refresh_token")),
-              (False, "1//zz-asha"))
-        google["token"] = (200, {"access_token": "ya29.zz", "refresh_token": "1//zz-kart", "scope": store.GMAIL_SCOPE})
-        google["calls"].clear()
-        r = call("GET", "/api/mailboxes/connect", cookies=k, headers={"host": "leads.zz.example"})
-        kstate = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(r.headers["location"]).query))["state"]
-        r = cb(k, code="c2", state=kstate)                          # Google says it is Asha's address
-        check("an address someone else connected: refused, and Google's permission withdrawn",
-              (r.headers.get("location", "").startswith("/?gmail=error"),
-               any(u == mailbox_connect.REVOKE_URL for u, _ in google["calls"])), (True, True))
-        google["token"] = (200, {"access_token": "ya29.zz", "scope": "openid"})
-        r = cb(a, code="c3", state=mailbox_connect.sign_state(a_email))
-        check("Gmail unticked on Google's screen: refused with the reason",
-              "Gmail+was+not+allowed" in r.headers.get("location", "") or "Gmail%20was%20not" in r.headers.get("location", ""), True)
+
+        class FakeCreds:
+            def __init__(self, refresh="1//zz-asha"):
+                self.refresh = refresh
+
+            def to_json(self):
+                return json.dumps({"token": "ya29.zz", "refresh_token": self.refresh, "client_id": "desk",
+                                   "client_secret": "desk-secret", "token_uri": store.TOKEN_URI, "scopes": [store.GMAIL_SCOPE]})
+
+        class FakeGmailProfile:
+            def __init__(self, address):
+                self.address = address
+
+            def users(self):
+                return self
+
+            def getProfile(self, userId):
+                return self
+
+            def execute(self):
+                return {"emailAddress": self.address}
+
+        class TxDb:                       # dbconn.Db on this test's one transaction
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, fn, on_reconnect=None):
+                with conn.cursor() as c:
+                    c.execute("savepoint users_step")
+                    try:
+                        out_ = fn(c)
+                    except Exception:
+                        c.execute("rollback to savepoint users_step")
+                        raise
+                    c.execute("release savepoint users_step")
+                    return out_
+
+            def close(self):
+                pass
+
+        signed_in_as = {"address": a_gmail.upper(), "creds": FakeCreds()}
+        real = (users.Db, users._server_key, users._google_signin, gdisc.build, sys.argv)
+        users.Db = TxDb
+        users._server_key = lambda: store.server_public_key()
+        users._google_signin = lambda: signed_in_as["creds"]
+        gdisc.build = lambda *a_, **k_: FakeGmailProfile(signed_in_as["address"])
+
+        def run_users(*argv):
+            sys.argv = ["users.py"] + list(argv)
+            try:
+                users.main()
+                return 0
+            except SystemExit as e:
+                return e.code if isinstance(e.code, int) else 1
+        try:
+            check("linking to a login that does not exist is refused", run_users("gmail", "nobody-%s@example.com" % tag), 1)
+            check("the owner links Asha's sending address", run_users("gmail", a_email), 0)
+            cur.execute("select user_email, address, token_enc, daily_cap from user_mailboxes where lower(address) = %s", (a_gmail,))
+            row = cur.fetchone()
+            check("  kept for Asha, address in lower case, 35 a day", (row[0], row[1], row[3]), (a_email, a_gmail, 35))
+            check("  sealed for the server: not readable as stored, readable with the server's secret",
+                  ("1//zz-asha" in row[2], row[2].startswith(store.SEALED), (store.decrypt(row[2]) or {}).get("refresh_token")),
+                  (False, True, "1//zz-asha"))
+            check("  and not with any other secret", store.decrypt(row[2], secret=b"not-the-server"), None)
+            check("the same address for Kartikeya: refused, it is Asha's", run_users("gmail", kart_email), 1)
+            signed_in_as["creds"] = FakeCreds("1//zz-asha-2")
+            check("running it again for Asha refreshes her sign-in, a new limit if given",
+                  run_users("gmail", a_email, "--cap", "20"), 0)
+            cur.execute("select count(*), max(daily_cap) from user_mailboxes where lower(address) = %s", (a_gmail,))
+            got = list(cur.fetchone())
+            cur.execute("select token_enc from user_mailboxes where lower(address) = %s", (a_gmail,))
+            check("  one row, cap 20, the new sign-in", (got, (store.decrypt(cur.fetchone()[0]) or {}).get("refresh_token")),
+                  ([1, 20], "1//zz-asha-2"))
+            check("  a cap that makes no sense is refused", run_users("gmail", a_email, "--cap", "0"), 1)
+            signed_in_as["creds"] = FakeCreds(refresh=None)
+            check("Google gives no lasting sign-in: nothing kept", run_users("gmail", a_email), 1)
+            signed_in_as["creds"] = FakeCreds()
+            check("--move gives it to Kartikeya", run_users("gmail", kart_email, "--move"), 0)
+            cur.execute("select user_email from user_mailboxes where lower(address) = %s", (a_gmail,))
+            check("  now his", cur.fetchone()[0], kart_email)
+            check("and back to Asha, at 35 again", run_users("gmail", a_email, "--move", "--cap", "35"), 0)
+        finally:
+            users.Db, users._server_key, users._google_signin, gdisc.build, sys.argv = real
 
         mine = call("GET", "/api/me/mailboxes", cookies=a).json()
-        check("Asha's list: the address, today's use, no secrets", (
-            [m["address"] for m in mine["mailboxes"]], mine["mailboxes"][0]["remaining"], mine["web_connect"],
-            "token_enc" in json.dumps(mine), "zz-asha" in json.dumps(mine)), ([a_gmail], 35, True, False, False))
+        check("Asha's sending address, read-only: the address and today's use, no secrets", (
+            [m["address"] for m in mine["mailboxes"]], mine["mailboxes"][0]["remaining"],
+            "token_enc" in json.dumps(mine), "zz-asha" in json.dumps(mine)), ([a_gmail], 35, False, False))
         strip = call("GET", "/api/mailboxes", cookies=a).json()
         me_row = next(x for x in strip["accounts"] if x["me"])
         check("Sending today: everyone listed, hers first with her address and 35",
               (strip["mode"], strip["accounts"][0]["me"], [m["address"] for m in me_row["mailboxes"]],
                me_row["mailboxes"][0]["daily_cap"], strip["can_send"]), ("approver", True, [a_gmail], 35, True))
         kart_row = next(x for x in strip["accounts"] if x["email"] == kart_email)
-        check("  Kartikeya: no Gmail, one approval waiting", (kart_row["mailboxes"], kart_row["approved_waiting"]), ([], 1))
+        check("  Kartikeya: no sending address, one approval waiting", (kart_row["mailboxes"], kart_row["approved_waiting"]), ([], 1))
         check("  and nothing secret in it", "token" in json.dumps(strip).replace("tokens", ""), False)
-
-        mb_id = mine["mailboxes"][0]["id"]
-        check("someone else cannot disconnect it (404)", call("DELETE", "/api/mailboxes/%s" % mb_id, cookies=k).status_code, 404)
-        google["calls"].clear()
-        r = call("DELETE", "/api/mailboxes/%s" % mb_id, cookies=a)
-        check("Asha disconnects it: gone, and Google's permission withdrawn",
-              (r.status_code, call("GET", "/api/me/mailboxes", cookies=a).json()["mailboxes"],
-               [f.get("token") for u, f in google["calls"] if u == mailbox_connect.REVOKE_URL]), (200, [], ["1//zz-asha"]))
 
         # ------------------------------------------------------------ reached out by
         print("\n-- who reached out")
@@ -353,8 +396,6 @@ def api():
     finally:
         conn.rollback()
         conn.close()
-        for k_ in ("GOOGLE_OAUTH_WEB_CLIENT_ID", "GOOGLE_OAUTH_WEB_CLIENT_SECRET"):
-            os.environ.pop(k_, None)
 
 
 def main_():

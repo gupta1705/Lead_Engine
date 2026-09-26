@@ -183,8 +183,11 @@ def main_():
         cur.execute("insert into app_users (email, password_hash, role) values (%s, %s, 'member')",
                     (email, pw_hash))
         slug = "zz-api-" + uuid.uuid4().hex[:6]
+        # the project's own-mailbox mode, whatever the live one says: per-person sending (send_from
+        # "approver", 2026-09-26) has its own table, tools/test_accounts.py
         cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'ZZ API test', 'company',"
-                    " config #- '{outreach,sending_paused}' from segments where slug = %s returning id", (slug, TVF))
+                    " config #- '{outreach,sending_paused}' #- '{outreach,send_from}' from segments where slug = %s"
+                    " returning id", (slug, TVF))
         seg_id = cur.fetchone()[0]
 
         def company(status="ready_for_review", score=50, address=True):
@@ -354,9 +357,12 @@ def main_():
             c = call("GET", "/api/leads?" + q, cookies=tvf).status_code
             check("  /api/leads?%s: a clean answer, not a server error" % q, c in (200, 400, 422), True)
         mb = call("GET", "/api/mailboxes", cookies=tvf).json()
-        check("the send counter: 35 a day for US Production Houses, not paused",
-              (mb["segment_cap"], mb["limit_today"], mb["paused"]), (35, 35, None))
+        check("US Production Houses: sending today per person (each from their own address), not paused",
+              (mb.get("mode"), isinstance(mb.get("accounts"), list), mb["paused"]), ("approver", True, None))
         check("  resets at the next midnight UTC", mb["resets_at"].endswith("T00:00:00+00:00"), True)
+        own = call("GET", "/api/mailboxes", cookies=mine).json()
+        check("a project sending from its own mailbox: 35 a day on the counter", (own["segment_cap"], own["limit_today"]),
+              (35, 35))
         lcx = call("GET", "/api/mailboxes", cookies=dict(good, tvf_segment="lcx-clipping")).json()
         check("  LCX clipping says it is paused, and cannot send", (bool(lcx["paused"]), lcx["can_send"]), (True, False))
         k = call("GET", "/api/kpis", cookies=tvf).json()

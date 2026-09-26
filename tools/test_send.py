@@ -226,7 +226,9 @@ def main():
                         " select %s, 'send test', 'company', config from segments where slug = 'us-production-houses'"
                         " returning id", (slug,))
             seg_id = cur.fetchone()[0]
-            cur.execute("update segments set config = jsonb_set(config #- '{outreach,mailboxes}',"
+            # the project's own mailbox (the pool), whatever the live config says: sending from each
+            # approver's own address has its own section below (approver_mode)
+            cur.execute("update segments set config = jsonb_set(config #- '{outreach,mailboxes}' #- '{outreach,send_from}',"
                         " '{outreach,daily_send_cap}', '3') where id = %s", (seg_id,))
             outreach.SEGMENT = slug
 

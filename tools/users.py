@@ -11,10 +11,20 @@ arguments (which would land in shell history).
     python tools/users.py add    teammate@theviralfever.com [--starting]
     python tools/users.py passwd teammate@theviralfever.com [--starting]
     python tools/users.py remove teammate@theviralfever.com
+    python tools/users.py gmail  teammate@theviralfever.com [--cap 35] [--move]
+    python tools/users.py gmail-remove sending@theviralfever.com
 
 One account per person (owner, 2026-09-26): each person signs in with their own
-login, connects their own Gmail in the app, and the emails they approve go out
-from it, signed with their name.
+login, and the emails they approve go out from the Gmail address the owner links
+to them, signed with their name.
+
+`gmail` links a sending address to a person: Google's own sign-in opens in a
+browser, the owner signs in to the address that person will send from, and the
+sign-in is sealed so that only the live server can read it (it is fetched the
+server's public key first, over HTTPS). Each address sends up to 35 a day
+(`--cap` for another number); a person may have several. Running it again for
+the same address refreshes its sign-in; `--move` moves an address from one
+person to another. `gmail-remove` unlinks an address.
 
 `team` sets up several people at once with one STARTING password: it works for
 their first sign-in only, which asks each of them for their own password, their
@@ -52,6 +62,53 @@ def _emails(args):
             sys.exit("not an email address: %r" % a)
         out.append(e)
     return out
+
+
+def _env(name):
+    import io
+    import os
+    v = os.environ.get(name)
+    if v:
+        return v.strip()
+    envfile = Path(__file__).resolve().parent.parent / ".env"
+    if envfile.exists():
+        for line in io.open(envfile, encoding="utf-8"):
+            if line.strip().startswith(name + "="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'") or None
+    return None
+
+
+def _server_key():
+    """The live server's public key, over HTTPS: a sign-in sealed with it is readable only there."""
+    import json
+    import urllib.request
+    base = (_env("PUBLIC_BASE_URL") or "https://tvf-lead-engine.onrender.com").rstrip("/")
+    try:
+        with urllib.request.urlopen(base + "/api/mailboxes/server-key", timeout=30) as r:
+            key = json.loads(r.read().decode()).get("x25519")
+    except Exception as e:
+        sys.exit("could not get the server's key from %s (%s). Is the latest version deployed?" % (base, e))
+    if not key:
+        sys.exit("the server at %s did not give a key" % base)
+    return key
+
+
+def _google_signin():
+    """Google's own sign-in, in a browser, for the address the person will send from -> Credentials."""
+    cid, csec = _env("GOOGLE_OAUTH_CLIENT_ID"), _env("GOOGLE_OAUTH_CLIENT_SECRET")
+    if not cid or not csec:
+        sys.exit("GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET must be in .env (the Desktop client)")
+    import mailbox_store as store
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    flow = InstalledAppFlow.from_client_config(
+        {"installed": {"client_id": cid, "client_secret": csec,
+                       "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                       "token_uri": store.TOKEN_URI, "redirect_uris": ["http://localhost"]}},
+        [store.GMAIL_SCOPE])
+    return flow.run_local_server(
+        port=0, prompt="consent select_account",
+        authorization_prompt_message="A browser window is opening. Sign in to the address this person will send from.\n",
+        success_message="Connected. You can close this tab and go back to the terminal.")
 
 
 def _set_password(cur, email, pw_hash, starting, role="member"):
@@ -154,6 +211,57 @@ def main():
             " returning id", (pw, starting, emails[0])), cur.fetchall())[1])
         print("password reset" if n else "no such user")
         print("(any existing sessions for this user are now invalid)")
+
+    elif cmd == "gmail":
+        import json
+        import mailbox_store as store
+        cap, move = None, "--move" in args
+        args = [a for a in args if a != "--move"]
+        if "--cap" in args:
+            i = args.index("--cap")
+            try:
+                cap = int(args[i + 1])
+            except (IndexError, ValueError):
+                sys.exit("--cap needs a number, e.g. --cap 35")
+            if not 1 <= cap <= 2000:
+                sys.exit("--cap is between 1 and 2000 a day")
+            args = args[:i] + args[i + 2:]
+        emails = _emails(args)
+        if len(emails) != 1:
+            sys.exit("usage: users.py gmail <person's login> [--cap 35] [--move]")
+        person = emails[0]
+        known = db.run(lambda cur: (cur.execute("select email from app_users where lower(email) = lower(%s)",
+                                                (person,)), cur.fetchone())[1])
+        if not known:
+            sys.exit("no login %s -- create it first (users.py team ...)" % person)
+        key = _server_key()                                # before the browser: fail early, not after signing in
+        creds = _google_signin()
+        from googleapiclient.discovery import build
+        address = build("gmail", "v1", credentials=creds, cache_discovery=False).users() \
+            .getProfile(userId="me").execute()["emailAddress"].strip().lower()
+        info = json.loads(creds.to_json())
+        if not info.get("refresh_token"):
+            sys.exit("Google did not give a lasting sign-in for %s; run it again" % address)
+        try:
+            db.run(lambda cur: store.save(cur, known[0], address, token_enc=store.seal(info, key),
+                                          daily_cap=cap, move=move))
+        except ValueError as e:
+            sys.exit("%s (add --move to move it to %s)" % (e, known[0]))
+        per_day = db.run(lambda cur: (cur.execute("select daily_cap from user_mailboxes where lower(address) = %s",
+                                                  (address,)), cur.fetchone())[1][0])
+        print("%s now sends from %s (%d a day). Emails they approve go out from it; the Outreach page shows its count."
+              % (known[0], address, per_day))
+
+    elif cmd == "gmail-remove":
+        import mailbox_store as store
+        emails = _emails(args)
+        if len(emails) != 1:
+            sys.exit("usage: users.py gmail-remove <sending address>")
+        if input("Unlink %s? Emails its person approves stop going out from it. Type yes: " % emails[0]).strip().lower() != "yes":
+            sys.exit("nothing changed")
+        gone = db.run(lambda cur: store.remove(cur, emails[0]))
+        print("unlinked %s from %s" % (gone["address"], gone["user_email"]) if gone else "no such sending address")
+        print("(Google's permission for it stays until it is removed at myaccount.google.com -> Security)")
 
     elif cmd == "remove":
         emails = _emails(args)
