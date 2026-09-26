@@ -339,6 +339,21 @@ values (
       "guidance": "Set by the owner 2026-09-18 with the outreach template. postal_address MUST be set before the first send (approval refuses a draft that still says SET_ME). The Gmail address itself comes from GMAIL_SENDER_ADDRESS in .env, never from config."
     },
     "daily_send_cap": 35,
+    "send_from": "approver",
+    "send_from_guidance": "Owner decision 2026-09-26: one login per person (suhasc@, kartikeyap@, upangyay@theviralfever.com), each linked to one or more Gmail addresses they connect in the app (account menu, top right -> Your Gmail). An email goes out from the Gmail of the person who approved it, from the address of theirs with the most room today, up to that address''s own limit (daily_cap on its user_mailboxes row, 35 by default; daily_send_cap here is not used in this mode). It is signed with their own name and title (account menu -> Your name and title), and the page shows each draft as the person looking at it would send it (tools/draft_render.personalize). An approval by someone with no Gmail connected waits in Approved. The project''s own mailbox (GMAIL_SENDER_ADDRESS, vedanshg@) sends nothing new; it still reads replies to the two emails it sent. Set to \"pool\" (or remove) to go back to sending from the project''s own mailbox.",
+    "voices": {
+      "guidance": "Owner decision 2026-09-26. The openers speak about Kartikeya (\"I''m writing on behalf of Kartikeya\", the owner''s choice of 2026-09-21), which cannot be right in an email from Kartikeya''s own address. For the person named here, each pair''s first text is replaced by the second, in the draft he sees and approves: his first-person line from the owner''s original samples of 2026-09-18 (\"I am {{sender_name}}, and I lead {{sender_title}} at The Viral Fever (TVF)\" with Kartikeya, Business Development and IP Strategy). Everyone else sends the openers as written, signed with their own name.",
+      "kartikeyap@theviralfever.com": [
+        [
+          "I''m writing on behalf of Kartikeya, who leads Business Development and IP Strategy at",
+          "I am Kartikeya, and I lead Business Development and IP Strategy at"
+        ],
+        [
+          "I''m writing on behalf of Kartikeya, who handles Business Development and IP Strategy at",
+          "I am Kartikeya, and I handle Business Development and IP Strategy at"
+        ]
+      ]
+    },
     "greeting_fallback": "{{company}} team",
     "hook_style": "tvf_partnership",
     "templates": [

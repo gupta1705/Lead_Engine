@@ -39,9 +39,16 @@ def generate(out, slug):
     fx["segment"] = main.segment_info(slug)
     fx["segments"] = main.segments_list(slug)
     with main.cursor() as cur:
-        cur.execute("select email from app_users where role = 'owner' limit 1")
+        # the person the preview is signed in as: the owner, or anyone, with a name so no first-sign-in screen
+        cur.execute("select email, name, title from app_users order by role = 'owner' desc, created_at limit 1")
         row = cur.fetchone()
         fx["auth"]["user"] = row["email"] if row else "owner@example.com"
+        fx["auth"].update(name=(row or {}).get("name") or "Preview Person",
+                          title=(row or {}).get("title") or "Business Development", must_change_password=False)
+
+    class _Req:                                   # what the endpoints read off a request: who is signed in
+        state = type("S", (), {"user": fx["auth"]["user"]})()
+    req = _Req()
     fx["stats"] = main.stats(segment=slug)
     fx["kpis"] = main.kpis(segment=slug)
     seen, leads = set(), []
@@ -65,9 +72,11 @@ def generate(out, slug):
             print("  details %d/%d" % (i, len(detail_ids)), flush=True)
     rows, counts = [], {}
     for f in FOLDERS:
-        d = main.outreach_list(f, segment=slug)
+        d = main.outreach_list(req, folder=f, segment=slug)
         rows += d["rows"]; counts = d["counts"]
     fx["outreach"] = {"rows": rows, "counts": counts}
+    fx["mailboxes"] = main.mailboxes_state(req, segment=slug) if fx["segment"]["slug"] != "universal" else None
+    fx["me_mailboxes"] = {"mailboxes": [], "web_connect": False}
     fx["footer"] = main.footer_get(segment=slug)
     fx["schedule"] = main.schedule_state(segment=slug)
     fx["ops"] = {"busy": None}
@@ -143,6 +152,24 @@ MOCK_JS = r"""
     if (p === "/api/segment/select") return json({ ok: true });
     if (p === "/api/auth/logout") return json({ ok: true });
     if (p === "/api/health") return json({ ok: true });
+    // one account per person (2026-09-26): name and title, password, and your Gmail list
+    if (p === "/api/auth/profile") {
+      const name = String(body.name || "").trim(), title = String(body.title || "").trim();
+      if (!name || !title) return json({ detail: "Your name and your title, as they should read under your emails." }, 400);
+      Object.assign(FX.auth, { name, title });
+      return json({ ok: true, name, title });
+    }
+    if (p === "/api/auth/password") {
+      if (String(body.new || "").length < 10) return json({ detail: "Choose a password of at least 10 characters." }, 400);
+      FX.auth.must_change_password = false;
+      return json({ ok: true });
+    }
+    if (p === "/api/me/mailboxes") return json(FX.me_mailboxes || { mailboxes: [], web_connect: false });
+    if (p.startsWith("/api/mailboxes/") && method === "DELETE") {
+      const id = p.split("/").pop();
+      if (FX.me_mailboxes) FX.me_mailboxes.mailboxes = FX.me_mailboxes.mailboxes.filter((b) => b.id !== id);
+      return json({ ok: true });
+    }
     if (p === "/api/stats") return json(FX.stats);
     if (p === "/api/kpis") return json(FX.kpis);
     if (p === "/api/schedule") return json(FX.schedule);

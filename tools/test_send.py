@@ -37,6 +37,111 @@ import outreach  # noqa: E402
 
 RESULTS = []
 SENDER = "sender@zz-send-test.example"
+REAL_USER_GMAIL = outreach.user_gmail_service
+
+
+def approver_mode(cur, gmail):
+    """From the approver (owner, 2026-09-26): an email goes out from the Gmail of the person who approved
+    it, the address of theirs with the most room first, each address up to its own daily limit; someone
+    with no Gmail connected waits; nobody's approval ever leaves from somebody else's address."""
+    import os
+    import mailbox_store as store
+    os.environ.setdefault("SESSION_SECRET", "zz-send-test-" + uuid.uuid4().hex)
+    args = argparse.Namespace(limit=500)
+    print("\n-- from the approver's own Gmail, each address with its own limit")
+    slug = "zz-send-appr-" + uuid.uuid4().hex[:6]
+    cur.execute("insert into segments (slug, name, entity_type, config)"
+                " select %s, 'send test (approver)', 'company', config from segments where slug = 'us-production-houses'"
+                " returning id", (slug,))
+    seg_id = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(config #- '{outreach,sending_paused}', '{outreach,send_from}',"
+                " '\"approver\"') where id = %s", (seg_id,))
+    outreach.SEGMENT = slug
+    tag = uuid.uuid4().hex[:6]
+    asha, bala = "zz-asha-%s@example.com" % tag, "zz-bala-%s@example.com" % tag
+    for who in (asha, bala):
+        cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', 'P', 'T')", (who,))
+    one, two = "asha.one.%s@zz-mail.example" % tag, "asha.two.%s@zz-mail.example" % tag
+
+    def mailbox(owner, address, cap):
+        cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap) values (%s, %s, %s, %s)"
+                    " returning id", (owner, address, store.encrypt({"refresh_token": "1//" + address}), cap))
+        return str(cur.fetchone()[0])
+    mailbox(asha, one, 2)
+    mailbox(asha, two, 1)
+    used = []
+
+    def fake_user_gmail(db, box):
+        used.append(box["address"])
+        return gmail
+    outreach.user_gmail_service = fake_user_gmail
+
+    def approved_by(who):
+        cur.execute("insert into entities (segment_id, name, domain, source, status) values"
+                    " (%s, %s, %s, 'test', 'shortlisted') returning id",
+                    (seg_id, "ZZ appr " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example"))
+        eid = cur.fetchone()[0]
+        cur.execute("insert into contacts (entity_id, full_name, email, email_status) values (%s, 'Kay', %s, 'valid')"
+                    " returning id", (eid, "kay.%s@zz-appr.example" % uuid.uuid4().hex[:6]))
+        cid = cur.fetchone()[0]
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status, approved_at,"
+                    " approved_by, approval_mode, created_at) values (%s, %s, 't', 'Hello', 'Hello Kay,\n\nBody',"
+                    " 'approved', now(), %s, 'single', clock_timestamp()) returning id", (eid, cid, who))
+        return cur.fetchone()[0]
+
+    def row(oid):
+        cur.execute("select status, lower(sender_address), send_error is not null from outreach where id = %s", (oid,))
+        return list(cur.fetchone())
+
+    hers = [approved_by(asha) for _ in range(4)]
+    his = approved_by(bala)
+    before = len(gmail.sent)
+    outreach.cmd_send(args)
+    check("Asha's four: three go (2 + 1 from her two addresses), the fourth waits for tomorrow",
+          [row(o)[0] for o in hers], ["sent", "sent", "sent", "approved"])
+    check("  from her address with the most room first", [row(o)[1] for o in hers[:3]], [one, one, two])
+    check("  and the From line says so", [m["From"].lower() for m in gmail.sent[before:]], [one, one, two])
+    check("Bala has no Gmail connected: his approval waits, untouched (no error, nothing sent from Asha's)",
+          row(his), ["approved", None, False])
+    cur.execute("select count(*) from outreach where lower(sender_address) in (%s, %s) and approved_by <> %s", (one, two, asha))
+    check("  nothing anyone else approved left from Asha's addresses", cur.fetchone()[0], 0)
+
+    # two runs at once: the other run's sends are simulated by a stale view of today; the claim counts for real
+    real_mailboxes = store.mailboxes
+    store.mailboxes = lambda *a, **k: [dict(b, out_today=0, sent_today=0, remaining=b["daily_cap"], usable=True)
+                                       for b in real_mailboxes(*a, **k)]
+    try:
+        outreach.cmd_send(args)
+    finally:
+        store.mailboxes = real_mailboxes
+    check("each address's limit holds against another run's sends: the fourth still waits", row(hers[3])[0], "approved")
+
+    # Bala connects a Gmail whose sign-in Google no longer accepts
+    bad = "bala.%s@zz-mail.example" % tag
+    bad_id = mailbox(bala, bad, 35)
+
+    class Refused(Exception):
+        pass
+    Refused.__name__ = "RefreshError"
+
+    def refusing(db, box):
+        if box["address"] == bad:
+            raise Refused("invalid_grant: Token has been expired or revoked.")
+        return gmail
+    outreach.user_gmail_service = refusing
+    rc = outreach.cmd_send(args)
+    cur.execute("select last_error is not null from user_mailboxes where id = %s", (bad_id,))
+    marked = cur.fetchone()[0]
+    check("his Gmail's sign-in refused: the email back in Approved, the address marked to reconnect, the run failed",
+          (row(his)[0], marked, rc), ("approved", True, 1))
+    outreach.user_gmail_service = fake_user_gmail
+    before = len(gmail.sent)
+    rc = outreach.cmd_send(args)
+    check("  a marked address is not tried again until he reconnects", (row(his)[0], len(gmail.sent) - before, rc),
+          ("approved", 0, 0))
+    cur.execute("update user_mailboxes set last_error = null where id = %s", (bad_id,))
+    outreach.cmd_send(args)
+    check("  reconnected: it goes, from his own address", row(his)[:2], ["sent", bad])
 
 
 def check(name, got, want):
@@ -291,10 +396,13 @@ def main():
                 outreach_policy.mailbox_status = real_status
             check("the cap holds against another run's sends (1 out today, cap 1): nothing more goes",
                   state(late[0])[0], "approved")
+
+            approver_mode(cur, gmail)
     finally:
         conn.rollback()
         conn.close()
         dbconn.Db, outreach.gmail_service, outreach.env, outreach.mailbox_connected, outreach.SEGMENT = real
+        outreach.user_gmail_service = REAL_USER_GMAIL
     bad = RESULTS.count(False)
     print("\n%d failure(s) of %d checks (all test rows rolled back; nothing was sent)" % (bad, len(RESULTS)))
     return 1 if bad else 0

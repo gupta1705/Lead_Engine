@@ -11,3 +11,5 @@ google-auth-oauthlib>=1.2,<2.0
 anthropic>=0.40
 bcrypt>=4.1,<5.0
 pglast>=6,<8
+# One Gmail per person (2026-09-26): each person's Google sign-in is kept encrypted (tools/mailbox_store.py).
+cryptography>=41,<47

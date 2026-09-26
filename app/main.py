@@ -58,6 +58,9 @@ app = FastAPI(title="TVF Lead Engine", docs_url=None, redoc_url=None, openapi_ur
 # the public side of this wall.
 AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup",
                "/api/health")
+# what a person still on a starting password may call: the screen that replaces it
+MUST_CHANGE_OK = ("/api/auth/state", "/api/auth/password", "/api/auth/profile", "/api/auth/logout",
+                  "/api/health")
 
 
 SECURITY_HEADERS = {"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
@@ -79,16 +82,28 @@ async def auth_wall(request, call_next):
         if site and site not in ("same-origin", "none"):
             return JSONResponse({"detail": "a request from another site is refused"}, status_code=403)
     request.state.user = None
+    request.state.must_change = False
     request.state.segment = _segment_for(request)
     token = request.cookies.get(_auth.COOKIE)
     if token:
+        found = {}
+
         def lookup(email):
             with cursor() as cur:
-                cur.execute("select password_hash from app_users"
+                cur.execute("select password_hash, must_change_password from app_users"
                             " where lower(email) = lower(%s)", (email,))
                 row = cur.fetchone()
-                return row["password_hash"] if row else None
+            if not row:
+                return None
+            found.update(row)
+            return row["password_hash"]
         request.state.user = _auth.parse_cookie(token, lookup)
+        request.state.must_change = bool(request.state.user and found.get("must_change_password"))
+    # A starting password the owner handed out (the same one, to everybody: 2026-09-26) opens nothing
+    # but the screen that replaces it. Enforced here, not just on the page.
+    if request.state.user and request.state.must_change and path.startswith("/api/") and path not in MUST_CHANGE_OK:
+        return JSONResponse({"detail": "Choose your own password first.", "must_change_password": True},
+                            status_code=403)
     if path in AUTH_EXEMPT or request.state.user:
         response = await call_next(request)
         for k, v in SECURITY_HEADERS.items():
@@ -406,13 +421,18 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             " (select c.full_name from contacts c where c.entity_id = e.id"
             "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
             "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
-            "   c.created_at, c.id limit 1) as contact_name"
+            "   c.created_at, c.id limit 1) as contact_name,"
+            # who reached out to it: the approver of its latest first email that went out (2026-09-26)
+            " (select o.approved_by from outreach o where o.entity_id = e.id and o.direction = 'outbound'"
+            "   and o.status = 'sent' and coalesce(o.sequence_step, 0) = 0 order by o.sent_at desc limit 1) as reached_by"
             " from entities e where " + rows_clause +
             " order by " + order + " limit %s offset %s",
             params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
+        people = _people() if any(r["reached_by"] for r in rows) else {}
         for r in rows:
             r["fields"] = [r.pop("f%d" % i) for i in range(len(fields))]
+            r["reached_by_name"] = _display(r["reached_by"], people)
         cur.execute("select count(*) filter (where " + HAS_ADDRESS + ") as with_address,"
                     " count(*) filter (where not " + HAS_ADDRESS + ") as without_address"
                     " from entities e where " + clause, params)
@@ -454,7 +474,7 @@ def lead(lead_id: str):
             c["id"] = str(c["id"])
             contacts.append(c)
         cur.execute(
-            "select id, status, subject, template_key from outreach"
+            "select id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at from outreach"
             " where entity_id = %s and direction = 'outbound' and coalesce(sequence_step, 0) = 0"
             " and status not in ('cancelled', 'failed') order by created_at desc limit 1", (lead_id,))
         draft = cur.fetchone()
@@ -468,6 +488,11 @@ def lead(lead_id: str):
     ranked = explain.rank_contacts(contacts, row.get("domain"))
     row["contacts"] = ranked
     outreach = dict(draft, id=str(draft["id"])) if draft else None
+    if outreach:
+        # who reached out (owner, 2026-09-26): the person who approved it, from which address, when
+        outreach["approved_by_name"] = _display(outreach.get("approved_by"), _people())
+        for k in ("approved_at", "sent_at"):
+            outreach[k] = outreach[k].isoformat() if outreach.get(k) else None
     row["outreach"] = outreach
     row["explain"] = explain.explain_lead(slug, cfg, row, ranked, outreach)
     row["criteria"] = [dict(c, assessed=c["state"] != explain.UNCHECKED) for c in row["explain"]["criteria"]]
@@ -566,12 +591,20 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = "", 
 
 # ------------------------------------------------------------------ outreach
 @app.get("/api/outreach")
-def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment)):
+def outreach_list(request: Request, folder: str = "drafts", segment: str = Depends(current_segment)):
     """One folder of the outreach_folders view, newest first, for this segment. Replies holds
     every reply, marked or not (the mark is on the row); 'untriaged' counts the ones nobody has
-    marked yet, which is what the sidebar count shows."""
+    marked yet, which is what the sidebar count shows.
+
+    Where emails go out from the approver's own Gmail, a draft is shown as the person looking at it
+    would send it: their sign-off, their voice (tools/draft_render.personalize). Approving stores
+    exactly that; the stored draft stays in the project's own form until then."""
     folders = ["inbox", "positive", "negative"] if folder == "inbox" else [folder]
+    people = _people()
+    me = people.get((getattr(request.state, "user", None) or "").lower())
+    dr = _render()
     with cursor() as cur:
+        cfg = _policy().outreach_config(cur, segment)
         cur.execute(
             "select f.* from outreach_folders f join entities e on e.id = f.entity_id"
             " where f.folder = any(%s) and e.segment_id = (select id from segments where slug = %s)"
@@ -579,6 +612,10 @@ def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment
         rows = [dict(r) for r in cur.fetchall()]
         for r in rows:
             r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
+            # who reached out: the person who approved it, from their own Gmail (sender_address)
+            r["approved_by_name"] = _display(r.get("approved_by"), people)
+            if r["status"] == "drafted" and r["direction"] == "outbound":
+                r["body"] = dr.personalize(r["body"], cfg, me)
         cur.execute("select f.folder, count(*) as n from outreach_folders f"
                     " join entities e on e.id = f.entity_id"
                     " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
@@ -590,15 +627,25 @@ def outreach_list(folder: str = "drafts", segment: str = Depends(current_segment
 
 
 @app.patch("/api/outreach/{oid}")
-def outreach_edit(oid: str, body: dict = Body(...)):
+def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
     """Edit a draft's subject/body. Approval means a human read THIS text, so
-    editing is only legal while the row is still a draft."""
+    editing is only legal while the row is still a draft. The body comes back as the editor saw it
+    (their sign-off, their voice) and is stored in the project's own form, so the next person to
+    open it sees it as theirs."""
     oid = _id(oid, "draft")
     subject = (body or {}).get("subject")
     text = (body or {}).get("body")
     if subject is not None and ("\n" in str(subject) or "\r" in str(subject)):
         # one line, always: the sender refuses a subject with a line break in it
         raise HTTPException(400, "the subject must be one line")
+    if text is not None:
+        me = _people().get((getattr(request.state, "user", None) or "").lower())
+        with cursor() as cur:
+            cur.execute("select s.slug from outreach o join entities e on e.id = o.entity_id"
+                        " join segments s on s.id = e.segment_id where o.id = %s", (oid,))
+            seg = cur.fetchone()
+            cfg = _policy().outreach_config(cur, seg["slug"]) if seg else {}
+        text = _render().canonicalize(text, cfg, me)
     with cursor() as cur:
         cur.execute(
             "update outreach set subject = coalesce(%s, subject),"
@@ -630,6 +677,22 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(404, "no such message")
         eid = msg["entity_id"]
         if action == "approve":
+            cfg = pol.outreach_config(cur, segment)
+            dr = _render()
+            if dr.sends_as_approver(cfg):
+                # it goes out from the approver's own Gmail, signed by them: exactly the text they were shown
+                cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user,))
+                person = cur.fetchone()
+                if not person or not person["name"] or not person["title"]:
+                    raise HTTPException(409, "Add your name and title first (your account menu, top right): "
+                                             "the emails you approve are signed with them.")
+                cur.execute("select body from outreach where id = %s and status = 'drafted'", (oid,))
+                row = cur.fetchone()
+                if row:
+                    mine = dr.personalize(row["body"], cfg, dict(person))
+                    if mine != row["body"]:
+                        cur.execute("update outreach set body = %s, updated_at = now()"
+                                    " where id = %s and status = 'drafted'", (mine, oid))
             ok, skipped = pol.check_drafts(cur, [oid], segment)
             if skipped:
                 raise HTTPException(409, "cannot approve: " + skipped[0]["reason"])
@@ -682,7 +745,8 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(409, "row is not in a state that allows " + action)
     # approved: it is sent now, not when someone next opens a terminal (app/scheduler.py)
     _scheduler.kick_outreach(segment, "manual")
-    return {"ok": True, "can_send": _can_send(segment), "paused": _send_paused(segment)}
+    return {"ok": True, "can_send": _can_send(segment, user), "paused": _send_paused(segment),
+            "sends_from": _sends_from(segment, user)}
 
 
 @app.post("/api/outreach/batch/sample")
@@ -730,9 +794,23 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
     if not pol.verify_sample(ids, sample, b.get("token"), _a._secret(), user, segment):
         raise HTTPException(409, "the spot-check does not match this batch any more; select and check again")
     with cursor() as cur:
-        policy = pol.batch_policy(pol.outreach_config(cur, segment))
+        cfg = pol.outreach_config(cur, segment)
+        policy = pol.batch_policy(cfg)
         if not policy:
             raise HTTPException(403, "batch approval is off for this segment")
+        dr = _render()
+        if dr.sends_as_approver(cfg):
+            # each one goes out from the approver's Gmail, signed by them, as the sample they read was
+            cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user or "",))
+            person = cur.fetchone()
+            if not person or not person["name"] or not person["title"]:
+                raise HTTPException(409, "Add your name and title first (your account menu, top right).")
+            cur.execute("select id, body from outreach where id = any(%s::uuid[]) and status = 'drafted'", (ids,))
+            for row in cur.fetchall():
+                mine = dr.personalize(row["body"], cfg, dict(person))
+                if mine != row["body"]:
+                    cur.execute("update outreach set body = %s, updated_at = now() where id = %s and status = 'drafted'",
+                                (mine, row["id"]))
         ok, skipped = pol.check_drafts(cur, ids, segment, policy)
         # re-checked here, not trusted from step 1: the rule is about what is
         # being approved now, and a draft may have been redrafted since
@@ -742,23 +820,39 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         batch_id, approved = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
     if approved:
         _scheduler.kick_outreach(segment, "manual")          # approved means sent: no terminal step
-    return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment),
-            "paused": _send_paused(segment)}
+    return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment, user),
+            "paused": _send_paused(segment), "sends_from": _sends_from(segment, user)}
 
 
-def _can_send(segment):
-    """Is a mailbox connected for this segment on this server, and is sending not paused? The page
-    words an approval by it: "sending now", "sends as soon as a mailbox is connected", or "waits:
-    sending is paused" (_send_paused)."""
+def _can_send(segment, user=None):
+    """Can an approval go out, and is sending not paused? Where emails go out from the approver's own
+    Gmail: does this person have one connected and working? The page words an approval by it:
+    "sending now", "sends as soon as a mailbox is connected", or "waits: sending is paused"."""
     try:
         with cursor() as cur:
             cfg = _policy().outreach_config(cur, segment)
-        if _policy().sending_paused(cfg):
-            return False
+            if _policy().sending_paused(cfg):
+                return False
+            if cfg.get("send_from") == "approver":
+                return any(b["usable"] for b in _mailbox_store().mailboxes(cur, user_email=user or ""))
         return any(mb["enabled"] and _scheduler.mailbox_connected(mb)
                    for mb in _policy().mailbox_list(cfg, segment))
     except Exception:
         return False
+
+
+def _sends_from(segment, user):
+    """The approver's own addresses an approval of theirs goes out from (the one with most room first),
+    or [] where the project sends from its own mailboxes."""
+    try:
+        with cursor() as cur:
+            cfg = _policy().outreach_config(cur, segment)
+            if cfg.get("send_from") != "approver":
+                return []
+            boxes = [b for b in _mailbox_store().mailboxes(cur, user_email=user or "") if b["usable"]]
+        return [b["address"] for b in sorted(boxes, key=lambda b: -b["remaining"])]
+    except Exception:
+        return []
 
 
 def _send_paused(segment):
@@ -768,6 +862,33 @@ def _send_paused(segment):
             return _policy().sending_paused(_policy().outreach_config(cur, segment))
     except Exception:
         return None
+
+
+# ------------------------------------------------------------------ people
+# One login per person (owner, 2026-09-26). Their name is how the page says who approved or reached out
+# to a lead, and their name and title sign the emails they approve.
+def _people():
+    """{email (lower case): {"email", "name", "title"}} for everyone with a login."""
+    with cursor() as cur:
+        cur.execute("select email, name, title from app_users")
+        return {r["email"].lower(): dict(r) for r in cur.fetchall()}
+
+
+def _display(email, people):
+    """A person's name for the page; the part of the address before the @ for someone without one."""
+    if not email:
+        return None
+    p = people.get(email.lower())
+    return (p and p.get("name")) or email.split("@")[0]
+
+
+def _mailbox_store():
+    import sys
+    p = os.path.join(REPO, "tools")
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import mailbox_store
+    return mailbox_store
 
 
 def _render():
@@ -898,15 +1019,20 @@ def _rebuild_drafts(cur, segment, old_cfg, new_cfg, dr):
 
 
 @app.get("/api/mailboxes")
-def mailboxes_state(segment: str = Depends(current_segment)):
+def mailboxes_state(request: Request, segment: str = Depends(current_segment)):
     """The segment's sending mailboxes: cap for today (warm-up included), sends
     today, room left, and whether this server can send from each (connected:
     its address and Gmail token are set here). Addresses are the ones recorded
-    on sent email; the credentials themselves are never shown."""
+    on sent email; the credentials themselves are never shown.
+
+    Where emails go out from the approver's own Gmail (owner, 2026-09-26): every person, each of their
+    addresses with today's use of its own limit, and how many of their approvals are waiting."""
     import datetime as _dt
     pol = _policy()
     with cursor() as cur:
         cfg = pol.outreach_config(cur, segment)
+        if cfg.get("send_from") == "approver":
+            return _approver_mailboxes(cur, cfg, segment, getattr(request.state, "user", None) or "")
         try:
             boxes = pol.mailbox_list(cfg, segment)
         except ValueError as e:
@@ -937,6 +1063,40 @@ def mailboxes_state(segment: str = Depends(current_segment)):
             "resets_at": _dt.datetime.combine(now.date() + _dt.timedelta(days=1), _dt.time(0),
                                               tzinfo=_dt.timezone.utc).isoformat(),
             "can_send": any(r["connected"] for r in out) and not pol.sending_paused(cfg)}
+
+
+def _approver_mailboxes(cur, cfg, segment, me):
+    import datetime as _dt
+    store = _mailbox_store()
+    boxes = store.mailboxes(cur)
+    cur.execute("select email, name from app_users order by lower(coalesce(name, email))")
+    people = [dict(r) for r in cur.fetchall()]
+    cur.execute("select lower(o.approved_by) as who, count(*) as n from outreach o join entities e on e.id = o.entity_id"
+                " where e.segment_id = (select id from segments where slug = %s) and o.direction = 'outbound'"
+                "   and o.status = 'approved' and o.send_error is null group by 1", (segment,))
+    waiting = {r["who"]: int(r["n"]) for r in cur.fetchall()}
+    paused = _policy().sending_paused(cfg)
+    keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error")
+    accounts = []
+    for p in people:
+        mine = [dict({k: b[k] for k in keep}) for b in boxes if b["user_email"].lower() == p["email"].lower()]
+        accounts.append({"email": p["email"], "name": p["name"] or p["email"].split("@")[0],
+                         "me": p["email"].lower() == me.lower(), "mailboxes": mine,
+                         "approved_waiting": waiting.get(p["email"].lower(), 0)})
+    accounts.sort(key=lambda a: (not a["me"], a["name"].lower()))           # yours first
+    mine = next((a for a in accounts if a["me"]), {"mailboxes": [], "approved_waiting": 0})
+    now = _dt.datetime.now(_dt.timezone.utc)
+    import mailbox_connect
+    return {"mode": "approver", "paused": paused, "accounts": accounts,
+            "web_connect": bool(mailbox_connect.web_client()),
+            "approved_waiting": sum(waiting.values()),
+            "resets_at": _dt.datetime.combine(now.date() + _dt.timedelta(days=1), _dt.time(0),
+                                              tzinfo=_dt.timezone.utc).isoformat(),
+            "can_send": not paused and any(b["usable"] for b in mine["mailboxes"]),
+            # the old single-counter fields, so a page from before this change still shows something true
+            "sent_today": sum(b["sent_today"] for b in mine["mailboxes"]),
+            "limit_today": sum(b["daily_cap"] for b in mine["mailboxes"] if b["usable"]) or None,
+            "segment_cap": None, "rotation": False, "mailboxes": []}
 
 
 # ------------------------------------------------------------------ kpis
@@ -973,7 +1133,10 @@ def kpis(segment: str = Depends(current_segment)):
                         r[k] = v.isoformat()
                     elif v is not None and not isinstance(v, (int, float, str, bool)):
                         r[k] = float(v)
-            out[qname] = rows if qname == "by_source" else (rows[0] if rows else {})
+            out[qname] = rows if qname in ("by_source", "by_account") else (rows[0] if rows else {})
+    people = _people()
+    for r in out.get("by_account") or []:
+        r["name"] = _display(r.get("account"), people)
     return out
 
 
@@ -1033,6 +1196,9 @@ app.include_router(_ops_module.build_router())
 
 import universal as _universal_module          # the Universal project's Apollo search page
 app.include_router(_universal_module.build_router(cursor))
+
+import mailbox_connect as _mailbox_connect_module   # "Connect your Gmail", one account per person
+app.include_router(_mailbox_connect_module.build_router(cursor))
 
 # ---------------------------------------------------------------- scheduler
 import scheduler as _sched_module

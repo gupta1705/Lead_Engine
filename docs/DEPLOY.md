@@ -322,14 +322,27 @@ The app now has real accounts, so "public" is safe in a way it was not before.
 owner account with your own email and a 10+ character password. That account
 owns the workspace. Nothing ships with a default credential.
 
-**Adding the team.** From the repo (or `docker compose exec app`):
+**Adding the team.** One login per person (2026-09-26). From the repo (or
+`docker compose exec app`), with everyone's address:
 
 ```bash
-python tools/users.py add teammate@theviralfever.com
+python tools/users.py team a@theviralfever.com b@theviralfever.com [--remove old@theviralfever.com]
 ```
 
-`users.py list` shows everyone; `passwd` resets a password (which invalidates
-that person's existing sessions); `remove` deletes a member (never the owner).
+It asks once for a starting password that works for each person's first
+sign-in only: the app then refuses everything until they choose their own, and
+asks for their name and title (the sign-off on the emails they approve, which
+go out from their own Gmail, connected from the account menu).
+`users.py list` shows everyone, whether they have signed in yet and their
+connected Gmail; `add` / `passwd` do one person (`--starting` for a one-time
+password), and reset sessions; `remove` deletes a member (never the owner;
+`team --remove` can, and hands ownership to the first person listed).
+
+**People's own Gmail** needs a Google OAuth client of type **Web application**
+with the redirect URI `https://<your host>/api/mailboxes/callback`, in
+`GOOGLE_OAUTH_WEB_CLIENT_ID` / `GOOGLE_OAUTH_WEB_CLIENT_SECRET`. Their sign-ins
+are stored encrypted with a key derived from `SESSION_SECRET`: rotating that
+secret means everyone signs in and connects their Gmail again.
 
 **How it holds up.** Passwords are bcrypt (cost 12). Sessions are signed
 cookies (HMAC-SHA256) that are httpOnly, SameSite=Lax, and automatically

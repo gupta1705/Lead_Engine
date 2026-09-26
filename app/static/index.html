@@ -210,11 +210,12 @@
           </div>
         </div>
       </header>
+      <div class="mailbox-strip" id="mailboxStrip" role="status" aria-live="polite" hidden></div>
       <div class="tabs" id="folderTabs" role="tablist" aria-label="Outreach folders"></div>
       <div class="toolbar batch-bar" id="batchBar" hidden></div>
       <div class="table-wrap">
         <table class="tbl" id="outreachTable">
-          <thead><tr><th class="sel-col"><input type="checkbox" id="outreachSelAll" aria-label="Select drafts, up to one batch"></th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th>When</th></tr></thead>
+          <thead><tr><th class="sel-col"><input type="checkbox" id="outreachSelAll" aria-label="Select drafts, up to one batch"></th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th class="by-col">By</th><th>When</th></tr></thead>
           <tbody id="outreachBody"></tbody>
         </table>
       </div>
@@ -236,6 +237,10 @@
           <div class="panel-head"><div><h2>Outreach results</h2><p class="sub">Companies contacted in the last 7 days, and the replies they sent.</p></div></div>
           <div class="tiles" id="kpiTiles" style="margin:0"></div>
         </div>
+      </div>
+      <div class="panel" id="accountPanel" hidden>
+        <div class="panel-head"><div><h2>By person</h2><p class="sub">Who reached out, from their own Gmail, and which companies wrote back. Replies are counted once per company, for whoever reached out to it.</p></div></div>
+        <div class="table-wrap"><table class="tbl" id="accountTable"></table></div>
       </div>
       <div class="panel" id="sourcePanel">
         <div class="panel-head"><div><h2>By source</h2><p class="sub">Which harvests find leads worth shortlisting.</p></div></div>

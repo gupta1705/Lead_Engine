@@ -302,6 +302,26 @@ def gmail_service(mb=None):
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
+def user_gmail_service(db, box):
+    """A Gmail client for an address a person connected in the app (tools/mailbox_store.py). The sign-in
+    is only readable where it was saved -- the server -- and a refreshed access token is kept."""
+    import mailbox_store as store
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+    except ImportError:
+        sys.exit("pip install google-api-python-client google-auth-oauthlib")
+    info = store.credentials(box)
+    if not info:
+        raise RuntimeError("the saved sign-in for %s cannot be read here; connect it again in the app" % box["address"])
+    creds = Credentials.from_authorized_user_info(info, [store.GMAIL_SCOPE])
+    if not creds.valid:
+        creds.refresh(Request())
+        db.run(lambda cur: store.update_token(cur, box["id"], json.loads(creds.to_json())))
+    return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+
 def cmd_auth(args):
     """One-time browser consent for one mailbox of the segment."""
     from dbconn import Db
@@ -404,28 +424,60 @@ def cmd_send(args):
         return 0
     if pol.sender_unset(cfg.get("sender")):
         sys.exit("refusing to send: config outreach.sender still contains SET_ME")
-    connected = {mb["key"]: env(mb["email_env"]).strip() for mb in MAILBOXES
-                 if mb["enabled"] and mailbox_connected(mb)}
-    if not connected:
-        sys.exit("no mailbox is connected for segment %s. For each mailbox, set its address in .env (%s)\n"
-                 "and run: SEGMENT_SLUG=%s python tools/outreach.py auth --mailbox <key>"
-                 % (SEGMENT, ", ".join(mb["email_env"] for mb in MAILBOXES), SEGMENT))
-    mbmap = {mb["key"]: mb for mb in MAILBOXES}
-    today = dt.datetime.now(dt.timezone.utc).date()
-    status = db.run(lambda cur: pol.mailbox_status(cur, SEGMENT, MAILBOXES, today))
-    order = [st["key"] for st in status]
-    remaining = {st["key"]: (st["remaining"] if st["key"] in connected else 0) for st in status}
-    for st in status:
-        log("  mailbox %-10s %-5s cap %3d today, %3d sent, %3d left" % (
-            st["key"], "on" if st["key"] in connected else "off", st["cap_today"], st["sent_today"], remaining[st["key"]]))
+    # Two ways a project sends. The pool (LCX): the project's own mailboxes, from .env / Render, the one
+    # with the most room first. From the approver (owner, 2026-09-26; US Production Houses): the Gmail of
+    # the person who approved the email, connected by them in the app (tools/mailbox_store.py), each
+    # address with its own daily limit -- nobody's approval goes out from somebody else's address.
+    approver_mode = cfg.get("send_from") == "approver"
+    owner_of, by_owner = {}, {}
+    if approver_mode:
+        import mailbox_store as store
+        boxes = db.run(lambda cur: store.mailboxes(cur, with_token=True))
+        usable = [b for b in boxes if b["usable"]]
+        connected = {b["address"].lower(): b["address"].lower() for b in usable}
+        mbmap = {b["address"].lower(): b for b in usable}
+        order = [b["address"].lower() for b in usable]
+        remaining = {b["address"].lower(): b["remaining"] for b in usable}
+        for b in boxes:
+            owner_of[b["address"].lower()] = b["user_email"].lower()
+            if b["usable"]:
+                by_owner.setdefault(b["user_email"].lower(), []).append(b["address"].lower())
+            log("  mailbox %-40s %-5s %-30s cap %3d, %3d out today, %3d left" % (
+                b["address"], "on" if b["usable"] else "off", b["user_email"], b["daily_cap"], b["out_today"],
+                remaining.get(b["address"].lower(), 0)))
+        if not usable:
+            # not a failure: approved emails wait in Approved until their approver connects a Gmail
+            log("nobody has a Gmail connected yet: approved emails wait (Account menu -> Your Gmail)")
+            db.close(); return 0
+        daily_cap = None
+        sent_today = sum(b["sent_today"] for b in boxes)
+        budget = min(sum(remaining.values()), args.limit)
+        if budget <= 0:
+            log("nothing can go today: every connected Gmail is at its daily limit")
+            db.close(); return 0
+    else:
+        connected = {mb["key"]: env(mb["email_env"]).strip() for mb in MAILBOXES
+                     if mb["enabled"] and mailbox_connected(mb)}
+        if not connected:
+            sys.exit("no mailbox is connected for segment %s. For each mailbox, set its address in .env (%s)\n"
+                     "and run: SEGMENT_SLUG=%s python tools/outreach.py auth --mailbox <key>"
+                     % (SEGMENT, ", ".join(mb["email_env"] for mb in MAILBOXES), SEGMENT))
+        mbmap = {mb["key"]: mb for mb in MAILBOXES}
+        today = dt.datetime.now(dt.timezone.utc).date()
+        status = db.run(lambda cur: pol.mailbox_status(cur, SEGMENT, MAILBOXES, today))
+        order = [st["key"] for st in status]
+        remaining = {st["key"]: (st["remaining"] if st["key"] in connected else 0) for st in status}
+        for st in status:
+            log("  mailbox %-10s %-5s cap %3d today, %3d sent, %3d left" % (
+                st["key"], "on" if st["key"] in connected else "off", st["cap_today"], st["sent_today"], remaining[st["key"]]))
 
-    daily_cap = int(cfg.get("daily_send_cap", 20))
-    sent_today = sum(st["sent_today"] for st in status)
-    budget = min(max(0, daily_cap - sent_today), sum(remaining.values()), args.limit)
-    if budget <= 0:
-        log("nothing can go today: segment %d/%d sent, connected mailboxes have %d left"
-            % (sent_today, daily_cap, sum(remaining.values())))
-        db.close(); return 0
+        daily_cap = int(cfg.get("daily_send_cap", 20))
+        sent_today = sum(st["sent_today"] for st in status)
+        budget = min(max(0, daily_cap - sent_today), sum(remaining.values()), args.limit)
+        if budget <= 0:
+            log("nothing can go today: segment %d/%d sent, connected mailboxes have %d left"
+                % (sent_today, daily_cap, sum(remaining.values())))
+            db.close(); return 0
 
     rows = db.run(lambda cur: (cur.execute("""
         select o.id, o.entity_id, o.subject, o.body,
@@ -438,7 +490,7 @@ def cmd_send(args):
                  order by s.sequence_step desc limit 1) as prev_message_id,
                exists (select 1 from outreach r where r.entity_id = o.entity_id
                         and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
-               p.sender_mailbox as parent_mailbox
+               p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver
         from outreach o
         join entities e on e.id = o.entity_id
         left join contacts c on c.id = o.contact_id
@@ -467,7 +519,7 @@ def cmd_send(args):
             " where id=%s and status='approved'", (_w, _o)))
 
     for (oid, eid, subject, body, email, estatus, company, ent_status,
-         step, thread_id, stopped, prev_mid, replied, parent_mb) in rows:
+         step, thread_id, stopped, prev_mid, replied, parent_mb, approver) in rows:
         if sent >= budget:
             break
         step = int(step or 0)
@@ -519,25 +571,45 @@ def cmd_send(args):
             if remaining.get(mb_key, 0) <= 0:
                 log("  %-32s follow-up %d waits: mailbox %s is at today's cap" % (company[:32], step, mb_key))
                 continue
+        elif approver_mode:
+            # the approver's own addresses only, the one with the most room today first
+            mine = by_owner.get(approver or "", [])
+            open_ = [k for k in mine if k in connected and remaining.get(k, 0) > 0]
+            if not open_:
+                log("  %-32s waits: %s" % (company[:32], (
+                    "%s has no Gmail connected" % (approver or "nobody") if not mine else
+                    "%s's Gmail is at today's limit" % approver)))
+                continue
+            mb_key = max(open_, key=lambda k: (remaining[k], -mine.index(k)))
         else:
             mb_key = pol.pick_mailbox([(k, remaining.get(k, 0)) for k in order], set(connected))
             if not mb_key:
                 log("  every connected mailbox is at today's cap")
                 break
 
-        # 2. claim, and take the mailbox the database settled on. One claim at a time per segment,
-        #    counted against the day's cap as it stands NOW: two runs at once (a deploy's old and new
-        #    server, a terminal run) each took the whole day's budget from their own start
+        # 2. claim, and take the mailbox the database settled on. One claim at a time per segment (per
+        #    address, from the approver), counted against the day's cap as it stands NOW: two runs at once
+        #    (a deploy's old and new server, a terminal run) each took the whole day's budget from their start
         def claim(cur, _o=oid, _k=mb_key, _a=connected[mb_key]):
-            cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send:" + SEGMENT,))
-            cur.execute(OUT_TODAY_SQL, (SEGMENT,))
-            if cur.fetchone()[0] >= daily_cap:
-                return "cap"
+            if approver_mode:
+                cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send-mailbox:" + _k,))
+                cur.execute(store.OUT_TODAY_FOR_SQL, (_k,))
+                if cur.fetchone()[0] >= int(mbmap[_k]["daily_cap"]):
+                    return "cap"
+            else:
+                cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send:" + SEGMENT,))
+                cur.execute(OUT_TODAY_SQL, (SEGMENT,))
+                if cur.fetchone()[0] >= daily_cap:
+                    return "cap"
             cur.execute("update outreach set status='sending', sender_mailbox=%s, sender_address=%s, updated_at=now()"
                         " where id=%s and status='approved' returning sender_mailbox", (_k, _a, _o))
             return cur.fetchone()
         claimed = db.run(claim)
         if claimed == "cap":
+            if approver_mode:
+                log("  %s is at its daily limit of %d (counting every run's sends)" % (mb_key, mbmap[mb_key]["daily_cap"]))
+                remaining[mb_key] = 0
+                continue
             log("  the day's cap of %d is reached (counting every run's sends)" % daily_cap)
             break
         if not claimed:
@@ -564,13 +636,17 @@ def cmd_send(args):
 
         if mb_key not in services:
             try:
-                services[mb_key] = gmail_service(mbmap[mb_key])
+                services[mb_key] = (user_gmail_service(db, mbmap[mb_key]) if approver_mode
+                                    else gmail_service(mbmap[mb_key]))
             except (Exception, SystemExit) as e:
                 # a revoked or expired sign-in, or a rotated client secret: the email goes back to
                 # Approved untouched (it used to stay in 'sending' for good), this mailbox sits the rest
-                # of the run out, and the run ends failed so the owner is told
+                # of the run out, and the run ends failed so the owner is told. A person's own Gmail is
+                # marked for reconnecting, which the app shows them until they do.
                 unclaim()
                 signin_failed.append(mb_key)
+                if approver_mode:
+                    db.run(lambda cur, _b=mbmap[mb_key], _e=e: store.mark_error(cur, _b["id"], "sign-in: %s" % _e))
                 log("  mailbox %s: Gmail sign-in failed (%s) -- %s goes back to Approved"
                     % (mb_key, str(e)[:120], company[:32]))
                 connected.pop(mb_key, None)
@@ -623,6 +699,8 @@ def cmd_send(args):
                     # goes back to Approved untouched and the mailbox sits the rest of the run out
                     unclaim()
                     signin_failed.append(mb_key)
+                    if approver_mode and (type(e).__name__ == "RefreshError" or code == 401):
+                        db.run(lambda cur, _b=mbmap[mb_key], _e=e: store.mark_error(cur, _b["id"], "sign-in: %s" % _e))
                     log("  mailbox %s: Gmail refused (%s: %s) -- %s goes back to Approved"
                         % (mb_key, code or "sign-in", str(e)[:100], company[:32]))
                     connected.pop(mb_key, None)
@@ -653,15 +731,23 @@ def cmd_send(args):
         by_box[mb_key] = by_box.get(mb_key, 0) + 1
         log("  %-32s SENT%s via %-8s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", mb_key, email))
     db.close()
-    log("\n%d sent this run (%s); %d sent today in the segment (ceiling %d)"
-        % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none", sent_today + sent, daily_cap))
+    if approver_mode:
+        log("\n%d sent this run (%s); each address has its own daily limit"
+            % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none"))
+    else:
+        log("\n%d sent this run (%s); %d sent today in the segment (ceiling %d)"
+            % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none", sent_today + sent, daily_cap))
     if signin_failed:
         # a failed step is what raises the alert and shows on Operations: sign in again with
         # `python tools/outreach.py auth`, then update the mailbox's token variable on the server
-        boxes = list(dict.fromkeys(signin_failed))
-        log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
-            " `python tools/outreach.py auth`, then update %s"
-            " on the server" % (", ".join(boxes), ", ".join(mbmap[k]["token_env"] for k in boxes if k in mbmap)))
+        failed = list(dict.fromkeys(signin_failed))
+        if approver_mode:
+            log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, its owner connects it"
+                " again in the app: Account menu -> Your Gmail." % ", ".join(failed))
+        else:
+            log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
+                " `python tools/outreach.py auth`, then update %s"
+                " on the server" % (", ".join(failed), ", ".join(mbmap[k]["token_env"] for k in failed if k in mbmap)))
         return 1
     return 0
 
@@ -685,6 +771,10 @@ def cmd_pull(args):
     load_outreach_config(db)
     mbmap = {mb["key"]: mb for mb in MAILBOXES}
     own = [a.strip().lower() for a in (env(mb["email_env"]) for mb in MAILBOXES) if a]
+    # the addresses people connected in the app: a thread they sent is read through their Gmail
+    import mailbox_store as store
+    user_boxes = {b["address"].lower(): b for b in db.run(lambda cur: store.mailboxes(cur, with_token=True))}
+    own += list(user_boxes)
     threads = db.run(lambda cur: (cur.execute("""
         select distinct o.gmail_thread_id, o.entity_id, o.contact_id, coalesce(o.sender_mailbox, %s)
         from outreach o join entities e on e.id = o.entity_id
@@ -702,11 +792,26 @@ def cmd_pull(args):
     found = errors = paused = bounced = skipped = 0
     for mbk, items in by_box.items():
         mb = mbmap.get(mbk)
-        if not mb or not mailbox_connected(mb):
+        ub = user_boxes.get(str(mbk or "").lower())
+        if ub is not None:
+            if not ub["usable"]:
+                skipped += len(items)
+                log("  %s: %d thread(s) skipped -- its owner has to connect it again" % (mbk, len(items)))
+                continue
+            try:
+                svc = user_gmail_service(db, ub)
+            except Exception as e:
+                skipped += len(items)
+                if type(e).__name__ == "RefreshError":
+                    db.run(lambda cur, _b=ub, _e=e: store.mark_error(cur, _b["id"], "sign-in: %s" % _e))
+                log("  %s: %d thread(s) skipped -- %s" % (mbk, len(items), str(e)[:120]))
+                continue
+        elif not mb or not mailbox_connected(mb):
             skipped += len(items)
             log("  mailbox %s: %d thread(s) skipped -- not connected on this machine" % (mbk, len(items)))
             continue
-        svc = gmail_service(mb)
+        else:
+            svc = gmail_service(mb)
         for tid, eid, cid in items:
             try:
                 t = svc.users().threads().get(userId="me", id=tid, format="full").execute()

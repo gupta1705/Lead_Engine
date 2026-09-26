@@ -76,3 +76,27 @@ from outreach o
 join entities e on e.id = o.entity_id
 where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true));
 
+
+-- Each person's activity (owner, 2026-09-26: "different account activity should be tracked"): the
+-- first emails they approved, how many went out (today, 7 days, all), from how many of their Gmail
+-- addresses, and the companies that wrote back. A reply counts once per company, for whoever reached
+-- out to it. account is the approver's login; the app adds their name.
+-- name: by_account
+select
+  lower(o.approved_by)                                                                as account,
+  count(*) filter (where o.status in ('approved', 'sending', 'sent', 'send_unknown')) as approved,
+  count(*) filter (where o.status = 'sent')                                           as sent,
+  count(*) filter (where o.status = 'sent' and o.sent_at::date = current_date)        as sent_today,
+  count(*) filter (where o.status = 'sent' and o.sent_at >= now() - interval '7 days') as sent_last_7d,
+  count(distinct lower(o.sender_address)) filter (where o.status = 'sent')           as addresses,
+  count(distinct o.entity_id) filter (where o.status = 'sent' and exists (
+      select 1 from outreach r where r.entity_id = o.entity_id and r.direction = 'inbound'))  as replied,
+  count(distinct o.entity_id) filter (where o.status = 'sent' and exists (
+      select 1 from outreach r where r.entity_id = o.entity_id and r.direction = 'inbound'
+                                 and r.triage = 'positive'))                         as positive
+from outreach o
+join entities e on e.id = o.entity_id
+where e.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
+  and o.direction = 'outbound' and coalesce(o.sequence_step, 0) = 0 and o.approved_by is not null
+group by 1
+order by 3 desc, 2 desc;

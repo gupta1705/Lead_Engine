@@ -7,9 +7,21 @@ password, listing who has access. Passwords are prompted for, never passed as
 arguments (which would land in shell history).
 
     python tools/users.py list
-    python tools/users.py add    teammate@theviralfever.com
-    python tools/users.py passwd teammate@theviralfever.com
+    python tools/users.py team   a@theviralfever.com b@theviralfever.com [--remove old@theviralfever.com]
+    python tools/users.py add    teammate@theviralfever.com [--starting]
+    python tools/users.py passwd teammate@theviralfever.com [--starting]
     python tools/users.py remove teammate@theviralfever.com
+
+One account per person (owner, 2026-09-26): each person signs in with their own
+login, connects their own Gmail in the app, and the emails they approve go out
+from it, signed with their name.
+
+`team` sets up several people at once with one STARTING password: it works for
+their first sign-in only, which asks each of them for their own password, their
+name and their title. Anyone listed who already has a login gets the starting
+password too. `--remove` takes logins away (after a typed yes); their connected
+Gmail addresses go with them, their approvals and sent emails stay in the history.
+`--starting` does the same for one person with `add` or `passwd`.
 """
 import getpass
 import sys
@@ -20,59 +32,137 @@ import bcrypt
 from dbconn import Db
 
 
-def _prompt_password():
-    p1 = getpass.getpass("New password (10+ chars): ")
-    if len(p1) < 10:
-        sys.exit("too short -- 10 characters minimum")
+def _prompt_password(starting=False):
+    """A password typed twice, hashed. A starting password (used once, then replaced by the person's
+    own) may be as short as 8; one somebody keeps needs 10."""
+    minimum = 8 if starting else 10
+    p1 = getpass.getpass("%s (%d+ characters): " % ("Starting password" if starting else "New password", minimum))
+    if len(p1) < minimum:
+        sys.exit("too short -- %d characters minimum" % minimum)
     if p1 != getpass.getpass("Confirm: "):
         sys.exit("passwords did not match")
     return bcrypt.hashpw(p1.encode(), bcrypt.gensalt(12)).decode()
+
+
+def _emails(args):
+    out = []
+    for a in args:
+        e = a.strip().lower()
+        if "@" not in e or e.startswith("--"):
+            sys.exit("not an email address: %r" % a)
+        out.append(e)
+    return out
+
+
+def _set_password(cur, email, pw_hash, starting, role="member"):
+    """Create the login, or give an existing one this password. -> 'added' | 'reset'."""
+    cur.execute("update app_users set password_hash = %s, must_change_password = %s"
+                " where lower(email) = lower(%s) returning id", (pw_hash, starting, email))
+    if cur.fetchone():
+        return "reset"
+    cur.execute("insert into app_users (email, password_hash, role, must_change_password)"
+                " values (%s, %s, %s, %s)", (email, pw_hash, role, starting))
+    return "added"
 
 
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     cmd = sys.argv[1]
+    args = [a for a in sys.argv[2:]]
+    starting = "--starting" in args
+    args = [a for a in args if a != "--starting"]
     db = Db()
 
     if cmd == "list":
         rows = db.run(lambda cur: (cur.execute(
-            "select email, role, last_login_at from app_users order by created_at"),
-            cur.fetchall())[1])
-        for email, role, last in rows:
-            print("  %-40s %-7s last login: %s" % (email, role, last or "never"))
+            "select u.email, u.role, u.name, u.title, u.must_change_password, u.last_login_at,"
+            " (select string_agg(m.address || case when m.last_error is null then '' else ' (reconnect)' end, ', ')"
+            "    from user_mailboxes m where lower(m.user_email) = lower(u.email)) as gmail"
+            " from app_users u order by u.created_at"), cur.fetchall())[1])
+        for email, role, name, title, must, last, gmail in rows:
+            print("  %-36s %-7s %-28s %s" % (email, role, ((name or "-") + (", " + title if title else ""))[:28],
+                                            "starting password, not signed in yet" if must else
+                                            "last login: %s" % (last or "never")))
+            print("  %-36s Gmail: %s" % ("", gmail or "none connected"))
         if not rows:
             print("  (no accounts yet -- create the owner via the app setup screen)")
 
+    elif cmd == "team":
+        remove = []
+        if "--remove" in args:
+            i = args.index("--remove")
+            remove, args = _emails(args[i + 1:]), args[:i]
+        emails = _emails(args)
+        if not emails:
+            sys.exit("usage: users.py team <email> [<email> ...] [--remove <email> ...]")
+        clash = set(emails) & set(remove)
+        if clash:
+            sys.exit("both kept and removed: %s" % ", ".join(sorted(clash)))
+        print("Accounts to set up with one starting password: %s" % ", ".join(emails))
+        print("Each person's first sign-in asks for their own password, name and title.")
+        pw = _prompt_password(starting=True)
+        if remove:
+            answer = input("Remove the login%s %s? Their connected Gmail goes too; their past approvals and"
+                           " sent emails stay. Type yes: " % ("s" if len(remove) > 1 else "", ", ".join(remove)))
+            if answer.strip().lower() != "yes":
+                sys.exit("nothing changed")
+
+        def apply(cur):
+            done = [(e, _set_password(cur, e, pw, True)) for e in emails]
+            gone = []
+            for e in remove:
+                cur.execute("delete from app_users where lower(email) = lower(%s) returning email", (e,))
+                if cur.fetchone():
+                    gone.append(e)
+            # somebody stays the owner: the first one listed, when the owner was among those removed
+            cur.execute("select count(*) from app_users where role = 'owner'")
+            promoted = None
+            if cur.fetchone()[0] == 0:
+                cur.execute("update app_users set role = 'owner' where lower(email) = lower(%s)", (emails[0],))
+                promoted = emails[0]
+            return done, gone, promoted
+        done, gone, promoted = db.run(apply)
+        for e, what in done:
+            print("  %-40s %s, starting password set" % (e, what))
+        for e in gone:
+            print("  %-40s removed" % e)
+        for e in remove:
+            if e not in gone:
+                print("  %-40s had no login" % e)
+        if promoted:
+            print("  %-40s is now the owner" % promoted)
+        print("Done. Send each person the site address and the starting password; they choose their own at"
+              " first sign-in, then connect their Gmail (account menu, top right).")
+
     elif cmd == "add":
-        if len(sys.argv) < 3:
-            sys.exit("usage: users.py add <email>")
-        email = sys.argv[2].strip().lower()
-        pw = _prompt_password()
-        db.run(lambda cur: cur.execute(
-            "insert into app_users (email, password_hash, role)"
-            " values (%s, %s, 'member')", (email, pw)))
-        print("added", email)
+        emails = _emails(args)
+        if len(emails) != 1:
+            sys.exit("usage: users.py add <email> [--starting]")
+        pw = _prompt_password(starting)
+        what = db.run(lambda cur: _set_password(cur, emails[0], pw, starting))
+        print("%s %s%s" % (what, emails[0], " (starting password: they choose their own at first sign-in)"
+                           if starting else ""))
 
     elif cmd == "passwd":
-        if len(sys.argv) < 3:
-            sys.exit("usage: users.py passwd <email>")
-        email = sys.argv[2].strip().lower()
-        pw = _prompt_password()
+        emails = _emails(args)
+        if len(emails) != 1:
+            sys.exit("usage: users.py passwd <email> [--starting]")
+        pw = _prompt_password(starting)
         n = db.run(lambda cur: (cur.execute(
-            "update app_users set password_hash=%s where lower(email)=lower(%s)"
-            " returning id", (pw, email)), cur.fetchall())[1])
+            "update app_users set password_hash=%s, must_change_password=%s where lower(email)=lower(%s)"
+            " returning id", (pw, starting, emails[0])), cur.fetchall())[1])
         print("password reset" if n else "no such user")
         print("(any existing sessions for this user are now invalid)")
 
     elif cmd == "remove":
-        if len(sys.argv) < 3:
+        emails = _emails(args)
+        if len(emails) != 1:
             sys.exit("usage: users.py remove <email>")
-        email = sys.argv[2].strip().lower()
         n = db.run(lambda cur: (cur.execute(
             "delete from app_users where lower(email)=lower(%s) and role<>'owner'"
-            " returning id", (email,)), cur.fetchall())[1])
-        print("removed" if n else "no such user, or refusing to remove the owner")
+            " returning id", (emails[0],)), cur.fetchall())[1])
+        print("removed" if n else "no such user, or refusing to remove the owner (use: team ... --remove)")
 
     else:
         sys.exit(__doc__)

@@ -798,3 +798,64 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
 
 def render_message(tpl, ctx):
     return render(tpl["subject"], ctx), render(tpl["body"], ctx)
+
+
+# ----------------------------------------------------------- whose email it is
+# Owner, 2026-09-26: one account per person, and an email goes out from the Gmail of the person who
+# approved it (outreach.send_from = "approver"), so it has to be signed by them. A draft is written
+# before anyone has approved it, with the project's own sign-off (outreach.sender): that CANONICAL
+# form is what is stored. Whoever opens a draft sees it as THEY would send it -- their name and title
+# in the sign-off, and, for someone the openers speak about (outreach.voices: Kartikeya), his own
+# first-person line from the owner's original samples -- and approving stores exactly that. Saving an
+# edit turns it back into the canonical form, so the next person to open it sees it as theirs.
+
+def sends_as_approver(cfg):
+    return (cfg or {}).get("send_from") == "approver"
+
+
+def footer_for(cfg, name=None, title=None):
+    """The footer as it reads with this name and title (the project's own sender when None)."""
+    sender = dict((cfg or {}).get("sender") or {})
+    if name is not None:
+        sender["name"] = name
+    if title is not None:
+        sender["title"] = title
+    return resolve_footer(footer_text(cfg or {}), sender)
+
+
+def voice_swaps(cfg, email):
+    """[(canonical text, this person's text)] from outreach.voices, for the person with this email."""
+    pairs = ((cfg or {}).get("voices") or {}).get(str(email or "").strip().lower())
+    return [(p[0], p[1]) for p in (pairs or []) if isinstance(p, (list, tuple)) and len(p) == 2
+            and p[0] and p[1]] if isinstance(pairs, list) else []
+
+
+def _signs(person):
+    return bool(person and person.get("name") and person.get("title"))
+
+
+def personalize(body, cfg, person):
+    """The stored (canonical) body as `person` ({email, name, title}) would send it. Unchanged when the
+    project does not send from the approver's own Gmail, or the person has no name and title yet."""
+    if not body or not sends_as_approver(cfg) or not _signs(person):
+        return body
+    out = body
+    canon, mine = footer_for(cfg), footer_for(cfg, person["name"], person["title"])
+    if canon != mine and out.endswith(canon):
+        out = out[:-len(canon)] + mine
+    for theirs, own in voice_swaps(cfg, person.get("email")):
+        out = out.replace(theirs, own)
+    return out
+
+
+def canonicalize(body, cfg, person):
+    """The reverse of personalize: a body as `person` saw it, back in the form that is stored."""
+    if not body or not sends_as_approver(cfg) or not _signs(person):
+        return body
+    out = body
+    for theirs, own in voice_swaps(cfg, person.get("email")):
+        out = out.replace(own, theirs)
+    canon, mine = footer_for(cfg), footer_for(cfg, person["name"], person["title"])
+    if canon != mine and out.endswith(mine):
+        out = out[:-len(mine)] + canon
+    return out

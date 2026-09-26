@@ -132,15 +132,68 @@ def build_router(cursor):
 
     def get_user(email):
         with cursor() as cur:
-            cur.execute("select email, password_hash, role from app_users"
+            cur.execute("select email, password_hash, role, name, title, must_change_password from app_users"
                         " where lower(email) = lower(%s)", (email,))
             return cur.fetchone()
 
     @r.get("/api/auth/state")
     def state(request: Request):
-        return {"needs_setup": user_count() == 0,
-                "authed": getattr(request.state, "user", None) is not None,
-                "user": getattr(request.state, "user", None)}
+        user = getattr(request.state, "user", None)
+        out = {"needs_setup": user_count() == 0, "authed": user is not None, "user": user}
+        if user:
+            # who is signed in, as the page greets them and as their emails are signed (owner, 2026-09-26:
+            # one account per person); a starting password handed out by the owner must be replaced first
+            u = get_user(user) or {}
+            out.update(name=u.get("name") or "", title=u.get("title") or "",
+                       must_change_password=bool(u.get("must_change_password")))
+        return out
+
+    def _signed_in(request):
+        user = getattr(request.state, "user", None)
+        if not user:
+            raise HTTPException(401, "not signed in")
+        return user
+
+    @r.post("/api/auth/password")
+    def change_password(request: Request, body: dict = Body(...)):
+        """Your own password, in place of the current one. The first sign-in with a starting password
+        the owner handed out comes here before anything else (the app refuses every other call until
+        then). Every other session of this person ends: sessions are tied to the password."""
+        user = _signed_in(request)
+        current = (body or {}).get("current") or ""
+        new = (body or {}).get("new") or ""
+        row = get_user(user)
+        if not row or not bcrypt.checkpw(current.encode(), row["password_hash"].encode()):
+            raise HTTPException(400, "The current password is not right.")
+        if len(new) < 10:
+            raise HTTPException(400, "Choose a password of at least 10 characters.")
+        if new == current:
+            raise HTTPException(400, "Choose a password different from the one you were given.")
+        if new.strip().lower() == user.lower():
+            raise HTTPException(400, "Your password cannot be your email address.")
+        pw_hash = bcrypt.hashpw(new.encode(), bcrypt.gensalt(12)).decode()
+        with cursor() as cur:
+            cur.execute("update app_users set password_hash = %s, must_change_password = false,"
+                        " password_changed_at = now() where lower(email) = lower(%s)", (pw_hash, user))
+        resp = Response(status_code=200, content='{"ok": true}', media_type="application/json")
+        _set_cookie(resp, request, make_cookie(row["email"], pw_hash))   # this session carries on
+        return resp
+
+    @r.post("/api/auth/profile")
+    def profile(request: Request, body: dict = Body(...)):
+        """Your name and title: the sign-off on every email you approve, which goes out from your Gmail."""
+        user = _signed_in(request)
+        name = " ".join(str((body or {}).get("name") or "").split())
+        title = " ".join(str((body or {}).get("title") or "").split())
+        if not name or len(name) > 80:
+            raise HTTPException(400, "Your name, as it should read under your emails (up to 80 characters).")
+        if not title or len(title) > 80:
+            raise HTTPException(400, "Your title, as it should read under your name (up to 80 characters).")
+        if "{{" in name + title or "SET_ME" in name + title:
+            raise HTTPException(400, "Write your name and title as they should read.")
+        with cursor() as cur:
+            cur.execute("update app_users set name = %s, title = %s where lower(email) = lower(%s)", (name, title, user))
+        return {"ok": True, "name": name, "title": title}
 
     @r.post("/api/auth/setup")
     def setup(request: Request, body: dict = Body(...)):

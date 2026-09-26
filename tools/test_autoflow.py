@@ -197,6 +197,31 @@ def main():
             check("  and the tick fetches replies first", s._ops.calls[:1], [("pull_replies", slug)])
             cur.execute("update outreach set gmail_thread_id = null where id = %s", (m5,))
 
+            # from the approver's own Gmail (owner, 2026-09-26): there is something to send only when an
+            # approval's approver has a working Gmail connected with room left today
+            aslug, aseg = segment({"outreach": dict(outreach, send_from="approver")})
+            who = "zz-flow-%s@example.com" % uuid.uuid4().hex[:6]
+            cur.execute("insert into app_users (email, password_hash, role) values (%s, 'x', 'member')", (who,))
+            ae, ac = lead(aseg, "shortlisted")
+            am = mail(ae, ac, "approved")
+            cur.execute("update outreach set approved_by = %s where id = %s", (who, am))
+            check("approver mode: approved, but its approver has no Gmail: nothing to send",
+                  s.outreach_work(aslug)["send"], False)
+            addr = "zz-flow-%s@zz-mail.example" % uuid.uuid4().hex[:6]
+            cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap) values (%s, %s, 'x', 1)"
+                        " returning id", (who, addr))
+            mbid = cur.fetchone()["id"]
+            check("  their Gmail connected: it is sent", s.outreach_work(aslug)["send"], True)
+            cur.execute("update user_mailboxes set last_error = 'sign-in: revoked' where id = %s", (mbid,))
+            check("  its sign-in refused: nothing to send until they reconnect", s.outreach_work(aslug)["send"], False)
+            cur.execute("update user_mailboxes set last_error = null where id = %s", (mbid,))
+            e9, c9 = lead(aseg, "contacted")
+            m9 = mail(e9, c9, "sent", sent_today=True)
+            cur.execute("update outreach set sender_address = %s where id = %s", (addr, m9))
+            check("  that address at its limit for today (1): nothing to send", s.outreach_work(aslug)["send"], False)
+            cur.execute("update user_mailboxes set daily_cap = 2 where id = %s", (mbid,))
+            check("  room again: it is sent", s.outreach_work(aslug)["send"], True)
+
             # after a restart (every deploy) each segment gets one round at once, not at the next quarter hour
             kicked = []
             real_kick, real_segments = s.kick_outreach, s.segments

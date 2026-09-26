@@ -276,6 +276,31 @@ svg { flex-shrink: 0; }
 .send-counter b { color: var(--text); font-weight: 600; }
 .send-counter.full, .send-counter.idle { background: var(--bg-warning); }
 .send-counter.paused { opacity: .85; }
+
+/* Sending today, one row per person, one chip per Gmail address (owner, 2026-09-26) */
+.mailbox-strip { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 12px 0 4px;
+  background: var(--bg-neutral-subtle, transparent); }
+.mbx-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.mbx-head .grow { flex: 1; }
+.mbx-people { display: flex; flex-direction: column; gap: 6px; }
+.mbx-person { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.mbx-person .who { font-weight: 600; min-width: 9em; }
+.mbx-person.me .who { color: var(--text-brand, var(--text)); }
+.mbx { display: inline-flex; align-items: baseline; gap: 4px; font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  background: var(--bg-neutral); max-width: 100%; }
+.mbx .addr { color: var(--text-subtle); margin-right: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbx b { color: var(--text); font-weight: 600; }
+.mbx .of { color: var(--text-subtle); }
+.mbx.full, .mbx.warn { background: var(--bg-warning); }
+.mbx.none { color: var(--text-subtle); font-style: italic; }
+.warn-text { color: var(--text-warning); }
+#outreachTable .by-col { display: none; }
+#outreachTable.show-by .by-col { display: table-cell; }
+.card-by { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-subtle);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.mbx-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mbx-list li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.mbx-list .grow { flex: 1; }
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
 .toolbar .grow { flex: 1; }
 .toolbar .result-count { color: var(--text-subtlest); font-size: 12px; margin-left: auto; }

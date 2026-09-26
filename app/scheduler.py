@@ -78,6 +78,19 @@ select exists (select 1 from outreach o join entities e on e.id = o.entity_id
                      and r.started_at > now() - make_interval(mins => %(every)s)) as due"""
 PULL_EVERY_MINUTES = 60
 TICK_MINUTES = 15
+# From the approver (owner, 2026-09-26): an approved email can go when its approver has a Gmail connected
+# in the app, working (no sign-in error), with room left today under that address's own limit.
+APPROVER_SENDABLE_SQL = """
+select 1 from outreach o
+join entities e on e.id = o.entity_id
+join user_mailboxes m on lower(m.user_email) = lower(o.approved_by) and m.enabled and m.last_error is null
+where e.segment_id = (select id from segments where slug = %s)
+  and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null
+  and (select count(*) from outreach x
+        where x.direction = 'outbound' and lower(x.sender_address) = lower(m.address)
+          and x.status in ('sent', 'sending', 'send_unknown')
+          and coalesce(x.sent_at, x.updated_at)::date = current_date) < m.daily_cap
+limit 1"""
 
 # Pipelines: an ordered list of ops-job keys. A pipeline fails at the first
 # step that fails; later steps do not run. run_chain appears twice in the
@@ -308,6 +321,12 @@ class Scheduler:
             boxes = pol.mailbox_list(cfg, segment)
             connected = [mb["key"] for mb in boxes if mb["enabled"] and self.mailbox_connected(mb)]
             paused = pol.sending_paused(cfg)                 # the owner's pause: approved emails wait
+            approver_mode = cfg.get("send_from") == "approver"
+            if approver_mode:
+                # people's own Gmail addresses, connected in the app; the project's mailbox (the env one)
+                # still reads replies to what it sent, but sends nothing new
+                cur.execute("select address from user_mailboxes where enabled and last_error is null")
+                connected = connected + [r["address"] if isinstance(r, dict) else r[0] for r in cur.fetchall()]
             pull = False
             if connected:                                    # reading replies is not sending: a pause does not stop it
                 cur.execute(PULL_DUE_SQL, {"segment": segment, "every": PULL_EVERY_MINUTES})
@@ -315,10 +334,14 @@ class Scheduler:
                 pull = bool(row["due"] if isinstance(row, dict) else row[0])
             room = 0
             if approved and connected and not paused and not pol.sender_unset(cfg.get("sender")):
-                status = pol.mailbox_status(cur, segment, boxes, now.date())
-                sent_today = sum(st["sent_today"] for st in status)
-                room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),
-                           sum(st["remaining"] for st in status if st["key"] in connected))
+                if approver_mode:
+                    cur.execute(APPROVER_SENDABLE_SQL, (segment,))
+                    room = 1 if cur.fetchone() is not None else 0
+                else:
+                    status = pol.mailbox_status(cur, segment, boxes, now.date())
+                    sent_today = sum(st["sent_today"] for st in status)
+                    room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),
+                               sum(st["remaining"] for st in status if st["key"] in connected))
         return {"draft": draft, "followups": followups, "approved": approved, "connected": connected,
                 "paused": bool(paused), "send": approved and room > 0, "pull": pull}
 

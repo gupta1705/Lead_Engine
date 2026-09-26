@@ -35,15 +35,30 @@ Open the site in any browser. You will be asked to log in.
 account instead: an email address and a password of at least ten characters.
 That account is created once and only once.
 
-**To give a colleague access**, the owner runs this on their machine:
+**One login per person.** Everyone has their own account, and the emails they
+approve go out from their own Gmail, signed with their own name. To set people
+up, the owner runs this once on their machine, with everyone's address:
 
 ```
-python tools/users.py add teammate@theviralfever.com
+python tools/users.py team suhasc@theviralfever.com kartikeyap@theviralfever.com upangyay@theviralfever.com
 ```
 
-It asks for a password, twice, and never puts it in a command. `users.py list`
-shows who has access, `passwd` resets a forgotten password, and `remove` takes
-access away.
+It asks for one **starting password**, twice, and never puts it in a command.
+Tell each person the site address and that password. It works once: their first
+sign-in asks for **their own password** (ten characters or more), **their name
+and title** (they sign every email that person approves), and then to **connect
+their Gmail**. Until the starting password is replaced, the app refuses to do
+anything else for that login. Adding `--remove old@theviralfever.com` to the
+same command takes someone's login away; their past approvals and sent emails
+stay in the history.
+
+`users.py list` shows who has access, whether they have signed in yet and which
+Gmail addresses they have connected; `add` and `passwd` (with `--starting` for a
+one-time password) do the same for one person.
+
+**Your account menu** (your initials, top right) holds **Your Gmail**, **Your
+name and title** and **Change password**. Changing your password keeps you
+signed in where you are and signs you out everywhere else.
 
 There is no "sign up" link and no password reset by email. That is deliberate.
 Everything in this tool sits behind that one login, including every screen,
@@ -65,8 +80,9 @@ Down the left is the menu. Five places, and you will live in three of them.
 The number next to **Outreach** is what is waiting for you there: drafts to
 approve, replies nobody has marked yet, and sends that failed.
 
-Across the top is only your account menu, with your email and **Log out**. The
-app is light or dark to match your computer's setting.
+Across the top is only your account menu: your name, **Your Gmail**, **Your name
+and title**, **Change password** and **Log out**. The app is light or dark to
+match your computer's setting.
 
 The Universal project has a different menu: **Apollo search** sits at the top,
 because that is where its leads come from, then Board and Leads. Outreach,
@@ -123,6 +139,7 @@ included), what the company does becomes the same company tags as above, and the
 place is the employer's HQ. Until 21 September the words went to profile
 keywords, which matched company names: *producers in California* found staff at a
 food firm called Flavor Producers; read as a title it finds 36,594 producers.
+
 **No job typed? You get the people who decide.** A people search that names no
 job, like *UAE restaurants*, finds the owners, founders and C-suite of those
 companies, not everyone on the payroll: 2,144 decision makers instead of 168,306
@@ -406,12 +423,32 @@ for them.
 
 ## Approving sends
 
-Approving is the decision to send. The email goes out within minutes, from the
-project's connected mailbox, inside the day's sending limit and each mailbox's
-warm-up, and never to an address that failed verification. The counter at the
-top of Outreach shows how many have gone out today against that limit (35 a day
-in US Production Houses) and when the count starts again: midnight UTC, which is
-5:30 am in India.
+Approving is the decision to send, and in US Production Houses **it goes out from
+your own Gmail**, signed with your own name and title. Each person connects their
+Gmail once (account menu, **Your Gmail**, then **Connect your Gmail**): Google's
+own screen shows exactly what is allowed, which is sending and reading replies
+for that one address and nothing else, and it can be taken back at any time from
+the Google account. You can connect more than one address. Each one sends **up to
+35 a day**, and an approval goes out from whichever of yours has the most room
+left. Nobody's approval ever leaves from somebody else's address.
+
+**What you see is what goes out.** A draft is shown to you as you would send it:
+your name and title in the sign-off. Kartikeya sees his own emails in his own
+voice ("I am Kartikeya, and I lead Business Development and IP Strategy…", the
+line from the original samples) rather than "on behalf of Kartikeya". Approving
+stores exactly the text you read. Approving needs your name and title; if you
+have not set them, it says so.
+
+**Sending today**, at the top of Outreach, lists everyone: each of their Gmail
+addresses with today's count out of its limit (for example `3/35`), anyone who
+has not connected one yet, and how many of their approvals are waiting. The
+counts start again at midnight UTC, which is 5:30 am in India. An approval by
+someone with no Gmail connected waits in Approved until they connect one.
+
+In the other projects the email goes out from the project's own mailbox, inside
+the day's sending limit and each mailbox's warm-up, and the counter at the top of
+Outreach shows how many have gone out today against that limit. Either way,
+never to an address that failed verification.
 
 Approve as many as you like. Anything past the day's limit waits in Approved and
 goes out from the next day on, oldest first, a day's limit at a time, until the
@@ -615,6 +652,13 @@ Then: the companies contacted in the last 7 days (follow-ups not counted), the
 reply rate and the positive rate, and in LCX Clipping the follow-ups sent. The
 target is 15 to 20 companies contacted a week.
 
+**By person** — who reached out: for each person, the first emails they
+approved, how many went out today, in the last 7 days and in all, and the
+companies that wrote back (a reply counts once per company, for whoever reached
+out to it). The same name shows in the Sent folder's **By** column, under
+**Contacted** in the leads list, on the board card, and in the lead's own
+**Outreach** box, with the address it went out from.
+
 **By source** — which connectors are earning their place: for each one, how
 many companies it found, how many can be contacted, and how many were
 shortlisted. It shows only in projects with more than one source.
@@ -665,8 +709,20 @@ card.
 the Outreach screen. Until this is done, no email can be approved: the check
 refuses a draft that still says `SET_ME`.
 
-**2. Connect a mailbox.** A Gmail OAuth client in Google Cloud, then the address
-in `.env`, then one browser consent per mailbox:
+**2. Let people connect their own Gmail (US Production Houses).** Once, in
+Google Cloud (the same project as the existing client, `TVFLeadgenerator`):
+**APIs & Services → Credentials → Create credentials → OAuth client ID →
+Application type: Web application**, name it `Lead Engine web`, and under
+**Authorized redirect URIs** add exactly
+`https://tvf-lead-engine.onrender.com/api/mailboxes/callback`. Create, then put
+its Client ID and Client secret in Render's Environment tab as
+`GOOGLE_OAUTH_WEB_CLIENT_ID` and `GOOGLE_OAUTH_WEB_CLIENT_SECRET`. From then on
+each person connects their own Gmail from the app; nobody touches Render again
+for it. Because the consent screen is **Internal**, only theviralfever.com
+addresses can be connected.
+
+**3. Connect a project mailbox (LCX Clipping).** A Gmail OAuth client in Google
+Cloud, then the address in `.env`, then one browser consent per mailbox:
 
 ```
 SEGMENT_SLUG=lcx-clipping python tools/outreach.py auth --mailbox main
@@ -679,7 +735,7 @@ wrote (the variable name is listed by `python tools/outreach.py mailboxes`).
 Use addresses on a sending domain that belongs to LCX alone, not the main company
 domain, so a bad week never touches everyday mail.
 
-**3. Connect Apollo**, for the Universal project and for the addresses the
+**4. Connect Apollo**, for the Universal project and for the addresses the
 weekly refresh buys in US Production Houses. In Apollo: Settings → Integrations
 → API Keys → Create new key, tick the five endpoints the Apollo search page
 lists (or turn on *Set as master key*), then put the key in `.env` as
@@ -687,7 +743,7 @@ lists (or turn on *Set as master key*), then put the key in `.env` as
 these steps at the top, and the refresh's Apollo step finds no key and stops
 short of spending anything.
 
-**4. Put the YouTube key on the server.** In Render's Environment tab, set
+**5. Put the YouTube key on the server.** In Render's Environment tab, set
 `YOUTUBE_API_KEY` (the same Google key as in `.env`). Without it, LCX Clipping's
 weekly refresh stops at its YouTube step. It has failed that way since
 2026-09-16, and Operations shows it under Automatic runs.
