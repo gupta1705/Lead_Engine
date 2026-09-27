@@ -94,8 +94,8 @@ Down the left is the menu. Five places, and you will live in three of them.
 The number next to **Outreach** is what is waiting for you there: drafts to
 approve, replies nobody has marked yet, and sends that failed.
 
-Across the top is only your account menu: your name, **Your Gmail**, **Your name
-and title**, **Change password** and **Log out**. The app is light or dark to
+Across the top is only your account menu: your name, **Your sending address**,
+**Your name and title**, **Change password** and **Log out**. The app is light or dark to
 match your computer's setting.
 
 The Universal project has a different menu: **Apollo search** sits at the top,

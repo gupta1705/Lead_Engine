@@ -190,7 +190,8 @@ def main():
         if promoted:
             print("  %-40s is now the owner" % promoted)
         print("Done. Send each person the site address and the starting password; they choose their own at"
-              " first sign-in, then connect their Gmail (account menu, top right).")
+              " first sign-in. Link the address each one sends from later with: users.py gmail <login>"
+              " (until then, what they approve waits in Approved).")
 
     elif cmd == "add":
         emails = _emails(args)

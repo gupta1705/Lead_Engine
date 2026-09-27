@@ -446,8 +446,8 @@ def cmd_send(args):
                 b["address"], "on" if b["usable"] else "off", b["user_email"], b["daily_cap"], b["out_today"],
                 remaining.get(b["address"].lower(), 0)))
         if not usable:
-            # not a failure: approved emails wait in Approved until their approver connects a Gmail
-            log("nobody has a Gmail connected yet: approved emails wait (Account menu -> Your Gmail)")
+            # not a failure: approved emails wait in Approved until the owner links their approver a Gmail
+            log("no sending address linked yet: approved emails wait (the owner runs tools/users.py gmail <login>)")
             db.close(); return 0
         daily_cap = None
         sent_today = sum(b["sent_today"] for b in boxes)
@@ -742,8 +742,8 @@ def cmd_send(args):
         # `python tools/outreach.py auth`, then update the mailbox's token variable on the server
         failed = list(dict.fromkeys(signin_failed))
         if approver_mode:
-            log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, its owner connects it"
-                " again in the app: Account menu -> Your Gmail." % ", ".join(failed))
+            log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, the owner links it"
+                " again: python tools/users.py gmail <login>." % ", ".join(failed))
         else:
             log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
                 " `python tools/outreach.py auth`, then update %s"

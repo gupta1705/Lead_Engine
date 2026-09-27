@@ -9,9 +9,9 @@
 --   app_users.must_change_password
 --                                 a starting password handed out by the owner works once; the
 --                                 first sign-in asks for the person's own
---   user_mailboxes                a Gmail address a person connected in the app (Account menu ->
---                                 Your Gmail). token_enc is Google's sign-in for it, encrypted
---                                 with a key derived from the server's SESSION_SECRET
+--   user_mailboxes                a Gmail address the owner linked to a person (tools/users.py
+--                                 gmail <login>). token_enc is Google's sign-in for it, sealed
+--                                 for the server with a key derived from its SESSION_SECRET
 --                                 (tools/mailbox_store.py): the database alone cannot send mail
 --                                 as anyone. Removing a login removes its connections.
 

@@ -1908,8 +1908,8 @@ function profileFields(me) {
     <div class="help">They sign every email you approve: it goes out from your own Gmail, with your name and title under it.</div>`;
 }
 
-/* The first sign-in (a starting password, or no name yet): set a password of your own, your name and
-   title, then connect your Gmail. Resolves once the account is ready to use. */
+/* The first sign-in (a starting password, or no name yet): set a password of your own, then your name
+   and title. Resolves once the account is ready to use. */
 function openWelcome() {
   return new Promise((resolve) => {
     const me = state.me || {};
