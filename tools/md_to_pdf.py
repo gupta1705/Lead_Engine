@@ -26,8 +26,9 @@ from pathlib import Path
 CSS = """
 @page { size: A4; margin: 18mm 16mm 16mm; }
 :root {
-  --ink: #172B4D; --soft: #44546F; --faint: #626F86;
-  --line: #DFE1E6; --accent: #0C66E4; --sunken: #F7F8F9;
+  /* the app's palette since its 2026-09-27 redesign */
+  --ink: #101828; --soft: #475467; --faint: #667085;
+  --line: #E4E7EC; --accent: #4F46E5; --sunken: #F7F8FA;
 }
 * { box-sizing: border-box; }
 body {
@@ -97,7 +98,7 @@ blockquote p:last-child { margin-bottom: 0; }
 """
 
 FOOTER = ("<div style=\"width:100%;padding:0 16mm;font:7.5pt 'Segoe UI',sans-serif;"
-          "color:#626F86;display:flex;justify-content:space-between\">"
+          "color:#667085;display:flex;justify-content:space-between\">"
           "<span>{left}</span>"
           "<span><span class='pageNumber'></span> / <span class='totalPages'></span></span>"
           "</div>")

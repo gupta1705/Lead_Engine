@@ -3,78 +3,102 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Log in — TVF Lead Engine</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230C66E4'/%3E%3Cpath d='M8 6l10 6-10 6z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23FF5A5F'/%3E%3Cstop offset='1' stop-color='%23D7263D'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3Cpath d='M9.5 7.6v8.8l7-4.4z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap">
 <style>
 /* Self-contained on purpose: this page sits OUTSIDE the auth wall, so it must
-   not pull the app's assets with it. Tokens mirror style.css (Atlassian set). */
+   not pull the app's assets with it. Tokens mirror style.css (2026-09-27 set). */
 :root {
-  --surface: #FFFFFF; --sunken: #F7F8F9; --text: #172B4D; --subtle: #44546F;
-  --subtlest: #626F86; --border-input: #8590A2; --focused: #388BFF;
-  --brand: #0C66E4; --brand-hover: #0055CC; --brand-pressed: #09326C;
-  --danger-bg: #FFECEB; --danger-text: #AE2E24; --link: #0C66E4;
-  --shadow: 0 8px 12px #091E4226, 0 0 1px #091E424F; --on-bold: #FFFFFF;
-  --input: #FFFFFF; --input-hover: #F7F8F9;
+  color-scheme: light;
+  --canvas: #F1F2F5; --surface: #FFFFFF; --text: #101828; --subtle: #475467; --subtlest: #667085;
+  --border: #E4E7EC; --border-input: #D0D5DD; --focused: #6366F1; --ring: 0 0 0 3px rgba(99, 102, 241, .24);
+  --brand: #4F46E5; --brand-hover: #4338CA; --brand-pressed: #3730A3; --on-bold: #FFFFFF;
+  --danger-bg: #FEF3F2; --danger-text: #D92D20; --placeholder: #98A2B3;
+  --glow-1: rgba(99, 102, 241, .16); --glow-2: rgba(255, 90, 95, .12);
+  --shadow: 0 24px 48px -16px rgba(16, 24, 40, .18), 0 2px 6px rgba(16, 24, 40, .05);
+  --mark-from: #FF5A5F; --mark-to: #D7263D;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --surface: #22272B; --sunken: #1D2125; --text: #B6C2CF; --subtle: #9FADBC;
-    --subtlest: #8C9BAB; --border-input: #738496; --focused: #85B8FF;
-    --brand: #579DFF; --brand-hover: #85B8FF; --brand-pressed: #CCE0FF;
-    --danger-bg: #42221F; --danger-text: #FD9891; --link: #579DFF;
-    --shadow: 0 0 0 1px #A6C5E229, 0 8px 12px #0304045C; --on-bold: #1D2125;
-    --input: #22272B; --input-hover: #282E33;
+    color-scheme: dark;
+    --canvas: #08090C; --surface: #14161B; --text: #F0F1F3; --subtle: #B9BEC7; --subtlest: #8E949E;
+    --border: #FFFFFF14; --border-input: #FFFFFF24; --focused: #818CF8; --ring: 0 0 0 3px rgba(129, 140, 248, .3);
+    --brand: #5558E8; --brand-hover: #6366F1; --brand-pressed: #4F46E5; --on-bold: #FFFFFF;
+    --danger-bg: #F044381F; --danger-text: #FDA29B; --placeholder: #5B616B;
+    --glow-1: rgba(99, 102, 241, .20); --glow-2: rgba(255, 90, 95, .10);
+    --shadow: 0 30px 60px -12px rgba(0, 0, 0, .7), 0 0 0 1px #FFFFFF14;
   }
 }
 * { box-sizing: border-box; }
 body {
   margin: 0; min-height: 100dvh; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; padding: 24px 16px; background: var(--sunken); color: var(--text);
-  font: 14px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  justify-content: center; padding: 32px 16px; color: var(--text);
+  background:
+    radial-gradient(900px 520px at 18% -10%, var(--glow-1), transparent 60%),
+    radial-gradient(760px 480px at 100% 110%, var(--glow-2), transparent 60%),
+    var(--canvas);
+  font: 14px/20px var(--font); font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
-.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; color: var(--text);
-  font-size: 20px; font-weight: 600; }
-.mark { width: 32px; height: 32px; border-radius: 6px; display: inline-flex; align-items: center;
-  justify-content: center; color: #fff; background: linear-gradient(135deg, #0C66E4, #1D7AFC); }
-.card { width: min(400px, 100%); background: var(--surface); border-radius: 3px;
-  box-shadow: var(--shadow); padding: 32px 40px 40px; }
-h1 { font-size: 16px; line-height: 20px; font-weight: 600; margin: 0 0 4px; text-align: center; }
-.sub { color: var(--subtlest); font-size: 12px; text-align: center; margin: 0 0 24px; }
-label { display: block; font-size: 12px; font-weight: 600; color: var(--subtle); margin: 16px 0 4px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; color: var(--text);
+  font: 700 20px/24px var(--font-display); letter-spacing: -.015em; }
+.mark { width: 38px; height: 38px; border-radius: 11px; display: inline-flex; align-items: center;
+  justify-content: center; color: #fff; background: linear-gradient(135deg, var(--mark-from), var(--mark-to));
+  box-shadow: 0 6px 16px -4px rgba(215, 38, 61, .55), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.mark svg { margin-left: 2px; }
+.brand small { display: block; font: 500 12px/16px var(--font); color: var(--subtlest); letter-spacing: 0; }
+.card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: var(--shadow); padding: 32px 32px 28px; animation: rise .35s cubic-bezier(.16, 1, .3, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .card { animation: none; } }
+h1 { font: 700 22px/28px var(--font-display); letter-spacing: -.02em; margin: 0 0 6px; }
+.sub { color: var(--subtlest); font-size: 13.5px; margin: 0 0 24px; }
+label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin: 16px 0 6px; }
+label:first-of-type { margin-top: 0; }
 input {
-  width: 100%; height: 40px; padding: 8px; border: 2px solid var(--border-input); border-radius: 3px;
-  background: var(--input); color: var(--text); font: inherit; transition: background .15s, border-color .15s;
+  width: 100%; height: 42px; padding: 9px 12px; border: 1px solid var(--border-input); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: 15px/22px var(--font);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .05); transition: border-color .15s, box-shadow .15s;
 }
-input:hover { background: var(--input-hover); }
-input:focus { outline: 0; border-color: var(--focused); background: var(--surface); }
+input:hover { border-color: var(--subtlest); }
+input:focus { outline: 0; border-color: var(--focused); box-shadow: var(--ring); }
+input::placeholder { color: var(--placeholder); }
 button {
-  width: 100%; height: 40px; margin-top: 24px; border: 0; border-radius: 3px; cursor: pointer;
-  background: var(--brand); color: var(--on-bold); font: inherit; font-weight: 600;
-  transition: background .15s;
+  width: 100%; height: 42px; margin-top: 24px; border: 0; border-radius: 10px; cursor: pointer;
+  background: var(--brand); color: var(--on-bold); font: 600 14.5px/1 var(--font);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .14), inset 0 1px 0 rgba(255, 255, 255, .16);
+  transition: background .15s, transform .08s;
 }
 button:hover { background: var(--brand-hover); }
-button:active { background: var(--brand-pressed); }
+button:active { background: var(--brand-pressed); transform: translateY(.5px); }
 button:focus-visible { outline: 2px solid var(--focused); outline-offset: 2px; }
-button:disabled { opacity: .5; cursor: default; }
-.err { display: none; margin-top: 16px; padding: 12px 16px; border-radius: 3px;
-  background: var(--danger-bg); color: var(--danger-text); font-size: 14px; }
+button:disabled { opacity: .6; cursor: default; }
+.err { display: none; margin-top: 16px; padding: 12px 14px; border-radius: 10px;
+  background: var(--danger-bg); color: var(--danger-text); font-size: 13.5px; }
 .err.show { display: block; }
-.hint { color: var(--subtlest); font-size: 12px; margin: 16px 0 0; text-align: center; }
-.foot { margin-top: 32px; color: var(--subtlest); font-size: 12px; text-align: center; }
+.hint { color: var(--subtlest); font-size: 12.5px; margin: 16px 0 0; text-align: center; }
+.hint:empty { display: none; }
+.foot { margin-top: 28px; color: var(--subtlest); font-size: 12.5px; text-align: center; max-width: 36ch; }
+@media (max-width: 480px) { .card { padding: 26px 22px 22px; border-radius: 16px; } input { font-size: 16px; } }
 </style>
 </head>
 <body>
 <div class="brand">
-  <span class="mark"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg></span>
-  Lead Engine
+  <span class="mark"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg></span>
+  <span>Lead Engine<small>The Viral Fever</small></span>
 </div>
 <div class="card">
   <h1 id="title">Log in to continue</h1>
   <p class="sub" id="subtitle">TVF Universal Lead Engine</p>
   <form id="f" novalidate>
     <label for="email">Email</label>
-    <input id="email" type="email" autocomplete="username" required inputmode="email" spellcheck="false">
+    <input id="email" type="email" autocomplete="username" required inputmode="email" spellcheck="false" placeholder="you@theviralfever.com">
     <label for="password">Password</label>
     <input id="password" type="password" autocomplete="current-password" required>
     <button id="go" type="submit">Log in</button>

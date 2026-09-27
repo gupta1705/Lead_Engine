@@ -3,85 +3,99 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>TVF Lead Engine</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230C66E4'/%3E%3Cpath d='M8 6l10 6-10 6z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23FF5A5F'/%3E%3Cstop offset='1' stop-color='%23D7263D'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='24' height='24' rx='6' fill='url(%23g)'/%3E%3Cpath d='M9.5 7.6v8.8l7-4.4z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Plus+Jakarta+Sans:wght@600..800&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
 
-<!-- ============================================================ TOP NAV -->
+<!-- ======================================================= PHONE BAR -->
+<!-- Below 1024px the sidebar is a drawer; this bar only opens it. -->
 <header class="topnav" role="banner">
-  <button class="btn icon grid-btn" id="drawerBtn" aria-label="Open navigation" title="Navigation">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></svg>
+  <button class="btn icon" id="drawerBtn" aria-label="Open navigation" title="Navigation">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
   </button>
   <span class="logo">
-    <span class="logo-mark"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg></span>
+    <span class="logo-mark"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg></span>
     <span class="word">Lead Engine</span>
   </span>
-
-  <div class="spacer"></div>
-
-  <div class="actions">
-    <div class="menu-anchor">
-      <button class="btn icon" id="userBtn" aria-label="Your account" aria-haspopup="true" aria-expanded="false" title="Account">
-        <span class="avatar av-1" id="userAvatar">?</span>
-      </button>
-      <div class="menu right" id="userMenu" hidden></div>
-    </div>
-  </div>
 </header>
 
 <div class="frame" id="frame">
   <div class="sidebar-scrim" id="sidebarScrim"></div>
 
-  <!-- ============================================================ SIDEBAR -->
+  <!-- ========================================================== SIDEBAR -->
+  <!-- The one navigation (owner, 2026-09-16): the mark, the project switcher, every page, and
+       at the bottom the account. Nothing here is repeated anywhere else. -->
   <nav class="sidebar" id="sidebar" aria-label="Project">
-    <button class="collapse-btn" id="collapseBtn" aria-label="Collapse sidebar" title="Collapse">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-    </button>
+    <div class="side-top">
+      <span class="logo">
+        <span class="logo-mark"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg></span>
+        <span class="word">Lead Engine</span>
+      </span>
+      <button class="collapse-btn" id="collapseBtn" aria-label="Collapse sidebar" title="Collapse sidebar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/><path d="m15.5 10-2 2 2 2"/></svg>
+      </button>
+    </div>
+
     <div class="sidebar-inner">
       <div class="menu-anchor project-anchor">
         <button class="project project-switch" id="projectSwitch" aria-haspopup="true" aria-expanded="false" title="Switch project">
-          <span class="project-avatar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="m3 9 1.4-4.2a1 1 0 0 1 1.2-.7L20 7.6l-1 1.4"/><path d="m8 4.6 2 3.6M12.5 5.5l2 3.6"/></svg></span>
+          <span class="project-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="m3 9 1.4-4.2a1 1 0 0 1 1.2-.7L20 7.6l-1 1.4"/><path d="m8 4.6 2 3.6M12.5 5.5l2 3.6"/></svg></span>
           <span class="project-text">
+            <span class="project-kicker">Project</span>
             <span class="project-name" id="projectName">US Production Houses</span>
           </span>
-          <svg class="project-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
+          <svg class="project-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
         </button>
         <div class="menu project-menu" id="projectSwitchMenu" hidden></div>
       </div>
 
-      <button class="side-item" data-route="universal" id="universalSide" hidden>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        Apollo search
-      </button>
-      <button class="side-item" data-route="board">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></svg>
-        Board
-      </button>
-      <button class="side-item" data-route="leads">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-        Leads
-      </button>
-      <button class="side-item" data-route="outreach">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
-        Outreach
-        <span class="pts count" id="outreachCount" hidden>0</span>
-      </button>
-      <button class="side-item" data-route="reports">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-        Reports
-      </button>
+      <div class="side-nav">
+        <button class="side-item" data-route="universal" id="universalSide" hidden title="Apollo search">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span class="label">Apollo search</span>
+        </button>
+        <button class="side-item" data-route="board" title="Board">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M15 3v12"/></svg>
+          <span class="label">Board</span>
+        </button>
+        <button class="side-item" data-route="leads" title="Leads">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>
+          <span class="label">Leads</span>
+        </button>
+        <button class="side-item" data-route="outreach" title="Outreach">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m3.5 7.5 8.5 6 8.5-6"/></svg>
+          <span class="label">Outreach</span>
+          <span class="pts count" id="outreachCount" hidden>0</span>
+        </button>
+        <button class="side-item" data-route="reports" title="Reports">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+          <span class="label">Reports</span>
+        </button>
+        <button class="side-item" data-route="ops" title="Operations">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5 6.8 15M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.5"/></svg>
+          <span class="label">Operations</span>
+        </button>
+      </div>
+    </div>
 
-      <button class="side-item" data-route="ops">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z" fill="currentColor"/></svg>
-        Operations
+    <div class="side-foot menu-anchor">
+      <button class="user-btn" id="userBtn" aria-label="Your account" aria-haspopup="true" aria-expanded="false">
+        <span class="avatar" id="userAvatar">?</span>
+        <span class="user-text"><span class="user-name" id="userName">Your account</span><span class="user-mail" id="userMail"></span></span>
+        <svg class="user-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
       </button>
+      <div class="menu up" id="userMenu" hidden></div>
     </div>
   </nav>
 
-  <!-- =============================================================== MAIN -->
+  <!-- ============================================================= MAIN -->
   <main class="page" id="main">
 
     <!-- UNIVERSAL: Apollo's people and company search (the Universal project only) -->
@@ -93,8 +107,9 @@
             <span class="uni-status" id="uniStatus"></span>
             <div class="menu-anchor">
               <button class="btn" id="uniSavedBtn" aria-haspopup="true" aria-expanded="false">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>
                 Saved searches
-                <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
               </button>
               <div class="menu right uni-saved-menu" id="uniSavedMenu" hidden></div>
             </div>
@@ -103,18 +118,20 @@
         </div>
       </header>
       <div id="uniSetup"></div>
-      <div class="tabs" id="uniTabs" role="tablist" aria-label="Search people or companies">
-        <button class="tab active" role="tab" aria-selected="true" data-kind="people">People</button>
-        <button class="tab" role="tab" aria-selected="false" data-kind="companies">Companies</button>
-      </div>
-      <form class="uni-searchbar" id="uniForm" role="search">
-        <div class="uni-query">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="uniQuery" type="search" placeholder="Job, company type and place: owners of restaurants in Dubai" aria-label="Search Apollo" autocomplete="off">
+      <div class="uni-hero">
+        <div class="tabs segmented" id="uniTabs" role="tablist" aria-label="Search people or companies">
+          <button class="tab active" role="tab" aria-selected="true" data-kind="people">People</button>
+          <button class="tab" role="tab" aria-selected="false" data-kind="companies">Companies</button>
         </div>
-        <button class="btn primary" id="uniGo" type="submit">Search</button>
-      </form>
-      <p class="uni-cost" id="uniCost"></p>
+        <form class="uni-searchbar" id="uniForm" role="search">
+          <div class="uni-query">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="uniQuery" type="search" placeholder="Job, company type and place: owners of restaurants in Dubai" aria-label="Search Apollo" autocomplete="off">
+          </div>
+          <button class="btn primary" id="uniGo" type="submit">Search</button>
+        </form>
+        <p class="uni-cost" id="uniCost"></p>
+      </div>
       <div class="uni-layout">
         <aside class="uni-filters" id="uniFilters" aria-label="Filters"></aside>
         <div class="uni-results">
@@ -137,9 +154,9 @@
         </div>
       </header>
       <div class="toolbar">
-        <div class="search" style="width:220px;position:relative">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="position:absolute;left:8px;top:8px;color:var(--icon-subtle);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="boardSearch" type="search" class="compact" placeholder="Search this board" aria-label="Search this board" style="padding-left:32px">
+        <div class="search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="boardSearch" type="search" class="compact" placeholder="Search this board" aria-label="Search this board">
         </div>
       </div>
       <div class="board-wrap"><div class="board" id="board" aria-live="polite"></div></div>
@@ -152,16 +169,16 @@
           <h1 id="leadsTitle">Leads</h1>
           <div class="page-actions">
             <a class="btn" id="leadsExport" href="/api/export.xlsx?status=all">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
               Export this view
             </a>
           </div>
         </div>
       </header>
       <div class="toolbar">
-        <div class="search" style="width:220px;position:relative">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="position:absolute;left:8px;top:8px;color:var(--icon-subtle);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input id="leadsSearch" type="search" class="compact" placeholder="Search leads" aria-label="Search leads" style="padding-left:32px">
+        <div class="search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="leadsSearch" type="search" class="compact" placeholder="Search leads" aria-label="Search leads">
         </div>
         <select id="leadsStatus" class="filter" aria-label="Status">
           <option value="all">Status: All</option>
@@ -204,7 +221,7 @@
           <div class="page-actions">
             <span class="send-counter" id="sendCounter" role="status" aria-live="polite" hidden></span>
             <button class="btn" id="footerBtn" title="The sign-off, postal address and opt-out at the end of every email this project sends">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/><path d="M6 18h7"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/><path d="M6 18h7"/></svg>
               Footer
             </button>
           </div>
@@ -228,14 +245,14 @@
           <h1 id="reportsTitle">Reports</h1>
         </div>
       </header>
-      <div class="panel-grid" style="margin-bottom:16px">
+      <div class="panel-grid">
         <div class="panel">
           <div class="panel-head"><div><h2>Status overview</h2><p class="sub">Every company the engine has ever found for this segment, by where it sits now.</p></div></div>
           <div class="donut-wrap"><div class="donut" id="donut"></div><ul class="legend" id="donutLegend"></ul></div>
         </div>
         <div class="panel">
           <div class="panel-head"><div><h2>Outreach results</h2><p class="sub">Companies contacted in the last 7 days, and the replies they sent.</p></div></div>
-          <div class="tiles" id="kpiTiles" style="margin:0"></div>
+          <div class="tiles" id="kpiTiles"></div>
         </div>
       </div>
       <div class="panel" id="accountPanel" hidden>
@@ -254,7 +271,10 @@
         <div class="title-row">
           <h1 id="opsTitle">Operations</h1>
           <div class="page-actions">
-            <button class="btn" id="runRefresh">Run weekly refresh</button>
+            <button class="btn" id="runRefresh">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg>
+              Run weekly refresh
+            </button>
           </div>
         </div>
       </header>
@@ -268,7 +288,7 @@
       </div>
       <div class="panel" id="logPanel" hidden>
         <div class="panel-head"><div><h2 id="logTitle">Log</h2><p class="sub">Streams while the job runs; the last lines are kept afterwards.</p></div>
-          <button class="btn subtle" id="logStop" hidden>Stop</button><button class="btn subtle" id="logClose">Hide</button></div>
+          <div class="btn-group"><button class="btn subtle" id="logStop" hidden>Stop</button><button class="btn subtle" id="logClose">Hide</button></div></div>
         <pre class="log" id="opsLog"></pre>
       </div>
     </section>

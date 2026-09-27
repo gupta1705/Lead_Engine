@@ -69,10 +69,10 @@ person; `gmail-remove <address>` unlinks one.
 addresses they send from; `add` and `passwd` (with `--starting` for a one-time
 password) do the same as `team` for one person.
 
-**Your account menu** (your initials, top right) holds **Your sending address**
-(where your emails go out from, and today's count), **Your name and title** and
-**Change password**. Changing your password keeps you signed in where you are and
-signs you out everywhere else.
+**Your account** is at the bottom of the sidebar, under your name. Click it for
+**Your sending address** (where your emails go out from, and today's count),
+**Your name and title** and **Change password**. Changing your password keeps you
+signed in where you are and signs you out everywhere else.
 
 There is no "sign up" link and no password reset by email. That is deliberate.
 Everything in this tool sits behind that one login, including every screen,
@@ -94,9 +94,12 @@ Down the left is the menu. Five places, and you will live in three of them.
 The number next to **Outreach** is what is waiting for you there: drafts to
 approve, replies nobody has marked yet, and sends that failed.
 
-Across the top is only your account menu: your name, **Your sending address**,
-**Your name and title**, **Change password** and **Log out**. The app is light or dark to
-match your computer's setting.
+At the top of the sidebar is the Lead Engine mark and, under it, the project you
+are in. At the bottom is your account: your name, and behind it **Your sending
+address**, **Your name and title**, **Change password** and **Log out**. The small
+button beside the mark folds the sidebar down to a row of icons, and back. On a
+phone the sidebar opens from the menu button at the top left. The app is light
+or dark to match your computer's setting.
 
 The Universal project has a different menu: **Apollo search** sits at the top,
 because that is where its leads come from, then Board and Leads. Outreach,
@@ -108,7 +111,8 @@ A **project** (the code calls it a segment) is one sales motion with its own
 leads, its own rubric, its own email templates and its own mailboxes. Nothing
 leaks between them.
 
-Click the project name at the very top of the left sidebar to switch.
+Click the project, just under the Lead Engine mark at the top of the sidebar,
+to switch.
 
 ![Click the project at the top of the sidebar to switch](img/03-projects.png){width=full}
 
@@ -257,10 +261,11 @@ made it interesting: subscribers, how much short-form it publishes, how many
 episodes, how often. Then a few tags: which source found it (only in projects
 with more than one source), the kind of lead, and the place.
 
-On the bottom row: the fit score, **out of 100** and explained in full inside
-the lead, and a round badge for the person the email goes to. A grey person
-icon means there is no address yet. 25 and up is worth a look; 45 and up is the
-priority band. Universal leads have no score.
+Beside the name is the fit score, **out of 100**, as a ring that fills with it:
+indigo from 25 (worth a look), green from 45 (the priority band). It is
+explained in full inside the lead. On the bottom row is the person the email
+goes to ("No contact yet" means there is no address yet) and, once an email has
+gone, who reached out. Universal leads have no score.
 
 
 # The leads list
@@ -292,12 +297,15 @@ Click anywhere on a row to open it.
 
 # Deciding on a lead
 
-This is the main job. Click any row or card.
+This is the main job. Click any row or card. The lead opens in a sheet beside
+the list, so you never lose your place: **J** and **K**, or the arrows at its top
+right, move to the next and previous lead in the same column or list without
+closing it. **Esc**, or a click beside the sheet, closes it.
 
 ![Everything the engine knows, and the two buttons that matter](img/05-lead.png){width=full}
 
 At the top are the lead's status and a link to the company's website, labelled
-with its domain.
+with its domain; beside the name, its fit score.
 
 Read it top to bottom:
 
@@ -390,7 +398,11 @@ the sign-off every email ends with.
 
 # Approving one email
 
-Click any row in Drafts.
+Click any row in Drafts. It opens beside the list, and **J** and **K** (or the
+arrows at its top right) move through the folder. Moving never approves
+anything: approving is always its own click, after reading. If you have edited a
+draft, moving to another one or closing it asks first, so an edit is never lost
+to a stray click.
 
 ![A draft, with the Approve button](img/07-draft.png){width=full}
 
