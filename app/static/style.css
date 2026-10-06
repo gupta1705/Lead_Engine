@@ -985,7 +985,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .mbx-list li:last-child { border-bottom: 0; }
 .mbx-list .grow { flex: 1; }
 .subject-cell { max-width: 460px; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.subject-cell > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subject-cell > span:last-child, .subject-cell > .subj { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subject-cell > .clip { flex: none; display: inline-flex; color: var(--text-subtle); overflow: visible; }
+/* the files an email carries (LCX Services: the deck), each opening from the app */
+.attach-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.attach { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+          border-radius: var(--radius-md); background: var(--surface); color: var(--text); text-decoration: none; font-size: 13.5px; }
+.attach:hover { border-color: var(--border-bold); background: var(--surface-hovered); }
+.attach .attach-name { font-weight: 500; min-width: 0; }
+.attach > svg, .attach > .num { flex: none; white-space: nowrap; }
+.details .attach-list { margin-top: 0; }
+.details .attach { width: 100%; }
 
 /* writing one email to the leads a person picked (Universal, 2026-09-27) */
 .compose-main { display: flex; flex-direction: column; gap: 16px; }

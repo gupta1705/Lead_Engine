@@ -177,6 +177,15 @@ def cmd_draft(args):
     elif llm.policy(cfg) or llm.partner_policy(cfg):
         log("  GROQ_API_KEY is not set, so %s is the built-in one\n" % part)
 
+    # the files a template attaches (LCX Services: the services deck), read and fingerprinted once a run;
+    # a template whose file is missing drafts nothing, rather than emails that say "attached" and are not
+    attach_cache = {}
+
+    def files_for(t):
+        if t["key"] not in attach_cache:
+            attach_cache[t["key"]] = _pol.attachments_for(t)
+        return attach_cache[t["key"]]
+
     made = skipped = 0
     for eid, company, meta, cid, cname, email, csource in rows:
         try:
@@ -189,6 +198,7 @@ def cmd_draft(args):
             # the production-house templates differ by whether the email greets a person by name
             tpl = requested or pick_template(cfg, meta, ctx)
             subject, body = render_message(tpl, ctx)
+            files = files_for(tpl)
         except Exception as e:
             # one lead that cannot be drafted (a stray {{word}} in its site text, say) is skipped and
             # named; it used to stop the run, and every lead after it went undrafted (2026-09-21)
@@ -196,14 +206,15 @@ def cmd_draft(args):
             log("  %-32s SKIPPED: could not draft it: %s" % (company[:32], str(e)[:120]))
             continue
         written = ctx.get("generated_hook") or None
-        log("  %-32s -> %-34s [%s]%s" % (company[:32], email, tpl["key"],
-                                         "  written" if written else ""))
+        log("  %-32s -> %-34s [%s]%s%s" % (company[:32], email, tpl["key"],
+                                           "  written" if written else "",
+                                           ("  + " + ", ".join(f["name"] for f in files)) if files else ""))
         if args.dry_run:
             continue
-        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body, _g=written: cur.execute(
+        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body, _g=written, _f=files: cur.execute(
             "insert into outreach (entity_id, contact_id, template_key, subject, body,"
-            " generated_hook) values (%s, %s, %s, %s, %s, %s) on conflict do nothing",
-            (_e, _c, tpl["key"], _s, _b, _g)))
+            " generated_hook, attachments) values (%s, %s, %s, %s, %s, %s, %s) on conflict do nothing",
+            (_e, _c, tpl["key"], _s, _b, _g, json.dumps(_f) if _f else None)))
         made += 1
 
     db.close()
@@ -386,6 +397,25 @@ def cmd_mailboxes(args):
     return 0
 
 
+def _message(body, attachments=None):
+    """The email as Gmail receives it: the text, and each attached file (outreach.attachments) as
+    itself -- application/pdf for the LCX Services deck -- named as it was approved."""
+    if not attachments:
+        return MIMEText(body)
+    import mimetypes
+    import outreach_policy as pol
+    from email.mime.application import MIMEApplication
+    from email.mime.multipart import MIMEMultipart
+    msg = MIMEMultipart("mixed")
+    msg.attach(MIMEText(body))
+    for a in attachments:
+        kind = (mimetypes.guess_type(a["name"])[0] or "application/octet-stream").split("/", 1)
+        part = MIMEApplication(pol.attachment_bytes(a), _subtype=kind[1] if kind[0] == "application" else "octet-stream")
+        part.add_header("Content-Disposition", "attachment", filename=a["name"])
+        msg.attach(part)
+    return msg
+
+
 def cmd_send(args):
     """Send approved drafts, spread across the segment's mailboxes.
 
@@ -490,7 +520,7 @@ def cmd_send(args):
                  order by s.sequence_step desc limit 1) as prev_message_id,
                exists (select 1 from outreach r where r.entity_id = o.entity_id
                         and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
-               p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver
+               p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver, o.attachments
         from outreach o
         join entities e on e.id = o.entity_id
         left join contacts c on c.id = o.contact_id
@@ -519,7 +549,7 @@ def cmd_send(args):
             " where id=%s and status='approved'", (_w, _o)))
 
     for (oid, eid, subject, body, email, estatus, company, ent_status,
-         step, thread_id, stopped, prev_mid, replied, parent_mb, approver) in rows:
+         step, thread_id, stopped, prev_mid, replied, parent_mb, approver, atts) in rows:
         if sent >= budget:
             break
         step = int(step or 0)
@@ -557,6 +587,9 @@ def cmd_send(args):
             problem = db.run(lambda cur, _o=oid, _m=email: (cur.execute(_DUPLICATE_SQL, {
                 "oid": _o, "email": _m, "statuses": TAKEN_AT_SEND}),
                                                            cur.fetchone())[1][0])
+        if not problem and atts:
+            # the deck a person approved, byte for byte (outreach_policy.attachment_problem), or nothing goes
+            problem = pol.attachment_problem(atts)
         if not problem:
             # an address that answered us under another lead or project since this was approved, or
             # bounced, gets nothing new from any project (outreach_policy.ANSWERED_SQL)
@@ -667,7 +700,7 @@ def cmd_send(args):
 
         # 3. send
         try:
-            msg = MIMEText(body)
+            msg = _message(body, atts)
             msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
             # our own Message-ID, one per row: an unknown outcome can be settled by searching Sent for
             # rfc822msgid:<tvf-...>, and a transport-level resend of the same POST is recognisable.

@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
-"""test_lcx_services.py -- the LCX Services project: one email offering every LCX service (2026-10-06).
+"""test_lcx_services.py -- the LCX Services project, end to end (2026-10-06).
 
     python tools/test_lcx_services.py
 
-The owner: "Under docs there is lcx services i wanna build outreach a single one offering all these
-services", then chose a new project like Universal (Apollo search, Write email), TVF's Mumbai address
-under it, and sending once approved. Checked:
+The owner: one outreach offering every service on docs/LCX Services.pdf, then "it should generate the
+leads on its own ... like we source leads for us production houses", "email should be a pitch deck of
+services" (a PDF deck attached), everywhere cold business email is allowed, sent once approved.
 
-  * the repo's config: the email offers all 18 services on the sheet (docs/LCX Services.pdf), passes
-    the compose checks, ends over TVF's address, sends from the approver, is not paused; the
-    generated SQL is the JSON's
-  * the page is handed that email to start the Write email box from (Universal is handed none)
-  * approving it sends it, rendered for each person, signed by the writer
-  * the Apollo search page works on the project it shows (?project=): searches and saves land
-    there and nowhere else, a project without the page is refused, and a page that names no project
-    keeps the old behaviour (the cookie's project if it has the page, else Universal)
-  * a lead with nobody at it points to Apollo search, as in Universal
-
-The real app runs in-process against the real database inside ONE transaction that is rolled back,
-as tools/test_compose.py does: throwaway projects, people and leads, then ROLLBACK. Apollo is never
-called (saving companies is free and local) and nothing is sent. Exit code 1 on any failure.
+Checked:
+  * the config: every one of the 18 services has buyers to find; a lead nobody can be written to can
+    never be auto-shortlisted; the countries; the weekly refresh's steps exist; Apollo is off; the one
+    template attaches the deck, which is built, five 16:9 pages, small; the generated SQL is the JSON's
+  * the harvest, offline: what a Wikidata or OpenStreetMap record becomes and what is left out (a
+    consent-law country, a chain's branch, a platform page, no name), the order, the city rotation
+  * against the database, in ONE transaction rolled back at the end: staging -> the promote chain's
+    own SQL -> the published address lifted into a contact -> scored -> auto-shortlisted -> drafted
+    with the deck -> approval refuses a missing deck -> the page lists the draft with its deck and
+    opens it, and nothing else
+  * a project that starts its Write email box from its own email (outreach.compose_start)
+  * the Apollo search page works on the project it shows; a project without it is refused
+  * an address that answered us in another project gets nothing new
+Nothing is sent and no network is used. Exit code 1 on any failure.
 """
+import argparse
 import json
 import os
 import sys
@@ -39,9 +41,16 @@ from run_sql import load_db_url  # noqa: E402
 
 import main  # noqa: E402
 import auth  # noqa: E402
+import build_deck  # noqa: E402
+import dbconn  # noqa: E402
+import discover_lcx_services as disc  # noqa: E402
+import enrich_lcx_services as lift  # noqa: E402
 import explain  # noqa: E402
 import gen_segment_sql  # noqa: E402
+import ops  # noqa: E402
+import outreach  # noqa: E402
 import outreach_compose  # noqa: E402
+import outreach_policy as pol  # noqa: E402
 
 RESULTS = []
 # the 18 services on docs/LCX Services.pdf, by the names the sheet gives them
@@ -50,6 +59,8 @@ SERVICES = ["Reel Forge", "Airbnb / Property Content", "AI VFX + Animation", "Au
             "AI UGC Product Videos", "AI Podcasts / Audio Content", "Virtual Tours for Schools",
             "AI Reality Experiences", "Creator × Brand Marketplace", "Local Business Tech and Automation",
             "AI Business Assistant", "AI Simulations for Training", "AI Fashion Stylist", "AI Onboarding Employee"]
+CHAIN = ["sql/05a_self_exclusion.sql", "sql/05_promote_minimal.sql", "sql/05c_merge_name_duplicates.sql",
+         "sql/04b_zero_unverified.sql"]
 
 
 def check(name, got, want):
@@ -88,30 +99,137 @@ class NoPool:
         pass
 
 
+class TxDb:
+    """dbconn.Db on the same transaction, for the command-line tools (see tools/test_send.py)."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __call__(self, url=None):
+        return self
+
+    def run(self, fn, on_reconnect=None):
+        with self._conn.cursor() as cur:
+            cur.execute("savepoint tool_step")
+            try:
+                out = fn(cur)
+            except Exception:
+                cur.execute("rollback to savepoint tool_step")
+                raise
+            cur.execute("release savepoint tool_step")
+            return out
+
+    def close(self):
+        pass
+
+
+def offline(cfg, uni):
+    o, tpl = cfg["outreach"], cfg["outreach"]["templates"][0]
+    print("-- the config")
+    pitched = {s for a in cfg["audiences"] for s in a.get("services") or []}
+    check("every one of the 18 services on the sheet has buyers to find", [s for s in SERVICES if s not in pitched], [])
+    check("  and nothing is pitched that is not on the sheet", sorted(pitched - set(SERVICES)), [])
+    check("  every audience is found somewhere", [a["key"] for a in cfg["audiences"] if not (a.get("wikidata") or a.get("osm"))], [])
+    rub = {r["key"]: r["points"] for r in cfg["rubric"]}
+    bonus = sum(m.get("max_bonus", 0) for m in cfg["score_modifiers"])
+    nobody = sum(p for k, p in rub.items() if k != "reachable_decision_maker") / sum(rub.values()) * 100 + bonus
+    check("a lead nobody can be written to can never be auto-shortlisted", nobody < cfg["auto_shortlist"]["min_score"], True)
+    inbox = (rub["reachable_decision_maker"] * 0.5 + rub["audience_fit"] + rub["established"]) / sum(rub.values()) * 100
+    check("  a published business address at a company of unknown size can", inbox > cfg["auto_shortlist"]["min_score"], True)
+    check("everywhere except the consent-law countries", (cfg["geography"]["allowed_countries"],
+          sorted(cfg["geography"]["disallowed_countries"])), ([], ["AT", "CA", "DE", "IT"]))
+    steps = cfg["pipelines"]["weekly_refresh"]
+    check("the weekly refresh's steps all exist, and run here", [s for s in steps if s not in ops.JOBS or
+          ops.JOBS[s].get("segments") not in (None, ["lcx-services"])], [])
+    check("  on Fridays, like a harvest", (cfg["schedule"][0]["pipeline"], cfg["schedule"][0]["dow"]), ("weekly_refresh", 4))
+    check("Apollo is not used for it (the owner: 'forget apollo for a sec')", cfg["enrichment"]["enabled"], False)
+    check("emails are drafted, not written by hand; sent from the approver; not paused",
+          (bool(o["templates"]), "compose" in o, o["send_from"], "sending_paused" in o), (True, False, "approver", False))
+    check("TVF's Mumbai address goes under it (the owner's choice)", o["sender"]["postal_address"],
+          uni["outreach"]["sender"]["postal_address"])
+    check("one template, the wording the owner approved", (tpl["subject"], tpl["body"].splitlines()[2]),
+          ("18 things LCX can do for {{company}}", "I'm writing from LCX. We work in three areas, and at least one of"
+           " them should be useful to {{company}}. Our services deck is attached."))
+    check("  it attaches the deck", tpl["attachments"], ["docs/decks/LCX Services - pitch deck.pdf"])
+    check("the deck is built: a PDF, five 16:9 pages, small enough to attach", build_deck.check(), [])
+    docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    ignored = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()
+    check("  and the server's image carries it (the sender reads it there)",
+          ("COPY docs/decks/ ./docs/decks/" in docker, [x for x in ignored if x in ("docs", "docs/", "docs/decks", "*.pdf")]),
+          (True, []))
+    deck = (ROOT / "docs" / "decks" / "lcx-services-deck.html").read_text(encoding="utf-8")
+    check("  every service is on it", [s for s in SERVICES if s.replace("×", "&times;") not in deck], [])
+    check("the generated SQL is the JSON's", gen_segment_sql.render("lcx-services", cfg),
+          (ROOT / "sql" / "03f_segment_lcx_services.sql").read_text(encoding="utf-8"))
+
+    print("\n-- the harvest, offline")
+    brands = next(a for a in cfg["audiences"] if a["key"] == "consumer_brands")
+    good = {"qid": "Q101", "label": "Acme Foods", "webs": ["https://www.acmefoods.example/"], "isos": ["IN"],
+            "employees": 450, "emails": ["mailto:hello@acmefoods.example"]}
+    row, why = disc.wikidata_row(good, brands, cfg)
+    check("a Wikidata company: its website, country, size and address", (row["domain"], row["raw"]["wikidata"]["country_iso"],
+          row["raw"]["published_email"], row["source_url"]), ("acmefoods.example", "IN", "hello@acmefoods.example",
+                                                               "https://www.wikidata.org/wiki/Q101"))
+    check("  scored for what it is", row["raw"]["scoring_inputs"], {"audience_fit": 1.0, "has_reachable_presence": True,
+          "established": 1.0, "right_size": 1.0, "oversized_signal": False, "country_signal": "allowed", "english_market": 1.0})
+    check("  and says what to pitch", row["raw"]["why_fit"].endswith("Pitch first: AI Video for Brands, AI UGC Product Videos,"
+                                                                       " Explainer Videos, Creator × Brand Marketplace."), True)
+    for name, rec, reason in (("only in a consent-law country", dict(good, isos=["DE"]), "a consent-law country"),
+                              ("a platform page for a website", dict(good, webs=["https://facebook.com/acme"]), "no website of its own"),
+                              ("no name in English", dict(good, label="Q101"), "no name in English")):
+        check("  left out: %s" % name, disc.wikidata_row(rec, brands, cfg), (None, reason))
+    check("  a company in Germany and India is kept, as Indian", disc.wikidata_row(dict(good, isos=["DE", "IN"]), brands, cfg)[0]
+          ["raw"]["wikidata"]["country_iso"], "IN")
+    order = sorted([("Q5", 120000), ("Q4", 7000), ("Q3", None), ("Q2", 300), ("Q1", 5)], key=lambda x: disc.size_order(*x))
+    check("  the right size first, the giants last", [q for q, _ in order], ["Q2", "Q3", "Q4", "Q1", "Q5"])
+    mk = [disc.market(isos, cfg) for isos in (["GB"], [], ["JP"], ["DE"], ["DE", "IN"])]
+    check("  an English-speaking market first, then unknown, then the rest; consent-law only never", mk, [0, 1, 2, 3, 0])
+    same = sorted([("Q7", 300, 2), ("Q9", 300, 0), ("Q8", 300, 1)], key=lambda x: disc.size_order(*x))
+    check("  so among companies of the same size, the English-speaking one is taken first", [q for q, _, _ in same],
+          ["Q9", "Q8", "Q7"])
+    cafes = next(a for a in cfg["audiences"] if a["key"] == "local_business")
+    city = {"name": "London", "country": "GB", "lat": 51.5, "lon": -0.12}
+    el = {"type": "node", "id": 42, "tags": {"amenity": "cafe", "name": "Bean There", "website": "https://beanthere.example",
+                                             "email": "Hello@BeanThere.example; other@x.example", "phone": "+44 20 0000 0000"}}
+    row, why = disc.osm_row(el, city, cafes, cfg)
+    check("an OpenStreetMap cafe: its own website and published address", (row["domain"], row["raw"]["published_email"],
+          row["raw"]["osm"]["attribution"]), ("beanthere.example", "hello@beanthere.example", disc.ATTRIBUTION))
+    check("  a complete listing counts as established, a local business is the right size",
+          (row["raw"]["scoring_inputs"]["established"], row["raw"]["scoring_inputs"]["right_size"]), (1.0, 1.0))
+    for name, tags, reason in (("a chain's branch", dict(el["tags"], brand="Costa"), "a chain's branch"),
+                               ("nothing to reach it by", {"amenity": "cafe", "name": "No Site"}, "no website or address of its own"),
+                               ("no name", {"amenity": "cafe", "website": "https://x.example"}, "no name"),
+                               ("another kind of place", {"amenity": "bank", "name": "B", "website": "https://b.example"},
+                                "another kind of place")):
+        check("  left out: %s" % name, disc.osm_row(dict(el, tags=tags), city, cafes, cfg), (None, reason))
+    insta = disc.osm_row(dict(el, tags={"amenity": "cafe", "name": "Insta Cafe", "website": "https://instagram.com/insta",
+                                        "email": "insta@gmail.com"}), city, cafes, cfg)[0]
+    check("  an Instagram page is no website, but its published address still counts", (insta["domain"],
+          insta["raw"]["published_email"]), (None, "insta@gmail.com"))
+    cities = cfg["osm_discovery"]["cities"]
+    import datetime as dt
+    weeks = [{c["name"] for c in disc.city_slice(cities, 6, dt.date(2026, 1, 5) + dt.timedelta(weeks=w))} for w in range(7)]
+    check("the cities rotate: seven weeks cover all %d" % len(cities), len(set().union(*weeks)), len(cities))
+    check("  each week a different six", all(len(w) == 6 for w in weeks) and weeks[0] != weeks[1], True)
+    q = disc.osm_query(city, cafes, 12000)
+    check("one Overpass query per city and audience, for places with a website or an address",
+          ('[~"^(amenity|leisure|shop)$"~"^(beauty|cafe|fitness_centre|hairdresser)$"]' in q,
+           '[~"^(contact:)?(website|email)$"~"."]' in q, "(around:12000,51.5,-0.12)" in q), (True, True, True))
+    meta, email, src = lift.lift({"discovery_raw": {"lcx_osm": row["raw"]}, "why_fit": "a person's own words"})
+    check("lifting: the audience, services and place go on the lead, a person's words stay",
+          (meta["kind"], meta["audience"], meta["hq_city"], meta["hq_country"], meta["why_fit"], email, src),
+          ("local_business", "Cafe, salon or gym", "London", "GB", "a person's own words", "hello@beanthere.example", "lcx_osm"))
+    m = lift.with_reachable({"scoring_inputs": {"reachable_decision_maker": 0}, "unverified_inputs": ["reachable_decision_maker", "x"]})
+    check("  a published address is half the contact points, and no longer unverified",
+          (m["scoring_inputs"]["reachable_decision_maker"], m["unverified_inputs"]), (0.5, ["x"]))
+    check("  a named person found earlier is never lowered", lift.with_reachable({"scoring_inputs": {"reachable_decision_maker": 1.0}})
+          ["scoring_inputs"]["reachable_decision_maker"], 1.0)
+
+
 def main_():
     cfg = json.loads((ROOT / "config" / "segment.lcx-services.json").read_text(encoding="utf-8"))
     uni = json.loads((ROOT / "config" / "segment.universal.json").read_text(encoding="utf-8"))
-    o, start = cfg["outreach"], cfg["outreach"]["compose_start"]
-
-    # ------------------------------------------------------------------ the config
-    print("-- the repo's config")
-    check("a new project like Universal: Apollo search, Write email, no drafts",
-          (cfg["ui"]["search_page"], o["compose"], "templates" in o, cfg["ui"]["project_name"]),
-          ("apollo", True, False, "LCX Services"))
-    check("  it sends from the approver's own address, and is not paused",
-          (o["send_from"], "sending_paused" in o), ("approver", False))
-    check("  TVF's Mumbai address goes under it (the owner's choice)",
-          o["sender"]["postal_address"], uni["outreach"]["sender"]["postal_address"])
-    check("  the footer carries the address and the way out",
-          ("{{postal_address}}" in o["footer"]["text"], "no thanks" in o["footer"]["text"]), (True, True))
-    check("the services email passes the checks an approval makes", outreach_compose.check_text(start["subject"], start["body"]), None)
-    check("  it offers every one of the 18 services on the sheet", [s for s in SERVICES if "- %s: " % s not in start["body"]], [])
-    check("  in the sheet's three groups", [g for g in ("1. Repurposing as a Service:", "2. AI Asset Creation:",
-                                                         "3. Tech Solutions:") if g not in start["body"]], [])
-    check("  it greets the person and names their company",
-          (start["body"].startswith("Hi {{first_name}},"), "{{company}}" in start["subject"]), (True, True))
-    check("the generated SQL is the JSON's", gen_segment_sql.render("lcx-services", cfg),
-          (ROOT / "sql" / "03f_segment_lcx_services.sql").read_text(encoding="utf-8"))
+    offline(cfg, uni)
 
     conn = psycopg2.connect(load_db_url())
     conn.autocommit = False
@@ -122,6 +240,8 @@ def main_():
     kicks = []
     main._scheduler.kick_outreach = lambda seg, trigger="manual": kicks.append((seg, trigger))
     client = TestClient(main.app, follow_redirects=False, raise_server_exceptions=False)
+    real_db, real_seg, real_lift_seg = dbconn.Db, outreach.SEGMENT, lift.SEGMENT
+    dbconn.Db = TxDb(conn)
 
     def call(method, url, cookies=None, **kw):
         client.cookies.clear()
@@ -136,14 +256,16 @@ def main_():
             return cur.fetchone()[0]
 
         tag = uuid.uuid4().hex[:6]
-        lx, un, no = "zz-lcxs-" + tag, "zz-uni-" + tag, "zz-noapollo-" + tag
+        lx, un, no, cp = ("zz-lcxs-" + tag, "zz-uni-" + tag, "zz-noapollo-" + tag, "zz-compose-" + tag)
         lx_id, un_id = project(lx, cfg), project(un, uni)
         plain = json.loads(json.dumps(cfg))
         plain["ui"].pop("search_page")
-        plain["ui"]["default_route"] = "board"
         no_id = project(no, plain)
+        start = {"subject": "Hello from LCX, {{company}}", "body": "Hi {{first_name}},\n\nA starting email."}
+        cp_cfg = json.loads(json.dumps(uni))
+        cp_cfg["outreach"]["compose_start"] = start
+        project(cp, cp_cfg)
         main._SEG_CACHE.update(at=0.0, rows=[])
-
         email = "zz-lcxs-%s@example.com" % tag
         pw = bcrypt.hashpw(b"zz", bcrypt.gensalt(4)).decode()
         cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, %s, 'member', %s, %s)",
@@ -153,63 +275,107 @@ def main_():
         def as_(slug):
             return {auth.COOKIE: session, "tvf_segment": slug}
 
-        # -------------------------------------------------------------- what the page is handed
-        print("\n-- what the page is handed")
+        # ------------------------------------------------------------ the harvest, into the pool
+        print("\n-- the harvest, through the promote chain, to a draft with the deck")
+        brands = next(a for a in cfg["audiences"] if a["key"] == "consumer_brands")
+        cafes = next(a for a in cfg["audiences"] if a["key"] == "local_business")
+        city = {"name": "London", "country": "GB", "lat": 51.5, "lon": -0.12}
+        staged = [disc.wikidata_row({"qid": "Q9%s1" % tag[:4].encode().hex()[:6], "label": "ZZ Acme Foods %s" % tag,
+                                     "webs": ["https://zz-acme-%s.example" % tag], "isos": ["IN"], "employees": 450,
+                                     "emails": []}, brands, cfg)[0],
+                  disc.osm_row({"type": "node", "id": int(tag, 16), "tags": {
+                      "amenity": "cafe", "name": "ZZ Bean There %s" % tag, "website": "https://zz-bean-%s.example" % tag,
+                      "email": "hello@zz-bean-%s.example" % tag, "opening_hours": "Mo-Su 08:00-18:00"}}, city, cafes, cfg)[0]]
+        for r in staged:
+            cur.execute("insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values"
+                        " (%s, %s, %s, %s, %s, %s)", (lx_id, r["name"], r["domain"],
+                                                      "lcx_wikidata" if "wikidata" in r["raw"] else "lcx_osm",
+                                                      r["source_url"], json.dumps(r["raw"])))
+        cur.execute("select set_config('tvf.segment', %s, true)", (lx,))
+        for f in CHAIN:
+            cur.execute((ROOT / f).read_text(encoding="utf-8"))
+        cur.execute("select name, status, metadata from entities where segment_id = %s order by name", (lx_id,))
+        got = {r[0]: r for r in cur.fetchall()}
+        acme, bean = got.get("ZZ Acme Foods %s" % tag), got.get("ZZ Bean There %s" % tag)
+        check("both are leads of LCX Services after the promote chain", (bool(acme), bool(bean)), (True, True))
+        lift.SEGMENT = lx
+        sys.argv = ["enrich_lcx_services.py"]
+        lift.main()
+        cur.execute("select e.name, c.email, c.source, c.email_status from contacts c join entities e on e.id = c.entity_id"
+                    " where e.segment_id = %s", (lx_id,))
+        check("the cafe's published address became its contact", [tuple(r) for r in cur.fetchall()],
+              [("ZZ Bean There %s" % tag, "hello@zz-bean-%s.example" % tag, "osm", "unverified")])
+        cur.execute("select count(*) from score_segment(%s)", (lx,))
+        cur.fetchone()
+        cur.execute((ROOT / "sql" / "13_apply_gates.sql").read_text(encoding="utf-8"))
+        cur.execute("select refresh_primary_contacts(%s)", (lx,))
+        cur.execute((ROOT / "sql" / "14_auto_shortlist.sql").read_text(encoding="utf-8"))
+        cur.execute("select name, status, round(fit_score)::int, metadata->>'audience', metadata->>'hq_city' from entities"
+                    " where segment_id = %s order by name", (lx_id,))
+        rows = {r[0]: r[1:] for r in cur.fetchall()}
+        check("the cafe, with an address: 25 + 20 + 15 + 15, +4 English, and shortlisted by itself", rows["ZZ Bean There %s" % tag],
+              ("shortlisted", 79, "Cafe, salon or gym", "London"))
+        check("the brand, nobody to write to yet: 54, under the line, left in To review", rows["ZZ Acme Foods %s" % tag][:2],
+              ("ready_for_review", 54))
+        outreach.SEGMENT = lx
+        outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
+        cur.execute("select o.id, o.subject, o.body, o.attachments from outreach o join entities e on e.id = o.entity_id"
+                    " where e.segment_id = %s", (lx_id,))
+        drafts = cur.fetchall()
+        check("one draft, for the cafe", [d[1] for d in drafts], ["18 things LCX can do for ZZ Bean There %s" % tag])
+        oid, subject, body, atts = drafts[0]
+        check("  greeting the inbox, offering the deck", body.splitlines()[:3], ["Hi there,", "", "I'm writing from LCX. We work in"
+              " three areas, and at least one of them should be useful to ZZ Bean There %s. Our services deck is attached." % tag])
+        check("  the deck is recorded on it, fingerprinted", [(a["name"], a["path"], a["bytes"] > 100000, len(a["sha256"]))
+                                                             for a in atts],
+              [("LCX Services - pitch deck.pdf", "docs/decks/LCX Services - pitch deck.pdf", True, 64)])
+        check("  and it can be approved", pol.check_drafts(cur, [str(oid)], lx)[1], [])
+        cur.execute("update outreach set attachments = %s where id = %s",
+                    (json.dumps([dict(atts[0], path="docs/decks/gone.pdf", name="gone.pdf")]), oid))
+        check("a draft whose deck is gone cannot be approved", pol.check_drafts(cur, [str(oid)], lx)[1],
+              [{"id": str(oid), "reason": "the attached gone.pdf is missing"}])
+        cur.execute("update outreach set attachments = %s where id = %s",
+                    (json.dumps([dict(atts[0], sha256="0" * 64)]), oid))
+        pol.check_drafts(cur, [str(oid)], lx)
+        cur.execute("select attachments->0->>'sha256' from outreach where id = %s", (oid,))
+        check("  a draft made before the deck was rebuilt takes the current one when approved", cur.fetchone()[0], atts[0]["sha256"])
+
+        print("\n-- the page")
         seg = call("GET", "/api/segment", cookies=as_(lx)).json()
-        pol = seg["outreach_policy"]
-        check("LCX Services: the Write email box starts from the services email",
-              pol.get("compose_start"), {"subject": start["subject"], "body": start["body"]})
-        check("  emails are written, never drafted", (pol["compose"], pol["drafts"]), (True, False))
-        check("  with its own search page and name", (seg["ui"]["search_page"], seg["ui"]["project_name"], seg["ui"]["key_prefix"]),
-              ("apollo", "LCX Services", "LXS"))
-        check("Universal: the box starts from the greeting, as before",
-              call("GET", "/api/segment", cookies=as_(un)).json()["outreach_policy"].get("compose_start"), None)
-        check("a project that writes no email is handed none",
-              call("GET", "/api/segment", cookies=as_("us-production-houses")).json()["outreach_policy"].get("compose_start"), None)
-        names = [s["project_name"] for s in call("GET", "/api/segments", cookies=as_(lx)).json()["segments"]]
-        check("  and LCX Services is in the projects menu", "LCX Services" in names, True)
+        check("LCX Services: drafts, no Write email box, opens on the board",
+              (seg["outreach_policy"]["drafts"], seg["outreach_policy"]["compose"], seg["outreach_policy"]["compose_start"],
+               seg["ui"]["default_route"], seg["ui"]["hide_routes"]), (True, False, None, "board", []))
+        listed = call("GET", "/api/outreach?folder=drafts", cookies=as_(lx)).json()["rows"]
+        check("  the draft is listed with its deck", [(r["company"], [a["name"] for a in r.get("attachments") or []]) for r in listed],
+              [("ZZ Bean There %s" % tag, ["LCX Services - pitch deck.pdf"])])
+        r = call("GET", "/api/outreach/attachment", cookies=as_(lx), params={"path": atts[0]["path"]})
+        check("  the deck opens from the app, as itself", (r.status_code, r.headers.get("content-type"), len(r.content)),
+              (200, "application/pdf", atts[0]["bytes"]))
+        check("  inline, not a download", r.headers.get("content-disposition", "").startswith("inline"), True)
+        for bad in ("../.env", "docs/decks/../../.env", "app/main.py", "docs/LCX Services.pdf"):
+            check("  nothing else is served: %s" % bad, call("GET", "/api/outreach/attachment", cookies=as_(lx),
+                                                            params={"path": bad}).status_code, 404)
+        check("  and nobody signed out", call("GET", "/api/outreach/attachment", params={"path": atts[0]["path"]}).status_code, 401)
+        ex = explain.explain_lead(lx, cfg, {"id": "x", "name": "ZZ Empty", "domain": None, "status": "ready_for_review",
+                                            "metadata": {}, "fit_score": None, "score_breakdown": None}, [], None)
+        check("a lead with nobody at it points to Apollo search, the way to add one by hand", ex["analysis"]["next_step"],
+              "Find a way in: save a person at it from Apollo search.")
 
-        # -------------------------------------------------------------- writing the services email
-        print("\n-- sending the services email")
+        # ------------------------------------------------------------ a project with its own starting email
+        print("\n-- a project that starts the Write email box from its own email")
+        pc = call("GET", "/api/segment", cookies=as_(cp)).json()["outreach_policy"]
+        check("its email is handed to the page", (pc["compose"], pc["compose_start"]), (True, start))
+        check("Universal is handed none", call("GET", "/api/segment", cookies=as_(un)).json()["outreach_policy"]["compose_start"], None)
+        check("  nor a project without Write email", call("GET", "/api/segment", cookies=as_("us-production-houses")).json()
+              ["outreach_policy"].get("compose_start"), None)
+        check("  and the starting email passes the checks", outreach_compose.check_text(start["subject"], start["body"]), None)
 
-        def lead(seg_id, name, contact):
-            t = uuid.uuid4().hex[:6]
-            cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'apollo',"
-                        " 'ready_for_review') returning id", (seg_id, name, "zz-%s.example" % t))
-            eid = str(cur.fetchone()[0])
-            if contact:
-                full, local = contact
-                cur.execute("insert into contacts (entity_id, full_name, email, email_status, source) values"
-                            " (%s, %s, %s, 'valid', 'apollo')", (eid, full, "%s@zz-%s.example" % (local, t)))
-            return eid
-
-        a = lead(lx_id, "ZZ Harbour Realty %s" % tag, ("Priya Shah", "priya"))
-        b = lead(lx_id, "ZZ Bloom Salons %s" % tag, (None, "hello"))
-        r = call("POST", "/api/outreach/compose", cookies=as_(lx), json={"ids": [a, b], "subject": start["subject"], "body": start["body"]})
-        j = r.json()
-        check("approving the services email as it is: 2 approved", (r.status_code, j.get("approved")), (200, 2))
-        cur.execute("select e.id::text, o.subject, o.body, o.status, o.approval_mode, o.approved_by from outreach o"
-                    " join entities e on e.id = o.entity_id where e.segment_id = %s order by e.name", (lx_id,))
-        rows = {x[0]: x[1:] for x in cur.fetchall()}
-        sa, sb = rows.get(a), rows.get(b)
-        check("  one approved email each, written here, approved by the writer",
-              [(x[2], x[3], x[4]) for x in (sb, sa)], [("approved", "compose", email)] * 2)
-        check("  the subject names their company", sa[0], "18 things LCX can do for ZZ Harbour Realty %s" % tag)
-        check("  a named person is greeted by name; a shared inbox, 'there'",
-              (sa[1].split("\n")[0], sb[1].split("\n")[0]), ("Hi Priya,", "Hi there,"))
-        check("  every service is in what they receive", [s for s in SERVICES if "- %s: " % s not in sa[1]], [])
-        check("  their company is filled in", "should be useful to ZZ Harbour Realty %s:" % tag in sa[1], True)
-        check("  signed by the writer, over TVF's address, with the way out",
-              ("Warm regards,\nAsha Rao\nPartnerships\n\nContagious Online Media Network" in sa[1], sa[1].rstrip().endswith(
-                  "you won't hear from me again.")), (True, True))
-        check("  no field is left unfilled", "{{" in sa[0] + sa[1] + sb[0] + sb[1], False)
-        check("  and the send is started at once (approved means sent)", kicks[-1:], [(lx, "manual")])
-
-        # -------------------------------------------------------------- someone who answered us elsewhere
+        # ------------------------------------------------------------ someone who answered us elsewhere
         print("\n-- an address that answered us in another project gets nothing new")
 
         def answered(local, triage, bounce=False):
-            """An email from the Universal project to local@..., and their reply (triage), or a bounce."""
+            """An email from the Universal project to local@..., their reply (triage) or a bounce, and a
+            draft for the same address in LCX Services."""
             t = uuid.uuid4().hex[:6]
             addr = "%s@zz-%s.example" % (local, t)
             cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'apollo',"
@@ -225,29 +391,28 @@ def main_():
                 cur.execute("insert into outreach (entity_id, contact_id, direction, subject, body, status, triage)"
                             " values (%s, %s, 'inbound', 'Re: Hello', 'No thanks', %s, %s)",
                             (eid, cid, "triaged" if triage else "received", triage))
-            # the same address, a lead of LCX Services (in capitals: an address is the same whatever its case)
-            lid = lead(lx_id, "ZZ Again %s" % t, None)
+            cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'lcx_osm',"
+                        " 'shortlisted') returning id", (lx_id, "ZZ Again %s" % t, "zz-again-%s.example" % t))
+            lid = cur.fetchone()[0]
             cur.execute("insert into contacts (entity_id, full_name, email, email_status, source) values"
-                        " (%s, 'Ravi Kumar', %s, 'valid', 'apollo')", (lid, addr.upper()))
-            return lid
+                        " (%s, 'Ravi Kumar', %s, 'valid', 'osm') returning id", (lid, addr.upper()))
+            lcid = cur.fetchone()[0]
+            cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body) values"
+                        " (%s, %s, 'lcx_services_deck_v1', 'S', 'B') returning id", (lid, lcid))
+            return str(cur.fetchone()[0])
 
         no_thanks, unread, auto, bounced = (answered("ravi", "negative"), answered("mohan", None),
                                             answered("ooo", "neutral"), answered("gone", None, bounce=True))
-        r = call("POST", "/api/outreach/compose/check", cookies=as_(lx), json={"ids": [no_thanks, unread, auto, bounced]})
-        why = {s["id"]: s["reason"] for s in r.json()["skipped"]}
-        check("they said no thanks to Universal's email: skipped here",
+        ok_ids, skipped = pol.check_drafts(cur, [no_thanks, unread, auto, bounced], lx)
+        why = {s["id"]: s["reason"] for s in skipped}
+        check("they said no thanks to Universal's email: not approvable here",
               why.get(no_thanks), "this address has replied to an earlier email from us: answer them in that thread")
         check("  a reply nobody has read yet counts too", why.get(unread),
               "this address has replied to an earlier email from us: answer them in that thread")
-        check("  an auto-reply does not: they can be written to", ([x["id"] for x in r.json()["ready"]], auto in why), ([auto], False))
-        check("  an address that bounced: skipped", why.get(bounced), "this address bounced an earlier email from us")
-        r = call("POST", "/api/outreach/compose", cookies=as_(lx), json={"ids": [no_thanks, bounced], "subject": start["subject"],
-                                                                        "body": start["body"]})
-        check("  approving them writes nothing", (r.status_code, r.json().get("approved")), (200, 0))
-        cur.execute("select count(*) from outreach where entity_id = any(%s::uuid[])", ([no_thanks, bounced],))
-        check("  not a row", cur.fetchone()[0], 0)
+        check("  an auto-reply does not", (ok_ids, auto in why), ([auto], False))
+        check("  an address that bounced: not approvable", why.get(bounced), "this address bounced an earlier email from us")
 
-        # -------------------------------------------------------------- the search page's project
+        # ------------------------------------------------------------ the search page's project
         print("\n-- the Apollo search page works on the project it shows")
         sname = "ZZ salons " + tag
         body = {"name": sname, "kind": "companies", "filters": {"q_organization_keyword_tags": ["salon"]}}
@@ -255,10 +420,12 @@ def main_():
         check("save a search in LCX Services: 200", r.status_code, 200)
         cur.execute("select segment_id from saved_searches where lower(name) = lower(%s)", (sname,))
         check("  it is kept in LCX Services", [x[0] for x in cur.fetchall()], [lx_id])
-        listed = lambda slug, cookie: [s["name"] for s in call("GET", "/api/universal/searches?project=" + slug,  # noqa: E731
-                                                               cookies=as_(cookie)).json().get("searches", [])]
-        check("  listed there", sname in listed(lx, lx), True)
-        check("  and not in Universal's list", sname in listed(un, un), False)
+
+        def listed_in(slug, cookie):
+            return [s["name"] for s in call("GET", "/api/universal/searches?project=" + slug,
+                                            cookies=as_(cookie)).json().get("searches", [])]
+        check("  listed there", sname in listed_in(lx, lx), True)
+        check("  and not in Universal's list", sname in listed_in(un, un), False)
 
         def saved(seg_id, name):
             cur.execute("select count(*) from entities where segment_id = %s and name = %s", (seg_id, name))
@@ -278,10 +445,8 @@ def main_():
         r = call("POST", "/api/universal/save?project=" + no, cookies=as_(no), json={"kind": "companies", "companies": [
             {"id": uuid.uuid4().hex[:24], "name": co3, "website_url": "https://zz-no-%s.example" % tag}]})
         check("a project without the search page: 404, nothing saved", (r.status_code, saved(no_id, co3)), (404, 0))
-        r = call("POST", "/api/universal/searches?project=" + no, cookies=as_(no), json=dict(body, name=sname + " x"))
-        check("  nor a search kept there", r.status_code, 404)
         check("  nor its status asked", call("GET", "/api/universal/status?project=" + no, cookies=as_(no)).status_code, 404)
-        r = call("POST", "/api/universal/save?project=" + "zz-nope-" + tag, cookies=as_(lx), json={"kind": "companies",
+        r = call("POST", "/api/universal/save?project=zz-nope-" + tag, cookies=as_(lx), json={"kind": "companies",
                  "companies": [{"id": uuid.uuid4().hex[:24], "name": "ZZ Nowhere"}]})
         check("  nor a project that does not exist", r.status_code, 404)
         co4 = "ZZ Old Page Co %s" % tag
@@ -295,17 +460,8 @@ def main_():
         r = call("GET", "/api/universal/searches", cookies=as_(no))
         check("  and to Universal when the cookie's project has none, as before",
               (r.status_code, mark in [s["name"] for s in r.json().get("searches", [])]), (200, True))
-
-        # -------------------------------------------------------------- a lead with nobody at it
-        print("\n-- a lead with nobody at it")
-        row = {"id": "x", "name": "ZZ Empty Co", "domain": None, "status": "ready_for_review", "metadata": {},
-               "fit_score": None, "score_breakdown": None}
-        ex = explain.explain_lead(lx, cfg, row, [], None)
-        check("points to Apollo search, as in Universal", ex["analysis"]["next_step"],
-              "Find a way in: save a person at it from Apollo search.")
-        check("  and says what was tried is Apollo, not its website", ex["contact_routes"]["tried"],
-              ["Saved from an Apollo company search; nobody at it has been revealed yet."])
     finally:
+        dbconn.Db, outreach.SEGMENT, lift.SEGMENT = real_db, real_seg, real_lift_seg
         conn.rollback()
         conn.close()
     bad = RESULTS.count(False)

@@ -88,6 +88,39 @@ JOBS = {
         "cmd": [PY, "tools/enrich_startups.py", "--limit", "400"],
         "segments": ["startup-acquisitions"],
     },
+    "discover_lcx_wikidata": {
+        "label": "Harvest: companies to pitch (Wikidata)",
+        "group": "Discover",
+        "desc": "Operating companies with a website in each audience's classes and industries (brands, retailers, "
+                "real estate, hotels, publishers, financial services, studios and agencies, attractions, schools). "
+                "Free, no key.",
+        "cmd": [PY, "tools/discover_lcx_services.py", "--source", "wikidata"],
+        "segments": ["lcx-services"],
+    },
+    "discover_lcx_osm": {
+        "label": "Harvest: local businesses to pitch (OpenStreetMap)",
+        "group": "Discover",
+        "desc": "Independent cafes, salons, gyms, shops, estate agents, guest houses, schools and attractions that "
+                "publish a website or an address, a few cities a week. Free, no key.",
+        "cmd": [PY, "tools/discover_lcx_services.py", "--source", "osm"],
+        "segments": ["lcx-services"],
+    },
+    "enrich_lcx_services": {
+        "label": "Lift what the harvest found (addresses, audience)",
+        "group": "Enrich",
+        "desc": "An address the business published becomes a contact; the audience, the services to pitch "
+                "first and the place go on the lead.",
+        "cmd": [PY, "tools/enrich_lcx_services.py", "--limit", "3000"],
+        "segments": ["lcx-services"],
+    },
+    "enrich_contacts_lcxs": {
+        "label": "Find contacts on sites (a week's harvest)",
+        "group": "Enrich",
+        "desc": "The polite site pass, sized for LCX Services' weekly harvest: up to 600 websites, robots.txt "
+                "honoured, never LinkedIn.",
+        "cmd": [PY, "tools/enrich_sitescrape.py", "--limit", "600", "--workers", "8"],
+        "segments": ["lcx-services"],
+    },
     "promote_chain": {
         "label": "Promote + score + gates",
         "group": "Process",

@@ -646,6 +646,23 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
     return {"rows": rows, "counts": counts}
 
 
+@app.get("/api/outreach/attachment")
+def outreach_attachment(path: str = ""):
+    """A file an email carries (outreach.attachments, sql/32; LCX Services: the services deck), opened
+    from the email's sheet so whoever approves it reads exactly what goes with it. Only files under
+    docs/decks/ can be attached, so only those are served here."""
+    try:
+        full = _policy().attachment_file(path)
+    except ValueError:
+        raise HTTPException(404, "no such attachment")
+    if not os.path.isfile(full):
+        raise HTTPException(404, "no such attachment")
+    import mimetypes
+    name = os.path.basename(full)
+    return FileResponse(full, filename=name, content_disposition_type="inline",
+                        media_type=mimetypes.guess_type(name)[0] or "application/octet-stream")
+
+
 @app.patch("/api/outreach/{oid}")
 def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
     """Edit a draft's subject/body. Approval means a human read THIS text, so

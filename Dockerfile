@@ -29,6 +29,9 @@ COPY app/    ./app/
 COPY tools/  ./tools/
 COPY sql/    ./sql/
 COPY config/ ./config/
+# the files emails attach (outreach.attachments: LCX Services' deck); the drafts record them and the
+# sender reads them from here, so the image must carry them
+COPY docs/decks/ ./docs/decks/
 
 # Run as a non-root user. This container talks to a database holding contact
 # details for real people; root is not the identity that should hold that.

@@ -75,6 +75,7 @@ const PATHS = {
   chevDown: '<path d="m6 9 6 6 6-6"/>',
   chevUp: '<path d="m18 15-6-6-6 6"/>',
   chevLeft: '<path d="m15 18-6-6 6-6"/>',
+  paperclip: '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
   chevRight: '<path d="m9 18 6-6-6-6"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
   link: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
@@ -908,7 +909,7 @@ async function loadOutreach() {
       <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} aria-label="Select this draft"></td>
       <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div></span></div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
-      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span>${esc(r.subject || "(no subject)")}</span></div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
+      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
       <td class="by-col">${r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
       ${(() => {   // when it last moved: sent, approved, or written -- not the draft's age on every tab
         const at = r.sent_at || (r.status === "approved" ? r.approved_at : null) || r.created_at;
@@ -971,7 +972,7 @@ async function startBatch() {
           <div class="primary-cell">${stepLozenge(r)}${esc(r.subject || "(no subject)")}</div>
           <div class="secondary">${esc(r.company)} · ${esc(r.contact_email || "")}</div></span></span>
           <button class="btn subtle compact" data-read="${i}">Read</button></div>
-        <div class="mail-body" data-body="${i}" hidden>${esc(r.body || "")}</div>
+        <div class="mail-body" data-body="${i}" hidden>${esc(r.body || "")}</div>${attachList(r)}
         <label class="check" style="margin-top:8px"><input type="checkbox" data-ok="${i}" disabled><span>I read this and it's right to send</span></label>
       </div>`).join("")}
     </div></div>
@@ -1292,6 +1293,17 @@ function showFooterProblems(root, problems) {
     problems.map((p) => `<div>${esc(p)}</div>`).join("")}</div></div>`;
 }
 
+/* The files an email carries (outreach.attachments, sql/32; LCX Services: the services deck). Each opens
+   from the app, so whoever approves it can read exactly the file that goes with it. */
+const files = (r) => (Array.isArray(r && r.attachments) ? r.attachments : []);
+function attachList(r) {
+  const fs = files(r);
+  if (!fs.length) return "";
+  return `<div class="attach-list">${fs.map((f) => `<a class="attach" href="/api/outreach/attachment?path=${encodeURIComponent(f.path)}"
+      target="_blank" rel="noopener">${icon("paperclip", 16)}<span class="attach-name truncate">${esc(f.name)}</span>
+      <span class="small muted num">${f.bytes ? Math.max(1, Math.round(f.bytes / 1024)) + " KB" : ""}</span></a>`).join("")}</div>`;
+}
+
 function openMessage(id) {
   const o = state.outreach, r = o.rows.find((x) => x.id === id);
   if (!r) return;
@@ -1316,6 +1328,7 @@ function openMessage(id) {
         <div class="side-group"><div class="group-head">Details</div><div class="group-body">
           <dl class="details">
             <dt>Company</dt><dd>${esc(r.company)}${r.domain ? `<div class="small muted">${esc(r.domain)}</div>` : ""}</dd>
+            ${files(r).length ? `<dt>Attached</dt><dd>${attachList(r)}</dd>` : ""}
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
             ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}

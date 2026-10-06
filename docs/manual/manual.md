@@ -101,10 +101,11 @@ button beside the mark folds the sidebar down to a row of icons, and back. On a
 phone the sidebar opens from the menu button at the top left. The app is light
 or dark to match your computer's setting.
 
-The Universal and LCX Services projects have a different menu: **Apollo
-search** sits at the top, because that is where their leads come from, then
-Board, Leads and Outreach (for the emails you write to their leads). Reports and
-Operations are not there.
+The Universal project has a different menu: **Apollo search** sits at the top,
+because that is where its leads come from, then Board, Leads and Outreach (for
+the emails you write to its leads). Reports and Operations are not there. LCX
+Services has Apollo search at the top too, for adding a lead by hand, and every
+other page after it.
 
 ## Switching between projects
 
@@ -126,8 +127,9 @@ Right now there are five:
   which TVF could buy for little or back with its content and audience.
 - **Universal** — any company or person, found with Apollo. No rubric and no
   harvest: you search, you pick, you save.
-- **LCX Services** — any business, found with Apollo the same way, sent one
-  email offering every LCX service.
+- **LCX Services** — businesses everywhere cold email is allowed, found by
+  itself every Friday and sent one email offering every LCX service, with the
+  services deck attached.
 
 Whichever project you pick, every screen changes with it. The board, the leads,
 the emails, the reports. Check the sidebar if you are ever unsure which one you
@@ -263,27 +265,50 @@ links a sending address to you, they wait in Approved.
 
 # LCX Services: every service in one email
 
-![In LCX Services the email is already written](img/15-lcx-services.png){width=full}
+![A draft in LCX Services, with the services deck attached](img/15-lcx-services.png){width=full}
 
-LCX Services offers everything LCX does, in one email, to any business. It works
-like Universal: find businesses with **Apollo search** (the same filters, the
-same credits), save the ones worth writing to, then tick them on **Leads** and
-press **Write email to N**, or open one lead and press **Write email**. What you
-save here stays here: Universal does not see it, and LCX Services does not see
-Universal's leads.
+LCX Services offers everything LCX does in one email, with the services deck
+attached, to businesses it finds by itself. Like the production houses, it
+harvests every Friday:
 
-The difference is that the email is already written. **Write email** opens with
-the LCX services email in the box: all eighteen services on the LCX services
-sheet, in its three groups (Repurposing as a Service, AI Asset Creation and Tech
-Solutions), each in the sheet's own words, with **{{first_name}}** and
-**{{company}}** filled in for each person. Send it as it is, or change anything
-first: what you approve is what goes. Your sign-off and TVF's Mumbai postal
-address go under it.
+- **Companies from Wikidata**: consumer brands, retailers, real estate
+  developers, hotels, publishers, banks and insurers, studios and agencies,
+  theme parks and international schools, each with its own website. The ones of
+  10 to 5,000 people come first; companies of over 100,000 are left out.
+- **Local businesses from OpenStreetMap**: independent cafes, salons, gyms,
+  shops, estate agents, guest houses, schools and attractions that publish a
+  website or an email address, a few cities a week (London, New York, Mumbai,
+  Dubai, Sydney, Singapore and more). A chain's branch is never one of them.
 
-Everything else is as in Universal: the email as each person will read it, the
-list of who cannot be written to and why, one first email per company, and it
-goes from your own sending address, inside its daily limit, once you approve
-it. Until the owner links a sending address to you, it waits in Approved.
+It looks everywhere cold business email is allowed, so Canada, Germany, Austria
+and Italy are left out. A business that is already a lead of another project is
+not found again here.
+
+Each lead says what kind of buyer it is and which services to pitch first. Its
+address comes from the business itself: the one it publishes, or one read off
+its own website. A lead with an address and a good fit is shortlisted by itself,
+and its email is drafted within minutes. A lead nobody can be written to yet
+stays in To review.
+
+**The email** is short and the same for every lead: *Hi* and the person's first
+name (or *there*), *I'm writing from LCX. We work in three areas, and at least
+one of them should be useful to* the company, *Our services deck is attached.
+If one fits, reply with its name and I'll send examples.* It is signed with your
+name and title, over TVF's Mumbai address. The deck goes with every email: five
+pages, a cover, one page for each of the three clusters with every service in
+the services sheet's own words, and the next step. Open it from **Attached** on
+the email before you approve.
+
+**Approving** is as in the other projects: in **Outreach**, under Drafts, open
+an email and approve it, or tick several and approve them together after reading
+a random few. It goes from your own sending address, inside its daily limit.
+When the deck is rebuilt, emails not yet approved take the new one, and an
+approved email whose deck changed since is held back rather than sent with a
+file you did not see.
+
+**Adding a lead by hand.** **Apollo search** works here as in Universal, and
+what you save becomes an LCX Services lead, drafted like the others once it is
+shortlisted.
 
 
 # The board

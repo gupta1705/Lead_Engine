@@ -14,6 +14,8 @@ handed and can be told to fail, so nothing leaves the machine. What is checked:
   * what is held back, visibly and without spending the cap: a bad address, an unfilled
     {{placeholder}}, a company rejected after approval, a subject with a line break, an address that
     has answered us in another project since it was approved (a follow-up to them is cancelled)
+  * an attached file (LCX Services' deck): sent as itself, byte for byte, named as approved; held
+    back when the file changed after approval
   * the owner's pause, and a sender still saying SET_ME
   * a Gmail error on the send (send_unknown, never retried by itself), and a Gmail sign-in that
     fails before anything is sent (the email goes back to Approved, not stuck in 'sending')
@@ -357,6 +359,33 @@ def main():
             check("  a follow-up to them is cancelled, with the reason", list(cur.fetchone()),
                   ["cancelled", "this address has replied to an earlier email from us: answer them in that thread"])
             check("  and nothing went to them", len(gmail.sent) - n, 0)
+
+            # ------------------------------------------------------------ an attached deck
+            print("\n-- an email with the deck attached (LCX Services)")
+            import outreach_policy as pol
+            deck = pol.attachment_record("docs/decks/LCX Services - pitch deck.pdf")
+            with_deck = approved(subject="18 things LCX can do for you", body="Hi Kay,\n\nOur services deck is attached.")
+            cur.execute("update outreach set attachments = %s where id = %s", (json.dumps([deck]), with_deck[0]))
+            changed = approved(subject="A deck changed after approval")
+            cur.execute("update outreach set attachments = %s where id = %s",
+                        (json.dumps([dict(deck, sha256="0" * 64)]), changed[0]))
+            n = len(gmail.sent)
+            outreach.cmd_send(args)
+            check("the email with the deck is sent", state(with_deck[0])[0], "sent")
+            m = next((x for x in gmail.sent[n:] if x["To"] == with_deck[2]), None)
+            parts = [(p.get_content_type(), p.get_filename()) for p in m.walk() if not p.is_multipart()] if m else None
+            check("  as its text and the deck, named as it was approved", parts,
+                  [("text/plain", None), ("application/pdf", "LCX Services - pitch deck.pdf")])
+            pdf = next(p for p in m.walk() if p.get_content_type() == "application/pdf").get_payload(decode=True) if m else b""
+            check("  the deck's bytes, unchanged", pdf == pol.attachment_bytes(deck), True)
+            check("  the text as written", next(p for p in m.walk() if p.get_content_type() == "text/plain")
+                  .get_payload(decode=True).decode("utf-8") if m else None, "Hi Kay,\n\nOur services deck is attached.")
+            cur.execute("select send_error from outreach where id = %s", (changed[0],))
+            held = cur.fetchone()[0]                             # read before state() runs its own query
+            check("a deck that changed after approval holds the email back, with the reason", (state(changed[0])[:2], held),
+                  (["approved", True], "the attached LCX Services - pitch deck.pdf has changed since this email was approved"))
+            check("  and it was not sent", any(x["To"] == changed[2] for x in gmail.sent[n:]), False)
+            cur.execute("update outreach set sent_at = sent_at - interval '2 days' where id = %s", (with_deck[0],))
 
             # --------------------------------------------------------- pause, sender
             print("\n-- the owner's pause, and a sender still saying SET_ME")

@@ -306,6 +306,96 @@ def answered_elsewhere(cur, email, entity_id):
         return None
     return row[0] if not isinstance(row, dict) else list(row.values())[0]
 
+
+# ------------------------------------------------------------------ attachments
+# Files an email carries (sql/32; LCX Services' deck, the owner 2026-10-06: "email should be a pitch
+# deck of services" -> "PDF deck attached"). A template names them (outreach.templates[].attachments),
+# only files under docs/decks/ can be named, and each email keeps the fingerprint of the file it
+# carries: a draft takes the current file when it is approved (refresh_attachments), and the sender
+# sends exactly the approved bytes or holds the email back. What a person approved is what is sent.
+ATTACH_DIR = ("docs", "decks")
+ATTACH_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _repo():
+    import os
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _attach_parts(path):
+    parts = [p for p in str(path or "").replace("\\", "/").split("/") if p]
+    if len(parts) < 3 or tuple(parts[:2]) != ATTACH_DIR or any(p in (".", "..") for p in parts):
+        raise ValueError("an attachment must be a file under docs/decks/, not %r" % (path,))
+    return parts
+
+
+def attachment_file(path):
+    """The absolute path of a repo-relative attachment; ValueError when it is not under docs/decks/."""
+    import os
+    return os.path.join(_repo(), *_attach_parts(path))
+
+
+def attachment_record(path):
+    """{name, path, sha256, bytes} for one attachment, read now. ValueError/OSError when it cannot go."""
+    parts = _attach_parts(path)
+    with open(attachment_file(path), "rb") as f:
+        data = f.read()
+    if not data:
+        raise ValueError("%s is empty" % "/".join(parts))
+    if len(data) > ATTACH_MAX_BYTES:
+        raise ValueError("%s is %d KB: an attachment over %d KB is not sent"
+                         % ("/".join(parts), len(data) // 1024, ATTACH_MAX_BYTES // 1024))
+    return {"name": parts[-1], "path": "/".join(parts), "sha256": hashlib.sha256(data).hexdigest(),
+            "bytes": len(data)}
+
+
+def attachments_for(tpl):
+    """The records for a template's attachments ([] when it names none)."""
+    return [attachment_record(p) for p in (tpl or {}).get("attachments") or []]
+
+
+def attachment_problem(atts):
+    """-> why these attachments cannot go as recorded, or None."""
+    for a in atts or []:
+        name = (a or {}).get("name") if isinstance(a, dict) else None
+        try:
+            with open(attachment_file(a.get("path")), "rb") as f:
+                data = f.read()
+        except (ValueError, OSError, AttributeError):
+            return "the attached %s is missing" % (name or "file")
+        if hashlib.sha256(data).hexdigest() != a.get("sha256"):
+            return "the attached %s has changed since this email was approved" % (name or "file")
+    return None
+
+
+def attachment_bytes(a):
+    with open(attachment_file(a["path"]), "rb") as f:
+        return f.read()
+
+
+def refresh_attachments(cur, ids):
+    """Drafts take the current file of each attachment (a deck rebuilt since they were drafted), so the
+    person approving one approves the file they can open now. Approved and sent emails are never touched.
+    A file that is gone is left recorded as it was: the check then says it is missing."""
+    ids = [str(i) for i in ids or []]
+    if not ids:
+        return 0
+    cur.execute("select id, attachments from outreach where id = any(%s::uuid[]) and status = 'drafted'"
+                " and attachments is not null", (ids,))
+    changed = 0
+    for r in cur.fetchall():
+        oid, atts = (r["id"], r["attachments"]) if isinstance(r, dict) else (r[0], r[1])
+        atts = atts if isinstance(atts, list) else json.loads(atts or "[]")
+        try:
+            fresh = [attachment_record(a["path"]) for a in atts]
+        except (ValueError, OSError, KeyError, TypeError):
+            continue
+        if fresh != atts:
+            cur.execute("update outreach set attachments = %s, updated_at = now() where id = %s and status = 'drafted'",
+                        (json.dumps(fresh), oid))
+            changed += 1
+    return changed
+
 # What has gone out today, or may have: the cap counts a send whose outcome is unknown, and one in
 # flight in another run. The day is the database's, UTC, as everywhere else.
 OUT_TODAY_SQL = """
@@ -319,7 +409,7 @@ where e.segment_id = (select id from segments where slug = %s)
 CHECK_SQL = """
 select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
        o.generated_hook, c.email, c.email_status,
-       e.status as entity_status, s.slug, e.name as entity_name, o.entity_id
+       e.status as entity_status, s.slug, e.name as entity_name, o.entity_id, o.attachments
 from outreach o
 join entities e on e.id = o.entity_id
 join segments s on s.id = e.segment_id
@@ -337,6 +427,7 @@ def check_drafts(cur, ids, segment, policy=None):
     once, for one lead. Approving that same draft on its own is unaffected,
     which is the whole point: it is still approvable, just not in bulk."""
     ids = [str(i) for i in ids]
+    refresh_attachments(cur, ids)                 # a draft carries the file a person can open now
     cur.execute(CHECK_SQL, (ids,))
     cols = [d[0] for d in cur.description]
     found = {}
@@ -375,7 +466,8 @@ def check_drafts(cur, ids, segment, policy=None):
         elif not (r["body"] or "").strip():
             reason = "empty body"
         else:
-            reason = answered_elsewhere(cur, r["email"], r["entity_id"])
+            reason = (attachment_problem(r.get("attachments"))
+                      or answered_elsewhere(cur, r["email"], r["entity_id"]))
             if not reason and r["sequence_step"] == 0:
                 cur.execute(DUPLICATE_SQL, {"oid": i, "email": None, "statuses": TAKEN_AT_APPROVAL})
                 dup = cur.fetchone()

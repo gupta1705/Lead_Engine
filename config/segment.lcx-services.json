@@ -1,20 +1,567 @@
 {
   "entity_type": "company",
-  "weekly_target": null,
-  "score_threshold_review": 0,
-  "score_threshold_priority": 0,
-  "brief": "LCX Services: any business, found with Apollo's search, offered all eighteen LCX services in one email (docs/LCX Services.pdf). The owner, 2026-10-06: \"i wanna build outreach a single one offering all these services\". It works like Universal: no scoring rubric and no harvest; a person searches Apollo on this project's search page, saves the people or companies worth writing to, picks them on the Leads page and presses Write email, and the services email (outreach.compose_start) is already in the box, to send as it is or edit first. Everything after that -- shortlisting, rejecting, contacts, export, replies -- is the same as every other project.",
-  "target_contact_roles": [],
-  "rubric": [],
-  "score_modifiers": [],
-  "gates": [],
+  "weekly_target": 1200,
+  "score_threshold_review": 25,
+  "score_threshold_priority": 70,
+  "brief": "LCX Services: businesses everywhere cold business email is allowed, offered every LCX service in one email with the services deck attached (docs/LCX Services.pdf; the deck is docs/decks/LCX Services - pitch deck.pdf). The owner, 2026-10-06: \"i wanna build outreach a single one offering all these services\", then \"it should generate the leads on its own for the people and businesses we can pitch the services to\" and \"like we source leads for us production houses i want leads to come like that\". So it harvests by itself every Friday, like the production houses: the buyers of each service (config audiences) from Wikidata and OpenStreetMap, through the promote chain, an address from the business itself or its own website, and a draft a person approves. Apollo is not used for it; the Apollo search page stays for adding a lead by hand.",
+  "target_contact_roles": [
+    "Owner",
+    "Founder",
+    "Co-Founder",
+    "CEO",
+    "Managing Director",
+    "Director",
+    "General Manager",
+    "Head of Marketing",
+    "Marketing Manager",
+    "Brand Manager",
+    "Principal"
+  ],
+  "geography": {
+    "allowed_countries": [],
+    "priority_countries": [],
+    "disallowed_countries": [
+      "CA",
+      "DE",
+      "AT",
+      "IT"
+    ],
+    "english_markets": [
+      "US",
+      "GB",
+      "IE",
+      "IN",
+      "AE",
+      "SG",
+      "AU",
+      "NZ",
+      "ZA",
+      "PH",
+      "MY",
+      "NG",
+      "KE",
+      "HK",
+      "LK",
+      "PK",
+      "BD",
+      "GH",
+      "QA",
+      "BH",
+      "OM"
+    ],
+    "guidance": "The owner, 2026-10-06: \"Everywhere allowed\" -- every country except those whose law needs consent before a cold business email: Canada (CASL), Germany and Austria (UWG), Italy, the same set as LCX Clipping. A company is left out only on evidence: Wikidata says its only country is one of them, or the city it was found in is. english_markets earns a small bonus (score_modifiers.english_market) because the email and the deck are in English; it never leaves anyone out."
+  },
+  "audiences": [
+    {
+      "key": "consumer_brands",
+      "label": "Consumer brand",
+      "fit": 1.0,
+      "services": [
+        "AI Video for Brands",
+        "AI UGC Product Videos",
+        "Explainer Videos",
+        "Creator × Brand Marketplace"
+      ],
+      "wikidata": [
+        {
+          "property": "P452",
+          "values": [
+            "Q12752882",
+            "Q11828862",
+            "Q540912",
+            "Q4899370",
+            "Q581105",
+            "Q57262277",
+            "Q11990434",
+            "Q484847"
+          ],
+          "note": "industry: cosmetics, clothing, food, beverages, consumer electronics, jewellery, furniture, e-commerce"
+        }
+      ]
+    },
+    {
+      "key": "retailers",
+      "label": "Retailer",
+      "fit": 1.0,
+      "services": [
+        "Shop Display Videos",
+        "AI Fashion Stylist",
+        "AI Simulations for Training",
+        "AI Onboarding Employee"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q507619",
+            "Q2549179",
+            "Q18043413",
+            "Q1941779",
+            "Q4382945"
+          ],
+          "note": "retail chain, department store chain, supermarket chain, fashion house, online shop"
+        },
+        {
+          "property": "P452",
+          "values": [
+            "Q126793"
+          ],
+          "note": "industry: retail"
+        }
+      ]
+    },
+    {
+      "key": "real_estate",
+      "label": "Real estate developer or agent",
+      "fit": 1.0,
+      "services": [
+        "AI Real Estate Visualisation",
+        "Airbnb / Property Content",
+        "Explainer Videos"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q17487600"
+          ],
+          "note": "real estate developer"
+        },
+        {
+          "property": "P452",
+          "values": [
+            "Q695829"
+          ],
+          "note": "industry: real estate development"
+        }
+      ],
+      "osm": [
+        [
+          "office",
+          "estate_agent"
+        ]
+      ]
+    },
+    {
+      "key": "hospitality",
+      "label": "Hotel or short stay",
+      "fit": 1.0,
+      "services": [
+        "Airbnb / Property Content",
+        "AI Reality Experiences",
+        "AI Onboarding Employee"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q1631129",
+            "Q3117865"
+          ],
+          "note": "hotel chain, hotel group"
+        },
+        {
+          "property": "P452",
+          "values": [
+            "Q1495452"
+          ],
+          "note": "industry: hospitality"
+        }
+      ],
+      "osm": [
+        [
+          "tourism",
+          "guest_house"
+        ],
+        [
+          "tourism",
+          "hotel"
+        ],
+        [
+          "tourism",
+          "apartment"
+        ]
+      ]
+    },
+    {
+      "key": "publishers",
+      "label": "Publisher",
+      "fit": 1.0,
+      "services": [
+        "Audiobooks and Audio Web Shows",
+        "AI Podcasts / Audio Content"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q2085381",
+            "Q1320047"
+          ],
+          "note": "publishing house, book publisher"
+        }
+      ]
+    },
+    {
+      "key": "financial_services",
+      "label": "Bank, insurer or investment firm",
+      "fit": 0.5,
+      "services": [
+        "AI Podcasts / Audio Content",
+        "AI Simulations for Training",
+        "AI Onboarding Employee",
+        "Explainer Videos"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q22687",
+            "Q2143354",
+            "Q4230006"
+          ],
+          "note": "bank, insurance company, asset management company"
+        },
+        {
+          "property": "P452",
+          "values": [
+            "Q837171"
+          ],
+          "note": "industry: financial services"
+        }
+      ]
+    },
+    {
+      "key": "studios_agencies",
+      "label": "Studio or agency",
+      "fit": 1.0,
+      "services": [
+        "Reel Forge",
+        "AI VFX + Animation",
+        "AI Video for Brands",
+        "Explainer Videos"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q1762059",
+            "Q10689397",
+            "Q1107679",
+            "Q216931"
+          ],
+          "note": "film production company, television production company, animation studio, advertising agency"
+        }
+      ]
+    },
+    {
+      "key": "attractions",
+      "label": "Theme park, museum or attraction",
+      "fit": 0.5,
+      "services": [
+        "AI Reality Experiences",
+        "Explainer Videos"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q194195"
+          ],
+          "note": "amusement park"
+        }
+      ],
+      "osm": [
+        [
+          "tourism",
+          "theme_park"
+        ],
+        [
+          "tourism",
+          "museum"
+        ]
+      ]
+    },
+    {
+      "key": "schools",
+      "label": "School",
+      "fit": 1.0,
+      "services": [
+        "Virtual Tours for Schools",
+        "AI Reality Experiences"
+      ],
+      "wikidata": [
+        {
+          "property": "P31",
+          "values": [
+            "Q572835"
+          ],
+          "note": "international school"
+        }
+      ],
+      "osm": [
+        [
+          "amenity",
+          "school"
+        ]
+      ]
+    },
+    {
+      "key": "local_business",
+      "label": "Cafe, salon or gym",
+      "fit": 1.0,
+      "services": [
+        "Local Business Tech and Automation",
+        "AI Business Assistant"
+      ],
+      "osm": [
+        [
+          "amenity",
+          "cafe"
+        ],
+        [
+          "shop",
+          "hairdresser"
+        ],
+        [
+          "shop",
+          "beauty"
+        ],
+        [
+          "leisure",
+          "fitness_centre"
+        ]
+      ]
+    },
+    {
+      "key": "local_retail",
+      "label": "Independent shop",
+      "fit": 1.0,
+      "services": [
+        "Shop Display Videos",
+        "AI Fashion Stylist",
+        "Local Business Tech and Automation"
+      ],
+      "osm": [
+        [
+          "shop",
+          "clothes"
+        ],
+        [
+          "shop",
+          "boutique"
+        ],
+        [
+          "shop",
+          "shoes"
+        ],
+        [
+          "shop",
+          "jewelry"
+        ]
+      ]
+    }
+  ],
+  "audiences_guidance": "Who buys which of the 18 services on docs/LCX Services.pdf, and where they are found (tools/discover_lcx_services.py). Every email offers every service; the audience decides who is found, what the lead says it fits (why_fit, Pitch first) and audience_fit in the rubric: 1.0 where the sheet's services fit directly, 0.5 where the sale is slower (banks and insurers, attractions). wikidata entries match a class (P31) or an industry (P452), as Wikidata items (QIDs); osm entries are OpenStreetMap tag pairs. Add an audience, a class or a tag here and the next harvest finds it.",
+  "discovery": {
+    "skip_known_elsewhere": true,
+    "wikidata": {
+      "max_new_per_run": 600,
+      "per_audience": 80
+    },
+    "osm": {
+      "max_new_per_run": 600,
+      "cities_per_run": 6
+    },
+    "guidance": "Each Friday's refresh stages up to 600 new companies from Wikidata (an equal share for each audience, at most per_audience; 10 to 5,000 people first, and within that English-speaking markets first, since the email and the deck are in English) and up to 600 local businesses from OpenStreetMap (cities_per_run cities, a different few each week). The site pass after it reads up to 600 websites, so a week's harvest is read the week it arrives. skip_known_elsewhere: a business already a lead of another project is not staged here, so nobody is pitched by two projects from the same address."
+  },
+  "osm_discovery": {
+    "endpoints": [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+    ],
+    "radius_m": 12000,
+    "pause_seconds": 3,
+    "cities": [
+      {"name": "London", "country": "GB", "lat": 51.5072, "lon": -0.1276},
+      {"name": "New York", "country": "US", "lat": 40.7128, "lon": -74.006},
+      {"name": "Mumbai", "country": "IN", "lat": 19.076, "lon": 72.8777},
+      {"name": "Dubai", "country": "AE", "lat": 25.2048, "lon": 55.2708},
+      {"name": "Sydney", "country": "AU", "lat": -33.8688, "lon": 151.2093},
+      {"name": "Singapore", "country": "SG", "lat": 1.3521, "lon": 103.8198},
+      {"name": "Los Angeles", "country": "US", "lat": 34.0522, "lon": -118.2437},
+      {"name": "Manchester", "country": "GB", "lat": 53.4808, "lon": -2.2426},
+      {"name": "Delhi", "country": "IN", "lat": 28.6139, "lon": 77.209},
+      {"name": "Melbourne", "country": "AU", "lat": -37.8136, "lon": 144.9631},
+      {"name": "Chicago", "country": "US", "lat": 41.8781, "lon": -87.6298},
+      {"name": "Dublin", "country": "IE", "lat": 53.3498, "lon": -6.2603},
+      {"name": "Bengaluru", "country": "IN", "lat": 12.9716, "lon": 77.5946},
+      {"name": "Abu Dhabi", "country": "AE", "lat": 24.4539, "lon": 54.3773},
+      {"name": "San Francisco", "country": "US", "lat": 37.7749, "lon": -122.4194},
+      {"name": "Birmingham", "country": "GB", "lat": 52.4862, "lon": -1.8904},
+      {"name": "Auckland", "country": "NZ", "lat": -36.8485, "lon": 174.7633},
+      {"name": "Hyderabad", "country": "IN", "lat": 17.385, "lon": 78.4867},
+      {"name": "Miami", "country": "US", "lat": 25.7617, "lon": -80.1918},
+      {"name": "Edinburgh", "country": "GB", "lat": 55.9533, "lon": -3.1883},
+      {"name": "Brisbane", "country": "AU", "lat": -27.4698, "lon": 153.0251},
+      {"name": "Cape Town", "country": "ZA", "lat": -33.9249, "lon": 18.4241},
+      {"name": "Pune", "country": "IN", "lat": 18.5204, "lon": 73.8567},
+      {"name": "Houston", "country": "US", "lat": 29.7604, "lon": -95.3698},
+      {"name": "Glasgow", "country": "GB", "lat": 55.8642, "lon": -4.2518},
+      {"name": "Kuala Lumpur", "country": "MY", "lat": 3.139, "lon": 101.6869},
+      {"name": "Chennai", "country": "IN", "lat": 13.0827, "lon": 80.2707},
+      {"name": "Seattle", "country": "US", "lat": 47.6062, "lon": -122.3321},
+      {"name": "Perth", "country": "AU", "lat": -31.9523, "lon": 115.8613},
+      {"name": "Johannesburg", "country": "ZA", "lat": -26.2041, "lon": 28.0473},
+      {"name": "Austin", "country": "US", "lat": 30.2672, "lon": -97.7431},
+      {"name": "Kolkata", "country": "IN", "lat": 22.5726, "lon": 88.3639},
+      {"name": "Manila", "country": "PH", "lat": 14.5995, "lon": 120.9842},
+      {"name": "Boston", "country": "US", "lat": 42.3601, "lon": -71.0589},
+      {"name": "Ahmedabad", "country": "IN", "lat": 23.0225, "lon": 72.5714},
+      {"name": "Atlanta", "country": "US", "lat": 33.749, "lon": -84.388},
+      {"name": "Nairobi", "country": "KE", "lat": -1.2921, "lon": 36.8219},
+      {"name": "Lagos", "country": "NG", "lat": 6.5244, "lon": 3.3792},
+      {"name": "Dallas", "country": "US", "lat": 32.7767, "lon": -96.797},
+      {"name": "Hong Kong", "country": "HK", "lat": 22.3193, "lon": 114.1694}
+    ],
+    "guidance": "OpenStreetMap's Overpass API, the endpoints tried in turn (the main one did not answer from the office on 2026-10-06; a mirror did). Each run takes discovery.osm.cities_per_run of these cities, a different few each ISO week, and asks each audience's tags within radius_m of the centre, for places that publish a website or an email address. Coverage follows the map's volunteers: on 2026-10-06 London had about 1,400 cafes with a website or address, Mumbai 26. Cities in English-speaking business markets only, since the email and the deck are in English; add a city here and it joins the rotation. Data (c) OpenStreetMap contributors, ODbL, recorded on each lead it found."
+  },
+  "hosting_providers": [
+    "facebook.com",
+    "fb.com",
+    "instagram.com",
+    "linktr.ee",
+    "linkedin.com",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+    "tiktok.com",
+    "wa.me",
+    "whatsapp.com",
+    "google.com",
+    "goo.gl",
+    "g.page",
+    "business.site",
+    "sites.google.com",
+    "maps.app.goo.gl",
+    "bit.ly",
+    "wixsite.com",
+    "wordpress.com",
+    "blogspot.com",
+    "squarespace.com",
+    "weebly.com",
+    "yelp.com",
+    "tripadvisor.com",
+    "booking.com",
+    "airbnb.com",
+    "zomato.com",
+    "swiggy.com",
+    "justdial.com",
+    "fresha.com",
+    "booksy.com",
+    "treatwell.co.uk",
+    "ubereats.com",
+    "doordash.com",
+    "deliveroo.co.uk",
+    "wikipedia.org",
+    "wikidata.org"
+  ],
+  "rubric": [
+    {
+      "key": "reachable_decision_maker",
+      "label": "Someone to write to: a named person (full) or the business's own published address (half)",
+      "points": 50,
+      "input": "metadata.scoring_inputs.reachable_decision_maker",
+      "guidance": "1.0 a named person in a deciding role with their own address (the site pass, or a person); 0.5 a business address (info@, hello@) the business publishes on OpenStreetMap, on Wikidata or on its own site (tools/enrich_lcx_services.py, enrich_contacts). Half the points on purpose: a lead nobody can be written to tops out at 50 (54 with the English bonus) and never crosses the auto-shortlist line at 55, so nothing is shortlisted that cannot be drafted."
+    },
+    {
+      "key": "audience_fit",
+      "label": "A buyer the services fit directly",
+      "points": 20,
+      "input": "metadata.scoring_inputs.audience_fit",
+      "guidance": "From the lead's audience (config audiences, fit): 1.0 brands, retailers, real estate, hotels and short stays, publishers, studios and agencies, schools, cafes, salons and gyms, independent shops; 0.5 banks and insurers, attractions, where the sale is slower."
+    },
+    {
+      "key": "established",
+      "label": "An established business",
+      "points": 15,
+      "input": "metadata.scoring_inputs.established",
+      "guidance": "1.0 a company notable enough for Wikidata, or a local business that publishes its website and its phone or opening hours; 0.5 a local business with less on record."
+    },
+    {
+      "key": "right_size",
+      "label": "The size that buys this and answers a cold email",
+      "points": 15,
+      "input": "metadata.scoring_inputs.right_size",
+      "guidance": "1.0 at 10 to 5,000 people, or an independent local business; 0.5 at 1-9 or 5,001-50,000 people; 0 above 50,000 (a procurement process, not a reply). Unverified (0) when Wikidata gives no headcount."
+    }
+  ],
+  "score_modifiers": [
+    {
+      "key": "english_market",
+      "label": "BONUS: an English-speaking business market",
+      "max_bonus": 4,
+      "input": "metadata.scoring_inputs.english_market",
+      "guidance": "The email and the deck are in English. 1.0 in geography.english_markets, 0 in any other allowed country, absent when the country is unknown. Four points: enough to order two equal leads, never enough to shortlist a lead nobody can be written to."
+    }
+  ],
+  "gates": [
+    {
+      "key": "country_allowed",
+      "label": "Not in a country where cold business email needs consent",
+      "input": "metadata.scoring_inputs.country_signal",
+      "exclude_when": "disallowed",
+      "guidance": "Fires only on confirmed evidence of a disallowed country (geography.disallowed_countries). Unknown always passes."
+    },
+    {
+      "key": "not_giant",
+      "label": "Not a company of over 100,000 people",
+      "input": "metadata.scoring_inputs.oversized_signal",
+      "exclude_when": true,
+      "guidance": "Set from Wikidata's headcount. Companies that size buy through procurement and have in-house teams for all of this; a cold email from LCX is not how they buy. Unknown passes."
+    },
+    {
+      "key": "usable_first_party_presence",
+      "label": "Some way to reach them: a website or an address",
+      "input": "metadata.scoring_inputs.has_reachable_presence",
+      "exclude_when": false,
+      "guidance": "Fires only on an explicit false. The harvest stages nothing without a website or a published address, so this is a guard."
+    }
+  ],
+  "auto_shortlist": {
+    "enabled": true,
+    "min_score": 55,
+    "guidance": "Like the production houses: every lead in To review scoring above 55 is shortlisted by the last step of the promote chain, and a shortlisted lead with an address is drafted within minutes. 55 is just above what a lead nobody can be written to can score (50, 54 with the English bonus), so everything shortlisted can be drafted. Shortlisting sends nothing: every email is approved by a person. Leads at or below the line stay in To review, where a person can shortlist one by hand."
+  },
+  "enrichment": {
+    "enabled": false,
+    "provider": "site_scrape",
+    "contact_method": "published_address_then_site_scrape",
+    "email_verifier": "none_yet",
+    "guidance": "An address comes from the business itself: the one it publishes on OpenStreetMap or Wikidata (tools/enrich_lcx_services.py), else its own website, read politely with robots.txt honoured (enrich_contacts_lcxs, tools/enrich_sitescrape.py). Never LinkedIn. enabled is the Apollo gate (tools/enrich_apollo.py) and is false: the owner, 2026-10-06, 'forget apollo for a sec'. Apollo enrichment can be turned on for this project later with a weekly credit budget, as for US Production Houses."
+  },
   "sources": [
     {
-      "slug": "apollo",
-      "name": "Apollo.io API (people and company search, bulk people reveal)",
+      "slug": "lcx_wikidata",
+      "name": "Wikidata (companies by class and industry)",
       "kind": "api",
       "phase": 1,
-      "detail": "tools/apollo.py, from this project's search page (the same page and key as Universal; what is saved here stays here). People search is free and returns a preview (first name, masked last name, title, employer). Saving a person reveals them with people/bulk_match: 1 credit per person Apollo holds data for. Company search is 1 credit per page. Key: APOLLO_API_KEY in .env and in Render's Environment tab."
+      "detail": "tools/discover_lcx_services.py --source wikidata: operating companies with an official website in each audience's classes and industries, not only in a consent-law country. CC0, free, no key."
+    },
+    {
+      "slug": "lcx_osm",
+      "name": "OpenStreetMap (local businesses around a city)",
+      "kind": "api",
+      "phase": 1,
+      "detail": "tools/discover_lcx_services.py --source osm: independent cafes, salons, gyms, shops, estate agents, guest houses, schools and attractions that publish a website or an email address, a few cities a week. ODbL, free, no key."
+    },
+    {
+      "slug": "apollo",
+      "name": "Apollo.io search (by hand)",
+      "kind": "api",
+      "phase": 2,
+      "detail": "The Apollo search page, for adding a lead by hand. Saving a person reveals them: 1 credit each. Not part of the weekly harvest."
     }
   ],
   "self_exclusion": {
@@ -28,28 +575,42 @@
       "contagious online media",
       "tvf"
     ],
-    "guidance": "TVF and its affiliates never enter the lead pool, from any source. An Apollo search can return TVF's own people and companies; saving one is refused, the same way the promote chain refuses them for the other segments. Domains match on the host or a subdomain, name patterns as whole words."
+    "guidance": "TVF and its affiliates never enter the lead pool, from any source. Domains match on the host or a subdomain, name patterns as whole words."
   },
   "outreach": {
-    "compose": true,
     "send_from": "approver",
     "sender": {
       "name": "LCX",
       "title": "Business Development",
       "postal_address": "Contagious Online Media Network Pvt Ltd. 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
-      "guidance": "Never what a recipient reads: an email here is written by a person and signed with their own name and title (app_users), with this postal address under it. The owner, 2026-10-06: TVF's Mumbai office address, the same as US Production Houses and Universal."
+      "guidance": "Never what a recipient reads as the sign-off: the email goes from the approver's own Gmail, signed with their name and title (app_users), with this postal address under it. The owner, 2026-10-06: TVF's Mumbai office address, as US Production Houses and Universal."
     },
     "footer": {
       "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
-      "guidance": "The block every email here ends with: the writer's sign-off, the postal address and the way out, as in Universal. Edited from Outreach -> Footer."
+      "guidance": "The block every email here ends with: the approver's sign-off, the postal address and the way out. Edited from Outreach -> Footer."
     },
-    "compose_start": {
-      "subject": "18 things LCX can do for {{company}}",
-      "body": "Hi {{first_name}},\n\nI'm writing from LCX. We work in three areas, and at least one of them should be useful to {{company}}:\n\n1. Repurposing as a Service: turning what you already own into new formats that reach more people.\n- Reel Forge: long form videos cut into reels and distributed across 5 to 10 Instagram pages.\n- Airbnb / Property Content: property photos turned into cinematic reels, carousels and home tours.\n- AI VFX + Animation: existing footage made cinematic with AI environments and effects.\n- Audiobooks and Audio Web Shows: books adapted into audio shows. Writers keep the rights and the revenue.\n\n2. AI Asset Creation: new content and experiences from scratch, without the cost of a traditional shoot or build.\n- AI Video for Brands: product, ad and campaign videos without separate shoots.\n- AI Real Estate Visualisation: blueprints turned into realistic visuals and walkthroughs before construction.\n- Explainer Videos: complex products, services and concepts explained visually.\n- Shop Display Videos: screen content for retail spaces showcasing collections, offers and promotions.\n- AI UGC Product Videos: AI influencers creating recurring product content on a brand's own page.\n- AI Podcasts / Audio Content: AI characters in conversation about products, brands and financial services.\n- Virtual Tours for Schools: virtual field trips to space, the ocean, ancient civilisations and landmarks.\n- AI Reality Experiences: immersive VR experiences and games.\n\n3. Tech Solutions: systems and tools businesses use in their daily operations, training and sales.\n- Creator × Brand Marketplace: a platform for brands to discover nano and micro influencers and run campaigns.\n- Local Business Tech and Automation: billing, bookings, WhatsApp follow ups and dashboards for cafes, salons and gyms.\n- AI Business Assistant: on demand answers on sales, tasks and inventory for business owners.\n- AI Simulations for Training: real world scenarios that test and score sales and customer facing teams.\n- AI Fashion Stylist: an AI mirror near changing rooms that completes the look from store stock.\n- AI Onboarding Employee: a digital trainer that teaches, tests and scores new hires across 10 to 15 parameters.\n\nIf one of these fits what {{company}} is working on, reply with its name and I'll send examples of our work.",
-      "source": "docs/LCX Services.pdf",
-      "guidance": "The email the Write email box starts from in this project: the owner's one email offering every LCX service (2026-10-06), approved by the owner as it reads here. Each service line is the services sheet's own wording; the sheet cuts off the description of AI Reality Experiences after \"games\", so it ends there. The person writing can change anything before approving, and what they approve is what is sent. It may use {{first_name}} and {{company}} only (tools/outreach_compose.py); the footer goes under it."
+    "greeting_fallback": "there",
+    "templates": [
+      {
+        "key": "lcx_services_deck_v1",
+        "subject": "18 things LCX can do for {{company}}",
+        "body": "Hi {{greeting_name}},\n\nI'm writing from LCX. We work in three areas, and at least one of them should be useful to {{company}}. Our services deck is attached.\n\nIf one fits, reply with its name and I'll send examples.\n\n{{footer}}",
+        "attachments": [
+          "docs/decks/LCX Services - pitch deck.pdf"
+        ],
+        "guidance": "The owner's choice, 2026-10-06: a short email with the services deck attached as a PDF, in the wording the owner approved. {{greeting_name}} is the person's first name when one is known, else 'there'. The deck in attachments goes with every email from this template; the sender checks it is the same file that was drafted and approved, and holds the email back if it changed."
+      }
+    ],
+    "batch_approval": {
+      "enabled": true,
+      "sample_min": 3,
+      "sample_fraction": 0.1,
+      "max_batch": 100,
+      "allow_generated": false,
+      "generated_sample_fraction": 0.25,
+      "guidance": "Every draft here comes from one template with no model-written sentence, so they may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company, the deck present)."
     },
-    "guidance": "The owner, 2026-10-06: one email offering all the LCX services, to any business. Leads come from Apollo, not a harvest, so there are no templates and nothing is drafted: a person picks leads (Leads page, or one lead) and presses Write email; the box starts from outreach.compose_start (tools/outreach_compose.py). The page shows how it reads for each of them; approving it is the same gate as everywhere -- one approved email per company, checked like an approved draft -- and it goes out from the writer's own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address's daily limit, which it shares with every other project. Not paused: the owner chose 'send once approved' for this project. A lead still in To review is shortlisted by being written to. Replies land in Outreach -> Replies."
+    "guidance": "The owner, 2026-10-06: one email offering every LCX service, with the services deck attached, to the businesses the weekly harvest finds. Like US Production Houses: a shortlisted lead with an address is drafted by itself from the one template, a person approves it (one at a time, or a spot-checked batch), and it goes from that person's own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address's daily limit, which it shares with every other project. One first email per company and per inbox; no follow-ups. Not paused: the owner chose 'send once approved'. Replies land in Outreach -> Replies."
   },
   "apollo": {
     "per_page": 25,
@@ -61,32 +622,29 @@
       "api/v1/usage_stats/credit_usage_stats",
       "api/v1/users/api_profile"
     ],
-    "guidance": "The same five endpoints and limits as Universal (see config/segment.universal.json): people search 0 credits, company search 1 credit per page, bulk_match 1 credit per person Apollo has data for. max_reveal_per_save caps one save; the page asks before every save that costs credits."
+    "guidance": "The search page's settings, the same as Universal (see config/segment.universal.json): people search 0 credits, company search 1 credit per page, bulk_match 1 credit per person Apollo has data for. max_reveal_per_save caps one save; the page asks before every save that costs credits."
   },
   "ui": {
     "project_name": "LCX Services",
     "key_prefix": "LXS",
     "board_title": "LCX Services leads",
     "list_title": "Leads",
-    "entity_label": "company",
-    "entity_plural": "companies",
-    "summary_label": "Company",
+    "entity_label": "business",
+    "entity_plural": "businesses",
+    "summary_label": "Why",
     "search_page": "apollo",
-    "default_route": "universal",
-    "hide_routes": [
-      "ops",
-      "reports"
-    ],
+    "default_route": "board",
+    "hide_routes": [],
     "card_fields": [
       {
-        "path": "metadata.industry",
+        "path": "metadata.audience",
         "label": "",
         "format": "text"
       },
       {
-        "path": "metadata.employees",
-        "label": "people",
-        "format": "number"
+        "path": "metadata.hq_city",
+        "label": "",
+        "format": "text"
       },
       {
         "path": "metadata.hq_country",
@@ -96,8 +654,23 @@
     ],
     "details": [
       {
-        "path": "metadata.industry",
-        "label": "Industry",
+        "path": "metadata.audience",
+        "label": "Audience",
+        "format": "text"
+      },
+      {
+        "path": "metadata.services",
+        "label": "Pitch first",
+        "format": "list"
+      },
+      {
+        "path": "metadata.hq_city",
+        "label": "City",
+        "format": "text"
+      },
+      {
+        "path": "metadata.hq_country",
+        "label": "Country",
         "format": "text"
       },
       {
@@ -106,28 +679,8 @@
         "format": "number"
       },
       {
-        "path": "metadata.hq_country",
-        "label": "Country",
-        "format": "text"
-      },
-      {
-        "path": "metadata.apollo.founded_year",
-        "label": "Founded",
-        "format": "text"
-      },
-      {
-        "path": "metadata.apollo.annual_revenue_printed",
-        "label": "Revenue",
-        "format": "text"
-      },
-      {
-        "path": "metadata.apollo.total_funding_printed",
-        "label": "Funding",
-        "format": "text"
-      },
-      {
-        "path": "metadata.apollo.latest_funding_stage",
-        "label": "Latest round",
+        "path": "metadata.industry",
+        "label": "Industry",
         "format": "text"
       },
       {
@@ -136,19 +689,31 @@
         "format": "text"
       },
       {
-        "path": "metadata.apollo.keywords",
-        "label": "Keywords",
-        "format": "list"
-      },
-      {
         "path": "metadata.saved_from.summary",
         "label": "Found by",
         "format": "text"
       }
     ]
   },
-  "schedule": [],
+  "schedule": [
+    {
+      "name": "weekly refresh",
+      "pipeline": "weekly_refresh",
+      "dow": 4,
+      "hour": 2,
+      "minute": 0,
+      "enabled": true
+    }
+  ],
   "pipelines": {
+    "weekly_refresh": [
+      "discover_lcx_wikidata",
+      "discover_lcx_osm",
+      "promote_chain",
+      "enrich_lcx_services",
+      "enrich_contacts_lcxs",
+      "promote_chain"
+    ],
     "enrich_contacts": [
       "enrich_contacts"
     ]
