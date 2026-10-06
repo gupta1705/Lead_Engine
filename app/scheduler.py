@@ -310,10 +310,15 @@ class Scheduler:
         now = now or _now()
         with self._cursor() as cur:
             cfg = pol.outreach_config(cur, segment)
-            if not (cfg or {}).get("templates"):
+            templates = bool((cfg or {}).get("templates"))
+            # a project whose emails a person writes (outreach.compose, the Universal project since
+            # 2026-09-27) has nothing to draft, but what they approved still has to go out
+            if not templates and not (cfg or {}).get("compose"):
                 return None
-            cur.execute(DRAFT_NEEDED_SQL, (segment,))
-            draft = cur.fetchone() is not None
+            draft = False
+            if templates:
+                cur.execute(DRAFT_NEEDED_SQL, (segment,))
+                draft = cur.fetchone() is not None
             steps = pol.followup_steps(cfg)
             followups = bool(steps) and bool(pol.due_followups(cur, segment, steps, now))
             cur.execute(APPROVED_SQL, (segment,))

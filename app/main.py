@@ -224,6 +224,9 @@ def segment_rows(force=False):
                             " config->>'score_threshold_priority' as priority,"
                                                        " config->'outreach'->'follow_ups' as follow_ups,"
                             " config->'outreach'->'batch_approval' as batch_approval,"
+                            " coalesce((config->'outreach'->>'compose')::boolean, false) as compose,"
+                            " coalesce(jsonb_array_length(case when jsonb_typeof(config->'outreach'->'templates') = 'array'"
+                            "   then config->'outreach'->'templates' end), 0) > 0 as has_templates,"
                             " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
                             " config->'auto_shortlist'->>'min_score' as auto_min"
                             " from segments where is_active order by slug")
@@ -291,6 +294,10 @@ def outreach_policy_info(row):
                         "steps": [{"step": s.get("step"), "after_days": s.get("after_days")}
                                   for s in (fu.get("steps") or [])]} if fu.get("enabled") else None),
         "batch_approval": _policy().batch_policy({"batch_approval": row.get("batch_approval")}),
+        # a person writes the email to leads they pick (tools/outreach_compose.py); with no templates
+        # nothing is ever drafted, so the page leaves the Drafts folder out
+        "compose": bool(row.get("compose")),
+        "drafts": bool(row.get("has_templates", True)),
     }
 
 
@@ -685,7 +692,7 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
                 cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user,))
                 person = cur.fetchone()
                 if not person or not person["name"] or not person["title"]:
-                    raise HTTPException(409, "Add your name and title first (your account menu, top right): "
+                    raise HTTPException(409, "Add your name and title first (the account menu at the bottom of the sidebar): "
                                              "the emails you approve are signed with them.")
                 cur.execute("select body from outreach where id = %s and status = 'drafted'", (oid,))
                 row = cur.fetchone()
@@ -805,7 +812,7 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
             cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user or "",))
             person = cur.fetchone()
             if not person or not person["name"] or not person["title"]:
-                raise HTTPException(409, "Add your name and title first (your account menu, top right).")
+                raise HTTPException(409, "Add your name and title first (the account menu at the bottom of the sidebar).")
             cur.execute("select id, body from outreach where id = any(%s::uuid[]) and status = 'drafted'", (ids,))
             for row in cur.fetchall():
                 mine = dr.personalize(row["body"], cfg, dict(person))
@@ -823,6 +830,59 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         _scheduler.kick_outreach(segment, "manual")          # approved means sent: no terminal step
     return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment, user),
             "paused": _send_paused(segment), "sends_from": _sends_from(segment, user)}
+
+
+def _compose_module():
+    """tools/outreach_compose.py -- an email a person writes to leads they picked."""
+    import sys
+    p = os.path.join(REPO, "tools")
+    if p not in sys.path:
+        sys.path.insert(0, p)
+    import outreach_compose
+    return outreach_compose
+
+
+def _compose(request, body, segment, apply):
+    comp = _compose_module()
+    b = body or {}
+    user = getattr(request.state, "user", None) or ""
+    with cursor() as cur:
+        cfg = _policy().outreach_config(cur, segment)
+        if not comp.compose_on(cfg):
+            raise HTTPException(403, "writing emails to picked leads is not on for this project")
+        cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user,))
+        person = cur.fetchone()
+        try:
+            out = comp.plan(cur, segment, b.get("ids") or [], b.get("subject") or "", b.get("body") or "",
+                            dict(person) if person else None, cfg, apply=apply)
+        except comp.Refused as e:
+            raise HTTPException(e.code, str(e))
+        boxes = []
+        if cfg.get("send_from") == "approver":
+            boxes = [{k: m[k] for k in ("address", "daily_cap", "out_today", "remaining", "usable")}
+                     for m in _mailbox_store().mailboxes(cur, user_email=user)]
+    out.update(approved=len(out["ready"]) if apply else 0, fields=list(comp.FIELDS), max=comp.MAX_RECIPIENTS,
+               mailboxes=boxes, can_send=_can_send(segment, user), paused=_send_paused(segment),
+               sends_from=_sends_from(segment, user))
+    return out
+
+
+@app.post("/api/outreach/compose/check")
+def outreach_compose_check(request: Request, body: dict = Body(...), segment: str = Depends(current_segment)):
+    """Before a person approves an email they wrote: who it goes to and how it greets each of them, who
+    is skipped and why, the footer it ends with, and what approving will do. Nothing is kept."""
+    return _compose(request, body, segment, apply=False)
+
+
+@app.post("/api/outreach/compose")
+def outreach_compose(request: Request, body: dict = Body(...), segment: str = Depends(current_segment)):
+    """Approve an email a person wrote, for the leads they picked (the owner, 2026-09-27: "in the universal
+    segment there should be a widget to send mail to them"). The same gate and the same sending as an
+    approved draft: one approved email per company, from the approver's own Gmail, inside its daily limit."""
+    out = _compose(request, body, segment, apply=True)
+    if out["approved"]:
+        _scheduler.kick_outreach(segment, "manual")            # approved means sent: no terminal step
+    return out
 
 
 def _can_send(segment, user=None):

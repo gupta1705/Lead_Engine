@@ -986,6 +986,36 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .subject-cell { max-width: 460px; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .subject-cell > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* writing one email to the leads a person picked (Universal, 2026-09-27) */
+.compose-main { display: flex; flex-direction: column; gap: 16px; }
+.compose-to { display: flex; align-items: baseline; gap: 12px; padding: 0 0 12px; border-bottom: 1px solid var(--border);
+  font-size: 14px; line-height: 20px; }
+.compose-to .label { font-size: 13px; font-weight: 500; color: var(--text-subtlest); min-width: 52px; }
+.label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.label-row > label { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--text); }
+.label-row .insert { display: inline-flex; align-items: center; gap: 6px; }
+.compose-body { min-height: 220px; height: 34dvh; }
+.field-error { font-size: 12.5px; line-height: 18px; color: var(--text-danger); }
+.compose-preview { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.preview-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 14px; background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border); font-size: 13.5px; min-width: 0; }
+.preview-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-head .btn.icon { width: 30px; height: 30px; }
+.mail-preview { padding: 16px 18px; background: var(--surface); }
+.mp-subject { font: 600 15px/22px var(--font-display); margin-bottom: 12px; overflow-wrap: anywhere; }
+.mp-body { white-space: pre-wrap; font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.rcpt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 46dvh; overflow-y: auto; }
+.rcpt-list li { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: var(--radius); cursor: pointer; }
+.rcpt-list li:hover { background: var(--surface-hovered); }
+.rcpt-list li.on { background: var(--bg-selected); }
+.rcpt-list .btn.icon { width: 28px; height: 28px; flex: none; }
+.rc-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.rc-name { font-weight: 600; font-size: 13.5px; }
+.from-box { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 8px; }
+.from-box + .from-box { border-top: 1px solid var(--border); padding-top: 10px; }
+.from-meter { display: flex; align-items: center; gap: 8px; }
+.skip-list li { color: var(--text-subtle); font-size: 13px; }
+
 /* batch approval (LCX) */
 .sel-col { display: none; width: 44px; }
 .tbl.batch .sel-col { display: table-cell; }

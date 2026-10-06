@@ -222,6 +222,21 @@ def main():
             cur.execute("update user_mailboxes set daily_cap = 2 where id = %s", (mbid,))
             check("  room again: it is sent", s.outreach_work(aslug)["send"], True)
 
+            # a project whose emails a person writes (outreach.compose, Universal since 2026-09-27): no
+            # templates, so nothing is ever drafted -- but what they approved goes out like any approval
+            cslug, cseg = segment({"outreach": {"compose": True, "send_from": "approver",
+                                                "sender": {"name": "TVF", "title": "BD",
+                                                           "postal_address": "1 Example Road, Mumbai 400001"}}})
+            ce, cc = lead(cseg, "shortlisted")
+            w = s.outreach_work(cslug)
+            check("compose project: something to look at, nothing to draft", (w is not None, w and w["draft"]), (True, False))
+            cm = mail(ce, cc, "approved")
+            cur.execute("update outreach set approved_by = %s, approval_mode = 'compose' where id = %s", (who, cm))
+            check("  a written email approved by someone with a Gmail: it is sent", s.outreach_work(cslug)["send"], True)
+            s._ops.calls.clear()
+            s.outreach_tick(cslug, "manual")
+            check("  the tick sends and never drafts", [k for k, _ in s._ops.calls], ["send_outreach"])
+
             # after a restart (every deploy) each segment gets one round at once, not at the next quarter hour
             kicked = []
             real_kick, real_segments = s.kick_outreach, s.segments

@@ -102,8 +102,8 @@ phone the sidebar opens from the menu button at the top left. The app is light
 or dark to match your computer's setting.
 
 The Universal project has a different menu: **Apollo search** sits at the top,
-because that is where its leads come from, then Board and Leads. Outreach,
-Reports and Operations are not there.
+because that is where its leads come from, then Board, Leads and Outreach (for
+the emails you write to its leads). Reports and Operations are not there.
 
 ## Switching between projects
 
@@ -222,6 +222,38 @@ people at these companies** to do the same for all of them.
 a name, and **Saved searches** runs one again. A saved company search waits for
 you to press Search, because it costs a credit.
 
+## Writing to Universal leads
+
+![One email, written once, as each person will read it](img/14-compose.png){width=full}
+
+Universal leads come from your searches, not from a harvest, so there is no
+ready-made email for them. You write it. On the **Leads** page, tick the leads
+you want to write to (a tick box shows on every lead with an address that has
+not been written to yet), then press **Write email to N**. For one lead, open it
+and press **Write email**.
+
+Write the subject and the email once. Two fields make it each person's own:
+**{{first_name}}**, the first name of the person it goes to ("there" when no
+first name is known, so *Hi {{first_name}},* still reads), and **{{company}}**,
+their company. The **First name** and **Company** buttons put them in for you.
+Anything else in double braces is refused.
+
+Under it, the page shows the email exactly as each person will read it, your
+sign-off and TVF's postal address included; the arrows, or a click on a name in
+the list on the right, go from one person to the next. The list shows how each
+is greeted and says when no first name is known. Leave anyone out with the
+cross beside their name. Leads that cannot be written to are listed with the
+reason: no address, already contacted, rejected, or already written to.
+
+**Approve and send** approves every one of them: you have read it and stand
+behind it, exactly as when approving a draft. Each goes on its own, from your
+own sending address, signed with your name and title, inside that address's
+daily limit (past the limit, the rest go from the next day). A lead still in To
+review is shortlisted by being written to. Every company gets one first email
+and no more, as everywhere. The emails then sit in **Outreach** under Approved
+until they go, then under Sent; replies arrive under Replies. Until the owner
+links a sending address to you, they wait in Approved.
+
 
 # The board
 
@@ -248,8 +280,8 @@ not the tool's.
 A rejected lead leaves the board. To find one, open Leads and set Status to
 Rejected.
 
-The Universal project sends no email, so its board has only To review and
-Shortlisted.
+In the Universal project the emails are the ones you write (see *Writing to
+Universal leads*); its board has the same four columns.
 
 Above the columns is one search box.
 

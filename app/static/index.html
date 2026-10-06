@@ -197,9 +197,12 @@
         </select>
         <span class="result-count" id="leadsCount"></span>
       </div>
+      <!-- where a person writes to the leads they pick (Universal): the picked ones, and the one action -->
+      <div class="toolbar batch-bar" id="leadsBatch" hidden></div>
       <div class="table-wrap">
         <table class="tbl" id="leadsTable">
           <thead><tr>
+            <th class="sel-col"><input type="checkbox" id="leadsSelAll" aria-label="Pick every lead on this page you can write to"></th>
             <th id="leadsSummaryCol">Summary</th><th class="col-status">Status</th><th class="col-score">Score</th>
             <th class="col-source">Source</th><th>Contact</th><th id="leadsLastCol">Location</th>
           </tr></thead>

@@ -74,6 +74,7 @@ const PATHS = {
   warn: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
   chevDown: '<path d="m6 9 6 6 6-6"/>',
   chevUp: '<path d="m18 15-6-6-6 6"/>',
+  chevLeft: '<path d="m15 18-6-6 6-6"/>',
   chevRight: '<path d="m9 18 6-6-6-6"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
   link: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
@@ -201,7 +202,7 @@ const post = (path, body) => api(path, { method: "POST",
 const state = {
   route: null, user: null, sources: [], segment: null, segments: [],
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD }, cols: {}, token: 0 },
-  leads: { filters: { q: "", status: "all", source: "", contact: "" },
+  leads: { filters: { q: "", status: "all", source: "", contact: "" }, selected: new Map(),
            page: 0, perPage: 50, total: 0, rows: [], token: 0 },
   outreach: { folder: "drafts", rows: [], counts: {}, token: 0, busy: false, selected: new Set() },
   ops: { timer: null },
@@ -590,8 +591,11 @@ async function loadLeads() {
   if (token !== state.leads.token) return;
   state.leads.rows = d.rows; state.leads.total = d.total;
   $("#leadsCount").textContent = d.total.toLocaleString() + " " + (d.total === 1 ? (segUi().entity_label || "company") : (segUi().entity_plural || "companies"));
+  const picked = state.leads.selected;
+  $("#leadsTable").classList.toggle("batch", composeOn());
   $("#leadsBody").innerHTML = d.rows.length ? d.rows.map((r) => `
-    <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
+    <tr class="row-link ${picked.has(String(r.id)) ? "selected" : ""}" data-id="${esc(r.id)}" tabindex="0">
+      <td class="sel-col">${canWrite(r) ? `<input type="checkbox" data-pick="${esc(r.id)}" ${picked.has(String(r.id)) ? "checked" : ""} aria-label="Pick ${esc(leadTitle(r).title)}">` : ""}</td>
       <td>${(() => { const t = leadTitle(r);
         const parts = [t.sub || (personFirst() ? (r.domain || "") : "no website yet"), r.kind ? String(r.kind).replace(/_/g, " ") : ""].filter(Boolean);
         return `<div class="cell-company">${monoTile(t.title, r.domain || r.id, "sm")}<span><div class="primary-cell">${esc(t.title)}</div><div class="secondary">${esc(parts.join(" · "))}</div></span></div>`; })()}</td>
@@ -601,7 +605,8 @@ async function loadLeads() {
       <td>${r.email ? `<span class="cell-person">${avatar(r.contact_name, r.email)}<span>${r.contact_name ? `<div>${esc(r.contact_name)}</div><div class="secondary">${esc(r.email)}</div>` : `<div>${esc(r.email)}</div>`}</span></span>` : '<span class="muted">No address</span>'}</td>
       <td class="secondary">${fieldSummary(r) || esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
     </tr>`).join("")
-    : `<tr class="empty-row"><td colspan="6">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="7">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
+  renderLeadsBatch();
   $("#leadsTable").classList.toggle("one-status", state.leads.filters.status !== "all");
   // The filter shows only where it can change what is on screen: a selection that is
   // all addresses, or none, has nothing to narrow.
@@ -609,7 +614,7 @@ async function loadLeads() {
   split.hidden = !(d.with_address && d.without_address) && !state.leads.filters.contact;
   split.options[1].textContent = `Has an address (${(d.with_address || 0).toLocaleString()})`;
   split.options[2].textContent = `No address yet (${(d.without_address || 0).toLocaleString()})`;
-  delegateOpen("#leadsBody", (id) => { setNav("lead", state.leads.rows.map((r) => String(r.id))); go("lead/" + id); });
+  delegateOpen("#leadsBody", (id) => { setNav("lead", state.leads.rows.map((r) => String(r.id))); go("lead/" + id); }, ".sel-col");
   const from = d.total ? state.leads.page * state.leads.perPage + 1 : 0;
   const to = Math.min((state.leads.page + 1) * state.leads.perPage, d.total);
   $("#leadsInfo").textContent = `${from}–${to}`;       // the total is in the count above the table
@@ -815,6 +820,7 @@ async function openLead(id, opts) {
     <div class="modal-foot">
       ${decided ? `<button class="btn subtle" data-decide="reset">Undo decision</button>` : ""}
       ${d.status !== "rejected" ? `<button class="btn subtle danger-text" data-decide="reject">Reject</button>` : ""}
+      ${canWriteLead(d) ? `<button class="btn ${d.status === "shortlisted" ? "primary" : ""}" data-compose>${icon("mail", 16)} Write email</button>` : ""}
       ${d.status !== "shortlisted" ? `<button class="btn primary" data-decide="shortlist">${icon("check", 16)} Shortlist</button>` : ""}
     </div>`, { label: d.name, sheet: true, onClose: leaveLeadRoute });
 
@@ -829,6 +835,8 @@ async function openLead(id, opts) {
   }));
   $("#reasonCancel", root).addEventListener("click", () => { $("#reasonBox", root).hidden = true; });
   $("#reasonGo", root).addEventListener("click", () => decide(id, "reject", $("#rejectReason", root).value));
+  const w = $("[data-compose]", root);
+  if (w) w.addEventListener("click", () => openCompose([{ id: String(d.id || id), name: d.name }]));
 }
 
 async function decide(id, decision, reason) {
@@ -863,6 +871,7 @@ function refreshCurrentView() {
 const FOLDERS = [["drafts", "Drafts"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"], ["attention", "Attention"]];
 function outreachPolicy() { return (state.segment && state.segment.outreach_policy) || {}; }
 function batchOn() { return !!outreachPolicy().batch_approval; }
+function draftsOn() { return outreachPolicy().drafts !== false; }     // false: nothing is ever drafted (Universal)
 function followUpsOn() { return !!(outreachPolicy().follow_ups || {}).enabled; }
 function stepLozenge(r) {
   const n = +r.sequence_step || 0;
@@ -870,6 +879,7 @@ function stepLozenge(r) {
 }
 async function loadOutreach() {
   const o = state.outreach, token = ++o.token;
+  if (!draftsOn() && o.folder === "drafts") o.folder = "outbox";   // a project whose emails a person writes
   if (!$("#outreachBody").children.length) $("#outreachBody").innerHTML = skeletonRows(5, 8);
   let d;
   try { d = await api("/api/outreach?folder=" + encodeURIComponent(o.folder)); }
@@ -887,7 +897,8 @@ async function loadOutreach() {
   o.selected = new Set([...(o.selected || [])].filter((id) => present.has(id)));
   const batch = batchOn() && o.folder === "drafts" && d.rows.length > 0;
   $("#outreachTable").classList.toggle("batch", batch);
-  $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => key !== "attention" || o.counts.attention || o.folder === "attention").map(([key, label]) =>
+  $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => (key !== "attention" || o.counts.attention || o.folder === "attention")
+      && (key !== "drafts" || draftsOn())).map(([key, label]) =>
     `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${o.counts[key] || 0}</span></button>`).join("");
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
     o.folder = b.dataset.f; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
@@ -906,6 +917,7 @@ async function loadOutreach() {
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="6">${o.folder === "drafts"
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
+        : o.folder === "outbox" && composeOn() ? "Nothing waiting to go out. To write to leads, pick them on the Leads page."
         : "Nothing in this folder yet."}</td></tr>`;
   // who reached out: the person who approved it, from which address (owner, 2026-09-26)
   $("#outreachTable").classList.toggle("show-by", ["outbox", "sent", "attention"].includes(o.folder));
@@ -996,6 +1008,209 @@ async function startBatch() {
       await loadOutreach();
     } catch (err) { toast(err.message, true); b.classList.remove("loading"); b.disabled = false; }
   });
+}
+
+/* ------------------------------------------------------------ writing one
+   An email a person writes to the leads they picked (the Universal project; the owner, 2026-09-27: "in the
+   universal segment there should be a widget to send mail to them"). The server checks every recipient the
+   way an approval does and says who is skipped and why (tools/outreach_compose.py); the page shows the
+   email as each of them will read it, footer and all; approving it makes one approved email per company,
+   sent from the writer's own Gmail inside that address's daily limit. Nothing is drafted in between. */
+const WRITABLE = ["discovered", "enriched", "scored", "ready_for_review", "shortlisted"];
+const COMPOSE_FIELDS = ["first_name", "company"];
+function composeOn() { return !!outreachPolicy().compose; }
+function canWrite(r) { return composeOn() && !!r.email && WRITABLE.includes(r.status); }
+function canWriteLead(d) {
+  return composeOn() && WRITABLE.includes(d.status) && !d.outreach
+    && (d.contacts || []).some((c) => c.usable && c.email);
+}
+/* the fields filled in as the server fills them (tools/outreach_compose.render): {{company}}'s reads "Angel Studios'" */
+function composeFill(text, f) {
+  const poss = (n) => n + (/s$/i.test(n) ? "'" : "'s");
+  return String(text || "")
+    .replace(/{{\s*company\s*}}(['’])s/g, (_, a) => poss(f.company).replace("'", a))
+    .replace(/{{\s*first_name\s*}}/g, f.first_name)
+    .replace(/{{\s*company\s*}}/g, f.company);
+}
+function composeUnknown(text) {
+  const bad = new Set();
+  String(text || "").replace(/{{\s*(\w+)\s*}}/g, (_, k) => { if (!COMPOSE_FIELDS.includes(k)) bad.add(k); return ""; });
+  return [...bad];
+}
+
+function renderLeadsBatch() {
+  const bar = $("#leadsBatch"), sel = state.leads.selected, n = sel.size;
+  const all = $("#leadsSelAll"), here = state.leads.rows.filter(canWrite);
+  if (all) {
+    const on = here.filter((r) => sel.has(String(r.id))).length;
+    all.checked = here.length > 0 && on === here.length;
+    all.indeterminate = on > 0 && on < here.length;
+    all.disabled = !here.length;
+  }
+  bar.hidden = !(composeOn() && n);
+  if (bar.hidden) return;
+  bar.innerHTML = `<span><strong>${n}</strong> picked</span>
+    <span class="small muted">One email, written once, goes to each of them: you see how it reads for every one before it goes.</span>
+    <span class="grow"></span>
+    <button class="btn subtle" id="leadsSelClear">Clear</button>
+    <button class="btn primary" id="leadsCompose">${icon("mail", 16)} Write email to ${n}</button>`;
+}
+function bindLeadsCompose() {
+  const picked = state.leads.selected;
+  $("#leadsBody").addEventListener("change", (e) => {
+    const t = e.target.closest("[data-pick]");
+    if (!t) return;
+    const r = state.leads.rows.find((x) => String(x.id) === t.dataset.pick);
+    if (t.checked && r) picked.set(String(r.id), { id: String(r.id), name: leadTitle(r).title });
+    else picked.delete(t.dataset.pick);
+    t.closest("tr").classList.toggle("selected", t.checked);
+    renderLeadsBatch();
+  });
+  $("#leadsSelAll").addEventListener("change", (e) => {
+    state.leads.rows.filter(canWrite).forEach((r) => {
+      if (e.target.checked) picked.set(String(r.id), { id: String(r.id), name: leadTitle(r).title });
+      else picked.delete(String(r.id));
+    });
+    $$("#leadsBody [data-pick]").forEach((c) => { c.checked = picked.has(c.dataset.pick); c.closest("tr").classList.toggle("selected", c.checked); });
+    renderLeadsBatch();
+  });
+  $("#leadsBatch").addEventListener("click", (e) => {
+    if (e.target.closest("#leadsSelClear")) { picked.clear(); loadLeads(); }
+    else if (e.target.closest("#leadsCompose")) openCompose([...picked.values()]);
+  });
+}
+
+async function openCompose(leads) {
+  const ids = leads.map((l) => String(l.id));
+  leaveLeadRoute();                    // opened from a lead: that lead's sheet is gone, and must open again later
+  modal.open(`${modalHead(`${typeIcon("mail")}<span class="key">New email</span>`)}
+    <div class="modal-body single"><div class="modal-main" aria-busy="true" aria-label="Checking who it can go to">
+      ${[30, 100, 100].map((w, i) => `<span class="skel" style="width:${w}%;height:${i ? 38 : 14}px;margin:${i ? 14 : 0}px 0"></span>`).join("")}
+      <span class="skel" style="width:100%;height:220px;margin-top:14px;border-radius:12px"></span></div></div>`,
+    { label: "New email", sheet: true });
+  let chk;
+  try { chk = await post("/api/outreach/compose/check", { ids }); }
+  catch (e) { modal.close(true); return toast(e.message, true); }
+  if (!modal.isOpen()) return;
+  const c = { ready: chk.ready.slice(), at: 0 };
+  const start = "Hi {{first_name}},\n\n";
+  const boxes = (chk.mailboxes || []).filter((b) => b.usable);
+  const room = boxes.reduce((a, b) => a + Math.max(0, b.remaining), 0);
+  const from = chk.paused
+    ? `<p class="small">Sending is paused for this project: what you approve waits in Approved.</p>`
+    : boxes.length ? boxes.map((b) => {
+        const used = b.daily_cap ? Math.min(100, Math.round(100 * b.out_today / b.daily_cap)) : 0;
+        return `<div class="from-box"><div class="truncate"><strong>${esc(b.address)}</strong></div>
+          <div class="from-meter"><span class="meter ${b.remaining > 0 ? "hi" : "full"}"><i style="width:${used}%"></i></span>
+          <span class="small muted">${b.remaining} of ${b.daily_cap} left today</span></div></div>`; }).join("")
+    : `<p class="small">You have no sending address yet. What you approve waits in Approved until the owner links one to you.</p>`;
+
+  modal.open(`
+    ${modalHead(`${typeIcon("mail")}<span class="key">New email</span>`)}
+    <div class="modal-body">
+      <div class="modal-main compose-main">
+        <div class="compose-to"><span class="label">To</span><span id="cTo"></span></div>
+        <div class="field"><label for="cSubject">Subject</label>
+          <input id="cSubject" type="text" maxlength="200" autocomplete="off" autofocus></div>
+        <div class="field"><div class="label-row"><label for="cBody">Email</label>
+          <span class="insert"><span class="small muted">Insert</span>
+            <button type="button" class="btn compact" data-insert="first_name">First name</button>
+            <button type="button" class="btn compact" data-insert="company">Company</button></span></div>
+          <textarea id="cBody" class="compose-body">${esc(start)}</textarea>
+          <div class="help">Write it once. {{first_name}} and {{company}} become each person's own; your sign-off and TVF's postal address go under it.</div>
+          <div class="field-error" id="cErr" role="alert" hidden></div></div>
+        <div class="compose-preview" id="cPreviewBox">
+          <div class="preview-head"><span class="small muted">How it reads for</span> <strong id="cWho"></strong><span class="grow"></span>
+            <span class="pos num small muted" id="cPos"></span>
+            <button type="button" class="btn icon" id="cPrev" aria-label="Previous person">${icon("chevLeft", 18)}</button>
+            <button type="button" class="btn icon" id="cNext" aria-label="Next person">${icon("chevRight", 18)}</button></div>
+          <div class="mail-preview"><div class="mp-subject" id="cPrevSubject"></div><div class="mp-body" id="cPreview"></div></div>
+        </div>
+      </div>
+      <div class="modal-side">
+        <div class="side-group"><div class="group-head">${icon("send", 16)} Sends from</div><div class="group-body" id="cFrom">${from}</div></div>
+        <div class="side-group"><div class="group-head">${icon("users", 16)} Goes to <span class="pts" id="cCount"></span></div>
+          <div class="group-body"><ul class="rcpt-list" id="cList"></ul></div></div>
+        ${chk.skipped.length ? `<div class="side-group"><div class="group-head">${icon("alert", 16)} Can't be written to <span class="pts">${chk.skipped.length}</span></div>
+          <div class="group-body"><ul class="plain-list skip-list">${chk.skipped.map((s) => `<li><strong>${esc(s.company || "A lead")}</strong>: ${esc(s.reason)}</li>`).join("")}</ul></div></div>` : ""}
+      </div>
+    </div>
+    <div class="modal-foot"><span class="left" id="cNote"></span>
+      <button class="btn subtle" data-close>Cancel</button>
+      <button class="btn primary" id="cGo" disabled>${icon("send", 16)} <span id="cGoText">Approve and send</span></button></div>`,
+    { label: "New email", sheet: true });
+
+  const root = $("#modalRoot");
+  const subj = $("#cSubject", root), body = $("#cBody", root);
+  const paint = () => {
+    const n = c.ready.length;
+    if (c.at >= n) c.at = Math.max(0, n - 1);
+    const r = c.ready[c.at];
+    $("#cTo", root).innerHTML = !n ? `<span class="warn-text">Nobody left to write to.</span>`
+      : n === 1 ? `${esc(r.contact_name || r.first_name)} <span class="muted">&lt;${esc(r.email)}&gt;</span>`
+      : `${n} people at ${n} companies <span class="muted">(listed on the right)</span>`;
+    $("#cCount", root).textContent = n;
+    $("#cList", root).innerHTML = c.ready.map((x, i) => `<li class="${i === c.at ? "on" : ""}" data-at="${i}">
+        <span class="rc-main"><span class="rc-name">${esc(x.first_name)}${x.named ? "" : ` <span class="warn-text small">(no first name known)</span>`}</span>
+          <span class="small muted truncate">${esc(x.contact_name || "")}${x.contact_name ? " · " : ""}${esc(x.email)}</span>
+          <span class="small muted truncate">${esc(x.company_as_written || x.company)}</span></span>
+        ${n > 1 ? `<button type="button" class="btn icon" data-drop="${esc(x.id)}" aria-label="Leave ${esc(x.company)} out">${icon("x", 14)}</button>` : ""}</li>`).join("");
+    const bad = composeUnknown(subj.value + " " + body.value);
+    const err = $("#cErr", root);
+    err.hidden = !bad.length;
+    err.textContent = bad.length ? bad.map((b) => "{{" + b + "}}").join(", ") + " is not a field an email can use: it can use {{first_name}} and {{company}}." : "";
+    $("#cPreviewBox", root).hidden = !r;
+    if (r) {
+      $("#cWho", root).textContent = (r.contact_name || r.first_name) + " at " + (r.company_as_written || r.company);
+      $("#cPos", root).textContent = n > 1 ? `${c.at + 1} of ${n}` : "";
+      $("#cPrev", root).hidden = $("#cNext", root).hidden = n < 2;
+      $("#cPrev", root).disabled = c.at === 0; $("#cNext", root).disabled = c.at >= n - 1;
+      $("#cPrevSubject", root).textContent = composeFill(subj.value.trim(), r) || "(no subject yet)";
+      $("#cPreview", root).textContent = composeFill(body.value.trim(), r) + "\n\n" + chk.footer;
+    }
+    const ok = n > 0 && subj.value.trim() && body.value.trim() && body.value.trim() !== start.trim() && !bad.length;
+    $("#cGo", root).disabled = !ok;
+    $("#cGoText", root).textContent = n > 1 ? `Approve and send ${n} emails` : "Approve and send";
+    const later = chk.paused || !boxes.length ? 0 : Math.max(0, n - room);
+    $("#cNote", root).textContent = !boxes.length || chk.paused ? "They wait in Approved until they can go."
+      : later ? `${n - later} go today; the other ${later} from tomorrow, within each day's limit.`
+      : "Each goes on its own, from your address, signed by you.";
+  };
+  const dirty = () => subj.value.trim() !== "" || body.value !== start;
+  modal.guard = () => !dirty() || confirm("Discard this email?");
+  subj.addEventListener("input", paint);
+  body.addEventListener("input", paint);
+  $$("[data-insert]", root).forEach((b) => b.addEventListener("click", () => {
+    const s = body.selectionStart ?? body.value.length, e = body.selectionEnd ?? s;
+    body.setRangeText("{{" + b.dataset.insert + "}}", s, e, "end");
+    body.focus(); paint();
+  }));
+  $("#cPrev", root).addEventListener("click", () => { c.at = Math.max(0, c.at - 1); paint(); });
+  $("#cNext", root).addEventListener("click", () => { c.at = Math.min(c.ready.length - 1, c.at + 1); paint(); });
+  $("#cList", root).addEventListener("click", (e) => {
+    const drop = e.target.closest("[data-drop]");
+    if (drop) { c.ready = c.ready.filter((x) => x.id !== drop.dataset.drop); paint(); return; }
+    const li = e.target.closest("[data-at]");
+    if (li) { c.at = +li.dataset.at; paint(); }
+  });
+  $("#cGo", root).addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    b.classList.add("loading"); b.disabled = true;
+    try {
+      const r = await post("/api/outreach/compose", { ids: c.ready.map((x) => x.id), subject: subj.value, body: body.value });
+      modal.guard = null; modal.close(true);
+      state.leads.selected.clear();
+      const n = r.approved, skipped = r.skipped || [];
+      flag(n ? `Approved ${n} email${n === 1 ? "" : "s"}` : "Nothing was approved", {
+        kind: n ? (skipped.length ? "info" : "") : "err", ms: 8000,
+        desc: (n ? (r.paused ? "They wait in Approved: sending is paused for this project."
+                  : r.can_send ? `They go out from ${(r.sends_from || [])[0] || "your address"} within minutes, inside its daily limit.`
+                  : "They wait in Approved until the owner links a sending address to you.") : "")
+          + (skipped.length ? ` ${skipped.length} skipped: ${[...new Set(skipped.map((s) => s.reason))].join("; ")}.` : "") });
+      refreshCurrentView(); refreshOutreachCount(true);
+    } catch (err) { toast(err.message, true); b.classList.remove("loading"); paint(); }
+  });
+  paint();
 }
 
 /* ---------------------------------------------------------------- footer
@@ -1099,7 +1314,7 @@ function openMessage(id) {
             <dt>Company</dt><dd>${esc(r.company)}${r.domain ? `<div class="small muted">${esc(r.domain)}</div>` : ""}</dd>
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
-            ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
+            ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
             ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">Part of this email was written by a model from this lead's own evidence. Every number in it was checked against that evidence.</dd>` : ""}
@@ -2173,7 +2388,7 @@ function bindFilters() {
 
 /* ================================================================ init */
 (async function init() {
-  bindShell(); bindFilters(); bindOps();
+  bindShell(); bindFilters(); bindOps(); bindLeadsCompose();
   try {
     const a = await api("/api/auth/state");
     state.user = a.user || null;

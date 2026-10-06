@@ -46,6 +46,7 @@ place per action.
 | **Reports** | Status donut with its legend; outreach results as tiles; By person; By source where a project has more than one. |
 | **Operations** | Run weekly refresh; the automatic runs and how each last went; mailboxes where there is rotation; the job log, drawn as a terminal. |
 | **Apollo search** | (Universal only.) People or Companies as a segmented control over one large search bar, what a search costs under it, the filters Apollo's own app offers in a column beside the results, saved searches. |
+| **Writing an email** | (Universal only, 2026-09-27: "in the universal segment there should be a widget to send mail to them".) Tick boxes on the Leads page for every lead that can be written to (an address, not contacted or rejected, no email yet), a bar with the one action, **Write email to N**, and **Write email** in one lead's sheet. The sheet: To, subject, the email with **First name** / **Company** buttons for `{{first_name}}` and `{{company}}`, and under it the email exactly as each person will read it (arrows, or a click on a name), sign-off and footer included. Beside it: the writer's sending address with today's room, everyone it goes to with how they are greeted (flagged when no first name is known, each removable), and who cannot be written to and why. **Approve and send N** is the approval: one approved email per company (`approval_mode` 'compose'), sent like any other. Universal's Outreach page has no Drafts folder: nothing there is ever drafted. |
 | **Login** | A card on the canvas, the mark above it. Self-contained: it sits outside the login wall. |
 
 Deep links: `#universal`, `#board`, `#leads`, `#outreach/<folder>`, `#reports`,
@@ -107,7 +108,10 @@ colour by adding a token to both themes.
   drafting and sending run by themselves (`app/scheduler.py`, `outreach_tick`),
   and the only way an email leaves is a person approving that email (owner,
   2026-09-19; see `docs/runbook.md`). Moving to the next email is never an
-  approval.
+  approval. An email a person writes in Universal is approved by the same
+  person in the same step, with how it reads for every recipient in front of
+  them; the server runs every recipient through the checks any approval makes
+  (`tools/outreach_compose.py`).
 
 ## Looking at it without a login
 

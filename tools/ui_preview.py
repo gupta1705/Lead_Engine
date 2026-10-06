@@ -269,6 +269,44 @@ MOCK_JS = r"""
                  r.approved_at = new Date().toISOString(); r.spot_checked = (body.sample || []).includes(id); } });
       return json({ batch_id: "preview", approved: (body.ids || []).length, skipped: [] });
     }
+    // ---- writing one email to picked leads (Universal, 2026-09-27): tools/outreach_compose.py, in short ----
+    if (p === "/api/outreach/compose/check" || p === "/api/outreach/compose") {
+      const pol = FX.segment.outreach_policy || {}, me = FX.auth, apply = p === "/api/outreach/compose";
+      if (!pol.compose) return json({ detail: "writing emails to picked leads is not on for this project" }, 403);
+      if (!me.name || !me.title) return json({ detail: "Add your name and title first (the account menu at the bottom of the sidebar): the emails you write are signed with them." }, 409);
+      const text = String(body.subject || "") + " " + String(body.body || "");
+      const bad = [...new Set([...text.matchAll(/{{\s*(\w+)\s*}}/g)].map((x) => x[1]).filter((k) => k !== "first_name" && k !== "company"))];
+      if (bad.length) return json({ detail: bad.map((b) => "{{" + b + "}}").join(", ") + " is not a field an email can use. It can use {{first_name}} and {{company}}." }, 400);
+      if (apply && (!String(body.subject || "").trim() || !String(body.body || "").trim())) return json({ detail: "Write a subject and the email." }, 400);
+      const postal = (FX.footer && FX.footer.sender && FX.footer.sender.postal_address) || "702, 7th Floor, Fortune Terraces, Mumbai 400053";
+      const footer = "Warm regards,\n" + me.name + "\n" + me.title + "\n\n" + postal + "\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.";
+      const ready = [], skipped = [];
+      (body.ids || []).forEach((id) => {
+        const r = FX.leads.find((x) => String(x.id) === String(id));
+        if (!r) return skipped.push({ id, company: null, reason: "not a lead of this project" });
+        if (!r.email) return skipped.push({ id, company: r.name, reason: "no email address to write to" });
+        if (!OPEN.has(r.status) && r.status !== "shortlisted")
+          return skipped.push({ id, company: r.name, reason: r.status === "contacted" ? "already contacted" : "it was " + String(r.status).replace(/_/g, " ") });
+        if (FX.outreach.rows.some((o) => o.entity_id === r.id && o.direction !== "inbound" && o.status !== "cancelled"))
+          return skipped.push({ id, company: r.name, reason: "it already has an email from us" });
+        const first = String(r.contact_name || "").trim().split(/\s+/)[0] || "";
+        ready.push({ id: r.id, company: r.name, company_as_written: r.name, contact_name: r.contact_name || null,
+                     email: r.email, first_name: first || "there", named: !!first });
+      });
+      if (apply) {
+        const now = new Date().toISOString();
+        const fill = (t, x) => String(t || "").replace(/{{\s*first_name\s*}}/g, x.first_name).replace(/{{\s*company\s*}}/g, x.company);
+        ready.forEach((x) => {
+          const r = FX.leads.find((l) => l.id === x.id); r.status = "shortlisted";
+          FX.outreach.rows.unshift({ id: "c" + Math.random().toString(16).slice(2), entity_id: x.id, company: x.company, domain: r.domain,
+            contact_name: x.contact_name, contact_email: x.email, direction: "outbound", status: "approved",
+            subject: fill(body.subject, x).trim(), body: fill(body.body, x).trim() + "\n\n" + footer,
+            approved_by: me.user, approved_by_name: me.name, approval_mode: "compose", approved_at: now, created_at: now, sequence_step: 0 });
+        });
+      }
+      return json({ ready, skipped, footer, approved: apply ? ready.length : 0, fields: ["first_name", "company"], max: 100,
+                    mailboxes: (FX.me_mailboxes && FX.me_mailboxes.mailboxes) || [], can_send: false, paused: null, sends_from: [] });
+    }
     // ---- the Apollo page: a pretend Apollo (made-up people at example.com) ----
     if (p.startsWith("/api/universal/")) {
       const U = FX.universal || { filters: [], app_only: [], endpoints: [] };
