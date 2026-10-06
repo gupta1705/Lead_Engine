@@ -557,6 +557,15 @@ def cmd_send(args):
             problem = db.run(lambda cur, _o=oid, _m=email: (cur.execute(_DUPLICATE_SQL, {
                 "oid": _o, "email": _m, "statuses": TAKEN_AT_SEND}),
                                                            cur.fetchone())[1][0])
+        if not problem:
+            # an address that answered us under another lead or project since this was approved, or
+            # bounced, gets nothing new from any project (outreach_policy.ANSWERED_SQL)
+            why = db.run(lambda cur, _m=email, _e=eid: pol.answered_elsewhere(cur, _m, _e))
+            if why and step > 0:
+                log("  %-32s follow-up %d CANCELLED: %s" % (company[:32], step, why))
+                cancel(oid, why)
+                continue
+            problem = why
         if problem:
             log("  %-32s PARKED: %s" % (company[:32], problem))
             park(oid, problem)

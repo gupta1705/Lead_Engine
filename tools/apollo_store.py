@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""apollo_store.py -- people and companies from Apollo, saved as leads of the Universal project.
+"""apollo_store.py -- people and companies from Apollo, saved as leads of a project that searches Apollo
+(ui.search_page "apollo": Universal, LCX Services).
 
 The same shape as every other project: a company is an entity, a person is a
 contact of it. What Apollo said about each is kept on the entity, so a lead

@@ -115,6 +115,8 @@ class Lead:
         self.now = now or dt.datetime.now(dt.timezone.utc)
         self.name = row.get("name") or ""
         self.domain = row.get("domain")
+        # a project whose leads come from Apollo search (Universal, LCX Services): nobody reads their sites
+        self.apollo = ((self.cfg.get("ui") or {}).get("search_page") == "apollo")
 
     def v(self, key):
         return num(self.si.get(key))
@@ -215,7 +217,7 @@ def contact_routes(lead):
     # what has been tried, so an empty contact list is never a mystery
     result = m.get("enrichment_result")
     people = m.get("apollo_people") if isinstance(m.get("apollo_people"), dict) else {}
-    if lead.slug == "universal" or people:
+    if lead.apollo or people:
         # an Apollo lead: Apollo's reveal is what was tried; nobody reads its website
         n, mailed = len(people), sum(1 for p in people.values() if isinstance(p, dict) and p.get("has_email"))
         tried.append("Apollo revealed %d %s saved here; %d came with an email address." % (
@@ -918,7 +920,7 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
     elif not lead.best():
         phone = next((r for r in routes["routes"] if r["kind"] == "phone"), None)
         step = ("Find a way in: call %s, or look for a named person on %s." % (phone["value"], lead.domain or "their site")
-                if phone else "Find a way in: %s." % ("save a person at it from Apollo search" if lead.slug == "universal"
+                if phone else "Find a way in: %s." % ("save a person at it from Apollo search" if lead.apollo
                                                       else "look for a named person on their site or channel"))
     elif big and big[0]["points"] >= 20:
         step = "Check %s by hand (%s points unchecked). %s" % (big[0]["key"].replace("_", " "), pts(big[0]["points"]),

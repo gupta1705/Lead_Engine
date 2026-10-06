@@ -19,11 +19,13 @@ FILES = {                       # slug -> (sql file, name, entity_type)
     "startup-acquisitions": "03c_segment_startup_acquisitions.sql",
     "lcx-clipping": "03d_segment_lcx_clipping.sql",
     "universal": "03e_segment_universal.sql",
+    "lcx-services": "03f_segment_lcx_services.sql",
 }
 NAMES = {
     "startup-acquisitions": "Startup Acquisition Targets -- struggling Mumbai startups",
     "lcx-clipping": "LCX Clipping -- creators and podcasters with a back catalogue",
     "universal": "Universal -- any company or person, found with Apollo search",
+    "lcx-services": "LCX Services -- any business, offered every LCX service in one email",
 }
 
 

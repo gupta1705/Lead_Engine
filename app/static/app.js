@@ -1093,7 +1093,10 @@ async function openCompose(leads) {
   catch (e) { modal.close(true); return toast(e.message, true); }
   if (!modal.isOpen()) return;
   const c = { ready: chk.ready.slice(), at: 0 };
-  const start = "Hi {{first_name}},\n\n";
+  // a project may start the box from its own email (outreach.compose_start; LCX Services: every LCX
+  // service in one email), sent as it is or changed first; otherwise it starts from the greeting
+  const GREETING = "Hi {{first_name}},\n\n", preset = outreachPolicy().compose_start;
+  const start = preset ? preset.body : GREETING, startSubject = preset ? preset.subject : "";
   const boxes = (chk.mailboxes || []).filter((b) => b.usable);
   const room = boxes.reduce((a, b) => a + Math.max(0, b.remaining), 0);
   const from = chk.paused
@@ -1111,13 +1114,14 @@ async function openCompose(leads) {
       <div class="modal-main compose-main">
         <div class="compose-to"><span class="label">To</span><span id="cTo"></span></div>
         <div class="field"><label for="cSubject">Subject</label>
-          <input id="cSubject" type="text" maxlength="200" autocomplete="off" autofocus></div>
+          <input id="cSubject" type="text" maxlength="200" autocomplete="off" autofocus value="${esc(startSubject)}"></div>
         <div class="field"><div class="label-row"><label for="cBody">Email</label>
           <span class="insert"><span class="small muted">Insert</span>
             <button type="button" class="btn compact" data-insert="first_name">First name</button>
             <button type="button" class="btn compact" data-insert="company">Company</button></span></div>
-          <textarea id="cBody" class="compose-body">${esc(start)}</textarea>
-          <div class="help">Write it once. {{first_name}} and {{company}} become each person's own; your sign-off and TVF's postal address go under it.</div>
+          <textarea id="cBody" class="compose-body${preset ? " long" : ""}">${esc(start)}</textarea>
+          <div class="help">${preset ? "This project's email is already in: send it as it is, or change anything first."
+            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off and the postal address go under it.</div>
           <div class="field-error" id="cErr" role="alert" hidden></div></div>
         <div class="compose-preview" id="cPreviewBox">
           <div class="preview-head"><span class="small muted">How it reads for</span> <strong id="cWho"></strong><span class="grow"></span>
@@ -1148,7 +1152,7 @@ async function openCompose(leads) {
     const r = c.ready[c.at];
     $("#cTo", root).innerHTML = !n ? `<span class="warn-text">Nobody left to write to.</span>`
       : n === 1 ? `${esc(r.contact_name || r.first_name)} <span class="muted">&lt;${esc(r.email)}&gt;</span>`
-      : `${n} people at ${n} companies <span class="muted">(listed on the right)</span>`;
+      : `${n} people at ${n} companies <span class="muted">(listed under Goes to)</span>`;
     $("#cCount", root).textContent = n;
     $("#cList", root).innerHTML = c.ready.map((x, i) => `<li class="${i === c.at ? "on" : ""}" data-at="${i}">
         <span class="rc-main"><span class="rc-name">${esc(x.first_name)}${x.named ? "" : ` <span class="warn-text small">(no first name known)</span>`}</span>
@@ -1168,7 +1172,7 @@ async function openCompose(leads) {
       $("#cPrevSubject", root).textContent = composeFill(subj.value.trim(), r) || "(no subject yet)";
       $("#cPreview", root).textContent = composeFill(body.value.trim(), r) + "\n\n" + chk.footer;
     }
-    const ok = n > 0 && subj.value.trim() && body.value.trim() && body.value.trim() !== start.trim() && !bad.length;
+    const ok = n > 0 && subj.value.trim() && body.value.trim() && body.value.trim() !== GREETING.trim() && !bad.length;
     $("#cGo", root).disabled = !ok;
     $("#cGoText", root).textContent = n > 1 ? `Approve and send ${n} emails` : "Approve and send";
     const later = chk.paused || !boxes.length ? 0 : Math.max(0, n - room);
@@ -1176,7 +1180,7 @@ async function openCompose(leads) {
       : later ? `${n - later} go today; the other ${later} from tomorrow, within each day's limit.`
       : "Each goes on its own, from your address, signed by you.";
   };
-  const dirty = () => subj.value.trim() !== "" || body.value !== start;
+  const dirty = () => subj.value.trim() !== startSubject.trim() || body.value !== start;
   modal.guard = () => !dirty() || confirm("Discard this email?");
   subj.addEventListener("input", paint);
   body.addEventListener("input", paint);
@@ -1625,12 +1629,17 @@ function bindOps() {
 }
 
 /* ========================================================== universal */
-/* The Universal project's page: Apollo's people and company search (2026-09-19).
+/* The Apollo search page (ui.search_page "apollo": Universal since 2026-09-19, LCX Services since
+ * 2026-10-06): Apollo's people and company search.
  * The filters are drawn from the server's list (tools/apollo.py FILTERS), so the
  * page offers exactly what Apollo's API accepts, under the names Apollo's own app
  * gives them. Searching people costs nothing; saving a person reveals them and
- * costs a credit, so a save that costs credits is always confirmed first. */
+ * costs a credit, so a save that costs credits is always confirmed first.
+ * Every call names the project this page shows, and the server saves only there (app/universal.py). */
 const UNI_STORE = "tvf_uni_v1";
+const uniSlug = () => (state.segment && state.segment.slug) || "";
+const uniStore = () => (!uniSlug() || uniSlug() === "universal" ? UNI_STORE : UNI_STORE + ":" + uniSlug());
+const uniPath = (p) => p + "?project=" + encodeURIComponent(uniSlug());
 state.uni = {
   kind: "people", q: { people: "", companies: "" }, filters: { people: {}, companies: {} },
   page: 1, perPage: 25, perCompany: "", rows: [], total: 0, totalPages: 0, searched: false, resultKind: null,
@@ -1640,11 +1649,11 @@ state.uni = {
 function safeUrl(u) { return /^https?:\/\//i.test(String(u || "")) ? String(u) : ""; }
 function uniPersist() {
   const u = state.uni;
-  try { localStorage.setItem(UNI_STORE, JSON.stringify({ kind: u.kind, q: u.q, filters: u.filters, picked: u.picked })); } catch (e) {}
+  try { localStorage.setItem(uniStore(), JSON.stringify({ kind: u.kind, q: u.q, filters: u.filters, picked: u.picked })); } catch (e) {}
 }
 function uniRestore() {
   let s = null;
-  try { s = JSON.parse(localStorage.getItem(UNI_STORE) || "null"); } catch (e) {}
+  try { s = JSON.parse(localStorage.getItem(uniStore()) || "null"); } catch (e) {}
   if (!s || typeof s !== "object") return;
   const u = state.uni;
   if (s.kind === "people" || s.kind === "companies") u.kind = s.kind;
@@ -1668,7 +1677,7 @@ async function loadUniversal() {
 async function uniLoadStatus() {
   const u = state.uni;
   try {
-    const d = await api("/api/universal/status");
+    const d = await api(uniPath("/api/universal/status"));
     u.status = d.apollo; u.schema = d.filters || [];
     u.maxReveal = d.max_reveal_per_save || 100; u.endpoints = d.endpoints || [];
   } catch (e) {
@@ -1818,7 +1827,7 @@ async function uniSearch(page, asTyped) {
   const token = ++u.token, btn = $("#uniGo");
   btn.classList.add("loading");
   try {
-    const d = await post("/api/universal/search", { kind: u.kind, filters, page: page || 1, as_typed: !!asTyped });
+    const d = await post(uniPath("/api/universal/search"), { kind: u.kind, filters, page: page || 1, as_typed: !!asTyped });
     if (token !== u.token) return;
     // a likely typo: a company search is held unsearched (no credit), a people search says so when empty
     u.suggest = d.did_you_mean || null; u.held = !!d.held; u.typed = u.q[u.kind];
@@ -1937,7 +1946,7 @@ function uniSavePeople() {
   $("#uniSaveGo").addEventListener("click", async (e) => {
     const b = e.currentTarget; b.classList.add("loading");
     try {
-      const r = await post("/api/universal/save", { kind: "people", ids: keep.map((x) => x.id), filters: u.lastFilters || {} });
+      const r = await post(uniPath("/api/universal/save"), { kind: "people", ids: keep.map((x) => x.id), filters: u.lastFilters || {} });
       modal.close(true);
       uniAfterSave(r, "people");
     } catch (err) { b.classList.remove("loading"); toast(err.message, true); }
@@ -1948,7 +1957,7 @@ async function uniSaveCompanies() {
   if (!rows.length) return;
   const b = $("#uniSaveCos"); if (b) b.classList.add("loading");
   try {
-    const r = await post("/api/universal/save", { kind: "companies", companies: rows, filters: u.lastFilters || {} });
+    const r = await post(uniPath("/api/universal/save"), { kind: "companies", companies: rows, filters: u.lastFilters || {} });
     uniAfterSave(r, "companies");
   } catch (err) { toast(err.message, true); if (b) b.classList.remove("loading"); }
 }
@@ -2001,7 +2010,7 @@ function uniLookalike(id, name) {
 async function renderUniSavedMenu(menu) {
   menu.innerHTML = `<div class="menu-heading">Saved searches</div><div class="menu-note">Loading…</div>`;
   let d;
-  try { d = await api("/api/universal/searches"); }
+  try { d = await api(uniPath("/api/universal/searches")); }
   catch (e) { menu.innerHTML = `<div class="menu-heading">Saved searches</div><div class="menu-note">${esc(e.message)}</div>`; return; }
   const rows = d.searches || [];
   menu.innerHTML = `<div class="menu-heading">Saved searches</div>` + (rows.length ? rows.map((s) =>
@@ -2020,7 +2029,7 @@ async function renderUniSavedMenu(menu) {
   });
   $$("[data-del]", menu).forEach((b) => b.addEventListener("click", async (e) => {
     e.stopPropagation();
-    try { await api("/api/universal/searches/" + b.dataset.del, { method: "DELETE" }); flag("Saved search deleted"); renderUniSavedMenu(menu); }
+    try { await api(uniPath("/api/universal/searches/" + encodeURIComponent(b.dataset.del)), { method: "DELETE" }); flag("Saved search deleted"); renderUniSavedMenu(menu); }
     catch (err) { toast(err.message, true); }
   }));
 }
@@ -2052,7 +2061,7 @@ function uniSaveSearchDialog() {
     const name = $("#ssName").value.trim();
     if (!name) return $("#ssName").focus();
     $("#ssGo").classList.add("loading");
-    try { await post("/api/universal/searches", { name, kind: u.kind, filters }); modal.close(true); flag("Search saved", { desc: name }); }
+    try { await post(uniPath("/api/universal/searches"), { name, kind: u.kind, filters }); modal.close(true); flag("Search saved", { desc: name }); }
     catch (e) { toast(e.message, true); $("#ssGo").classList.remove("loading"); }
   };
   $("#ssGo").addEventListener("click", go);

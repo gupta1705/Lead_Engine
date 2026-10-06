@@ -12,7 +12,8 @@ handed and can be told to fail, so nothing leaves the machine. What is checked:
   * what a sent row and its company look like afterwards
   * the message itself: To, From, Subject (non-ASCII encoded), body, no Cc/Bcc
   * what is held back, visibly and without spending the cap: a bad address, an unfilled
-    {{placeholder}}, a company rejected after approval, a subject with a line break
+    {{placeholder}}, a company rejected after approval, a subject with a line break, an address that
+    has answered us in another project since it was approved (a follow-up to them is cancelled)
   * the owner's pause, and a sender still saying SET_ME
   * a Gmail error on the send (send_unknown, never retried by itself), and a Gmail sign-in that
     fails before anything is sent (the email goes back to Approved, not stuck in 'sending')
@@ -313,6 +314,49 @@ def main():
                   ("sent", 1))
             if gmail.sent[before:]:
                 check("  and no header was smuggled in", gmail.sent[-1].get("Bcc"), None)
+
+            # ------------------------------------- an answer from them, elsewhere, since approval
+            print("\n-- an address that answered us in another project since it was approved")
+            cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'send test other', 'company',"
+                        " config from segments where slug = 'us-production-houses' returning id",
+                        ("zz-send-other-" + uuid.uuid4().hex[:6],))
+            other_seg = cur.fetchone()[0]
+
+            def answered_elsewhere():
+                """Their reply ("no thanks") to another project's email -> the address."""
+                addr = "lee.%s@zz-send-test.example" % uuid.uuid4().hex[:6]
+                cur.execute("insert into entities (segment_id, name, domain, source, status) values"
+                            " (%s, %s, %s, 'test', 'contacted') returning id",
+                            (other_seg, "ZZ other " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example"))
+                oe = cur.fetchone()[0]
+                cur.execute("insert into contacts (entity_id, full_name, email, email_status) values"
+                            " (%s, 'Lee Doe', %s, 'valid') returning id", (oe, addr))
+                oc = cur.fetchone()[0]
+                cur.execute("insert into outreach (entity_id, contact_id, direction, subject, body, status, triage)"
+                            " values (%s, %s, 'inbound', 'Re: hello', 'No thanks', 'triaged', 'negative')", (oe, oc))
+                return addr
+
+            opener_to = approved(address=answered_elsewhere().upper())
+            fu_ent = approved(address=answered_elsewhere())          # a thread here, whose follow-up is due
+            cur.execute("update outreach set status = 'sent', sent_at = now() - interval '5 days', gmail_thread_id = %s,"
+                        " gmail_message_id = %s where id = %s",
+                        ("zz-thread-" + uuid.uuid4().hex[:8], "zz-msg-" + uuid.uuid4().hex[:8], fu_ent[0]))
+            cur.execute("update entities set status = 'contacted' where id = %s", (fu_ent[1],))
+            cur.execute("insert into outreach (entity_id, contact_id, subject, body, status, sequence_step, parent_id,"
+                        " approved_at, approved_by, created_at) select entity_id, contact_id, 'Re: ' || subject, 'Again',"
+                        " 'approved', 1, id, now(), 'test', clock_timestamp() from outreach where id = %s returning id",
+                        (fu_ent[0],))
+            fu = cur.fetchone()[0]
+            n = len(gmail.sent)
+            outreach.cmd_send(args)
+            cur.execute("select send_error from outreach where id = %s", (opener_to[0],))
+            parked_why = cur.fetchone()[0]                       # read before state() runs its own query
+            check("a first email to them is parked, with the reason", (state(opener_to[0])[:2], parked_why),
+                  (["approved", True], "this address has replied to an earlier email from us: answer them in that thread"))
+            cur.execute("select status, stopped_reason from outreach where id = %s", (fu,))
+            check("  a follow-up to them is cancelled, with the reason", list(cur.fetchone()),
+                  ["cancelled", "this address has replied to an earlier email from us: answer them in that thread"])
+            check("  and nothing went to them", len(gmail.sent) - n, 0)
 
             # --------------------------------------------------------- pause, sender
             print("\n-- the owner's pause, and a sender still saying SET_ME")

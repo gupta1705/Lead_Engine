@@ -8,9 +8,13 @@
     POST   /api/universal/searches           save one (a name already taken is updated)
     DELETE /api/universal/searches/{id}      delete one
 
-Everything saved goes to the 'universal' segment, whatever project the cookie
-names: the page only exists there, and a save must never land in another
-project's pool by accident.
+A project has this page when its config says ui.search_page "apollo": Universal,
+and since 2026-10-06 LCX Services. The page names its project on every call
+(?project=<slug>) and everything saved goes there -- never to a project without
+the page, so a save cannot land in another project's pool by accident, and a
+second tab switched to another project does not move this tab's saves with it.
+A call that names none (a page loaded before 2026-10-06) is for the cookie's
+project when it has the page, and otherwise for Universal, as before.
 
 Apollo is called outside any database transaction. A reveal of 100 people is
 ten API calls; holding a connection open across them would starve the pool.
@@ -31,7 +35,7 @@ if TOOLS not in sys.path:
 import apollo  # noqa: E402
 import apollo_store  # noqa: E402
 
-SLUG = "universal"
+SLUG = "universal"                 # the project a call that names none falls back to
 _STATUS = {"at": 0.0, "value": None}
 _LOCK = threading.Lock()
 # seconds: the status panel costs two Apollo calls (0 credits, but rate-limited, and ~3 s). The credits are
@@ -52,15 +56,28 @@ def _apollo_http(e):
     return HTTPException(502, msg)
 
 
-def build_router(cursor):
+def has_page(cfg):
+    """Does this project search Apollo for its leads? (ui.search_page)"""
+    return ((cfg or {}).get("ui") or {}).get("search_page") == "apollo"
+
+
+def build_router(cursor, allowed=None):
+    """allowed: the project slugs this deployment serves (SEGMENTS_ALLOWED), or None for any."""
     r = APIRouter()
 
-    def segment(cur):
-        cur.execute("select id, config from segments where slug = %s", (SLUG,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "the Universal project is not set up: run sql/03e_segment_universal.sql")
-        return row["id"], row["config"] or {}
+    def segment(cur, request):
+        named = (request.query_params.get("project") or "").strip()
+        want = [named] if named else [getattr(request.state, "segment", None), SLUG]
+        for slug in dict.fromkeys(s for s in want if s):
+            if allowed is not None and slug not in allowed():
+                continue
+            cur.execute("select id, config from segments where slug = %s and is_active", (slug,))
+            row = cur.fetchone()
+            if row and has_page(row["config"]):
+                return row["id"], row["config"] or {}
+        if named:
+            raise HTTPException(404, "this project does not search Apollo for its leads")
+        raise HTTPException(404, "the Universal project is not set up: run sql/03e_segment_universal.sql")
 
     def status(force=False):
         with _LOCK:
@@ -72,9 +89,9 @@ def build_router(cursor):
             return _STATUS["value"]
 
     @r.get("/api/universal/status")
-    def universal_status():
+    def universal_status(request: Request):
         with cursor() as cur:
-            _, cfg = segment(cur)
+            _, cfg = segment(cur, request)
         a = cfg.get("apollo") or {}
         return {"apollo": status(),
                 "max_reveal_per_save": int(a.get("max_reveal_per_save") or 100),
@@ -82,13 +99,13 @@ def build_router(cursor):
                 "filters": apollo.FILTERS}
 
     @r.post("/api/universal/search")
-    def universal_search(body: dict = Body(...)):
+    def universal_search(request: Request, body: dict = Body(...)):
         b = body or {}
         kind = b.get("kind")
         # a page of companies costs one credit whatever its size, so it is always a full page;
         # people are free and come in the project's page size
         with cursor() as cur:
-            _, cfg = segment(cur)
+            _, cfg = segment(cur, request)
         people_per = int((cfg.get("apollo") or {}).get("per_page") or 25)
         q_text = (b.get("filters") or {}).get("q_text")
         suggestion = apollo.did_you_mean(q_text) if kind in ("people", "companies") else None
@@ -109,7 +126,7 @@ def build_router(cursor):
         except apollo.ApolloError as e:
             raise _apollo_http(e)
         with cursor() as cur:
-            seg_id, _ = segment(cur)
+            seg_id, _ = segment(cur, request)
             if kind == "people":
                 have = apollo_store.saved_person_ids(cur, seg_id, [p["id"] for p in out["people"]])
                 for p in out["people"]:
@@ -140,7 +157,7 @@ def build_router(cursor):
             summary = ""
         saved_from = {"kind": kind, "summary": summary, "at": apollo_store.now_iso(), "by": user}
         with cursor() as cur:
-            seg_id, cfg = segment(cur)
+            seg_id, cfg = segment(cur, request)
         rule = cfg.get("self_exclusion") or {}
         cap = int((cfg.get("apollo") or {}).get("max_reveal_per_save") or 100)
 
@@ -184,9 +201,9 @@ def build_router(cursor):
 
     # ------------------------------------------------------------ saved searches
     @r.get("/api/universal/searches")
-    def searches_list():
+    def searches_list(request: Request):
         with cursor() as cur:
-            seg_id, _ = segment(cur)
+            seg_id, _ = segment(cur, request)
             cur.execute("select id, name, kind, filters, created_by, updated_at from saved_searches"
                         " where segment_id = %s order by lower(name)", (seg_id,))
             rows = [dict(x) for x in cur.fetchall()]
@@ -213,7 +230,7 @@ def build_router(cursor):
         import json
         user = getattr(request.state, "user", None) or "unknown"
         with cursor() as cur:
-            seg_id, _ = segment(cur)
+            seg_id, _ = segment(cur, request)
             cur.execute(
                 "insert into saved_searches (segment_id, name, kind, filters, created_by) values (%s, %s, %s, %s::jsonb, %s)"
                 " on conflict (segment_id, lower(name)) do update set kind = excluded.kind, filters = excluded.filters,"
@@ -222,9 +239,9 @@ def build_router(cursor):
         return {"ok": True, "id": sid, "name": name}
 
     @r.delete("/api/universal/searches/{search_id}")
-    def searches_delete(search_id: str):
+    def searches_delete(request: Request, search_id: str):
         with cursor() as cur:
-            seg_id, _ = segment(cur)
+            seg_id, _ = segment(cur, request)
             cur.execute("delete from saved_searches where id::text = %s and segment_id = %s returning id",
                         (search_id, seg_id))
             if not cur.fetchone():

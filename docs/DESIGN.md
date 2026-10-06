@@ -45,8 +45,8 @@ place per action.
 | **Outreach** | Sending today (each person, each of their addresses with a bar of today's count against its limit; or the project's one counter), folders as tabs with counts (Drafts, Approved, Sent, Replies, Attention only when something is in it), and the list: company, contact, subject, by (on Approved, Sent and Attention), when. An email opens in a sheet like a lead: a draft is editable until approved, Approve and send is its only action. |
 | **Reports** | Status donut with its legend; outreach results as tiles; By person; By source where a project has more than one. |
 | **Operations** | Run weekly refresh; the automatic runs and how each last went; mailboxes where there is rotation; the job log, drawn as a terminal. |
-| **Apollo search** | (Universal only.) People or Companies as a segmented control over one large search bar, what a search costs under it, the filters Apollo's own app offers in a column beside the results, saved searches. |
-| **Writing an email** | (Universal only, 2026-09-27: "in the universal segment there should be a widget to send mail to them".) Tick boxes on the Leads page for every lead that can be written to (an address, not contacted or rejected, no email yet), a bar with the one action, **Write email to N**, and **Write email** in one lead's sheet. The sheet: To, subject, the email with **First name** / **Company** buttons for `{{first_name}}` and `{{company}}`, and under it the email exactly as each person will read it (arrows, or a click on a name), sign-off and footer included. Beside it: the writer's sending address with today's room, everyone it goes to with how they are greeted (flagged when no first name is known, each removable), and who cannot be written to and why. **Approve and send N** is the approval: one approved email per company (`approval_mode` 'compose'), sent like any other. Universal's Outreach page has no Drafts folder: nothing there is ever drafted. |
+| **Apollo search** | (A project with `ui.search_page` "apollo": Universal, and LCX Services since 2026-10-06; every call names the project the page shows, and what is saved lands only there.) People or Companies as a segmented control over one large search bar, what a search costs under it, the filters Apollo's own app offers in a column beside the results, saved searches. |
+| **Writing an email** | (Universal, 2026-09-27: "in the universal segment there should be a widget to send mail to them"; LCX Services, 2026-10-06, where the box starts from the project's own email, `outreach.compose_start`: every LCX service in one email, sent as it is or changed first.) Tick boxes on the Leads page for every lead that can be written to (an address, not contacted or rejected, no email yet), a bar with the one action, **Write email to N**, and **Write email** in one lead's sheet. The sheet: To, subject, the email with **First name** / **Company** buttons for `{{first_name}}` and `{{company}}`, and under it the email exactly as each person will read it (arrows, or a click on a name), sign-off and footer included. Beside it: the writer's sending address with today's room, everyone it goes to with how they are greeted (flagged when no first name is known, each removable), and who cannot be written to and why. **Approve and send N** is the approval: one approved email per company (`approval_mode` 'compose'), sent like any other. Universal's Outreach page has no Drafts folder: nothing there is ever drafted. |
 | **Login** | A card on the canvas, the mark above it. Self-contained: it sits outside the login wall. |
 
 Deep links: `#universal`, `#board`, `#leads`, `#outreach/<folder>`, `#reports`,
@@ -112,6 +112,12 @@ colour by adding a token to both themes.
   person in the same step, with how it reads for every recipient in front of
   them; the server runs every recipient through the checks any approval makes
   (`tools/outreach_compose.py`).
+- **Once someone answers, no project writes to them cold again.** An address
+  that has replied to any email from us (anything but an auto-reply) or
+  bounced one, under any lead in any project, is refused at approval and at
+  sending (`outreach_policy.ANSWERED_SQL`, 2026-10-06): Universal and LCX
+  Services both write to any business over the same address, and the footer
+  promises "you won't hear from me again".
 
 ## Looking at it without a login
 

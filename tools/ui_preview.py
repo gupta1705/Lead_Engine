@@ -75,7 +75,9 @@ def generate(out, slug):
         d = main.outreach_list(req, folder=f, segment=slug)
         rows += d["rows"]; counts = d["counts"]
     fx["outreach"] = {"rows": rows, "counts": counts}
-    fx["mailboxes"] = main.mailboxes_state(req, segment=slug) if fx["segment"]["slug"] != "universal" else None
+    # a project that searches Apollo (Universal, LCX Services) has no mailboxes of its own: each person sends from theirs
+    apollo_page = (fx["segment"].get("ui") or {}).get("search_page") == "apollo"
+    fx["mailboxes"] = None if apollo_page else main.mailboxes_state(req, segment=slug)
     fx["me_mailboxes"] = {"mailboxes": []}
     fx["footer"] = main.footer_get(segment=slug)
     fx["schedule"] = main.schedule_state(segment=slug)
@@ -85,7 +87,7 @@ def generate(out, slug):
     import apollo
     import explain
     with main.cursor() as cur:
-        cur.execute("select config->'apollo' as a from segments where slug = 'universal'")
+        cur.execute("select config->'apollo' as a from segments where slug = %s", (slug if apollo_page else "universal",))
         row = cur.fetchone()
     a = (row or {}).get("a") or {}
     fx["universal"] = {"filters": apollo.FILTERS, "endpoints": a.get("endpoints") or [],
@@ -111,11 +113,11 @@ def generate(out, slug):
                                        "rank": 95}], demo["domain"])
     demo["contacts"] = contacts
     demo["outreach"] = None
-    demo["explain"] = explain.explain_lead("universal", {"rubric": []}, demo, contacts)
+    demo["explain"] = explain.explain_lead("universal", {"rubric": [], "ui": {"search_page": "apollo"}}, demo, contacts)
     demo["criteria"] = []
     demo["thresholds"] = {"review": 0, "priority": 0}
-    if slug == "universal":
-        # the Universal project starts empty: one made-up saved lead, so the board, list and dialog have something
+    if apollo_page:
+        # a project that searches Apollo starts empty: one made-up saved lead, so the board, list and dialog have something
         fx["details"][demo["id"]] = demo
         fx["leads"].append({"id": demo["id"], "name": demo["name"], "domain": demo["domain"], "source": "apollo",
                             "status": "ready_for_review", "fit_score": 0, "why_fit": None, "kind": None,

@@ -101,9 +101,10 @@ button beside the mark folds the sidebar down to a row of icons, and back. On a
 phone the sidebar opens from the menu button at the top left. The app is light
 or dark to match your computer's setting.
 
-The Universal project has a different menu: **Apollo search** sits at the top,
-because that is where its leads come from, then Board, Leads and Outreach (for
-the emails you write to its leads). Reports and Operations are not there.
+The Universal and LCX Services projects have a different menu: **Apollo
+search** sits at the top, because that is where their leads come from, then
+Board, Leads and Outreach (for the emails you write to their leads). Reports and
+Operations are not there.
 
 ## Switching between projects
 
@@ -116,7 +117,7 @@ to switch.
 
 ![Click the project at the top of the sidebar to switch](img/03-projects.png){width=full}
 
-Right now there are four:
+Right now there are five:
 
 - **LCX Clipping** — creators, podcasters and production houses with a deep back
   catalogue and almost no short-form. This is the active one.
@@ -125,6 +126,8 @@ Right now there are four:
   which TVF could buy for little or back with its content and audience.
 - **Universal** — any company or person, found with Apollo. No rubric and no
   harvest: you search, you pick, you save.
+- **LCX Services** — any business, found with Apollo the same way, sent one
+  email offering every LCX service.
 
 Whichever project you pick, every screen changes with it. The board, the leads,
 the emails, the reports. Check the sidebar if you are ever unsure which one you
@@ -243,7 +246,10 @@ sign-off and TVF's postal address included; the arrows, or a click on a name in
 the list on the right, go from one person to the next. The list shows how each
 is greeted and says when no first name is known. Leave anyone out with the
 cross beside their name. Leads that cannot be written to are listed with the
-reason: no address, already contacted, rejected, or already written to.
+reason: no address, already contacted, rejected, or already written to. So is
+an address that has already replied to us, or bounced an email from us, in any
+project: whoever answered is answered in that conversation, never sent a second
+cold email.
 
 **Approve and send** approves every one of them: you have read it and stand
 behind it, exactly as when approving a draft. Each goes on its own, from your
@@ -253,6 +259,31 @@ review is shortlisted by being written to. Every company gets one first email
 and no more, as everywhere. The emails then sit in **Outreach** under Approved
 until they go, then under Sent; replies arrive under Replies. Until the owner
 links a sending address to you, they wait in Approved.
+
+
+# LCX Services: every service in one email
+
+![In LCX Services the email is already written](img/15-lcx-services.png){width=full}
+
+LCX Services offers everything LCX does, in one email, to any business. It works
+like Universal: find businesses with **Apollo search** (the same filters, the
+same credits), save the ones worth writing to, then tick them on **Leads** and
+press **Write email to N**, or open one lead and press **Write email**. What you
+save here stays here: Universal does not see it, and LCX Services does not see
+Universal's leads.
+
+The difference is that the email is already written. **Write email** opens with
+the LCX services email in the box: all eighteen services on the LCX services
+sheet, in its three groups (Repurposing as a Service, AI Asset Creation and Tech
+Solutions), each in the sheet's own words, with **{{first_name}}** and
+**{{company}}** filled in for each person. Send it as it is, or change anything
+first: what you approve is what goes. Your sign-off and TVF's Mumbai postal
+address go under it.
+
+Everything else is as in Universal: the email as each person will read it, the
+list of who cannot be written to and why, one first email per company, and it
+goes from your own sending address, inside its daily limit, once you approve
+it. Until the owner links a sending address to you, it waits in Approved.
 
 
 # The board

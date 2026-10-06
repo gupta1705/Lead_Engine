@@ -275,6 +275,37 @@ where o.id = %(oid)s
 TAKEN_AT_APPROVAL = ["approved", "sending", "sent", "send_unknown"]
 TAKEN_AT_SEND = ["sending", "sent", "send_unknown"]
 
+# An address that has answered an email from us -- anything but an auto-reply -- or bounced one, under
+# any lead in any project, gets nothing new from any project (2026-10-06, with LCX Services: Universal
+# and LCX Services both write to any business, over the same TVF address). "If this isn't relevant,
+# reply "no thanks" and you won't hear from me again" has to hold across projects, and someone already
+# in a conversation is answered there, by a person, not sent a second cold email. Their own lead's
+# thread is left to the thread rules (a reply pauses or ends it). -> the reason, or NULL.
+ANSWERED_SQL = """
+select case
+  when exists (
+    select 1 from outreach r join contacts c on c.id = r.contact_id
+    where r.direction = 'inbound' and r.triage is distinct from 'neutral'
+      and lower(c.email) = lower(%(email)s) and r.entity_id <> %(entity)s::uuid)
+    then 'this address has replied to an earlier email from us: answer them in that thread'
+  when exists (
+    select 1 from contacts c
+    where lower(c.email) = lower(%(email)s) and c.email_status = 'invalid' and c.verifier = 'bounce')
+    then 'this address bounced an earlier email from us'
+end
+"""
+
+
+def answered_elsewhere(cur, email, entity_id):
+    """-> why this address must get no new email from us (ANSWERED_SQL), or None."""
+    if not email or not entity_id:
+        return None
+    cur.execute(ANSWERED_SQL, {"email": email.strip(), "entity": str(entity_id)})
+    row = cur.fetchone()
+    if not row:
+        return None
+    return row[0] if not isinstance(row, dict) else list(row.values())[0]
+
 # What has gone out today, or may have: the cap counts a send whose outcome is unknown, and one in
 # flight in another run. The day is the database's, UTC, as everywhere else.
 OUT_TODAY_SQL = """
@@ -288,7 +319,7 @@ where e.segment_id = (select id from segments where slug = %s)
 CHECK_SQL = """
 select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
        o.generated_hook, c.email, c.email_status,
-       e.status as entity_status, s.slug, e.name as entity_name
+       e.status as entity_status, s.slug, e.name as entity_name, o.entity_id
 from outreach o
 join entities e on e.id = o.entity_id
 join segments s on s.id = e.segment_id
@@ -343,15 +374,17 @@ def check_drafts(cur, ids, segment, policy=None):
             reason = "its opening line was written by a model; approve it on its own"
         elif not (r["body"] or "").strip():
             reason = "empty body"
-        elif r["sequence_step"] == 0:
-            cur.execute(DUPLICATE_SQL, {"oid": i, "email": None, "statuses": TAKEN_AT_APPROVAL})
-            dup = cur.fetchone()
-            reason = (dup[0] if not isinstance(dup, dict) else list(dup.values())[0]) if dup else None
-            keys = {"email:" + r["email"].strip().lower(), "name:" + (r["entity_name"] or "").strip().lower()}
-            if not reason and keys & chosen:
-                reason = "another selected draft goes to the same address or company"
-            if not reason:
-                chosen |= keys
+        else:
+            reason = answered_elsewhere(cur, r["email"], r["entity_id"])
+            if not reason and r["sequence_step"] == 0:
+                cur.execute(DUPLICATE_SQL, {"oid": i, "email": None, "statuses": TAKEN_AT_APPROVAL})
+                dup = cur.fetchone()
+                reason = (dup[0] if not isinstance(dup, dict) else list(dup.values())[0]) if dup else None
+                keys = {"email:" + r["email"].strip().lower(), "name:" + (r["entity_name"] or "").strip().lower()}
+                if not reason and keys & chosen:
+                    reason = "another selected draft goes to the same address or company"
+                if not reason:
+                    chosen |= keys
         if reason:
             skipped.append({"id": i, "reason": reason})
         else:

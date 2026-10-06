@@ -314,6 +314,7 @@ svg { flex-shrink: 0; }
 .project-switch[data-prefix="LCX"] .project-avatar { background: linear-gradient(135deg, #F79009, #E31B54); }
 .project-switch[data-prefix="STA"] .project-avatar { background: linear-gradient(135deg, #12B76A, #0BA5EC); }
 .project-switch[data-prefix="UNI"] .project-avatar { background: linear-gradient(135deg, #7A5AF8, #2E90FA); }
+.project-switch[data-prefix="LXS"] .project-avatar { background: linear-gradient(135deg, #E31B54, #9E77ED); }
 .project-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .project-kicker { font-size: 11px; line-height: 14px; color: var(--text-subtlest); font-weight: 500; }
 .project-name { font-weight: 600; font-size: 13.5px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -995,6 +996,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .label-row > label { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--text); }
 .label-row .insert { display: inline-flex; align-items: center; gap: 6px; }
 .compose-body { min-height: 220px; height: 34dvh; }
+.compose-body.long { height: 52dvh; }             /* a project's own email, already written (LCX Services) */
 .field-error { font-size: 12.5px; line-height: 18px; color: var(--text-danger); }
 .compose-preview { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 .preview-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 14px; background: var(--surface-sunken);

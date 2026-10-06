@@ -225,6 +225,7 @@ def segment_rows(force=False):
                                                        " config->'outreach'->'follow_ups' as follow_ups,"
                             " config->'outreach'->'batch_approval' as batch_approval,"
                             " coalesce((config->'outreach'->>'compose')::boolean, false) as compose,"
+                            " config->'outreach'->'compose_start' as compose_start,"
                             " coalesce(jsonb_array_length(case when jsonb_typeof(config->'outreach'->'templates') = 'array'"
                             "   then config->'outreach'->'templates' end), 0) > 0 as has_templates,"
                             " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
@@ -297,8 +298,19 @@ def outreach_policy_info(row):
         # a person writes the email to leads they pick (tools/outreach_compose.py); with no templates
         # nothing is ever drafted, so the page leaves the Drafts folder out
         "compose": bool(row.get("compose")),
+        # the email the Write email box starts from (outreach.compose_start; LCX Services: every LCX
+        # service in one email), or None for a box that starts from "Hi {{first_name}},"
+        "compose_start": _compose_start(row) if row.get("compose") else None,
         "drafts": bool(row.get("has_templates", True)),
     }
+
+
+def _compose_start(row):
+    s = row.get("compose_start")
+    if not isinstance(s, dict):
+        return None
+    subject, body = str(s.get("subject") or "").strip(), str(s.get("body") or "").strip()
+    return {"subject": subject, "body": body} if subject and body else None
 
 
 def segments_list(current):
@@ -1253,8 +1265,9 @@ app.include_router(_auth_router)
 import ops as _ops_module
 app.include_router(_ops_module.build_router())
 
-import universal as _universal_module          # the Universal project's Apollo search page
-app.include_router(_universal_module.build_router(cursor))
+import universal as _universal_module          # the Apollo search page (Universal, LCX Services)
+app.include_router(_universal_module.build_router(
+    cursor, allowed=(lambda: SEGMENTS_ALLOWED) if SEGMENTS_ALLOWED else None))
 
 import mailbox_connect as _mailbox_connect_module   # each person's sending address, linked by the owner
 app.include_router(_mailbox_connect_module.build_router(cursor))
