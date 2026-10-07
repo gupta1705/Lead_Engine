@@ -10,6 +10,7 @@ real database inside one transaction that is rolled back: a throwaway segment,
 leads in every state, then ROLLBACK. Not one credit is spent by this file.
 Exit code 1 on any failure.
 """
+import datetime as dt
 import json
 import sys
 import uuid
@@ -175,6 +176,46 @@ def offline():
     for slug in ("lcx-clipping", "startup-acquisitions", "universal"):
         cfg = json.loads((HERE.parent / "config" / ("segment.%s.json" % slug)).read_text(encoding="utf-8"))
         check("%s spends nothing" % slug, ea.enrich_block(cfg)["enabled"], False)
+    check("production houses keeps its own rules: no weekly cap, no country hold, the old pick, no cross-project skip",
+          [ea.enrich_block(live)[k] for k in ("credits_per_week", "reveal_countries", "employer_check", "strict_roles",
+                                              "skip_known_elsewhere")],
+          [None, [], False, False, False])
+
+    print("\n-- LCX Services (the owner, 2026-10-07: \"Enriching from apollo is acceptable\")")
+    lcx = json.loads((HERE.parent / "config" / "segment.lcx-services.json").read_text(encoding="utf-8"))
+    b = ea.enrich_block(lcx)
+    check("on, inside a stated budget: 120 a week, 700 kept for the others, over 43, four countries",
+          (b["enabled"], b["credits_per_week"], b["keep_in_reserve"], b["score_over"], b["reveal_countries"]),
+          (True, 120, 700, 43.0, ["US", "GB", "IN", "AE"]))
+    check("  no 1-credit name lookups (every lead has a website)", b["by_name"], False)
+    check("who to look for depends on the lead: a school's principal, a hotel's director of sales",
+          (ea.roles_for(lcx, "schools")[0], ea.roles_for(lcx, "hospitality")[0]),
+          ("Principal", "Director of Sales and Marketing"))
+    check("  a lead of no known audience falls back to the project's list",
+          ea.roles_for(lcx, None) == lcx["target_contact_roles"], True)
+    check("the employer check: the same company under its legal name passes, another company does not",
+          [ea.works_at({"company": c}, n) for c, n in (("Gyldendal A/S", "Gyldendal"), ("Harrods Ltd", "Harrods"),
+                                                       ("Ladybird Books", "Penguin Random House"), ("", "X"),
+                                                       ("First Horizon", "First Citizens Bank"),
+                                                       ("Bank of Marin", "Bank of Hope"),
+                                                       ("Marriott Vacations Worldwide", "Marriott International"))],
+          [True, True, False, False, False, False, True])
+    check("  a lead saved from the search page names its country as Apollo does: still one of the four",
+          [x in ea.country_forms(["US", "GB", "IN", "AE"]) for x in ("US", "UNITED KINGDOM", "UAE", "AUSTRALIA", "AU")],
+          [True, True, True, False, False])
+    roles = ea.roles_for(lcx, "attractions")
+    senior = b["senior"]
+
+    def strict(titles):
+        who, _ = ea.pick([hit(x, i=i) for i, x in enumerate(titles, 1)], roles, strict=True, senior_re=senior)
+        return who["title"] if who else None
+    check("strict: a title that only shares 'director' is not paid for",
+          strict(["Director of Benefits Administration"]), None)
+    check("  nor a vice president of something else", strict(["Vice President of Architecture"]), None)
+    check("  a role, a real shared word, or a founder is",
+          [strict([x]) for x in ("Head of Marketing", "VP Guest Experience", "Co Founder")],
+          ["Head of Marketing", "VP Guest Experience", "Co Founder"])
+    check("  the only person Apollo lists is no longer reason enough", strict(["MD"]), None)
 
 
 class FakeDb:
@@ -333,6 +374,139 @@ def database():
         conn.close()
 
 
+def lcx_run():
+    """LCX Services' rules end to end, with Apollo stubbed: the country hold, the search at the current
+    employer, the employer check, nobody paid for twice across projects, the weekly cap and the ledger."""
+    print("\n-- an LCX Services run, Apollo stubbed (rolled back)")
+    import psycopg2
+    import apollo_budget
+    import dbconn
+    from run_sql import load_db_url
+    conn = psycopg2.connect(load_db_url())
+    conn.autocommit = False
+    cur = conn.cursor()
+    keep = (dbconn.Db, apollo.key_is_set, apollo.search_people, apollo.reveal_people, apollo.credits, ea.SEGMENT,
+            sys.argv, ea.DELAY)
+    calls, reveals = [], []
+    try:
+        tag = uuid.uuid4().hex[:6]
+        slug, other = "zz-lcx-enrich-" + tag, "zz-other-enrich-" + tag
+        cfg = {"rubric": [{"key": "reachable_decision_maker", "points": 50,
+                           "input": "metadata.scoring_inputs.reachable_decision_maker"}],
+               "target_contact_roles": ["Founder"],
+               "audiences": [{"key": "consumer_brands", "contact_roles": ["Head of Marketing", "Chief Marketing Officer"]}],
+               "enrichment": {"provider": "apollo", "enabled": True, "credits_per_run": 110, "credits_per_week": 3,
+                              "keep_in_reserve": 700, "verified_only": True, "reveal_countries": ["US", "GB"],
+                              "current_employer_check": True, "require_fitting_role": True,
+                              "skip_revealed_elsewhere": True, "senior_titles": "(founder|chief executive)"}}
+        cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 't', 'company', %s::jsonb) returning id",
+                    (slug, json.dumps(cfg)))
+        seg = cur.fetchone()[0]
+        cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'o', 'company', '{}'::jsonb) returning id",
+                    (other,))
+        oseg = cur.fetchone()[0]
+
+        def lead(name, domain, country, extra=None, seg_id=None):
+            meta = dict({"kind": "consumer_brands", "hq_country": country}, **(extra or {}))
+            cur.execute("insert into entities (segment_id, name, domain, source, status, fit_score, metadata)"
+                        " values (%s, %s, %s, 'test', 'ready_for_review', 50, %s::jsonb) returning id",
+                        (seg_id or seg, name, domain, json.dumps(meta)))
+            return cur.fetchone()[0]
+        good = lead("ZZ Good Brand", "good-%s.example" % tag, "US")
+        held = lead("ZZ Australian Brand", "au-%s.example" % tag, "AU")
+        org = "%024x" % 0xa0f1
+        known = lead("ZZ Apollo Found", "found-%s.example" % tag, "GB", {"apollo": {"id": org}})
+        moved = lead("ZZ Another Employer", "moved-%s.example" % tag, "US")
+        twice = lead("ZZ Already Revealed", "twice-%s.example" % tag, "US")
+        spare = lead("ZZ Over The Cap", "cap-%s.example" % tag, "US")
+        named = lead("ZZ A Named Country", "named-%s.example" % tag, "United Kingdom")
+        cur.execute("update entities set fit_score = 60 where id = %s", (named,))
+        for i in range(3):                           # better scored, but based where nothing is paid for
+            hx = lead("ZZ Held %d" % i, "held%d-%s.example" % (i, tag), "Australia")
+            cur.execute("update entities set fit_score = 70 where id = %s", (hx,))
+        dup_person = "%024x" % 0xb0b0
+        lead("ZZ Elsewhere", "elsewhere-%s.example" % tag, "US", {"apollo_enrich": {"person": dup_person}}, seg_id=oseg)
+        cur.execute("insert into apollo_spend (segment_id, kind, credits, ref) values (%s, 'company_page', 1, 'this week')",
+                    (seg,))
+
+        last = [None]
+
+        def people(filters, page=1, per_page=10):
+            calls.append(filters)
+            dom = (filters.get("q_organization_domains_list") or [None])[0]
+            last[0] = dom or "found-%s.example" % tag
+            if filters.get("organization_ids"):
+                return {"total": 1, "people": [dict(hit("Head of Marketing", i=31), company="ZZ Apollo Found")]}
+            if dom and dom.startswith("moved-"):
+                return {"total": 1, "people": [dict(hit("Head of Marketing", i=32), company="Some Other Firm")]}
+            if dom and dom.startswith("twice-"):
+                return {"total": 1, "people": [dict(hit("Head of Marketing", i=33), id=dup_person, company="ZZ Already Revealed")]}
+            name = {"good-": "ZZ Good Brand", "cap-": "ZZ Over The Cap"}
+            co = next((v for k, v in name.items() if dom and dom.startswith(k)), "Firm")
+            return {"total": 2, "people": [dict(hit("Director of Benefits", i=34), company=co),
+                                           dict(hit("Chief Marketing Officer", i=35), company=co)]}
+
+        def reveal(ids):
+            reveals.extend(ids)
+            pid, dom = ids[0], last[0]                 # the company just searched
+            return {"people": [{"apollo_id": pid, "name": "Pat Example", "first_name": "Pat", "title": "Head of Marketing",
+                                "email": "pat@%s" % dom, "email_status": "valid", "apollo_email_status": "verified",
+                                "organization": {"name": "x", "primary_domain": dom}}], "missing": [], "credits": 1.0}
+        dbconn.Db = lambda *a, **k: FakeDb(cur)
+        apollo.key_is_set = lambda: True
+        apollo.search_people, apollo.reveal_people = people, reveal
+        apollo.credits = lambda: {"lead_credits_left": 2204}
+        ea.SEGMENT, ea.DELAY = slug, 0
+        sys.argv = ["enrich_apollo.py", "--limit", "20"]
+        check("the run completes", ea.main(), 0)
+
+        def checked(eid):
+            cur.execute("select metadata->>'apollo_checked' from entities where id = %s", (eid,))
+            return cur.fetchone()[0]
+        check("a lead based outside the reveal countries is held, not stamped", checked(held), None)
+        check("  held in the query itself, so better-scored held leads never crowd the rest out",
+              any(any("held" in d for d in (c.get("q_organization_domains_list") or [])) for c in calls), False)
+        check("a lead whose country is Apollo's name for one of the four is searched (its people work elsewhere: free)",
+              checked(named), "v1:other-employer")
+        check("a lead the Apollo harvest found is searched at its current employer, by Apollo's id",
+              any(c.get("organization_ids") == [org] for c in calls), True)
+        check("  and its person is revealed", checked(known), "v1:written")
+        check("people who work somewhere else now: nothing paid", checked(moved), "v1:other-employer")
+        check("a person already revealed for another project is not paid for again", checked(twice), "v1:known-elsewhere")
+        check("the strict pick paid for the CMO, not the benefits director",
+              "%024x" % (0xc000 + 34) in reveals, False)
+        check("the weekly cap: 3 a week, 1 already spent this week, so 2 reveals and no more", len(reveals), 2)
+        check("  the lead over the cap is left for next week, unstamped", checked(spare), None)
+        cur.execute("select kind, credits from apollo_spend where segment_id = %s order by id", (seg,))
+        check("every credit is in the ledger", [(k, float(c)) for k, c in cur.fetchall()],
+              [("company_page", 1.0), ("reveal", 1.0), ("reveal", 1.0)])
+        block = ea.enrich_block(cfg)
+        check("the allowance reads the ledger: the week's cap is used up",
+              apollo_budget.allowance(cur, slug, cfg["enrichment"], 2204, 110)[0], 0)
+        check("  and the reserve binds when the month runs low",
+              apollo_budget.allowance(cur, slug, dict(cfg["enrichment"], credits_per_week=None), 701, 110)[0], 1)
+        check("  (the block reads the cap the run used)", block["credits_per_week"], 3)
+        check("  and when Apollo cannot say what is left, a project keeping a reserve spends nothing",
+              apollo_budget.allowance(cur, slug, dict(cfg["enrichment"], credits_per_week=None), None, 110),
+              (0, "the balance: Apollo did not say what is left, and 700 must be kept for the other projects"))
+        check("  a project with no budget stated is not held by it", apollo_budget.allowance(cur, slug, {}, None, 110)[0], 110)
+        cur.execute("delete from apollo_spend where segment_id = %s", (seg,))
+        cur.execute("select (date_trunc('week', (now() at time zone 'utc') - interval '4 days') + interval '4 days')"
+                    " at time zone 'utc'")
+        friday = cur.fetchone()[0].astimezone(dt.timezone.utc)
+        for at, n in ((friday - dt.timedelta(minutes=5), 100), (friday + dt.timedelta(minutes=5), 7)):
+            cur.execute("insert into apollo_spend (segment_id, kind, credits, at) values (%s, 'reveal', %s, %s)", (seg, n, at))
+        check("the week runs from Friday 00:00 UTC: last Thursday night's spend is last week's",
+              (apollo_budget.spent(cur, slug), apollo_budget.spent(cur, segment_id=seg), friday.weekday(),
+               (friday.hour, friday.minute)), (7.0, 7.0, 4, (0, 0)))
+    finally:
+        (dbconn.Db, apollo.key_is_set, apollo.search_people, apollo.reveal_people, apollo.credits, ea.SEGMENT,
+         sys.argv, ea.DELAY) = keep
+        conn.rollback()
+        cur.close()
+        conn.close()
+
+
 def main():
     offline()
     try:
@@ -340,6 +514,13 @@ def main():
     except Exception as e:                       # noqa: BLE001 -- a missing database is a failure, not a crash
         RESULTS.append(False)
         print("FAIL  database part: %r" % (e,))
+    try:
+        lcx_run()
+    except Exception as e:                       # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        RESULTS.append(False)
+        print("FAIL  LCX run: %r" % (e,))
     bad = RESULTS.count(False)
     print("\n%d failure(s) of %d checks (all test rows rolled back)" % (bad, len(RESULTS)))
     return 1 if bad else 0

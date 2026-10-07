@@ -818,7 +818,9 @@ ORG_FIELDS = ("id", "name", "website_url", "primary_domain", "linkedin_url", "tw
               "publicly_traded_symbol", "publicly_traded_exchange", "alexa_ranking", "industry", "industries",
               "keywords", "estimated_num_employees", "city", "state", "country", "raw_address",
               "short_description", "annual_revenue", "annual_revenue_printed", "total_funding",
-              "total_funding_printed", "latest_funding_stage", "latest_funding_round_date")
+              "total_funding_printed", "latest_funding_stage", "latest_funding_round_date",
+              # the parent company, when Apollo files this one as a subsidiary (LCX Services' harvest keeps it)
+              "owned_by_organization_id")
 
 
 ORG_NUMBERS = ("founded_year", "estimated_num_employees", "annual_revenue", "total_funding", "alexa_ranking")

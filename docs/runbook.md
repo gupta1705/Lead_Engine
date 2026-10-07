@@ -12,7 +12,7 @@ app unless a terminal command is shown.
 | 1st of month 03:00 UTC | Harvests: Wikidata, AICP (monthly) | n8n, unattended |
 | Tue 02:00 UTC | `weekly_refresh`: promote → enrich → score again → gates | app scheduler, unattended |
 | Wed / Thu 02:00 UTC | LCX's and Startups' own `weekly_refresh`, harvests included | app scheduler, unattended |
-| Fri 02:00 UTC | LCX Services' `weekly_refresh`: Wikidata and OpenStreetMap harvests, published addresses, the site pass, score, auto-shortlist (docs/LCX_services.md) | app scheduler, unattended |
+| Fri 02:00 UTC | LCX Services' `weekly_refresh`: Wikidata, Apollo (10 pages), FDIC and OpenStreetMap harvests, published addresses, the site pass, Apollo people (within 120 credits a week, 700 kept in reserve), score, auto-shortlist (docs/LCX_services.md) | app scheduler, unattended |
 | Every 15 min | Drafting and sending, when there is work | app scheduler, unattended |
 | Hourly | Replies and bounces fetched from each sent thread's mailbox (`outreach.py pull`, read-only), while there are threads from the last 60 days | app scheduler, unattended (since 2026-09-21) |
 | **Tue/Wed** | **Review the band** (below) | **you, ~1.5 h** |

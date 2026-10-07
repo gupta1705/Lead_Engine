@@ -105,6 +105,32 @@ JOBS = {
         "cmd": [PY, "tools/discover_lcx_services.py", "--source", "osm"],
         "segments": ["lcx-services"],
     },
+    "discover_lcx_apollo": {
+        "label": "Harvest: corporates to pitch (Apollo company search)",
+        "group": "Discover",
+        "desc": "Mid-size companies with their websites, from Apollo's company search: companies hiring for content, "
+                "video or training now, recently funded ones, and each audience by size and country. 1 credit a page of "
+                "100, inside the project's weekly cap; a page that would come back empty is never bought.",
+        "cmd": [PY, "tools/discover_lcx_services.py", "--source", "apollo"],
+        "segments": ["lcx-services"],
+    },
+    "discover_lcx_fdic": {
+        "label": "Harvest: US banks to pitch (FDIC register)",
+        "group": "Discover",
+        "desc": "Insured US banks of the right size, with their own websites, from the FDIC's public register. "
+                "Free, no key.",
+        "cmd": [PY, "tools/discover_lcx_services.py", "--source", "fdic"],
+        "segments": ["lcx-services"],
+    },
+    "enrich_apollo_lcxs": {
+        "label": "Ask Apollo for a named person (LCX Services)",
+        "group": "Enrich",
+        "desc": "Leads that fit well and still have nobody to write to after the site pass: one free search at the "
+                "company for its audience's roles, then 1 credit for the best person's verified work address. Inside "
+                "the weekly cap, never under the reserve kept for the other projects.",
+        "cmd": [PY, "tools/enrich_apollo.py", "--limit", "200"],
+        "segments": ["lcx-services"],
+    },
     "enrich_lcx_services": {
         "label": "Lift what the harvest found (addresses, audience)",
         "group": "Enrich",
@@ -116,9 +142,10 @@ JOBS = {
     "enrich_contacts_lcxs": {
         "label": "Find contacts on sites (a week's harvest)",
         "group": "Enrich",
-        "desc": "The polite site pass, sized for LCX Services' weekly harvest: up to 600 websites, robots.txt "
-                "honoured, never LinkedIn.",
-        "cmd": [PY, "tools/enrich_sitescrape.py", "--limit", "600", "--workers", "8"],
+        "desc": "The polite site pass, sized for LCX Services' weekly harvest: up to 1,000 websites, best-scoring "
+                "first (corporates before cafes), robots.txt honoured, never LinkedIn. It runs before any Apollo "
+                "credit, so nothing is paid for a company that publishes an address.",
+        "cmd": [PY, "tools/enrich_sitescrape.py", "--limit", "1000", "--workers", "8"],
         "segments": ["lcx-services"],
     },
     "promote_chain": {

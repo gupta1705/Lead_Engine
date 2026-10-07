@@ -47,7 +47,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-services")
-SOURCES = {"wikidata": "lcx_wikidata", "osm": "lcx_osm"}
+SOURCES = {"wikidata": "lcx_wikidata", "osm": "lcx_osm", "apollo": "lcx_apollo", "fdic": "lcx_fdic"}
+FDIC_API = "https://api.fdic.gov/banks/institutions"
 SPARQL = "https://query.wikidata.org/sparql"
 UA = "TVFLeadEngine/1.0 (+https://github.com/gupta1705/tvf-lead-engine; internal BD tool)"
 OSM_ENDPOINTS = ["https://overpass-api.de/api/interpreter",
@@ -69,10 +70,16 @@ def log(m):
 def audiences(cfg, source):
     """The config's audiences that this source can find."""
     out = []
+    apollo_keys = {s.get("audience") for s in ((cfg or {}).get("apollo_discovery") or {}).get("searches") or []}
+    fdic_key = ((cfg or {}).get("fdic_discovery") or {}).get("audience")
     for a in (cfg or {}).get("audiences") or []:
         if source == "wikidata" and a.get("wikidata"):
             out.append(a)
         elif source == "osm" and a.get("osm"):
+            out.append(a)
+        elif source == "apollo" and a["key"] in apollo_keys:
+            out.append(a)
+        elif source == "fdic" and a["key"] == fdic_key:
             out.append(a)
     return out
 
@@ -234,12 +241,17 @@ def sparql(query):
 def wikidata_ids(match):
     """{QID: (headcount or None, [country ISO codes])} for every operating company with a website
     matching one {property, values} entry."""
-    prop = {"P31": "wdt:P31", "P452": "wdt:P452"}[match["property"]]
-    vals = " ".join("wd:%s" % q for q in match["values"] if QID_RE.match(q))
+    if match["property"] == "P414":
+        # listed on any stock exchange: ordinary corporates the class and industry queries miss
+        which = "?item wdt:P414 [] ; wdt:P856 [] ."
+    else:
+        prop = {"P31": "wdt:P31", "P452": "wdt:P452"}[match["property"]]
+        vals = " ".join("wd:%s" % q for q in match["values"] if QID_RE.match(q))
+        which = "VALUES ?v { %s } ?item %s ?v ; wdt:P856 [] ." % (vals, prop)
     rows = sparql("SELECT ?item (MAX(?emp) AS ?e) (GROUP_CONCAT(DISTINCT ?iso; separator=\",\") AS ?isos) WHERE {"
-                  " VALUES ?v { %s } ?item %s ?v ; wdt:P856 [] . FILTER NOT EXISTS { ?item wdt:P576 [] }"
+                  " %s FILTER NOT EXISTS { ?item wdt:P576 [] }"
                   " OPTIONAL { ?item wdt:P1128 ?emp . } OPTIONAL { ?item wdt:P17 ?c . ?c wdt:P297 ?iso . } }"
-                  " GROUP BY ?item" % (vals, prop))
+                  " GROUP BY ?item" % which)
     out = {}
     for b in rows:
         try:
@@ -317,6 +329,352 @@ def osm_query(city, aud, radius):
     vals = sorted({v for _, v in aud["osm"]})
     return ('[out:json][timeout:90];nwr[~"^(%s)$"~"^(%s)$"][~"^(contact:)?(website|email)$"~"."]'
             '(around:%d,%s,%s);out tags center;' % ("|".join(keys), "|".join(vals), radius, city["lat"], city["lon"]))
+
+
+# ------------------------------------------------------------------ Apollo company search
+# The owner, 2026-10-07: "i want to reachout to buisnesses to normal corporates not just cafes ... Enriching
+# from apollo is acceptable". Apollo's company search is the one source of mid-size corporates that comes
+# with each company's website, at 1 credit a page of 100 (0.01 a company). config apollo_discovery: the
+# saved searches (an audience's industry tags and sizes, some with a buying signal: hiring for content or
+# training, recently funded), each run in every country listed, one page a run, least-run slice first.
+# A page that would come back empty is caught first by a free people search with the same filters.
+COMPANY_ONLY = ("latest_funding_date_range", "latest_funding_amount_range", "total_funding_range",
+                "organization_not_locations", "lookalike_organization_ids", "q_organization_name")
+
+
+def apollo_slices(cfg):
+    """Every (search, country) pair the config asks for, with its cursor key, in the config's order."""
+    acfg = (cfg or {}).get("apollo_discovery") or {}
+    out = []
+    for si, s in enumerate(acfg.get("searches") or []):
+        for ci, c in enumerate(acfg.get("countries") or []):
+            out.append({"key": "%s|%s" % (s["key"], c["iso"]), "search": s, "country": c, "order": (ci, si)})
+    return out
+
+
+def apollo_filters(sl, today=None):
+    """The company-search filters for one slice: its search's own, its country, and its signal's dates
+    (hiring in the last N days, funded in the last N days) counted back from today."""
+    today = today or dt.date.today()
+    s = sl["search"]
+    f = json.loads(json.dumps(s.get("filters") or {}))
+    f["organization_locations"] = [sl["country"]["name"]]
+    if s.get("posted_within_days"):
+        f["organization_job_posted_at_range"] = {
+            "min": (today - dt.timedelta(days=int(s["posted_within_days"]))).isoformat(), "max": today.isoformat()}
+    if s.get("funded_within_days"):
+        f["latest_funding_date_range"] = {
+            "min": (today - dt.timedelta(days=int(s["funded_within_days"]))).isoformat(), "max": today.isoformat()}
+    return f
+
+
+def band_size(bands):
+    """right_size from the headcount bands a search asked for: 1.0 when every band sits in 10-5,000."""
+    if not bands:
+        return None
+    lo_hi = []
+    for b in bands:
+        try:
+            lo, hi = (int(x) for x in str(b).split(","))
+        except ValueError:
+            return None
+        lo_hi.append((lo, hi))
+    if all(lo >= 10 and hi <= 5000 for lo, hi in lo_hi):
+        return 1.0
+    return 0.5
+
+
+def band_text(bands):
+    if not bands:
+        return None
+    lows = [int(str(b).split(",")[0]) for b in bands]
+    highs = [int(str(b).split(",")[1]) for b in bands]
+    return "%s-%s people" % (format(min(lows), ","), format(max(highs), ","))
+
+
+def apollo_row(org, sl, aud, cfg, today=None):
+    """One company from a company-search page -> a staging row, or None (and why). Apollo's answer has no
+    industry, size or country, so they come from the slice that found it."""
+    import apollo_store
+    today = today or dt.date.today()
+    name = (org.get("name") or "").strip()
+    if not name:
+        return None, "no name"
+    # Apollo's primary_domain first, as tools/apollo_store.py does, so a company saved by hand from the
+    # search page and the same one found here are one company to the skip-sets and the duplicate rule
+    url, domain = website(org.get("primary_domain") or org.get("website_url"), cfg)
+    if not domain:
+        return None, "no website of its own"
+    if apollo_store.excluded({"name": name, "primary_domain": domain}, (cfg or {}).get("self_exclusion") or {}):
+        return None, "TVF or an affiliate"
+    s, iso = sl["search"], sl["country"]["iso"].upper()
+    bands = (s.get("filters") or {}).get("organization_num_employees_ranges") or []
+    si = inputs(aud, cfg, iso=iso, established=1.0)
+    size = band_size(bands)
+    if size is not None:
+        si["right_size"] = size
+    try:
+        young = int(org.get("founded_year") or 0) >= today.year - 1
+    except (TypeError, ValueError):
+        young = False
+    if young:
+        si["established"] = 0.5                      # founded this year or last
+    if s.get("signal"):
+        si["buying_signal"] = 1.0
+    how = s.get("signal") or band_text(bands) or "industry search"
+    raw = {"kind": aud["key"], "audience": aud.get("label"), "services": aud.get("services") or [],
+           "why_fit": why_fit(aud, " in %s, on Apollo (%s)" % (sl["country"]["name"], how)),
+           "published_email": None,
+           "apollo": {k: org.get(k) for k in ("id", "name", "website_url", "primary_domain", "phone", "founded_year",
+                                              "publicly_traded_symbol", "annual_revenue_printed") if org.get(k)},
+           "apollo_search": {"key": sl["key"], "signal": s.get("signal"), "country_iso": iso,
+                             "size_band": band_text(bands)},
+           "scoring_inputs": si}
+    return {"name": name[:200], "domain": domain, "source_url": "https://app.apollo.io/#/organizations/%s" % org.get("id"),
+            "raw": raw}, None
+
+
+def precheck(filters):
+    """Free: does a company page with these filters have anyone in it? A people search with the same
+    company filters answers for nothing. None when it cannot say (a funding filter, which only company
+    search takes)."""
+    import apollo
+    if any(k in filters for k in COMPANY_ONLY):
+        return None
+    return apollo.search_people(filters, 1, 1)["total"]
+
+
+def load_cursors(db, seg_id):
+    return db.run(lambda cur: (cur.execute(
+        "select search_key, next_page, total_pages, runs, exhausted_at, last_run_at from apollo_cursors"
+        " where segment_id = %s", (seg_id,)),
+        {r[0]: {"next_page": r[1], "total_pages": r[2], "runs": r[3], "exhausted": r[4] is not None,
+                "exhausted_at": r[4], "last_run_at": r[5]} for r in cur.fetchall()})[1])
+
+
+def cursor_sql(cur, seg_id, key, next_page, total_pages, exhausted):
+    cur.execute(
+        "insert into apollo_cursors (segment_id, search_key, next_page, total_pages, runs, last_run_at, exhausted_at)"
+        " values (%s, %s, %s, %s, 1, now(), case when %s then now() end)"
+        " on conflict (segment_id, search_key) do update set next_page = excluded.next_page,"
+        " total_pages = coalesce(excluded.total_pages, apollo_cursors.total_pages),"
+        " runs = apollo_cursors.runs + 1, last_run_at = now(), exhausted_at = excluded.exhausted_at",
+        (seg_id, key, max(1, min(500, int(next_page))), total_pages, bool(exhausted)))
+
+
+def save_cursor(db, seg_id, key, next_page, total_pages, exhausted):
+    """Where a slice got to: the next run asks for the next page."""
+    db.run(lambda cur: cursor_sql(cur, seg_id, key, next_page, total_pages, exhausted))
+
+
+def rolling_days(sl):
+    """A signal search counts back from today (hiring in the last 30 days, funded in the last 90), so its
+    results are a different set each time: the window, in days, or None for a fixed search."""
+    s = sl["search"]
+    d = s.get("posted_within_days") or s.get("funded_within_days")
+    return int(d) if d else None
+
+
+def slice_page(sl, cursors, now=None):
+    """The page to buy next for this slice, or None while it waits.
+    A fixed search goes on page by page; once used up (or found empty by the free check) it waits until
+    its cursor is reset. A signal search, once used up (or found empty), rests for its window and then
+    starts again at page 1, by then a new set of companies. Part-way through, it goes on with its next
+    page however long ago it was bought: its results shift with the dates, so that page holds companies
+    not seen yet, where page 1 would mostly be the big employers that are always hiring."""
+    c = cursors.get(sl["key"]) or {}
+    days = rolling_days(sl)
+    now = now or dt.datetime.now(dt.timezone.utc)
+    if days and c.get("exhausted_at") is not None and now - c["exhausted_at"] >= dt.timedelta(days=days):
+        return 1
+    if c.get("exhausted"):
+        return None
+    return c.get("next_page") or 1
+
+
+def slice_order(slices, cursors, now=None):
+    """Least-run first, so every audience and country gets its turn; then the config's country and
+    search order. A slice that is waiting (slice_page) is left out."""
+    live = [s for s in slices if slice_page(s, cursors, now) is not None]
+    return sorted(live, key=lambda s: ((cursors.get(s["key"]) or {}).get("runs", 0), s["order"]))
+
+
+def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadline=None, spend=None,
+               dry_run=False, today=None):
+    """Up to `pages` company pages (1 credit each), each the next page of the least-run slice. The ledger
+    (spend(cur, credits, ref)) and the slice's cursor are written together, in one transaction, the moment
+    Apollo answers and before anything is done with the companies: a page paid for is always on the ledger
+    and never asked for again, whatever happens next. Every company is then handed to emit(row) as it
+    arrives. -> (rows staged, {reason: count}, pages bought)."""
+    import apollo
+    auds = {a["key"]: a for a in (cfg or {}).get("audiences") or []}
+    acfg = (cfg or {}).get("apollo_discovery") or {}
+    per_page = int(acfg.get("per_page") or 100)
+    cursors = load_cursors(db, seg_id)
+    staged, why_not, bought = [], {}, 0
+    # up to signal_pages_per_run pages from the signal searches (a buying signal, best leads, small sets),
+    # the rest from the plain audience searches (the volume); signals again if the plain ones run out
+    ordered = slice_order(apollo_slices(cfg), cursors)
+    sig_cap = int(acfg.get("signal_pages_per_run") if acfg.get("signal_pages_per_run") is not None else pages)
+    signal = [s for s in ordered if s["search"].get("signal")]
+    base = [s for s in ordered if not s["search"].get("signal")]
+    bought_signal = [0]
+
+    def queue():
+        for s in signal:
+            if bought_signal[0] >= sig_cap:
+                break
+            yield s, True
+        yield from ((s, False) for s in base)
+        yield from ((s, True) for s in signal if s not in seen)
+    seen = []
+    for sl, is_signal in queue():
+        seen.append(sl)
+        if bought >= pages:
+            break
+        if deadline and time.monotonic() > deadline:
+            log("  stopping: this run's time is up (--max-minutes); the rest wait for the next run")
+            break
+        aud = auds.get(sl["search"].get("audience"))
+        if not aud:
+            log("  %-34s skipped: no audience %r in the config" % (sl["key"], sl["search"].get("audience")))
+            continue
+        filters = apollo_filters(sl, today)
+        page = slice_page(sl, cursors) or 1
+        try:
+            n = precheck(filters)
+        except (apollo.ApolloError, ValueError) as e:
+            log("  %-34s free check failed: %s" % (sl["key"], str(e)[:100]))
+            if isinstance(e, apollo.ApolloError) and e.status in (401, 403):
+                break
+            continue
+        if n == 0:
+            log("  %-34s nobody on Apollo matches: set aside, no credit spent" % sl["key"])
+            if not dry_run:
+                save_cursor(db, seg_id, sl["key"], page, None, True)
+            continue
+        if dry_run:
+            log("  %-34s page %d would be bought (%s people at matching companies, free check)"
+                % (sl["key"], page, "?" if n is None else format(n, ",")))
+            bought += 1
+            bought_signal[0] += 1 if is_signal else 0
+            continue
+        try:
+            out = apollo.search_companies(filters, page, per_page)
+        except apollo.ApolloError as e:
+            log("  %-34s company search failed: %s" % (sl["key"], str(e)[:100]))
+            if e.status in (401, 403):
+                break
+            if e.status == 429:
+                time.sleep(min(int(e.retry_after or 60), 120))
+            continue
+        except ValueError as e:
+            log("  %-34s skipped: %s" % (sl["key"], str(e)[:100]))
+            continue
+        bought += 1
+        bought_signal[0] += 1 if is_signal else 0
+        total_pages = min(int(out.get("total_pages") or 0), 500) or None
+        done = not out.get("companies") or (total_pages is not None and page >= total_pages) or page >= 500
+        ref = "%s p%d" % (sl["key"], page)
+        try:
+            db.run(lambda cur: (spend(cur, 1, ref) if spend else None,
+                                cursor_sql(cur, seg_id, sl["key"], page + 1, total_pages, done)))
+        except Exception as e:                      # noqa: BLE001 -- the ledger must hold: stop buying
+            log("  %-34s page %d bought, but the ledger and cursor could not be written (%s): stopping, so"
+                " the week's cap is not overrun" % (sl["key"], page, str(e).splitlines()[0][:80]))
+            break
+        took = 0
+        for org in out.get("companies") or []:
+            row, why = apollo_row(org, sl, aud, cfg, today)
+            if row and (row["source_url"] in skip_urls or row["domain"] in skip_domains):
+                row, why = None, "already a lead here or in another project"
+            if not row:
+                why_not[why] = why_not.get(why, 0) + 1
+                continue
+            skip_domains.add(row["domain"])
+            skip_urls.add(row["source_url"])
+            staged.append(row)
+            if emit:
+                emit(row)
+            took += 1
+        log("  %-34s page %d of %s: %3d companies, %3d new%s" % (
+            sl["key"], page, total_pages or "?", len(out.get("companies") or []), took, "  (last page)" if done else ""))
+        time.sleep(0.5)
+    return staged, why_not, bought
+
+
+# ------------------------------------------------------------------ FDIC BankFind (US banks)
+# Every insured US bank, from the FDIC's own public API: name, its website, city and state, and total
+# assets, a real size measure. US government work, public domain. config fdic_discovery: which audience
+# they are, and the asset band that is the right size (assets are in thousands of dollars, as the API
+# gives them). A finite list: the first runs take a share each week, then only new charters appear.
+def fdic_banks():
+    """Every active bank: [{NAME, WEBADDR, CITY, STALP, ASSET, CERT}]."""
+    q = urllib.parse.urlencode({"filters": "ACTIVE:1", "fields": "NAME,WEBADDR,CITY,STALP,ASSET,CERT",
+                                "limit": 10000, "format": "json"})
+    return [d["data"] for d in _get_json(FDIC_API + "?" + q).get("data") or [] if d.get("data")]
+
+
+def fdic_row(b, aud, cfg):
+    """One bank -> a staging row, or None (and why)."""
+    fcfg = (cfg or {}).get("fdic_discovery") or {}
+    name = " ".join(str(b.get("NAME") or "").split())
+    if not name:
+        return None, "no name"
+    url, domain = website(b.get("WEBADDR"), cfg)
+    if not domain:
+        return None, "no website of its own"
+    try:
+        assets = int(b.get("ASSET") or 0)                    # thousands of dollars
+    except (TypeError, ValueError):
+        assets = 0
+    lo, hi = int(fcfg.get("assets_min_thousands") or 0), int(fcfg.get("assets_max_thousands") or 10 ** 12)
+    if not lo <= assets <= hi:
+        return None, "outside the asset band"
+    si = inputs(aud, cfg, iso="US", established=1.0)
+    si["right_size"] = 1.0
+    where = " in %s, %s, on the FDIC's register (%s bn dollars in assets)" % (
+        (b.get("CITY") or "").title(), b.get("STALP") or "", format(round(assets / 1e6, 1), ","))
+    raw = {"kind": aud["key"], "audience": aud.get("label"), "services": aud.get("services") or [],
+           "why_fit": why_fit(aud, where), "published_email": None,
+           "fdic": {"cert": b.get("CERT"), "city": (b.get("CITY") or "").title(), "state": b.get("STALP"),
+                    "assets_thousands": assets, "website": url, "country_iso": "US"},
+           "scoring_inputs": si}
+    return {"name": name[:200], "domain": domain,
+            "source_url": "https://banks.data.fdic.gov/bankfind-suite/bankfind/details/%s" % b.get("CERT"),
+            "raw": raw}, None
+
+
+def run_fdic(cfg, limit, skip_urls, skip_domains, emit=None, banks=None):
+    """Up to `limit` new banks in the asset band, largest first (they have the marketing teams)."""
+    key = ((cfg or {}).get("fdic_discovery") or {}).get("audience")
+    aud = next((a for a in (cfg or {}).get("audiences") or [] if a["key"] == key), None)
+    if not aud:
+        return [], {}
+    if banks is None:
+        try:
+            banks = fdic_banks()
+        except Exception as e:                      # noqa: BLE001 -- one source down never stops the refresh
+            log("  FDIC BankFind did not answer (%s): no banks this run, the rest of the refresh goes on"
+                % str(e).splitlines()[0][:100])
+            return [], {"FDIC BankFind did not answer": 1}
+    staged, why_not = [], {}
+    for b in sorted(banks, key=lambda x: -(int(x.get("ASSET") or 0))):
+        if len(staged) >= limit:
+            break
+        row, why = fdic_row(b, aud, cfg)
+        if row and (row["source_url"] in skip_urls or row["domain"] in skip_domains):
+            row, why = None, "already a lead here or in another project"
+        if not row:
+            why_not[why] = why_not.get(why, 0) + 1
+            continue
+        skip_domains.add(row["domain"])
+        skip_urls.add(row["source_url"])
+        staged.append(row)
+        if emit:
+            emit(row)
+    log("  FDIC: %d active banks, %d staged" % (len(banks), len(staged)))
+    return staged, why_not
 
 
 # ------------------------------------------------------------------ the run
@@ -463,10 +821,46 @@ def run_osm(cfg, limit, cities_per_run, skip_urls, skip_domains, endpoints, per_
     return staged, why_not
 
 
+def apollo_run(db, seg_id, cfg, args, skip_urls, skip_domains, emit, deadline):
+    """The Apollo source's gate and budget: only when the project has Apollo spending on (enrichment.enabled,
+    provider apollo -- the owner's yes), never past the week's cap or the reserve (tools/apollo_budget.py),
+    and every page written to the ledger as it is bought."""
+    import apollo
+    import apollo_budget
+    import enrich_apollo
+    block = cfg.get("enrichment") or {}
+    gate = enrich_apollo.enrich_block(cfg)
+    if gate["provider"] != "apollo" or not gate["enabled"]:
+        log("Apollo spending is off for %s (enrichment.enabled) -- nothing bought" % SEGMENT)
+        return [], {}
+    if not apollo.key_is_set():
+        log("APOLLO_API_KEY is not set -- skipped, nothing spent")
+        return [], {}
+    acfg = cfg.get("apollo_discovery") or {}
+    want = int(args.limit or acfg.get("pages_per_run") or 10)
+    try:
+        left = (apollo.credits() or {}).get("lead_credits_left")
+    except apollo.ApolloError as e:
+        left = None
+        log("  credits unknown (%s)" % e)
+    pages, why = db.run(lambda cur: apollo_budget.allowance(cur, SEGMENT, block, left, want))
+    log("  Apollo: up to %d company page(s) this run (set by %s)%s"
+        % (pages, why, "  [DRY RUN: free checks only, nothing bought]" if args.dry_run else ""))
+    if pages <= 0:
+        return [], {}
+
+    def spend(cur, credits, ref):                  # inside run_apollo's own transaction, with the cursor
+        apollo_budget.record(cur, SEGMENT, "company_page", credits, ref)
+    staged, why_not, bought = run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=emit,
+                                         deadline=deadline, spend=spend, dry_run=args.dry_run)
+    log("  Apollo: %d page(s) %s" % (bought, "would be bought" if args.dry_run else "bought, 1 credit each"))
+    return staged, why_not
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=sorted(SOURCES), required=True)
-    ap.add_argument("--limit", type=int, default=None, help="most new businesses this run")
+    ap.add_argument("--limit", type=int, default=None, help="most new businesses this run (Apollo: company pages)")
     ap.add_argument("--per-audience", type=int, default=None, help="Wikidata: most new companies per audience")
     ap.add_argument("--cities", type=int, default=None, help="OpenStreetMap: cities this run")
     ap.add_argument("--endpoint", action="append", default=None,
@@ -518,6 +912,10 @@ def main():
         if args.source == "wikidata":
             staged, why_not = run_wikidata(cfg, limit, args.per_audience or int(dcfg.get("per_audience") or 150),
                                            skip_urls, skip_domains, emit=emit, deadline=deadline)
+        elif args.source == "fdic":
+            staged, why_not = run_fdic(cfg, limit, skip_urls, skip_domains, emit=emit)
+        elif args.source == "apollo":
+            staged, why_not = apollo_run(db, seg_id, cfg, args, skip_urls, skip_domains, emit, deadline)
         else:
             staged, why_not = run_osm(cfg, limit, args.cities or int(dcfg.get("cities_per_run") or 6),
                                       skip_urls, skip_domains,

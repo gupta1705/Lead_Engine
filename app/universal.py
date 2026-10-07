@@ -56,6 +56,35 @@ def _apollo_http(e):
     return HTTPException(502, msg)
 
 
+def _spend(cursor, seg_id, kind, credits, ref):
+    """Credits spent from this page, into the ledger (tools/apollo_budget.py), in a transaction of their own
+    and before anything else is done with what was bought, so a save that fails afterwards cannot take the
+    record of the spend with it. A missing ledger table never fails the search or the save paid for."""
+    import apollo_budget
+    try:
+        with cursor() as cur:
+            apollo_budget.record_by_id(cur, seg_id, kind, credits, ref)
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def _budget(cursor, seg_id, cfg, status, need):
+    """A project with a stated Apollo budget (LCX Services: enrichment.credits_per_week, keep_in_reserve)
+    spends from this page inside it, the same week the weekly runs count. -> None when `need` credits fit,
+    else what to tell the person. A project without one (Universal) is not checked, as before."""
+    import apollo_budget
+    block = (cfg or {}).get("enrichment") or {}
+    if not apollo_budget.capped(block):
+        return None
+    left = ((status() or {}).get("credits") or {}).get("lead_credits_left")
+    with cursor() as cur:
+        n, why = apollo_budget.allowance(cur, None, block, left, segment_id=seg_id)
+    if n >= need:
+        return None
+    return ("this project's Apollo budget has %d credit(s) left now (set by %s), and this needs %d: "
+            "the owner sets the budget in the project's config" % (max(0, n), why, need))
+
+
 def has_page(cfg):
     """Does this project search Apollo for its leads? (ui.search_page)"""
     return ((cfg or {}).get("ui") or {}).get("search_page") == "apollo"
@@ -105,7 +134,7 @@ def build_router(cursor, allowed=None):
         # a page of companies costs one credit whatever its size, so it is always a full page;
         # people are free and come in the project's page size
         with cursor() as cur:
-            _, cfg = segment(cur, request)
+            seg_id, cfg = segment(cur, request)
         people_per = int((cfg.get("apollo") or {}).get("per_page") or 25)
         q_text = (b.get("filters") or {}).get("q_text")
         suggestion = apollo.did_you_mean(q_text) if kind in ("people", "companies") else None
@@ -114,6 +143,10 @@ def build_router(cursor, allowed=None):
             # and Apollo is not called (owner, 2026-09-21: "UAE Restraunts" found nothing and cost one)
             return {"companies": [], "total": 0, "page": 1, "total_pages": 0, "held": True,
                     "did_you_mean": suggestion, "read_as": ""}
+        if kind == "companies":
+            over = _budget(cursor, seg_id, cfg, status, 1)
+            if over:
+                raise HTTPException(409, over)
         try:
             if kind == "people":
                 out = apollo.search_people(b.get("filters") or {}, b.get("page") or 1, people_per)
@@ -125,8 +158,10 @@ def build_router(cursor, allowed=None):
             raise HTTPException(400, str(e))
         except apollo.ApolloError as e:
             raise _apollo_http(e)
+        if kind == "companies":
+            # the page cost a credit: into the ledger first, where the project's weekly cap reads it (sql/33)
+            _spend(cursor, seg_id, "company_page", 1, "search page, by hand")
         with cursor() as cur:
-            seg_id, _ = segment(cur, request)
             if kind == "people":
                 have = apollo_store.saved_person_ids(cur, seg_id, [p["id"] for p in out["people"]])
                 for p in out["people"]:
@@ -172,10 +207,14 @@ def build_router(cursor, allowed=None):
             todo = [i for i in ids if i not in already]
             revealed = {"people": [], "missing": [], "credits": 0.0, "error": None, "unrevealed": []}
             if todo:
+                over = _budget(cursor, seg_id, cfg, status, len(todo))
+                if over:
+                    raise HTTPException(409, over)
                 try:
                     revealed = apollo.reveal_people(todo)
                 except apollo.ApolloError as e:
                     raise _apollo_http(e)
+                _spend(cursor, seg_id, "reveal", revealed.get("credits") or 0, "search page, by hand")
             # "at most N per company" is applied on the page, before this call: here it would come
             # after the reveal, and the people it dropped would already have cost a credit each
             with cursor() as cur:

@@ -249,6 +249,9 @@ def verify_sample(ids, sample, token, secret, user, segment):
 # websites (Close-Up Productions: closeupprod.com and closeupproductions.com), must not get two
 # openers. -> the reason, or NULL. `statuses` says what counts as taken: approval also counts other
 # approved rows; the sender counts only what has gone or may have gone.
+# Since 2026-10-07 the inbox and the website hold across projects: every project writes from the same
+# TVF address, so a person or a company gets one first email from us, not one per project. (The name
+# rule stays within a project: two companies of one name in different markets are not the same one.)
 DUPLICATE_SQL = """
 select case
   when exists (
@@ -256,10 +259,20 @@ select case
     join contacts c2 on c2.id = o2.contact_id
     join entities e2 on e2.id = o2.entity_id
     where lower(c2.email) = lower(coalesce(%(email)s, c.email))
-      and o2.id <> o.id and o2.entity_id <> o.entity_id and e2.segment_id = e.segment_id
+      and o2.id <> o.id and o2.entity_id <> o.entity_id
       and o2.direction = 'outbound' and coalesce(o2.sequence_step, 0) = 0
       and o2.status = any(%(statuses)s))
     then 'this address already has a first email from us, under another lead'
+  -- the same company (its website) under another project's lead: one first email per company from us,
+  -- whichever project wrote it (2026-10-07, with LCX Services' Apollo harvest beside Universal's page)
+  when e.domain is not null and exists (
+    select 1 from outreach o2 join entities e2 on e2.id = o2.entity_id
+    where e2.segment_id <> e.segment_id and normalize_domain(e2.domain) = normalize_domain(e.domain)
+      and o2.direction = 'outbound' and coalesce(o2.sequence_step, 0) = 0
+      and o2.status = any(%(statuses)s)
+      -- a first email that bounced reached nobody there: it does not use up the company
+      and coalesce(o2.stopped_reason, '') not like 'bounced%%')
+    then 'this company already has a first email from us in another project'
   when exists (
     select 1 from outreach o2 join entities e2 on e2.id = o2.entity_id
     where e2.segment_id = e.segment_id and lower(e2.name) = lower(e.name) and e2.id <> e.id

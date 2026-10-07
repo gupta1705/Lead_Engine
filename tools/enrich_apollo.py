@@ -65,6 +65,27 @@ RULES, each one an invariant the rest of the engine already keeps:
 Durability rules from tools/dbconn.py apply: a reconnecting connection, one
 commit per lead, and a per-lead stamp carrying its date, so an interrupted run
 resumes and a lead Apollo did not know is tried again a month later.
+
+LCX SERVICES (2026-10-07, the owner: "Enriching from apollo is acceptable"). Each of these is
+switched on by the project's own config, so US Production Houses runs exactly as it did:
+  * enrichment.credits_per_week / keep_in_reserve: a weekly cap counted in the ledger (apollo_spend,
+    sql/33, tools/apollo_budget.py) across every run and the harvest's company pages, and a floor of
+    credits always left for the other projects. Every credit any project spends is written there.
+  * audiences[].contact_roles: who to look for depends on what the lead is (a school's principal, a
+    hotel's director of sales, a retailer's head of visual merchandising), not one list for all.
+  * metadata.apollo.id (a lead the Apollo harvest found): people are searched at Apollo's record of
+    that company, i.e. its current employees, so a past employee is never paid for.
+  * enrichment.current_employer_check: for a lead searched by website, a free hit whose employer's
+    name is not the lead's is not paid for.
+  * enrichment.reveal_countries: only leads based there (US, GB, IN, AE) -- elsewhere the law on
+    cold email to an address nobody published is stricter.
+  * enrichment.senior_titles: what counts as senior when nobody in the target roles is found, and
+    enrichment.require_fitting_role: nobody is paid for whose title is neither a role, nor shares a
+    real word with one, nor senior.
+  * enrichment.skip_revealed_elsewhere: a person already revealed for another project is not paid for
+    again (the same person must not get a first email from two projects, and the credit is saved).
+A project with a budget also stops the run if a credit cannot be written to the ledger, since its cap
+is read from there; when Apollo cannot say what is left, it spends nothing (tools/apollo_budget.py).
 """
 import argparse
 import datetime as dt
@@ -118,13 +139,68 @@ def enrich_block(cfg):
         over = float(b["score_over"]) if b.get("score_over") is not None else None
     except (TypeError, ValueError):
         over = None
+    countries = [str(c).upper() for c in b.get("reveal_countries") or [] if str(c).strip()]
+    senior = None
+    if b.get("senior_titles"):
+        try:
+            senior = re.compile(str(b["senior_titles"]), re.I)
+        except re.error:
+            senior = None
     return {"provider": b.get("provider"),
             "enabled": b.get("enabled") is True,
             "verified_only": b.get("verified_only") is not False,
             "credits_per_run": int(b.get("credits_per_run") or DEFAULT_BUDGET),
+            "credits_per_week": b.get("credits_per_week"),
+            "keep_in_reserve": b.get("keep_in_reserve"),
             "stale_days": int(b.get("recheck_after_days") or STALE_DAYS),
             "score_over": over,
-            "by_name": b.get("find_website_by_name") is True}
+            "by_name": b.get("find_website_by_name") is True,
+            "reveal_countries": countries,
+            "employer_check": b.get("current_employer_check") is True,
+            "strict_roles": b.get("require_fitting_role") is True,
+            "skip_known_elsewhere": b.get("skip_revealed_elsewhere") is True,
+            "senior": senior}
+
+
+def roles_for(cfg, kind):
+    """Who to look for at this lead: its audience's contact_roles when the config has them (LCX Services),
+    else the segment's one target_contact_roles list."""
+    for a in (cfg or {}).get("audiences") or []:
+        if kind and a.get("key") == kind and a.get("contact_roles"):
+            return [r for r in a["contact_roles"] if str(r or "").strip()]
+    return [r for r in ((cfg or {}).get("target_contact_roles") or []) if str(r or "").strip()]
+
+
+# Words many unrelated companies start with, so sharing one says nothing: "First Citizens Bank" is not
+# "First Horizon", nor "Bank of Hope" "Bank of Marin".
+COMMON_FIRST = {"first", "bank", "national", "united", "american", "global", "international", "royal", "city",
+                "new", "great", "general", "central", "capital", "community", "citizens", "peoples", "people",
+                "home", "the", "big", "north", "south", "east", "west", "pacific", "atlantic", "golden", "star"}
+
+
+def works_at(person, company):
+    """Free check, before a credit: does the search hit's current employer carry the lead's name?
+    ("Gyldendal A/S" and "Gyldendal" do; "Penguin Random House" and "Ladybird Books" do not; nor do
+    "First Citizens Bank" and "First Horizon", which share only a word many companies start with.)"""
+    a, b = name_key(person.get("company")), name_key(company)
+    if not a or not b:
+        return False
+    if a == b or a.startswith(b + " ") or b.startswith(a + " "):
+        return True
+    first = a.split()[0]
+    return first == b.split()[0] and first not in COMMON_FIRST and len(first) >= 4
+
+
+def revealed_elsewhere(db, apollo_id, eid):
+    """Was this person already paid for under a lead of another project? Then not again: the same person
+    must not get a first email from two projects, and the credit is saved."""
+    if not apollo_id:
+        return None
+    return db.run(lambda cur: (cur.execute(
+        "select s.slug from entities e join segments s on s.id = e.segment_id"
+        " where e.segment_id <> (select segment_id from entities where id = %s)"
+        " and (e.metadata->'apollo_enrich'->>'person' = %s or coalesce(e.metadata->'apollo_people', '{}'::jsonb) ? %s)"
+        " limit 1", (eid, apollo_id, apollo_id)), cur.fetchone())[1])
 
 
 def contact_value(person):
@@ -175,17 +251,30 @@ def role_words(roles):
             if len(w) > 2 and w not in ("the", "and")}
 
 
-def pick(people, roles):
+# Words every kind of title has, so sharing one says nothing about the person's job: "Director of Benefits
+# Administration" shares "director" with "Marketing Director" and is still not who LCX writes to.
+GENERIC_WORDS = {"director", "head", "manager", "chief", "officer", "senior", "lead", "vice", "president",
+                 "executive", "global", "group", "regional", "area", "assistant", "associate", "deputy"}
+
+
+def pick(people, roles, strict=False, senior_re=None):
     """The one person to pay for: an address first, then the closest role, then the title sharing most
     words with the target roles, then any senior title. The word overlap replaced a title-length tiebreak
-    that chose Severin Films' Head of QC over its Acquisitions/Producer."""
+    that chose Severin Films' Head of QC over its Acquisitions/Producer.
+    strict (enrichment.require_fitting_role, LCX Services): nobody is paid for unless their title is one of
+    the roles, shares a word with them that is not a generic one, or is senior (senior_re) -- the only
+    person Apollo lists is not a reason to spend a credit."""
     words = role_words(roles)
+    meaningful = words - GENERIC_WORDS
     best, best_key, matched = None, None, None
     for p in people:
         title = p.get("title") or ""
         rank, role = role_rank(title, roles)
-        overlap = len(words & set(re.findall(r"[a-z]+", title.lower())))
-        senior = 1 if SENIOR_RE.search(title) else 0
+        title_words = set(re.findall(r"[a-z]+", title.lower()))
+        overlap = len(words & title_words)
+        senior = 1 if (senior_re or SENIOR_RE).search(title) else 0
+        if strict and not rank and not (meaningful & title_words) and not senior:
+            continue
         key = (1 if p.get("has_email") else 0, rank, overlap, senior)
         if best_key is None or key > best_key:
             best, best_key, matched = p, key, role
@@ -229,26 +318,60 @@ UNNAMED_SQL = """
                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)"""
 
 
-def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name=False):
+# reveal_countries are ISO codes; a lead saved from the search page carries Apollo's country name.
+COUNTRY_NAMES = {"US": ("UNITED STATES", "USA", "UNITED STATES OF AMERICA"),
+                 "GB": ("UNITED KINGDOM", "UK", "GREAT BRITAIN", "ENGLAND", "SCOTLAND", "WALES", "NORTHERN IRELAND"),
+                 "IN": ("INDIA",), "AE": ("UNITED ARAB EMIRATES", "UAE")}
+
+
+def country_forms(codes):
+    """Every way a lead may name one of these countries, upper case: the code and Apollo's names."""
+    out = []
+    for c in codes or []:
+        c = str(c).upper()
+        out += [c] + list(COUNTRY_NAMES.get(c, ()))
+    return out
+
+
+def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name=False, countries=None):
     """Open leads that Apollo could put a person behind -- and, when the config sets score_over, only
     the ones scoring above it (owner, 2026-09-21: "any lead over 22.5 with no contacts find and add
     them"). A lead without a website is included only when by_name is on: it is looked up by its
-    name first. Shortlisted first, then best score."""
+    name first. With countries (enrichment.reveal_countries), only leads based there: held leads are
+    left out here, not after the limit, so they never crowd out the ones that can be paid for.
+    Shortlisted first, then a buying signal, then best score."""
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=stale_days)).replace(microsecond=0).isoformat()
     sql = """
-        select e.id, e.name, e.domain, e.status, e.fit_score
+        select e.id, e.name, e.domain, e.status, e.fit_score, e.metadata->>'kind',
+               e.metadata->'apollo'->>'id', upper(e.metadata->>'hq_country')
         from entities e join segments s on s.id = e.segment_id
         where s.slug = %s and e.status = any(%s)
     """ + ("" if (by_name and not unnamed) else "  and e.domain is not null\n") + (
         UNNAMED_SQL if unnamed else NO_EMAIL_SQL) + ("" if recheck else """
           and coalesce(e.metadata->>'apollo_checked_at', '') < %s""") + ("" if score_over is None else """
-          and coalesce(e.fit_score, 0) > %s""") + """
+          and coalesce(e.fit_score, 0) > %s""") + ("" if not countries else """
+          and upper(trim(coalesce(e.metadata->>'hq_country', ''))) = any(%s)""") + """
         order by case when e.status = 'shortlisted' then 0 else 1 end,
+                 case when e.metadata ? 'buying_signal' then 0 else 1 end,
                  e.fit_score desc nulls last, e.name
         limit %s"""
     args = ((SEGMENT, OPEN_STATUSES) + (() if recheck else (cutoff,))
-            + (() if score_over is None else (score_over,)) + (limit,))
+            + (() if score_over is None else (score_over,)) + ((country_forms(countries),) if countries else ())
+            + (limit,))
     return db.run(lambda cur: (cur.execute(sql, args), cur.fetchall())[1])
+
+
+def ledger(db, kind, credits, ref=None):
+    """Every credit, into apollo_spend as it is spent (tools/apollo_budget.py), for every project.
+    -> True when written. A project with no stated budget goes on without it (the table not there yet);
+    one with a budget stops the run (LEDGER_MUST_HOLD), since its cap is read from the ledger."""
+    import apollo_budget
+    try:
+        db.run(lambda cur: apollo_budget.record(cur, SEGMENT, kind, credits, ref))
+        return True
+    except Exception as e:                          # noqa: BLE001
+        log("  (ledger not written: %s)" % str(e).splitlines()[0][:80])
+        return False
 
 
 def stamp(db, eid, outcome, person=None, credits=0.0, via=None):
@@ -277,7 +400,7 @@ def stamp(db, eid, outcome, person=None, credits=0.0, via=None):
     return db.run(write)
 
 
-def search(domain, roles, verified_only, org_id=None):
+def search(domain, roles, verified_only, org_id=None, senior=None):
     """Free. Narrowest first: the target roles with an address on file, then the roles, then anyone senior.
     A pass that finds people but nobody with an address does not end the search -- Imaginary Forces had
     two executive producers with no address and a senior person with one, and the first build stopped at
@@ -296,7 +419,7 @@ def search(domain, roles, verified_only, org_id=None):
         people = out["people"]
         # the widest pass is anyone at the company: only a senior title is worth a credit there
         if i == len(passes) - 1 and roles:
-            people = [p for p in people if SENIOR_RE.search(p.get("title") or "")]
+            people = [p for p in people if (senior or SENIOR_RE).search(p.get("title") or "")]
         if not people:
             continue
         if any(p.get("has_email") for p in people):
@@ -389,7 +512,7 @@ def main():
         log("APOLLO_API_KEY is not set (env, or Render's Environment tab) -- skipped, nothing spent.")
         db.close(); return 0
 
-    roles = [r for r in (cfg.get("target_contact_roles") or []) if str(r or "").strip()]
+    roles = roles_for(cfg, None)
     budget = args.budget or block["credits_per_run"]
     try:
         left = (apollo.credits() or {}).get("lead_credits_left")
@@ -398,9 +521,19 @@ def main():
         log("credits unknown (%s)" % e)
     if left is not None and left < budget:
         budget = int(left)
+    import apollo_budget
+    capped = apollo_budget.capped(cfg.get("enrichment") or {})
+    stop_after = False
+    if capped:
+        budget, why = db.run(lambda cur: apollo_budget.allowance(cur, SEGMENT, cfg.get("enrichment") or {}, left, budget))
+        log("  budget this run: %d credit(s), set by %s" % (budget, why))
+        if budget <= 0:
+            log("nothing to spend this week -- nothing revealed")
+            db.close(); return 0
     over = args.score_over if args.score_over is not None else block["score_over"]
     above = "" if over is None else " scoring over %g" % over
-    rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck, over, block["by_name"])
+    rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck, over, block["by_name"],
+                      block["reveal_countries"])
     if args.lead:
         rows = [r for r in rows if any(x.lower() in (r[1] or "").lower() for x in args.lead)]
     if not rows:
@@ -411,14 +544,24 @@ def main():
     log("apollo enrichment -- %s | %d lead(s)%s%s | budget %d credit(s)%s"
         % (SEGMENT, len(rows), above, " without a name on the inbox" if args.unnamed else " with nothing to write to",
            budget, "  [DRY RUN: nothing is revealed]" if args.dry_run else ""))
-    log("  roles: %s" % (", ".join(roles) if roles else "(any senior title)"))
+    log("  roles: %s" % ("by each lead's audience (audiences[].contact_roles)"
+                         if any(a.get("contact_roles") for a in cfg.get("audiences") or [])
+                         else ", ".join(roles) if roles else "(any senior title)"))
+    if block["reveal_countries"]:
+        log("  revealed only for leads based in: %s" % ", ".join(block["reveal_countries"]))
     if left is not None:
         log("  credits left before this run: %s\n" % left)
 
     spent = 0.0
     stats = {"written": 0, "named": 0, "no_email": 0, "unknown": 0, "elsewhere": 0, "error": 0, "left": 0,
-             "websites": 0, "no_company": 0}
-    for done, (eid, name, domain, status, score) in enumerate(rows):
+             "websites": 0, "no_company": 0, "held_country": 0, "other_employer": 0, "known_elsewhere": 0}
+    for done, (eid, name, domain, status, score, kind, org_id, country) in enumerate(rows):
+        if stop_after:                               # the last reveal's ledger row failed (a stated budget)
+            break
+        if block["reveal_countries"] and (country or "").strip() not in country_forms(block["reveal_countries"]):
+            stats["held_country"] += 1
+            continue                                 # not stamped: asked about if the list ever widens
+        lead_roles = roles_for(cfg, kind)
         if not args.dry_run and spent + 1 > budget:
             stats["left"] = len(rows) - done
             log("\n  budget reached -- %d lead(s) left for the next run" % stats["left"])
@@ -434,6 +577,9 @@ def main():
             try:
                 org, why = find_company(name)
                 spent += 1
+                if not ledger(db, "company_lookup", 1, "lead %s" % eid) and capped:
+                    log("\n  the ledger could not be written -- stopping, so the week's cap holds")
+                    break
             except apollo.ApolloError as e:
                 log("  %-34s company lookup failed: %s" % (name[:34], e))
                 stats["error"] += 1
@@ -459,7 +605,7 @@ def main():
                 log("\n  budget reached -- %d lead(s) left for the next run" % stats["left"])
                 break
         try:
-            people, total = search(domain, roles, block["verified_only"])
+            people, total = search(domain, lead_roles, block["verified_only"], org_id=org_id, senior=block["senior"])
         except apollo.ApolloError as e:
             if e.status in (401, 403):
                 log("  %-34s %s" % (name[:34], e))
@@ -469,7 +615,8 @@ def main():
                 log("  rate limit: waiting %ds" % wait)
                 time.sleep(wait)
                 try:
-                    people, total = search(domain, roles, block["verified_only"])
+                    people, total = search(domain, lead_roles, block["verified_only"], org_id=org_id,
+                                           senior=block["senior"])
                 except apollo.ApolloError as e2:
                     log("  %-34s stopped: %s" % (name[:34], e2))
                     break
@@ -488,15 +635,23 @@ def main():
                 log("  %-34s %-16s nobody at %s: would look %r up by name (1 credit)"
                     % (name[:34], status, domain, name_key(name)))
                 continue
+            if spent + 1 > budget:
+                stats["left"] = len(rows) - done
+                log("\n  budget reached -- %d lead(s) left for the next run" % stats["left"])
+                break
             try:
                 org, _why = find_company(name)
                 spent += 1
+                if not ledger(db, "company_lookup", 1, "lead %s" % eid) and capped:
+                    log("\n  the ledger could not be written -- stopping, so the week's cap holds")
+                    break
             except apollo.ApolloError:
                 org = None
             alt = store.norm_domain((org or {}).get("primary_domain"))
             if org and alt and alt != domain:
                 try:
-                    people, total = search(domain, roles, block["verified_only"], org_id=org["id"])
+                    people, total = search(domain, lead_roles, block["verified_only"], org_id=org["id"],
+                                           senior=block["senior"])
                 except apollo.ApolloError:
                     people = []
                 if people:
@@ -512,9 +667,33 @@ def main():
             if not args.dry_run:
                 stamp(db, eid, "none")
             continue
-        who, why = pick(people, roles)
+        if block["employer_check"] and not org_id:
+            here = [p for p in people if works_at(p, name)]
+            if not here:
+                log("  %-34s %-16s the people Apollo lists at %s work somewhere else now -- nothing paid"
+                    % (name[:34], status, domain))
+                stats["other_employer"] += 1
+                if not args.dry_run:
+                    stamp(db, eid, "other-employer")
+                continue
+            people = here
+        who, why = pick(people, lead_roles, strict=block["strict_roles"], senior_re=block["senior"])
+        if not who:
+            log("  %-34s %-16s nobody Apollo lists there is in a fitting role -- nothing paid" % (name[:34], status))
+            stats["no_fit"] = stats.get("no_fit", 0) + 1
+            if not args.dry_run:
+                stamp(db, eid, "no-fit")
+            continue
         shown = "%s %s -- %s" % (who.get("first_name") or "?", who.get("last_name_obfuscated") or "",
                                  who.get("title") or "no title")
+        other = revealed_elsewhere(db, who.get("id"), eid) if block["skip_known_elsewhere"] else None
+        if other:
+            log("  %-34s %-16s %s was already revealed for %s -- not paid for again"
+                % (name[:34], status, shown, other))
+            stats["known_elsewhere"] += 1
+            if not args.dry_run:
+                stamp(db, eid, "known-elsewhere")
+            continue
         if args.dry_run:
             log("  %-34s %-16s would reveal %s (%s)%s"
                 % (name[:34], status, shown, why, "" if who.get("has_email") else "  [no address on file]"))
@@ -534,6 +713,9 @@ def main():
                 db.close(); return 1
             continue
         spent += float(rep.get("credits") or 0)
+        if not ledger(db, "reveal", rep.get("credits") or 0, "lead %s" % eid) and capped:
+            log("\n  the ledger could not be written -- stopping, so the week's cap holds")
+            stop_after = True
         person = (rep.get("people") or [None])[0]
         if not person:
             log("  %-34s %-16s Apollo had nothing more on %s" % (name[:34], status, shown))
@@ -572,6 +754,14 @@ def main():
     log("  no address on file      : %d" % stats["no_email"])
     log("  Apollo knows nobody     : %d" % stats["unknown"])
     log("  had moved on            : %d" % stats["elsewhere"])
+    if stats.get("no_fit"):
+        log("  nobody in a fitting role: %d  (not paid for)" % stats["no_fit"])
+    if stats["other_employer"]:
+        log("  others' employees only  : %d  (not paid for)" % stats["other_employer"])
+    if stats["known_elsewhere"]:
+        log("  revealed for another project already: %d  (not paid for)" % stats["known_elsewhere"])
+    if stats["held_country"]:
+        log("  held: based outside %s : %d" % ("/".join(block["reveal_countries"]), stats["held_country"]))
     log("  errors                  : %d" % stats["error"])
     log("  credits spent           : %g%s" % (spent, "  [DRY RUN: none]" if args.dry_run else ""))
     if not args.dry_run:

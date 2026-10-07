@@ -23,6 +23,7 @@ Checked:
 Nothing is sent and no network is used. Exit code 1 on any failure.
 """
 import argparse
+import datetime as dt
 import json
 import os
 import sys
@@ -142,7 +143,22 @@ def offline(cfg, uni):
     check("the weekly refresh's steps all exist, and run here", [s for s in steps if s not in ops.JOBS or
           ops.JOBS[s].get("segments") not in (None, ["lcx-services"])], [])
     check("  on Fridays, like a harvest", (cfg["schedule"][0]["pipeline"], cfg["schedule"][0]["dow"]), ("weekly_refresh", 4))
-    check("Apollo is not used for it (the owner: 'forget apollo for a sec')", cfg["enrichment"]["enabled"], False)
+    e = cfg["enrichment"]
+    check("Apollo is on (the owner, 2026-10-07: 'Enriching from apollo is acceptable'), inside a stated budget",
+          (e["enabled"], e["provider"], e["credits_per_week"], e["keep_in_reserve"], e["reveal_countries"]),
+          (True, "apollo", 120, 700, ["US", "GB", "IN", "AE"]))
+    check("  the discovery pages fit inside the week's cap with room for the reveals",
+          cfg["apollo_discovery"]["pages_per_run"] <= e["credits_per_week"] - e["credits_per_run"], True)
+    check("  Apollo searches only where its addresses may be written to without consent",
+          [c["iso"] for c in cfg["apollo_discovery"]["countries"]], ["US", "GB", "IN", "AE"])
+    check("  every Apollo search names an audience that exists, and every audience has contact roles",
+          ([s["key"] for s in cfg["apollo_discovery"]["searches"] if s["audience"] not in {a["key"] for a in cfg["audiences"]}],
+           [a["key"] for a in cfg["audiences"] if not a.get("contact_roles")]), ([], []))
+    check("normal corporates: an audience of mid-size companies for the training services, listed companies included",
+          [(a["key"], a["wikidata"][0]["property"]) for a in cfg["audiences"] if a["key"] == "corporate_teams"],
+          [("corporate_teams", "P414")])
+    check("fewer cafes: OpenStreetMap down to 150 a week, 2 cities",
+          (cfg["discovery"]["osm"]["max_new_per_run"], cfg["discovery"]["osm"]["cities_per_run"]), (150, 2))
     check("emails are drafted, not written by hand; sent from the approver; not paused",
           (bool(o["templates"]), "compose" in o, o["send_from"], "sending_paused" in o), (True, False, "approver", False))
     check("TVF's Mumbai address goes under it (the owner's choice)", o["sender"]["postal_address"],
@@ -244,8 +260,11 @@ def offline(cfg, uni):
         rows, why = disc.run_osm(one, 600, 2, set(), set(), ["x"], emit=saved.append, deadline=disc.time.monotonic() - 1)
         check("  out of time: it stops asking, keeping what it has", rows, [])
 
+        def wd_base(match):
+            return (int(match["values"][0][1:]) if match.get("values") else int(match["property"][1:])) % 100000 * 100
+
         def fake_ids(match):                 # each audience its own companies, half of them in an English market
-            base = int(match["values"][0][1:]) % 100000 * 100
+            base = wd_base(match)
             return {"Q%d" % (base + i): (100 + i, ["US"] if i % 2 else ["JP"]) for i in range(1, 30)}
 
         def fake_details(qids):
@@ -256,16 +275,97 @@ def offline(cfg, uni):
         rows, why = disc.run_wikidata(cfg, 90, 80, set(), set(), emit=saved.append)
         n_aud = len(disc.audiences(cfg, "wikidata"))
         check("Wikidata: every company saved as it is found, an equal share per audience",
-              (len(saved) == len(rows), len(rows), 90 // n_aud), (True, n_aud * (90 // n_aud), 10))
-        base = int(disc.audiences(cfg, "wikidata")[0]["wikidata"][0]["values"][0][1:]) % 100000 * 100
+              (len(saved) == len(rows), len(rows)), (True, n_aud * (90 // n_aud)))
+        base = wd_base(disc.audiences(cfg, "wikidata")[0]["wikidata"][0])
         check("  the English-speaking market taken first within the same size", [r["raw"]["wikidata"]["qid"] for r in rows[:3]],
               ["Q%d" % (base + i) for i in (1, 3, 5)])
     finally:
         disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep = real
+    print("\n-- the corporate sources, offline")
+    sls = disc.apollo_slices(cfg)
+    now = dt.datetime(2026, 10, 9, 2, 0, tzinfo=dt.timezone.utc)
+    sig = next(s for s in sls if s["key"] == "corporates_hiring_trainers|US")
+    fixed = next(s for s in sls if s["key"] == "brands|US")
+    ago = lambda d: now - dt.timedelta(days=d)          # noqa: E731
+    check("a fixed search goes on page by page, and waits once used up",
+          [disc.slice_page(fixed, {"brands|US": c}, now) for c in
+           ({"next_page": 4, "last_run_at": ago(60)}, {"exhausted": True, "exhausted_at": ago(400)})], [4, None])
+    check("  a signal search (hiring in the last 30 days) rests 30 days once used up, then starts again at page 1",
+          [disc.slice_page(sig, {sig["key"]: c}, now) for c in
+           ({"exhausted": True, "exhausted_at": ago(3)}, {"exhausted": True, "exhausted_at": ago(31)})], [None, 1])
+    check("  part-way through, it goes on with its next page however long ago (page 1 would be the same big employers)",
+          [disc.slice_page(sig, {sig["key"]: {"next_page": 3, "last_run_at": ago(d)}}, now) for d in (7, 40)], [3, 3])
+    check("Apollo: every search in every country, one cursor each",
+          (len(sls), len({s["key"] for s in sls})),
+          (len(cfg["apollo_discovery"]["searches"]) * 4, len(cfg["apollo_discovery"]["searches"]) * 4))
+    hiring = next(s for s in sls if s["key"] == "corporates_hiring_trainers|GB")
+    f = disc.apollo_filters(hiring, dt.date(2026, 10, 7))
+    check("  a signal slice: its country, and jobs posted in the last 30 days",
+          (f["organization_locations"], f["organization_job_posted_at_range"]),
+          (["United Kingdom"], {"min": "2026-09-07", "max": "2026-10-07"}))
+    funded = disc.apollo_filters(next(s for s in sls if s["key"] == "brands_recently_funded|US"), dt.date(2026, 10, 7))
+    check("  the funded slice: rounds in the last 90 days, and no free check (people search has no funding filter)",
+          (funded["latest_funding_date_range"]["min"],
+           any(k in funded for k in disc.COMPANY_ONLY)), ("2026-07-09", True))
+    check("  sizes: 10-5,000 people is the right size, anything above is half",
+          (disc.band_size(["11,50", "2001,5000"]), disc.band_size(["2001,5000", "5001,10000"]), disc.band_size([])),
+          (1.0, 0.5, None))
+    aud_corp = next(a for a in cfg["audiences"] if a["key"] == "corporate_teams")
+    org = {"id": "a" * 24, "name": "Acme Training Ltd", "website_url": "https://www.acme-training.example/",
+           "primary_domain": "acme-training.example", "founded_year": 2001, "linkedin_url": "https://linkedin.com/x"}
+    arow, _ = disc.apollo_row(org, hiring, aud_corp, cfg, dt.date(2026, 10, 7))
+    check("an Apollo company: its website, Apollo's id, and the slice's country and size",
+          (arow["domain"], arow["source_url"], arow["raw"]["apollo_search"]["country_iso"], arow["raw"]["apollo"]["id"]),
+          ("acme-training.example", "https://app.apollo.io/#/organizations/" + "a" * 24, "GB", "a" * 24))
+    check("  scored from the slice, with its buying signal", arow["raw"]["scoring_inputs"],
+          {"audience_fit": 1.0, "has_reachable_presence": True, "established": 1.0, "country_signal": "allowed",
+           "english_market": 1.0, "right_size": 1.0, "buying_signal": 1.0})
+    check("  says why: the signal, the country, what to pitch",
+          arow["raw"]["why_fit"].startswith("Mid-size company in United Kingdom, on Apollo (hiring for training and onboarding now)."),
+          True)
+    check("  never a LinkedIn link kept", "linkedin" in json.dumps(arow), False)
+    check("  a company founded this year is half established",
+          disc.apollo_row(dict(org, founded_year=2026), hiring, aud_corp, cfg, dt.date(2026, 10, 7))[0]
+          ["raw"]["scoring_inputs"]["established"], 0.5)
+    check("  TVF itself is never a lead", disc.apollo_row(dict(org, name="The Viral Fever", website_url="https://theviralfever.com"),
+                                                          hiring, aud_corp, cfg)[1], "TVF or an affiliate")
+    check("  Apollo's primary domain first, as a company saved from the search page has it",
+          disc.apollo_row(dict(org, website_url="https://acme-training.example.co.uk/careers"), hiring, aud_corp, cfg)[0]["domain"],
+          "acme-training.example")
+    check("  nor a company with only a social page", disc.apollo_row(dict(org, website_url="https://facebook.com/acme",
+                                                                         primary_domain=None), hiring, aud_corp, cfg)[1],
+          "no website of its own")
+    banks = [{"NAME": "Big Bank", "WEBADDR": "www.bigbank.example", "CITY": "NEW YORK", "STALP": "NY", "ASSET": 900000000, "CERT": 1},
+             {"NAME": "Mid Bank", "WEBADDR": "http://www.MIDBANK.example", "CITY": "DALLAS", "STALP": "TX", "ASSET": 5000000, "CERT": 2},
+             {"NAME": "Mid Bank Two", "WEBADDR": "midbank2.example", "CITY": "BOSTON", "STALP": "MA", "ASSET": 1200000, "CERT": 3},
+             {"NAME": "Tiny Bank", "WEBADDR": "tiny.example", "CITY": "X", "STALP": "WI", "ASSET": 200000, "CERT": 4},
+             {"NAME": "No Site Bank", "WEBADDR": "", "CITY": "X", "STALP": "WI", "ASSET": 3000000, "CERT": 5}]
+    got, why = disc.run_fdic(cfg, 10, set(), {"midbank2.example"}, banks=banks)
+    check("FDIC: only banks of $1-20 billion with a website, largest first, none already a lead",
+          ([r["domain"] for r in got], sorted(why.items())),
+          (["midbank.example"], [("already a lead here or in another project", 1), ("no website of its own", 1),
+                                 ("outside the asset band", 2)]))
+    keep_fb = disc.fdic_banks
+
+    def down():
+        raise OSError("timed out")
+    disc.fdic_banks = down
+    try:
+        check("  FDIC down: no banks this run, and the step does not fail the refresh",
+              disc.run_fdic(cfg, 10, set(), set()), ([], {"FDIC BankFind did not answer": 1}))
+    finally:
+        disc.fdic_banks = keep_fb
+    check("  a bank: the financial-services audience, in the US, the right size",
+          (got[0]["raw"]["kind"], got[0]["raw"]["fdic"]["country_iso"], got[0]["raw"]["scoring_inputs"]["right_size"]),
+          ("financial_services", "US", 1.0))
     meta, email, src = lift.lift({"discovery_raw": {"lcx_osm": row["raw"]}, "why_fit": "a person's own words"})
     check("lifting: the audience, services and place go on the lead, a person's words stay",
           (meta["kind"], meta["audience"], meta["hq_city"], meta["hq_country"], meta["why_fit"], email, src),
           ("local_business", "Cafe, salon or gym", "London", "GB", "a person's own words", "hello@beanthere.example", "lcx_osm"))
+    meta, email, src = lift.lift({"discovery_raw": {"lcx_apollo": arow["raw"]}})
+    check("  an Apollo company: its country and size band from the search, its Apollo record for the person search",
+          (meta["kind"], meta["hq_country"], meta["buying_signal"], meta["apollo"]["id"], email, src),
+          ("corporate_teams", "GB", "hiring for training and onboarding now", "a" * 24, None, "lcx_apollo"))
     m = lift.with_reachable({"scoring_inputs": {"reachable_decision_maker": 0}, "unverified_inputs": ["reachable_decision_maker", "x"]})
     check("  a published address is half the contact points, and no longer unverified",
           (m["scoring_inputs"]["reachable_decision_maker"], m["unverified_inputs"]), (0.5, ["x"]))
@@ -470,8 +570,169 @@ def main_():
               why.get(no_thanks), "this address has replied to an earlier email from us: answer them in that thread")
         check("  a reply nobody has read yet counts too", why.get(unread),
               "this address has replied to an earlier email from us: answer them in that thread")
-        check("  an auto-reply does not", (ok_ids, auto in why), ([auto], False))
+        check("  an auto-reply is not an answer: that inbox is held only because it already had its first email",
+              why.get(auto), "this address already has a first email from us, under another lead")
         check("  an address that bounced: not approvable", why.get(bounced), "this address bounced an earlier email from us")
+
+        # ------------------------------------------------------------ the Apollo harvest, stubbed
+        print("\n-- the Apollo harvest, Apollo stubbed: signals first, cursors, the ledger, nothing bought twice")
+        import apollo
+        keep_ap = (apollo.search_people, apollo.search_companies)
+        bought, spends = [], []
+        try:
+            def free(filters, page=1, per_page=1):
+                empty = "Hong Kong" in filters.get("organization_locations", []) or \
+                    "zz-empty-tag" in (filters.get("q_organization_keyword_tags") or [])
+                return {"total": 0 if empty else 500, "people": []}
+
+            def paid(filters, page=1, per_page=100):
+                bought.append((filters.get("organization_locations")[0], page, filters.get("q_organization_job_titles") is not None))
+                n = len(bought)
+                return {"total_pages": 2, "companies": [
+                    {"id": "%024x" % (n * 1000 + i), "name": "ZZ Co %d-%d %s" % (n, i, tag),
+                     "website_url": "https://zz-co-%d-%d-%s.example" % (n, i, tag)} for i in range(3)]}
+            apollo.search_people, apollo.search_companies = free, paid
+            small = json.loads(json.dumps(cfg))
+            small["apollo_discovery"]["countries"] = [{"name": "United States", "iso": "US"}, {"name": "Hong Kong", "iso": "HK"}]
+            small["apollo_discovery"]["searches"] = (
+                [dict(s) for s in cfg["apollo_discovery"]["searches"] if s.get("signal")][:6] +
+                [dict(s) for s in cfg["apollo_discovery"]["searches"] if not s.get("signal")][:3])
+            small["apollo_discovery"]["signal_pages_per_run"] = 2
+            got, why_not, n = disc.run_apollo(dbconn.Db, lx_id, small, 5, set(), set(),
+                                              spend=lambda cur_, c, ref: spends.append((c, ref)))
+            check("5 pages bought: 2 from signal searches, then the plain ones", (n, [b[2] for b in bought]),
+                  (5, [True, True, False, False, False]))
+            check("  every page is in the ledger as it is bought", len(spends), 5)
+            cur.execute("select next_page from apollo_cursors where segment_id = %s and exhausted_at is null"
+                        " order by search_key limit 1", (lx_id,))
+            check("  a bought slice's next run asks for page 2", cur.fetchone()[0], 2)
+            check("  the companies found, with their websites", len(got), 15)
+            bought.clear()
+            got2, _, n2 = disc.run_apollo(dbconn.Db, lx_id, small, 5, set(), set(r["domain"] for r in got))
+            check("the next run: the signal slices not yet run, then page 2 of the plain ones",
+                  [(b[1]) for b in bought], [1, 1, 2, 2, 2])
+            check("  a slice that would come back empty (the free check) is never bought",
+                  [b for b in bought if b[0] == "Hong Kong"], [])
+            cur.execute("select search_key from apollo_cursors where segment_id = %s and exhausted_at is not null"
+                        " and search_key like %s order by 1", (lx_id, "%|HK"))
+            check("  and is set aside", [r[0] for r in cur.fetchall()], ["brands|HK", "developers|HK", "retailers|HK"])
+            check("  a company found before is not staged again", len(got2), 0)
+            cur.execute("select search_key from apollo_cursors where segment_id = %s and exhausted_at is not null"
+                        " and search_key like %s order by 1", (lx_id, "%|US"))
+            check("  a slice's last page used up: it waits until its cursor is reset",
+                  [r[0] for r in cur.fetchall()], ["brands|US", "developers|US", "retailers|US"])
+            bought.clear()
+
+            def broken(cur_, c, ref):
+                raise RuntimeError("ledger down")
+            got3, _, n3 = disc.run_apollo(dbconn.Db, lx_id, small, 5, set(), set(), spend=broken)
+            cur.execute("select count(*) from apollo_cursors where segment_id = %s and search_key = %s and runs = 1",
+                        (lx_id, "retailers_hiring_store_staff|US"))
+            check("a page whose ledger row cannot be written: buying stops at once, nothing staged from it",
+                  (len(bought), n3, len(got3)), (1, 1, 0))
+            check("  and its cursor did not move either (one transaction), so the cap was not overrun unseen",
+                  cur.fetchone()[0], 0)
+        finally:
+            apollo.search_people, apollo.search_companies = keep_ap
+
+        # ------------------------------------------------------------ one first email per company, across projects
+        print("\n-- one first email per company and per inbox, whichever project wrote it")
+        t2 = uuid.uuid4().hex[:6]
+        cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'apollo', 'contacted')"
+                    " returning id", (un_id, "ZZ Pitched %s" % t2, "zz-pitched-%s.example" % t2))
+        pe = cur.fetchone()[0]
+        cur.execute("insert into contacts (entity_id, email, email_status, source) values (%s, %s, 'valid', 'apollo')"
+                    " returning id", (pe, "ceo@zz-pitched-%s.example" % t2))
+        pc = cur.fetchone()[0]
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status, sent_at)"
+                    " values (%s, %s, 't', 'S', 'B', 'sent', now())", (pe, pc))
+
+        def draft_for(domain, email):
+            cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'lcx_apollo',"
+                        " 'shortlisted') returning id", (lx_id, "ZZ Again %s" % uuid.uuid4().hex[:6], domain))
+            eid = cur.fetchone()[0]
+            cur.execute("insert into contacts (entity_id, email, email_status, source) values (%s, %s, 'valid', 'apollo')"
+                        " returning id", (eid, email))
+            cid = cur.fetchone()[0]
+            cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body) values (%s, %s, 't', 'S', 'B')"
+                        " returning id", (eid, cid))
+            return str(cur.fetchone()[0])
+        same_co = draft_for("zz-pitched-%s.example" % t2, "sales@zz-pitched-%s.example" % t2)
+        same_inbox = draft_for("zz-other-%s.example" % t2, "ceo@zz-pitched-%s.example" % t2)
+        fresh = draft_for("zz-fresh-%s.example" % t2, "hello@zz-fresh-%s.example" % t2)
+        ok_ids, skipped = pol.check_drafts(cur, [same_co, same_inbox, fresh], lx)
+        why = {s["id"]: s["reason"] for s in skipped}
+        check("a company Universal already wrote to gets no first email from LCX Services",
+              why.get(same_co), "this company already has a first email from us in another project")
+        check("  nor does that person's inbox, under any lead", why.get(same_inbox),
+              "this address already has a first email from us, under another lead")
+        check("  a company nobody has written to can be approved", ok_ids, [fresh])
+        cur.execute("update outreach set stopped_reason = 'bounced: the address rejected the email' where entity_id = %s",
+                    (pe,))
+        ok_ids, skipped = pol.check_drafts(cur, [same_co], lx)
+        check("  a first email that bounced reached nobody there: the company is not used up",
+              (ok_ids, [s["reason"] for s in skipped]), ([same_co], []))
+
+        # ------------------------------------------------------------ the search page's spending
+        print("\n-- the Apollo search page writes what it spends to the ledger, and keeps to the project's budget")
+        import universal as uni_page
+        keep_sc, keep_st, keep_rv = apollo.search_companies, apollo.status, apollo.reveal_people
+        asked = []
+        balance = {"left": 2000}
+        try:
+            def page_co(filters, page=1, per_page=100):
+                asked.append("companies")
+                return {"total": 1, "page": 1, "total_pages": 1, "per_page": per_page,
+                        "companies": [{"id": "e" * 24, "name": "ZZ Page Co", "website_url": "https://zz-page.example"}]}
+            apollo.search_companies = page_co
+            apollo.status = lambda: {"key_set": True, "connected": True, "problems": [],
+                                     "credits": {"lead_credits_left": balance["left"]}}
+            apollo.reveal_people = lambda ids: asked.append("reveal") or {
+                "people": [], "missing": list(ids), "credits": float(len(ids)), "error": None, "unrevealed": []}
+
+            def fresh():
+                uni_page._STATUS.update(at=0.0, value=None)
+            fresh()
+            r = call("POST", "/api/universal/search?project=" + lx, cookies=as_(lx),
+                     json={"kind": "companies", "filters": {"q_organization_keyword_tags": ["retail"]}})
+            cur.execute("select kind, credits::float, ref from apollo_spend where segment_id = %s and ref like 'search page%%'",
+                        (lx_id,))
+            check("a page of companies searched by hand: 1 credit, counted in the project's week",
+                  (r.status_code, cur.fetchall()), (200, [("company_page", 1.0, "search page, by hand")]))
+            r = call("POST", "/api/universal/save?project=" + lx, cookies=as_(lx),
+                     json={"kind": "people", "ids": ["%024x" % (0xd000 + i) for i in range(3)]})
+            cur.execute("select coalesce(sum(credits), 0)::float from apollo_spend where segment_id = %s"
+                        " and kind = 'reveal' and ref like 'search page%%'", (lx_id,))
+            check("  people revealed by hand: on the ledger before they are saved", (r.status_code, cur.fetchone()[0]),
+                  (200, 3.0))
+            cur.execute("insert into apollo_spend (segment_id, kind, credits, ref) values (%s, 'reveal', 200, 'zz the week')",
+                        (lx_id,))
+            del asked[:]
+            fresh()
+            r = call("POST", "/api/universal/search?project=" + lx, cookies=as_(lx),
+                     json={"kind": "companies", "filters": {"q_organization_keyword_tags": ["retail"]}})
+            check("  the week's budget used up: the page says so and Apollo is not asked",
+                  (r.status_code, "budget" in r.json().get("detail", ""), asked), (409, True, []))
+            r = call("POST", "/api/universal/save?project=" + lx, cookies=as_(lx),
+                     json={"kind": "people", "ids": ["%024x" % 0xd100]})
+            check("  nor is anyone revealed", (r.status_code, asked), (409, []))
+            cur.execute("delete from apollo_spend where segment_id = %s and ref = 'zz the week'", (lx_id,))
+            balance["left"] = 700
+            fresh()
+            r = call("POST", "/api/universal/search?project=" + lx, cookies=as_(lx),
+                     json={"kind": "companies", "filters": {"q_organization_keyword_tags": ["retail"]}})
+            check("  700 left in the month: the reserve is the other projects', so nothing", (r.status_code, asked), (409, []))
+            balance["left"] = None
+            fresh()
+            r = call("POST", "/api/universal/search?project=" + lx, cookies=as_(lx),
+                     json={"kind": "companies", "filters": {"q_organization_keyword_tags": ["retail"]}})
+            check("  Apollo cannot say what is left: nothing, rather than risk the reserve", (r.status_code, asked), (409, []))
+            r = call("POST", "/api/universal/search?project=" + un, cookies=as_(un),
+                     json={"kind": "companies", "filters": {"q_organization_keyword_tags": ["retail"]}})
+            check("  Universal states no budget: searched as before", (r.status_code, asked), (200, ["companies"]))
+        finally:
+            apollo.search_companies, apollo.status, apollo.reveal_people = keep_sc, keep_st, keep_rv
+            uni_page._STATUS.update(at=0.0, value=None)
 
         # ------------------------------------------------------------ the search page's project
         print("\n-- the Apollo search page works on the project it shows")

@@ -12,7 +12,7 @@ values (
   "weekly_target": 1200,
   "score_threshold_review": 25,
   "score_threshold_priority": 70,
-  "brief": "LCX Services: businesses everywhere cold business email is allowed, offered every LCX service in one email with the services deck attached (docs/LCX Services.pdf; the deck is docs/decks/LCX Services - pitch deck.pdf). The owner, 2026-10-06: \"i wanna build outreach a single one offering all these services\", then \"it should generate the leads on its own for the people and businesses we can pitch the services to\" and \"like we source leads for us production houses i want leads to come like that\". So it harvests by itself every Friday, like the production houses: the buyers of each service (config audiences) from Wikidata and OpenStreetMap, through the promote chain, an address from the business itself or its own website, and a draft a person approves. Apollo is not used for it; the Apollo search page stays for adding a lead by hand.",
+  "brief": "LCX Services: businesses everywhere cold business email is allowed, offered every LCX service in one email with the services deck attached (docs/LCX Services.pdf; the deck is docs/decks/LCX Services - pitch deck.pdf). The owner, 2026-10-06: \"i wanna build outreach a single one offering all these services\" and \"it should generate the leads on its own\"; 2026-10-07: \"i want to reachout to buisnesses to normal corporates not just cafes and all think about whats the best places we can source our leads from and use it . Enriching from apollo is acceptable\". So it harvests by itself every Friday: mid-size corporates from Apollo''s company search (those hiring for content or training right now, recently funded ones, and each audience by size and country), listed companies and notable firms from Wikidata, US banks from the FDIC register, and a small stream of local businesses from OpenStreetMap. Then an address from the business itself or its own website, a named person from Apollo for a well-fitting lead that has none (inside a weekly credit cap), and a draft a person approves. docs/LCX_services.md.",
   "target_contact_roles": [
     "Owner",
     "Founder",
@@ -62,6 +62,35 @@ values (
   },
   "audiences": [
     {
+      "key": "corporate_teams",
+      "label": "Mid-size company",
+      "fit": 1.0,
+      "services": [
+        "AI Onboarding Employee",
+        "AI Simulations for Training",
+        "AI Business Assistant",
+        "Explainer Videos",
+        "AI Podcasts / Audio Content"
+      ],
+      "wikidata": [
+        {
+          "property": "P414",
+          "values": [],
+          "note": "listed on a stock exchange: ordinary corporates the class and industry queries miss"
+        }
+      ],
+      "contact_roles": [
+        "Head of Learning and Development",
+        "Learning and Development Manager",
+        "Head of Training",
+        "Head of Sales Enablement",
+        "Chief People Officer",
+        "HR Director",
+        "Head of Internal Communications",
+        "Head of Customer Experience"
+      ]
+    },
+    {
       "key": "consumer_brands",
       "label": "Consumer brand",
       "fit": 1.0,
@@ -86,6 +115,15 @@ values (
           ],
           "note": "industry: cosmetics, clothing, food, beverages, consumer electronics, jewellery, furniture, e-commerce"
         }
+      ],
+      "contact_roles": [
+        "Chief Marketing Officer",
+        "Head of Marketing",
+        "Brand Director",
+        "Head of Brand",
+        "Head of Ecommerce",
+        "Head of Content",
+        "Founder"
       ]
     },
     {
@@ -117,6 +155,14 @@ values (
           ],
           "note": "industry: retail"
         }
+      ],
+      "contact_roles": [
+        "Head of Marketing",
+        "Marketing Director",
+        "Head of Visual Merchandising",
+        "Head of Retail Operations",
+        "Head of Learning and Development",
+        "Head of Customer Experience"
       ]
     },
     {
@@ -149,6 +195,14 @@ values (
           "office",
           "estate_agent"
         ]
+      ],
+      "contact_roles": [
+        "Founder",
+        "Managing Director",
+        "Head of Marketing",
+        "Marketing Director",
+        "Sales Director",
+        "Director of Sales and Marketing"
       ]
     },
     {
@@ -190,6 +244,14 @@ values (
           "tourism",
           "apartment"
         ]
+      ],
+      "contact_roles": [
+        "Director of Sales and Marketing",
+        "Marketing Director",
+        "Head of Marketing",
+        "General Manager",
+        "Head of Learning and Development",
+        "Revenue and Distribution Director"
       ]
     },
     {
@@ -209,6 +271,14 @@ values (
           ],
           "note": "publishing house, book publisher"
         }
+      ],
+      "contact_roles": [
+        "Publisher",
+        "Head of Audio",
+        "Head of Digital",
+        "Rights Director",
+        "Head of Audience Development",
+        "Managing Director"
       ]
     },
     {
@@ -238,6 +308,14 @@ values (
           ],
           "note": "industry: financial services"
         }
+      ],
+      "contact_roles": [
+        "Head of Marketing",
+        "Head of Content",
+        "Head of Brand",
+        "Head of Learning and Development",
+        "Head of Sales Enablement",
+        "Chief Marketing Officer"
       ]
     },
     {
@@ -261,6 +339,13 @@ values (
           ],
           "note": "film production company, television production company, animation studio, advertising agency"
         }
+      ],
+      "contact_roles": [
+        "Founder",
+        "Managing Director",
+        "Creative Director",
+        "Head of Production",
+        "Head of Partnerships"
       ]
     },
     {
@@ -289,6 +374,13 @@ values (
           "tourism",
           "museum"
         ]
+      ],
+      "contact_roles": [
+        "Marketing Director",
+        "Head of Marketing",
+        "Head of Guest Experience",
+        "Commercial Director",
+        "General Manager"
       ]
     },
     {
@@ -313,6 +405,14 @@ values (
           "amenity",
           "school"
         ]
+      ],
+      "contact_roles": [
+        "Principal",
+        "Head of School",
+        "Head of Admissions",
+        "Director of Admissions",
+        "Marketing Director",
+        "Bursar"
       ]
     },
     {
@@ -340,6 +440,12 @@ values (
           "leisure",
           "fitness_centre"
         ]
+      ],
+      "contact_roles": [
+        "Founder",
+        "Owner",
+        "Operations Director",
+        "Head of Marketing"
       ]
     },
     {
@@ -368,10 +474,16 @@ values (
           "shop",
           "jewelry"
         ]
+      ],
+      "contact_roles": [
+        "Founder",
+        "Owner",
+        "Operations Director",
+        "Head of Marketing"
       ]
     }
   ],
-  "audiences_guidance": "Who buys which of the 18 services on docs/LCX Services.pdf, and where they are found (tools/discover_lcx_services.py). Every email offers every service; the audience decides who is found, what the lead says it fits (why_fit, Pitch first) and audience_fit in the rubric: 1.0 where the sheet''s services fit directly, 0.5 where the sale is slower (banks and insurers, attractions). wikidata entries match a class (P31) or an industry (P452), as Wikidata items (QIDs); osm entries are OpenStreetMap tag pairs. Add an audience, a class or a tag here and the next harvest finds it.",
+  "audiences_guidance": "Who buys which of the 18 services on docs/LCX Services.pdf, where they are found (tools/discover_lcx_services.py) and who to write to there (contact_roles, the titles Apollo is searched for, best first). Every email offers every service; the audience decides who is found, what the lead says it fits (why_fit, Pitch first) and audience_fit in the rubric: 1.0 where the sheet''s services fit directly, 0.5 where the sale is slower (banks and insurers, attractions). corporate_teams (2026-10-07) is the owner''s \"normal corporates\": any industry, 201-5,000 people, for the training, onboarding and explainer services. wikidata entries match a class (P31), an industry (P452) or a stock-exchange listing (P414); osm entries are OpenStreetMap tag pairs; the Apollo searches are in apollo_discovery.",
   "discovery": {
     "skip_known_elsewhere": true,
     "wikidata": {
@@ -380,11 +492,14 @@ values (
       "max_minutes": 40
     },
     "osm": {
-      "max_new_per_run": 600,
-      "cities_per_run": 6,
+      "max_new_per_run": 150,
+      "cities_per_run": 2,
       "max_minutes": 40
     },
-    "guidance": "Each Friday''s refresh stages up to 600 new companies from Wikidata (an equal share for each audience, at most per_audience; 10 to 5,000 people first, and within that English-speaking markets first, since the email and the deck are in English) and up to 600 local businesses from OpenStreetMap (cities_per_run cities, a different few each week). The site pass after it reads up to 600 websites, so a week''s harvest is read the week it arrives. Each business is saved the moment it is found, and a run stops asking for more after max_minutes (a slow or failing endpoint cannot hold the weekly refresh); what it did not reach waits for the next run. skip_known_elsewhere: a business already a lead of another project is not staged here, so nobody is pitched by two projects from the same address."
+    "guidance": "Each Friday''s refresh stages up to 600 new companies from Wikidata (an equal share for each audience, at most per_audience; 10 to 5,000 people first, and within that English-speaking markets first), the Apollo pages the week''s credits allow (apollo_discovery, about 900 companies), up to 200 US banks from the FDIC register, and up to 150 local businesses from OpenStreetMap (2 cities a week): the owner wants normal corporates, \"not just cafes\". The site pass after it reads up to 1,000 websites, best-scoring first. Each business is saved the moment it is found, and a run stops asking for more after max_minutes; what it did not reach waits for next week. skip_known_elsewhere: a business already a lead of another project is not staged here, so nobody is pitched by two projects from the same address.",
+    "fdic": {
+      "max_new_per_run": 200
+    }
   },
   "osm_discovery": {
     "endpoints": [
@@ -684,7 +799,7 @@ values (
       "label": "Someone to write to: a named person (full) or the business''s own published address (half)",
       "points": 50,
       "input": "metadata.scoring_inputs.reachable_decision_maker",
-      "guidance": "1.0 a named person in a deciding role with their own address (the site pass, or a person); 0.5 a business address (info@, hello@) the business publishes on OpenStreetMap, on Wikidata or on its own site (tools/enrich_lcx_services.py, enrich_contacts). Half the points on purpose: a lead nobody can be written to tops out at 50 (54 with the English bonus) and never crosses the auto-shortlist line at 55, so nothing is shortlisted that cannot be drafted."
+      "guidance": "1.0 a named person in a deciding role with their own verified address (Apollo, the site pass, or a person); 0.5 a business address (info@, hello@) the business publishes on OpenStreetMap, on Wikidata or on its own site (tools/enrich_lcx_services.py, enrich_contacts). Half the points on purpose: a lead nobody can be written to tops out at 50 (54 with the English bonus) and never crosses the auto-shortlist line at 55, so nothing is shortlisted that cannot be drafted."
     },
     {
       "key": "audience_fit",
@@ -746,33 +861,64 @@ values (
     "guidance": "Like the production houses: every lead in To review scoring above 55 is shortlisted by the last step of the promote chain, and a shortlisted lead with an address is drafted within minutes. 55 is just above what a lead nobody can be written to can score (50, 54 with the English bonus), so everything shortlisted can be drafted. Shortlisting sends nothing: every email is approved by a person. Leads at or below the line stay in To review, where a person can shortlist one by hand."
   },
   "enrichment": {
-    "enabled": false,
-    "provider": "site_scrape",
-    "contact_method": "published_address_then_site_scrape",
-    "email_verifier": "none_yet",
-    "guidance": "An address comes from the business itself: the one it publishes on OpenStreetMap or Wikidata (tools/enrich_lcx_services.py), else its own website, read politely with robots.txt honoured (enrich_contacts_lcxs, tools/enrich_sitescrape.py). Never LinkedIn. enabled is the Apollo gate (tools/enrich_apollo.py) and is false: the owner, 2026-10-06, ''forget apollo for a sec''. Apollo enrichment can be turned on for this project later with a weekly credit budget, as for US Production Houses."
+    "enabled": true,
+    "provider": "apollo",
+    "contact_method": "published_address_then_site_scrape_then_apollo",
+    "email_verifier": "apollo",
+    "credits_per_run": 110,
+    "credits_per_week": 120,
+    "keep_in_reserve": 700,
+    "score_over": 43,
+    "verified_only": true,
+    "find_website_by_name": false,
+    "recheck_after_days": 30,
+    "reveal_countries": [
+      "US",
+      "GB",
+      "IN",
+      "AE"
+    ],
+    "current_employer_check": true,
+    "senior_titles": "(founder|owner|ceo|chief executive|chief marketing|chief commercial|chief operating|chief people|(?<!vice )president|managing director|general manager|principal|head of school|head teacher|headmaster|headmistress)",
+    "guidance": "The owner, 2026-10-07: \"Enriching from apollo is acceptable\". Addresses come first from the business itself (what it publishes, then its own website: free); a lead that fits well (scoring over score_over) and still has nobody to write to gets one free Apollo people search for its audience''s contact_roles at its current employer, then 1 credit for the best person''s verified work address (tools/enrich_apollo.py, enrich_apollo_lcxs). The week''s cap, credits_per_week, covers this project''s Apollo spending together, the search page''s included: about 10 company pages and 110 people. The week runs from Friday 00:00 UTC, the refresh''s day. The ledger (apollo_spend, sql/33) counts every credit, so a refresh pressed by hand cannot spend the week twice, and nothing is spent once fewer than keep_in_reserve credits are left for the month (nor when Apollo cannot say what is left), so US Production Houses keeps its week. reveal_countries: only leads based in the US, the UK, India and the UAE. skip_revealed_elsewhere: nobody already revealed for another project is paid for again. Change the numbers here (then tools/gen_segment_sql.py lcx-services and sql/03f). A person is paid for only when their title is one of the audience''s contact_roles, shares a real word with one (marketing, brand, training, admissions...; not ''director'' or ''head''), or is senior (senior_titles: founder, chief executive, managing director, principal...): the only person Apollo lists is not a reason to spend.",
+    "require_fitting_role": true,
+    "skip_revealed_elsewhere": true
   },
   "sources": [
     {
-      "slug": "lcx_wikidata",
-      "name": "Wikidata (companies by class and industry)",
+      "slug": "lcx_apollo",
+      "name": "Apollo.io company search (weekly, inside the credit cap)",
       "kind": "api",
       "phase": 1,
-      "detail": "tools/discover_lcx_services.py --source wikidata: operating companies with an official website in each audience''s classes and industries, not only in a consent-law country. CC0, free, no key."
+      "detail": "tools/discover_lcx_services.py --source apollo: mid-size companies with their websites, by audience, size and country, the ones hiring for content, training or store staff now and the recently funded first. 1 credit a page of 100."
+    },
+    {
+      "slug": "lcx_wikidata",
+      "name": "Wikidata (listed companies, and companies by class and industry)",
+      "kind": "api",
+      "phase": 1,
+      "detail": "tools/discover_lcx_services.py --source wikidata: operating companies with an official website, listed on a stock exchange or in an audience''s classes and industries. CC0, free."
+    },
+    {
+      "slug": "lcx_fdic",
+      "name": "FDIC BankFind (US banks)",
+      "kind": "api",
+      "phase": 1,
+      "detail": "tools/discover_lcx_services.py --source fdic: US banks of $1-20 billion with their websites. Public domain, free."
     },
     {
       "slug": "lcx_osm",
       "name": "OpenStreetMap (local businesses around a city)",
       "kind": "api",
-      "phase": 1,
-      "detail": "tools/discover_lcx_services.py --source osm: independent cafes, salons, gyms, shops, estate agents, guest houses, schools and attractions that publish a website or an email address, a few cities a week. ODbL, free, no key."
+      "phase": 2,
+      "detail": "tools/discover_lcx_services.py --source osm: independent cafes, salons, gyms, shops, estate agents, guest houses, schools and attractions that publish a website or an address, 2 cities a week. ODbL."
     },
     {
       "slug": "apollo",
       "name": "Apollo.io search (by hand)",
       "kind": "api",
       "phase": 2,
-      "detail": "The Apollo search page, for adding a lead by hand. Saving a person reveals them: 1 credit each. Not part of the weekly harvest."
+      "detail": "The Apollo search page, for adding a lead by hand. Saving a person reveals them: 1 credit each."
     }
   ],
   "self_exclusion": {
@@ -875,6 +1021,11 @@ values (
         "format": "list"
       },
       {
+        "path": "metadata.buying_signal",
+        "label": "Signal",
+        "format": "text"
+      },
+      {
         "path": "metadata.hq_city",
         "label": "City",
         "format": "text"
@@ -882,6 +1033,11 @@ values (
       {
         "path": "metadata.hq_country",
         "label": "Country",
+        "format": "text"
+      },
+      {
+        "path": "metadata.size_band",
+        "label": "Size",
         "format": "text"
       },
       {
@@ -919,15 +1075,386 @@ values (
   "pipelines": {
     "weekly_refresh": [
       "discover_lcx_wikidata",
+      "discover_lcx_apollo",
+      "discover_lcx_fdic",
       "discover_lcx_osm",
       "promote_chain",
       "enrich_lcx_services",
       "enrich_contacts_lcxs",
+      "enrich_apollo_lcxs",
       "promote_chain"
     ],
     "enrich_contacts": [
       "enrich_contacts"
     ]
+  },
+  "apollo_discovery": {
+    "pages_per_run": 10,
+    "signal_pages_per_run": 4,
+    "per_page": 100,
+    "countries": [
+      {
+        "name": "United States",
+        "iso": "US"
+      },
+      {
+        "name": "United Kingdom",
+        "iso": "GB"
+      },
+      {
+        "name": "India",
+        "iso": "IN"
+      },
+      {
+        "name": "United Arab Emirates",
+        "iso": "AE"
+      }
+    ],
+    "searches": [
+      {
+        "key": "corporates_hiring_trainers",
+        "audience": "corporate_teams",
+        "signal": "hiring for training and onboarding now",
+        "posted_within_days": 30,
+        "filters": {
+          "organization_num_employees_ranges": [
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ],
+          "q_organization_job_titles": [
+            "learning and development manager",
+            "training manager",
+            "sales trainer",
+            "instructional designer",
+            "sales enablement manager",
+            "onboarding specialist"
+          ]
+        }
+      },
+      {
+        "key": "corporates_hiring_frontline",
+        "audience": "corporate_teams",
+        "signal": "hiring sales and service staff now",
+        "posted_within_days": 30,
+        "filters": {
+          "organization_num_employees_ranges": [
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ],
+          "q_organization_job_titles": [
+            "sales representative",
+            "customer service representative",
+            "account executive"
+          ],
+          "organization_num_jobs_range": {
+            "min": 10
+          }
+        }
+      },
+      {
+        "key": "brands_hiring_content",
+        "audience": "consumer_brands",
+        "signal": "hiring for content and video now",
+        "posted_within_days": 30,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "consumer goods",
+            "cosmetics",
+            "apparel & fashion",
+            "food & beverages",
+            "luxury goods & jewelry",
+            "sporting goods",
+            "consumer electronics",
+            "wine & spirits"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ],
+          "q_organization_job_titles": [
+            "content marketing manager",
+            "social media manager",
+            "video editor",
+            "video producer",
+            "content creator",
+            "brand manager"
+          ]
+        }
+      },
+      {
+        "key": "brands_recently_funded",
+        "audience": "consumer_brands",
+        "signal": "raised money in the last 90 days",
+        "funded_within_days": 90,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "consumer goods",
+            "cosmetics",
+            "apparel & fashion",
+            "food & beverages",
+            "luxury goods & jewelry",
+            "sporting goods",
+            "consumer electronics",
+            "wine & spirits"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ],
+          "latest_funding_amount_range": {
+            "min": 2000000,
+            "max": 60000000
+          }
+        }
+      },
+      {
+        "key": "retailers_hiring_store_staff",
+        "audience": "retailers",
+        "signal": "hiring store staff now",
+        "posted_within_days": 30,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "retail",
+            "supermarkets"
+          ],
+          "organization_num_employees_ranges": [
+            "51,200",
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ],
+          "q_organization_job_titles": [
+            "store associate",
+            "sales associate",
+            "visual merchandiser",
+            "store manager"
+          ],
+          "organization_num_jobs_range": {
+            "min": 10
+          }
+        }
+      },
+      {
+        "key": "hotels_hiring_content_or_training",
+        "audience": "hospitality",
+        "signal": "hiring for content or training now",
+        "posted_within_days": 30,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "hospitality",
+            "hotels"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ],
+          "q_organization_job_titles": [
+            "social media manager",
+            "content creator",
+            "training manager",
+            "guest experience manager"
+          ]
+        }
+      },
+      {
+        "key": "developers_hiring_marketing",
+        "audience": "real_estate",
+        "signal": "hiring for marketing and sales now",
+        "posted_within_days": 30,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "real estate development"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ],
+          "q_organization_job_titles": [
+            "marketing manager",
+            "sales manager"
+          ]
+        }
+      },
+      {
+        "key": "brands",
+        "audience": "consumer_brands",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "consumer goods",
+            "cosmetics",
+            "apparel & fashion",
+            "food & beverages",
+            "luxury goods & jewelry",
+            "sporting goods",
+            "consumer electronics",
+            "wine & spirits"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ]
+        }
+      },
+      {
+        "key": "developers",
+        "audience": "real_estate",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "real estate development"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ]
+        }
+      },
+      {
+        "key": "retailers",
+        "audience": "retailers",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "retail",
+            "supermarkets"
+          ],
+          "organization_num_employees_ranges": [
+            "51,200",
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ]
+        }
+      },
+      {
+        "key": "hotels",
+        "audience": "hospitality",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "hospitality",
+            "hotels"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ]
+        }
+      },
+      {
+        "key": "publishers",
+        "audience": "publishers",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "publishing",
+            "book publishing",
+            "newspapers",
+            "online media"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ]
+        }
+      },
+      {
+        "key": "insurers_and_investment_firms",
+        "audience": "financial_services",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "insurance",
+            "investment management",
+            "financial services"
+          ],
+          "organization_num_employees_ranges": [
+            "51,200",
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ]
+        }
+      },
+      {
+        "key": "schools",
+        "audience": "schools",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "primary/secondary education"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000"
+          ]
+        }
+      },
+      {
+        "key": "attractions",
+        "audience": "attractions",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "amusement parks",
+            "museums & institutions",
+            "recreational facilities & services"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ]
+        }
+      },
+      {
+        "key": "agencies",
+        "audience": "studios_agencies",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "marketing & advertising",
+            "animation"
+          ],
+          "organization_num_employees_ranges": [
+            "11,50",
+            "51,200",
+            "201,500"
+          ]
+        }
+      }
+    ],
+    "guidance": "Apollo''s company search: 1 credit a page of up to 100 companies, each with its website and Apollo''s own id for it (tools/discover_lcx_services.py --source apollo). A slice is one search in one country; each run buys pages_per_run pages, signal_pages_per_run of them from the signal searches (a company hiring for training, content or store staff right now, or recently funded, has the budget and the gap today), the rest from the plain audience searches, least-run slice first, and each slice''s next page the run after (apollo_cursors, sql/33). The ledger row and the cursor are written together the moment a page is bought, so a page paid for is never bought again. A signal search counts back from today, so it is a new set each time: once used up it rests for its window (30 or 90 days), then starts again at page 1; a plain search, once used up, waits until its cursor is reset. A free people search with the same filters goes first, and a page that would come back empty is never bought (the funding search has no free check: people search does not take it). Countries: the US, the UK, India and the UAE, where an Apollo address may be written to without prior consent; Australia, New Zealand and South Africa need consent the way Apollo finds an address, so they are left out. The answer has no industry, size or country, so they come from the slice. Tags are Apollo''s own, matched word for word (checked free on 2026-10-07: every one finds thousands); ''real estate development'', not ''real estate'', which pulls brokerages; no ''media production'' or ''film'', which US Production Houses already covers."
+  },
+  "fdic_discovery": {
+    "audience": "financial_services",
+    "assets_min_thousands": 1000000,
+    "assets_max_thousands": 20000000,
+    "guidance": "Every insured US bank, from the FDIC''s public BankFind API (public domain, no key; 4,223 active on 2026-10-07, nearly all with their own website). Banks of $1 to 20 billion in assets are the right size: a marketing team of their own, no procurement maze; about 940 of them. Up to discovery.fdic.max_new_per_run a week, largest first, until they are all in."
   }
 }'::jsonb
 )

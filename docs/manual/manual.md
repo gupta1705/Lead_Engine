@@ -127,9 +127,9 @@ Right now there are five:
   which TVF could buy for little or back with its content and audience.
 - **Universal** — any company or person, found with Apollo. No rubric and no
   harvest: you search, you pick, you save.
-- **LCX Services** — businesses everywhere cold email is allowed, found by
-  itself every Friday and sent one email offering every LCX service, with the
-  services deck attached.
+- **LCX Services** — companies and businesses everywhere cold email is
+  allowed, found by itself every Friday and sent one email offering every LCX
+  service, with the services deck attached.
 
 Whichever project you pick, every screen changes with it. The board, the leads,
 the emails, the reports. Check the sidebar if you are ever unsure which one you
@@ -271,24 +271,34 @@ LCX Services offers everything LCX does in one email, with the services deck
 attached, to businesses it finds by itself. Like the production houses, it
 harvests every Friday:
 
-- **Companies from Wikidata**: consumer brands, retailers, real estate
-  developers, hotels, publishers, banks and insurers, studios and agencies,
-  theme parks and international schools, each with its own website. The ones of
-  10 to 5,000 people come first; companies of over 100,000 are left out.
-- **Local businesses from OpenStreetMap**: independent cafes, salons, gyms,
-  shops, estate agents, guest houses, schools and attractions that publish a
-  website or an email address, a few cities a week (London, New York, Mumbai,
-  Dubai, Sydney, Singapore and more). A chain's branch is never one of them.
+- **Companies from Apollo**: mid-size companies of any industry, consumer
+  brands, retailers, real estate developers, hotels, publishers, insurers,
+  schools, attractions and agencies in the US, the UK, India and the UAE. The
+  ones showing a reason to buy now come first: hiring trainers, sales staff,
+  store staff or content people this month, or funded in the last three months.
+  The lead says which.
+- **US banks from the FDIC's register**: banks of $1 to 20 billion, largest
+  first.
+- **Companies from Wikidata**: the same kinds of buyer and listed companies,
+  each with its own website. The ones of 10 to 5,000 people come first;
+  companies of over 100,000 are left out.
+- **Local businesses from OpenStreetMap**, fewer than before: independent cafes,
+  salons, gyms and shops that publish a website or an email address, two cities
+  a week. A chain's branch is never one of them.
 
 It looks everywhere cold business email is allowed, so Canada, Germany, Austria
 and Italy are left out. A business that is already a lead of another project is
 not found again here.
 
 Each lead says what kind of buyer it is and which services to pitch first. Its
-address comes from the business itself: the one it publishes, or one read off
-its own website. A lead with an address and a good fit is shortlisted by itself,
-and its email is drafted within minutes. A lead nobody can be written to yet
-stays in To review.
+address comes from the business itself first: the one it publishes, or one read
+off its own website. A lead that fits well and still has nobody to write to gets
+the right person from Apollo: a marketing head at a brand, the head of training
+at a mid-size company, the principal of a school. Only someone in a fitting role
+who still works there is paid for, inside a weekly budget the owner set (120
+credits). A lead with an address and a good fit is shortlisted by itself, and
+its email is drafted within minutes. A lead nobody can be written to yet stays
+in To review.
 
 **The email** is short and the same for every lead: *Hi* and the person's first
 name (or *there*), *I'm writing from LCX. We work in three areas, and at least
@@ -308,7 +318,12 @@ file you did not see.
 
 **Adding a lead by hand.** **Apollo search** works here as in Universal, and
 what you save becomes an LCX Services lead, drafted like the others once it is
-shortlisted.
+shortlisted. What a search costs here counts in the project's weekly budget, and
+once that is used up the page says so until Friday.
+
+A company that already had a first email from another project, or an inbox
+that did, is not written to again from here: approving it says why. (A first
+email that bounced does not count: it reached nobody.)
 
 
 # The board
