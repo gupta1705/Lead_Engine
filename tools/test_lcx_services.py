@@ -215,6 +215,53 @@ def offline(cfg, uni):
     check("one Overpass query per city and audience, for places with a website or an address",
           ('[~"^(amenity|leisure|shop)$"~"^(beauty|cafe|fitness_centre|hairdresser)$"]' in q,
            '[~"^(contact:)?(website|email)$"~"."]' in q, "(around:12000,51.5,-0.12)" in q), (True, True, True))
+    # the two loops, with the network stubbed: what is found is saved as it is found, the even shares hold
+    real = (disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep)
+    disc.time.sleep = lambda s: None
+    try:
+        import re
+
+        def fake_overpass(query, endpoints, pause=2.0):
+            """39 cafes around each city, every third publishing an address; every other audience's
+            endpoint fails."""
+            if "fitness_centre" not in query:
+                raise RuntimeError("no OpenStreetMap endpoint answered: HTTP Error 504")
+            off = int(abs(float(re.search(r"around:\d+,(-?[\d.]+)", query).group(1))) * 1000)
+            return [{"type": "node", "id": off + i, "tags": {"amenity": "cafe", "name": "Cafe %d" % (off + i),
+                     "website": "https://cafe%d.example" % (off + i),
+                     **({"email": "hi@cafe%d.example" % (off + i)} if i % 3 == 0 else {})}} for i in range(1, 40)]
+        disc.overpass = fake_overpass
+        saved = []
+        one = dict(cfg, osm_discovery=dict(cfg["osm_discovery"], cities=cfg["osm_discovery"]["cities"][:2]))
+        rows, why = disc.run_osm(one, 120, 2, set(), set(), ["x"], emit=saved.append)
+        per = 120 // (2 * len(disc.audiences(cfg, "osm")))
+        check("OpenStreetMap: every place is saved as it is found", [r["source_url"] for r in saved],
+              [r["source_url"] for r in rows])
+        check("  an even share per city and audience (%d each), those with an address first" % per,
+              (len(rows), len({r["raw"]["osm"]["city"] for r in rows}), all(r["raw"]["published_email"] for r in rows)),
+              (2 * per, 2, True))
+        check("  an endpoint that fails skips that city and audience, and the run goes on", len(rows) > 0, True)
+        rows, why = disc.run_osm(one, 600, 2, set(), set(), ["x"], emit=saved.append, deadline=disc.time.monotonic() - 1)
+        check("  out of time: it stops asking, keeping what it has", rows, [])
+
+        def fake_ids(match):                 # each audience its own companies, half of them in an English market
+            base = int(match["values"][0][1:]) % 100000 * 100
+            return {"Q%d" % (base + i): (100 + i, ["US"] if i % 2 else ["JP"]) for i in range(1, 30)}
+
+        def fake_details(qids):
+            return {q: {"qid": q, "label": "Co %s" % q, "webs": ["https://co-%s.example" % q.lower()], "isos": ["US"],
+                        "employees": 300, "emails": []} for q in qids}
+        disc.wikidata_ids, disc.wikidata_details = fake_ids, fake_details
+        saved = []
+        rows, why = disc.run_wikidata(cfg, 90, 80, set(), set(), emit=saved.append)
+        n_aud = len(disc.audiences(cfg, "wikidata"))
+        check("Wikidata: every company saved as it is found, an equal share per audience",
+              (len(saved) == len(rows), len(rows), 90 // n_aud), (True, n_aud * (90 // n_aud), 10))
+        base = int(disc.audiences(cfg, "wikidata")[0]["wikidata"][0]["values"][0][1:]) % 100000 * 100
+        check("  the English-speaking market taken first within the same size", [r["raw"]["wikidata"]["qid"] for r in rows[:3]],
+              ["Q%d" % (base + i) for i in (1, 3, 5)])
+    finally:
+        disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep = real
     meta, email, src = lift.lift({"discovery_raw": {"lcx_osm": row["raw"]}, "why_fit": "a person's own words"})
     check("lifting: the audience, services and place go on the lead, a person's words stay",
           (meta["kind"], meta["audience"], meta["hq_city"], meta["hq_country"], meta["why_fit"], email, src),

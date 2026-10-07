@@ -340,12 +340,17 @@ def known_elsewhere(db, seg_id):
         (seg_id,)), {r[0] for r in cur.fetchall() if r[0]})[1])
 
 
-def run_wikidata(cfg, limit, per_audience, skip_urls, skip_domains):
+def run_wikidata(cfg, limit, per_audience, skip_urls, skip_domains, emit=None, deadline=None):
+    """-> (rows staged, {reason: count} not staged). Each row is handed to emit(row) as it is found, so a
+    run that is stopped keeps what it found; the run ends early at `deadline` (time.monotonic())."""
     staged, why_not = [], {}
     auds = audiences(cfg, "wikidata")
     # every audience gets its share of the run, so the last in the list is not left with nothing
     per_audience = max(1, min(per_audience, limit // max(1, len(auds))))
     for aud in auds:
+        if deadline and time.monotonic() > deadline:
+            log("  stopping: this run's time is up (--max-minutes); the rest wait for the next run")
+            break
         qids = {}
         for match in aud["wikidata"]:
             try:
@@ -387,6 +392,8 @@ def run_wikidata(cfg, limit, per_audience, skip_urls, skip_domains):
                 skip_domains.add(row["domain"])
                 skip_urls.add(row["source_url"])
                 staged.append(row)
+                if emit:
+                    emit(row)
                 took += 1
                 if took >= per_audience or len(staged) >= limit:
                     break
@@ -404,7 +411,9 @@ def osm_order(row):
             -(row["raw"]["scoring_inputs"].get("established") or 0), row["name"].lower())
 
 
-def run_osm(cfg, limit, cities_per_run, skip_urls, skip_domains, endpoints, per_place=None):
+def run_osm(cfg, limit, cities_per_run, skip_urls, skip_domains, endpoints, per_place=None, emit=None, deadline=None):
+    """-> (rows staged, {reason: count} not staged), each row handed to emit(row) as it is found; the run
+    ends early at `deadline` (time.monotonic())."""
     ocfg = cfg.get("osm_discovery") or {}
     cities = city_slice(ocfg.get("cities") or [], cities_per_run)
     radius = int(ocfg.get("radius_m") or 12000)
@@ -418,6 +427,9 @@ def run_osm(cfg, limit, cities_per_run, skip_urls, skip_domains, endpoints, per_
         for aud in auds:
             if len(staged) >= limit:
                 break
+            if deadline and time.monotonic() > deadline:
+                log("  stopping: this run's time is up (--max-minutes); the rest wait for the next run")
+                return staged, why_not
             try:
                 els = overpass(osm_query(city, aud, radius), endpoints)
             except Exception as e:
@@ -443,6 +455,8 @@ def run_osm(cfg, limit, cities_per_run, skip_urls, skip_domains, endpoints, per_
                     skip_domains.add(row["domain"])
                 skip_urls.add(row["source_url"])
                 staged.append(row)
+                if emit:
+                    emit(row)
                 took += 1
             log("  %-14s %-22s %4d places, %4d usable, %4d staged" % (city["name"], aud["key"], len(els), len(rows), took))
             time.sleep(pause)
@@ -457,6 +471,8 @@ def main():
     ap.add_argument("--cities", type=int, default=None, help="OpenStreetMap: cities this run")
     ap.add_argument("--endpoint", action="append", default=None,
                     help="OpenStreetMap: an Overpass endpoint to use instead of the config's (repeatable)")
+    ap.add_argument("--max-minutes", type=float, default=None,
+                    help="stop asking for more after this long (config discovery.<source>.max_minutes, else 40)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -485,22 +501,28 @@ def main():
             "insert into source_runs (segment_id, source, status) values (%s,%s,'running') returning id",
             (seg_id, source)), cur.fetchone()[0])[1])
     staged, why_not, error = [], {}, None
+    deadline = time.monotonic() + 60 * float(args.max_minutes or dcfg.get("max_minutes") or 40)
+
+    def emit(r):
+        """One business into staging the moment it is found: a run that is stopped keeps what it found
+        (dbconn's second rule: never batch the writes to the end)."""
+        if args.dry_run:
+            return
+        db.run(lambda cur, _r=r: cur.execute(
+            "insert into staging_candidates (segment_id, name, domain, source, source_url, raw)"
+            " select %s,%s,%s,%s,%s,%s where not exists (select 1 from staging_candidates"
+            " where segment_id=%s and source_url=%s)",
+            (seg_id, _r["name"], _r["domain"], source, _r["source_url"], json.dumps(_r["raw"]),
+             seg_id, _r["source_url"])))
     try:
         if args.source == "wikidata":
             staged, why_not = run_wikidata(cfg, limit, args.per_audience or int(dcfg.get("per_audience") or 150),
-                                           skip_urls, skip_domains)
+                                           skip_urls, skip_domains, emit=emit, deadline=deadline)
         else:
             staged, why_not = run_osm(cfg, limit, args.cities or int(dcfg.get("cities_per_run") or 6),
                                       skip_urls, skip_domains,
-                                      args.endpoint or (cfg.get("osm_discovery") or {}).get("endpoints") or OSM_ENDPOINTS)
-        if not args.dry_run:
-            for r in staged:
-                db.run(lambda cur, _r=r: cur.execute(
-                    "insert into staging_candidates (segment_id, name, domain, source, source_url, raw)"
-                    " select %s,%s,%s,%s,%s,%s where not exists (select 1 from staging_candidates"
-                    " where segment_id=%s and source_url=%s)",
-                    (seg_id, _r["name"], _r["domain"], source, _r["source_url"], json.dumps(_r["raw"]),
-                     seg_id, _r["source_url"])))
+                                      args.endpoint or (cfg.get("osm_discovery") or {}).get("endpoints") or OSM_ENDPOINTS,
+                                      emit=emit, deadline=deadline)
     except Exception as e:                                   # noqa: BLE001 -- recorded on the run, then raised
         error = str(e)[:500]
         raise

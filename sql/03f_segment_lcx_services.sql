@@ -376,13 +376,15 @@ values (
     "skip_known_elsewhere": true,
     "wikidata": {
       "max_new_per_run": 600,
-      "per_audience": 80
+      "per_audience": 80,
+      "max_minutes": 40
     },
     "osm": {
       "max_new_per_run": 600,
-      "cities_per_run": 6
+      "cities_per_run": 6,
+      "max_minutes": 40
     },
-    "guidance": "Each Friday''s refresh stages up to 600 new companies from Wikidata (an equal share for each audience, at most per_audience; 10 to 5,000 people first, and within that English-speaking markets first, since the email and the deck are in English) and up to 600 local businesses from OpenStreetMap (cities_per_run cities, a different few each week). The site pass after it reads up to 600 websites, so a week''s harvest is read the week it arrives. skip_known_elsewhere: a business already a lead of another project is not staged here, so nobody is pitched by two projects from the same address."
+    "guidance": "Each Friday''s refresh stages up to 600 new companies from Wikidata (an equal share for each audience, at most per_audience; 10 to 5,000 people first, and within that English-speaking markets first, since the email and the deck are in English) and up to 600 local businesses from OpenStreetMap (cities_per_run cities, a different few each week). The site pass after it reads up to 600 websites, so a week''s harvest is read the week it arrives. Each business is saved the moment it is found, and a run stops asking for more after max_minutes (a slow or failing endpoint cannot hold the weekly refresh); what it did not reach waits for the next run. skip_known_elsewhere: a business already a lead of another project is not staged here, so nobody is pitched by two projects from the same address."
   },
   "osm_discovery": {
     "endpoints": [
