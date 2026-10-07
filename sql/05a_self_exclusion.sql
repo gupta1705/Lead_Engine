@@ -26,10 +26,15 @@
 
 ----------------------------------------------------------------------
 -- One-time: the import_result CHECK predates this rule. Additive only.
+-- skipped_shielded_name is what 05_promote_minimal's step 3 writes for a staging row whose name
+-- matches a rejected or archived company (the name-level shield). It was missing from this list,
+-- so the first harvest that found such a name rolled back the whole promote: LCX Clipping's
+-- weekly refresh of 2026-10-07 stopped there ("Maxwell Leadership Podcast").
 ----------------------------------------------------------------------
 alter table staging_candidates drop constraint if exists staging_candidates_import_result_check;
 alter table staging_candidates add constraint staging_candidates_import_result_check
-    check (import_result in ('inserted', 'merged_duplicate', 'skipped_rejected', 'skipped_self'));
+    check (import_result in ('inserted', 'merged_duplicate', 'skipped_rejected', 'skipped_self',
+                             'skipped_shielded_name'));
 
 ----------------------------------------------------------------------
 -- STEP 1 -- what would be excluded. Read this before running step 2.

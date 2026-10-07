@@ -338,6 +338,15 @@ def main_():
                         " (%s, %s, %s, %s, %s, %s)", (lx_id, r["name"], r["domain"],
                                                       "lcx_wikidata" if "wikidata" in r["raw"] else "lcx_osm",
                                                       r["source_url"], json.dumps(r["raw"])))
+        # a company already ruled out, found again under another website: the name-level shield keeps it out,
+        # and the chain must say so rather than fail (it did, on LCX Clipping's refresh of 2026-10-07)
+        shield = "ZZ Ruled Out %s" % tag
+        cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'lcx_wikidata',"
+                    " 'archived')", (lx_id, shield, "zz-ruled-%s.example" % tag))
+        cur.execute("insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values"
+                    " (%s, %s, %s, 'lcx_wikidata', %s, %s)", (lx_id, shield, "zz-ruled-again-%s.example" % tag,
+                                                              "https://www.wikidata.org/wiki/Q77%s" % tag[:4].encode().hex()[:5],
+                                                              json.dumps(staged[0]["raw"])))
         cur.execute("select set_config('tvf.segment', %s, true)", (lx,))
         for f in CHAIN:
             cur.execute((ROOT / f).read_text(encoding="utf-8"))
@@ -345,6 +354,11 @@ def main_():
         got = {r[0]: r for r in cur.fetchall()}
         acme, bean = got.get("ZZ Acme Foods %s" % tag), got.get("ZZ Bean There %s" % tag)
         check("both are leads of LCX Services after the promote chain", (bool(acme), bool(bean)), (True, True))
+        cur.execute("select import_result from staging_candidates where segment_id = %s and name = %s", (lx_id, shield))
+        check("a company ruled out before, found again: kept out, and the chain says why", [r[0] for r in cur.fetchall()],
+              ["skipped_shielded_name"])
+        cur.execute("select count(*) from entities where segment_id = %s and name = %s", (lx_id, shield))
+        check("  still one lead of that name, the archived one", cur.fetchone()[0], 1)
         lift.SEGMENT = lx
         sys.argv = ["enrich_lcx_services.py"]
         lift.main()
