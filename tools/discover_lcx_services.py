@@ -343,12 +343,14 @@ COMPANY_ONLY = ("latest_funding_date_range", "latest_funding_amount_range", "tot
 
 
 def apollo_slices(cfg):
-    """Every (search, country) pair the config asks for, with its cursor key, in the config's order."""
+    """Every (search, country) pair the config asks for, with its cursor key. Ordered on a diagonal through
+    searches and countries ((search + country) index, then country), so a run mixes the countries
+    instead of taking every US slice before the first UK one."""
     acfg = (cfg or {}).get("apollo_discovery") or {}
     out = []
     for si, s in enumerate(acfg.get("searches") or []):
         for ci, c in enumerate(acfg.get("countries") or []):
-            out.append({"key": "%s|%s" % (s["key"], c["iso"]), "search": s, "country": c, "order": (ci, si)})
+            out.append({"key": "%s|%s" % (s["key"], c["iso"]), "search": s, "country": c, "order": (si + ci, ci)})
     return out
 
 
@@ -493,8 +495,8 @@ def slice_page(sl, cursors, now=None):
 
 
 def slice_order(slices, cursors, now=None):
-    """Least-run first, so every audience and country gets its turn; then the config's country and
-    search order. A slice that is waiting (slice_page) is left out."""
+    """Least-run first, so every audience and country gets its turn; then the diagonal (apollo_slices).
+    A slice that is waiting (slice_page) is left out."""
     live = [s for s in slices if slice_page(s, cursors, now) is not None]
     return sorted(live, key=lambda s: ((cursors.get(s["key"]) or {}).get("runs", 0), s["order"]))
 

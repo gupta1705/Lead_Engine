@@ -298,6 +298,9 @@ def offline(cfg, uni):
     check("Apollo: every search in every country, one cursor each",
           (len(sls), len({s["key"] for s in sls})),
           (len(cfg["apollo_discovery"]["searches"]) * 4, len(cfg["apollo_discovery"]["searches"]) * 4))
+    check("  the first run mixes countries: a diagonal through searches and countries, not every US slice first",
+          [s["key"] for s in disc.slice_order([s for s in sls if not s["search"].get("signal")], {})][:6],
+          ["brands|US", "developers|US", "brands|GB", "retailers|US", "developers|GB", "brands|IN"])
     hiring = next(s for s in sls if s["key"] == "corporates_hiring_trainers|GB")
     f = disc.apollo_filters(hiring, dt.date(2026, 10, 7))
     check("  a signal slice: its country, and jobs posted in the last 30 days",
@@ -615,7 +618,9 @@ def main_():
                   [b for b in bought if b[0] == "Hong Kong"], [])
             cur.execute("select search_key from apollo_cursors where segment_id = %s and exhausted_at is not null"
                         " and search_key like %s order by 1", (lx_id, "%|HK"))
-            check("  and is set aside", [r[0] for r in cur.fetchall()], ["brands|HK", "developers|HK", "retailers|HK"])
+            check("  and is set aside", [r[0] for r in cur.fetchall()],
+                  sorted(["brands|HK", "developers|HK", "retailers|HK", small["apollo_discovery"]["searches"][0]["key"] + "|HK",
+                          small["apollo_discovery"]["searches"][1]["key"] + "|HK"]))
             check("  a company found before is not staged again", len(got2), 0)
             cur.execute("select search_key from apollo_cursors where segment_id = %s and exhausted_at is not null"
                         " and search_key like %s order by 1", (lx_id, "%|US"))

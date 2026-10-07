@@ -198,8 +198,10 @@ def offline():
                                                        ("Ladybird Books", "Penguin Random House"), ("", "X"),
                                                        ("First Horizon", "First Citizens Bank"),
                                                        ("Bank of Marin", "Bank of Hope"),
-                                                       ("Marriott Vacations Worldwide", "Marriott International"))],
-          [True, True, False, False, False, False, True])
+                                                       ("Marriott Vacations Worldwide", "Marriott International"),
+                                                       ("AG Barr Group", "A.G. Barr"), ("Abe's of Maine", "Abes of Maine"),
+                                                       ("Arte Studio", "Artemis Partners"))],
+          [True, True, False, False, False, False, True, True, True, False])
     check("  a lead saved from the search page names its country as Apollo does: still one of the four",
           [x in ea.country_forms(["US", "GB", "IN", "AE"]) for x in ("US", "UNITED KINGDOM", "UAE", "AUSTRALIA", "AU")],
           [True, True, True, False, False])

@@ -187,6 +187,10 @@ def works_at(person, company):
         return False
     if a == b or a.startswith(b + " ") or b.startswith(a + " "):
         return True
+    # the same name spelt with other punctuation: "AG Barr Group" is "A.G. Barr", "Abe's of Maine" "Abes of Maine"
+    short, long_ = sorted((a.replace(" ", ""), b.replace(" ", "")), key=len)
+    if short == long_ or (len(short) >= 6 and long_.startswith(short)):
+        return True
     first = a.split()[0]
     return first == b.split()[0] and first not in COMMON_FIRST and len(first) >= 4
 
