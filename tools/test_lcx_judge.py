@@ -515,6 +515,11 @@ def gates():
           (br("Kestrel Vape Co"), br("DraftKings"), br("Kestrel", rec={"classes": ["casino"]}),
            br("Kestrel", title="Kestrel | Gift sets", description="Wine and chocolate hampers.")),
           ("unsafe", "unsafe", "unsafe", None))
+    check("  every supermarket's Wikidata class ('... food, beverages or tobacco predominating') is not tobacco;"
+          " the tobacco industry is",
+          (br("Elvi", rec={"industries": ["retail sale in non-specialised stores with food, beverages or tobacco"
+                                          " predominating"]}),
+           br("Kestrel", rec={"industries": ["tobacco industry"]})), (None, "unsafe"))
     check("activity_signal: a parked or default page is dead",
           gate(lead("Kestrel", "kestrel.example", "consumer_brands", rec=wd(),
                     title="Apache2 Ubuntu Default Page: It works"), "activity_signal"), "dead")

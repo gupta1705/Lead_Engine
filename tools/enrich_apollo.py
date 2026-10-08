@@ -369,7 +369,11 @@ SITE_READ_SQL = """
   and coalesce(e.metadata->'scoring_inputs'->>'oversized_signal', 'false') <> 'true'
   and coalesce(e.metadata->'scoring_inputs'->>'brand_risk_signal', '') <> 'unsafe'
   and coalesce(e.metadata->'scoring_inputs'->>'country_signal', '') not in ('disallowed', 'unpayable')
-  and coalesce(e.metadata->'scoring_inputs'->>'activity_signal', '') <> 'dead'"""
+  and coalesce(e.metadata->'scoring_inputs'->>'activity_signal', '') <> 'dead'
+  -- nor one whose email is already written: the drafter never drafts a lead twice, so a person found now would
+  -- not be written to (the leads shortlisted under the old score, 2026-10-08); a cancelled draft frees it again
+  and not exists (select 1 from outreach o where o.entity_id = e.id and o.direction = 'outbound'
+                   and o.status not in ('cancelled', 'failed'))"""
 
 
 # reveal_countries are ISO codes; a lead saved from the search page carries Apollo's country name.

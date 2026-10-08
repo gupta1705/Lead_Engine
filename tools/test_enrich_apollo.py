@@ -455,6 +455,14 @@ def lcx_guards():
         lead("Brand Inbox Only", contact="inbox")
         lead("Corporate Named", "corporate_teams", contact="named")
         role_named = lead("Bank Named Role Inbox", "financial_services", contact="named_role")
+        drafted = lead("Bank Already Drafted", "financial_services", contact="inbox")
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body) select e.id, c.id, 't',"
+                    " 'S', 'B' from entities e join contacts c on c.entity_id = e.id where e.segment_id = %s"
+                    " and e.name = %s", (seg, drafted))
+        freed = lead("Bank Draft Cancelled", "financial_services", contact="inbox")
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status) select e.id, c.id,"
+                    " 't', 'S', 'B', 'cancelled' from entities e join contacts c on c.entity_id = e.id"
+                    " where e.segment_id = %s and e.name = %s", (seg, freed))
         gated = [lead("A Major's Brand", gate={"oversized_signal": True}),
                  lead("Brand Unsafe", gate={"brand_risk_signal": "unsafe"}),
                  lead("Sanctioned Country", gate={"country_signal": "unpayable"}),
@@ -468,7 +476,9 @@ def lcx_guards():
                                                       bb["site_read"], bb["named_for"]))
         got = picked()
         check("the default pass: read and theirs, not the wrong buyer, under too big, over 60; and the bank and"
-              " corporate with only an inbox", got, sorted([ok, half_big, unknown, corp, bank, role_named]))
+              " corporate with only an inbox", got, sorted([ok, half_big, unknown, corp, bank, role_named, freed]))
+        check("  never a lead whose email is already drafted (a person found now would not be written to);"
+              " a cancelled draft frees it", (drafted in got, freed in got), (False, True))
         check("  a bank whose only named person sits at accounting@: the drafter would write to info@, so Apollo"
               " looks for a named one", role_named in got, True)
         check("  never a lead a gate excludes (a major, brand-unsafe, sanctioned or consent-law, a dead site): gates"
@@ -481,7 +491,7 @@ def lcx_guards():
         check("  a brand with an inbox has someone to write to; a corporate with a named person is done",
               [n for n in ("Brand Inbox Only", "Corporate Named") if n in got], [])
         check("--unnamed: every read lead whose only address has nobody's name on it",
-              picked(unnamed=True), sorted([bank, "Brand Inbox Only", corp]))
+              picked(unnamed=True), sorted([bank, "Brand Inbox Only", corp, freed]))
         off = ea.enrich_block(dict(cfg, auto_shortlist=dict(cfg["auto_shortlist"], enabled=False)))
         check("auto-shortlist off: an inbox is draftable again, so the corporate's is enough", corp in picked(block=off),
               False)
@@ -490,6 +500,7 @@ def lcx_guards():
               picked(block=plain), sorted(["Read And Theirs", "Never Read", "Bot Wall Only", "Not Judged Yet",
                                            "Wrong Buyer Half", "Too Big Half", "Too Big Full", "Not Their Site",
                                            "Theirs Unknown"] + gated))
+        # (the plain project's default pass takes only leads with no usable address, so neither bank is in it)
     finally:
         ea.SEGMENT = keep
         conn.rollback()
