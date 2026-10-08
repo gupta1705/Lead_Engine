@@ -30,6 +30,15 @@ WHAT IT STAGES. staging_candidates rows, source lcx_wikidata or lcx_osm, raw = {
 key, audience, services, why_fit, published_email, wikidata|osm, scoring_inputs}. The promote chain
 makes them leads; tools/enrich_lcx_services.py turns a published address into a contact. Nothing
 is fetched from a company's own site here, and never anything from LinkedIn.
+
+SCORING V4 (the owner, 2026-10-07: "think and decide one"). tools/lcx_judge.py sets every scoring input
+from the stored record on each chain run, so scoring_inputs carries only what a discovery record settles
+by itself: audience_fit, has_reachable_presence, country_signal ('disallowed', 'unpayable' for a
+sanctioned country, 'allowed') and oversized_signal (over 50,000 people or $10B of revenue). The
+records keep what the judge reads: Apollo's parent company id, latest funding round, social pages and
+when its buying signal was seen; OpenStreetMap's account tags (contact:youtube, contact:instagram,
+contact:tiktok); and, for a judged project, Wikidata's accounts, revenue, pupils, parents, classes and
+industries, fetched for every 50 companies staged (add_wikidata_more).
 """
 import argparse
 import datetime as dt
@@ -114,8 +123,9 @@ def published_email(*values):
 
 
 def right_size(employees):
-    """1.0 at 10-5,000 people (big enough to pay, small enough to answer a cold email), 0.5 at 1-9
-    or 5,001-50,000, 0 above; None when nobody said."""
+    """The harvest's order of preference by headcount (size_order): 1.0 at 10-5,000 people (big enough to
+    pay, small enough to answer a cold email), 0.5 at 1-9 or 5,001-50,000, 0 above; None when nobody said.
+    Not a scoring input any more: the judge sizes each lead by its audience's bands (buyer_size)."""
     if employees is None:
         return None
     if 10 <= employees <= 5000:
@@ -125,20 +135,42 @@ def right_size(employees):
     return 0.5
 
 
-def inputs(aud, cfg, iso=None, employees=None, established=None, small=False, reachable=True):
-    """The scoring and gate inputs a discovery record can settle (see the config's rubric)."""
-    bad, english = geography(cfg)
+def giant_lines(cfg):
+    """not_major's size lines (config judge.not_major; the owner, 2026-10-07: over 50,000 people or $10B of
+    revenue): (people over, revenue from)."""
+    nm = ((cfg or {}).get("judge") or {}).get("not_major") or {}
+    try:
+        return float(nm.get("employees_over", 50000)), float(nm.get("revenue_from", 1e10))
+    except (TypeError, ValueError):
+        return 50000.0, 1e10
+
+
+def oversized(employees, revenue, cfg):
+    """True over not_major's lines, False under them, None when neither headcount nor revenue is known."""
+    people, money = giant_lines(cfg)
+    if employees is None and revenue is None:
+        return None
+    return bool((employees is not None and employees > people) or (revenue is not None and revenue >= money))
+
+
+def inputs(aud, cfg, iso=None, employees=None, revenue=None, reachable=True):
+    """The scoring and gate inputs a discovery record can settle by itself, and nothing else.
+
+    Scoring v4 (the owner, 2026-10-07: "think and decide one"): every other input is judged from the lead's
+    stored record on each chain run (tools/lcx_judge.py), so the harvest stages only these four. It no longer
+    stages established, right_size or english_market (retired that day), nor a buying_signal score: they were
+    copied into a lead by the promote merge whenever its own value was missing, so staging them would put a
+    retired key back on every lead found again. The facts they came from stay on the discovery record."""
+    bad, _ = geography(cfg)
+    unpayable = {c.upper() for c in ((cfg or {}).get("geography") or {}).get("unpayable_countries") or []}
     si = {"audience_fit": float(aud.get("fit", 1.0)), "has_reachable_presence": bool(reachable)}
-    if established is not None:
-        si["established"] = established
-    size = 1.0 if small else right_size(employees)
-    if size is not None:
-        si["right_size"] = size
-    if employees is not None:
-        si["oversized_signal"] = employees > 100000
+    big = oversized(employees, revenue, cfg)
+    if big is not None:
+        si["oversized_signal"] = big
     if iso:
-        si["country_signal"] = "disallowed" if iso in bad else "allowed"
-        si["english_market"] = 1.0 if iso in english else 0.0
+        # disallowed: a consent-law country (country_allowed); unpayable: a sanctioned one LCX cannot invoice
+        # (payable_country, geography.unpayable_countries)
+        si["country_signal"] = "disallowed" if iso in bad else "unpayable" if iso in unpayable else "allowed"
     return si
 
 
@@ -173,9 +205,14 @@ def wikidata_row(rec, aud, cfg):
            "why_fit": why_fit(aud, where, extra), "published_email": email,
            "wikidata": {"qid": rec["qid"], "matched": rec.get("matched"), "country_iso": iso, "website": url,
                         "employees": emp},
-           "scoring_inputs": inputs(aud, cfg, iso=iso, employees=emp, established=1.0)}
+           "scoring_inputs": inputs(aud, cfg, iso=iso, employees=emp)}
     return {"name": name[:200], "domain": domain, "source_url": "https://www.wikidata.org/wiki/" + rec["qid"],
             "raw": raw}, None
+
+
+# OpenStreetMap's tags for a place's own accounts: contact:* is the documented form, the bare key is common too
+OSM_ACCOUNT_TAGS = ("contact:youtube", "contact:instagram", "contact:tiktok", "contact:vimeo",
+                    "youtube", "instagram", "tiktok", "vimeo")
 
 
 def osm_category(tags, aud):
@@ -203,13 +240,19 @@ def osm_row(el, city, aud, cfg):
     phone = t.get("phone") or t.get("contact:phone")
     complete = bool(domain and (phone or t.get("opening_hours")))
     iso = (city.get("country") or "").upper() or None
+    osm = {"type": el.get("type"), "id": el.get("id"), "category": cat, "city": city["name"],
+           "country_iso": iso, "website": url, "email": email, "phone": phone, "complete": complete,
+           "attribution": ATTRIBUTION}
+    # the accounts the place lists for itself (content_activity counts a video or Instagram account a
+    # directory lists, tools/lcx_judge.py), as tagged
+    for key in OSM_ACCOUNT_TAGS:
+        v = str(t.get(key) or "").strip()
+        if v:
+            osm[key] = v[:300]
     raw = {"kind": aud["key"], "audience": aud.get("label"), "services": aud.get("services") or [],
            "why_fit": why_fit(aud, " in %s, on OpenStreetMap (%s)" % (city["name"], cat)),
-           "published_email": email,
-           "osm": {"type": el.get("type"), "id": el.get("id"), "category": cat, "city": city["name"],
-                   "country_iso": iso, "website": url, "email": email, "phone": phone,
-                   "attribution": ATTRIBUTION},
-           "scoring_inputs": inputs(aud, cfg, iso=iso, established=1.0 if complete else 0.5, small=True)}
+           "published_email": email, "osm": osm,
+           "scoring_inputs": inputs(aud, cfg, iso=iso)}
     return {"name": name[:200], "domain": domain,
             "source_url": "https://www.openstreetmap.org/%s/%s" % (el.get("type"), el.get("id")), "raw": raw}, None
 
@@ -370,28 +413,31 @@ def apollo_filters(sl, today=None):
     return f
 
 
-def band_size(bands):
-    """right_size from the headcount bands a search asked for: 1.0 when every band sits in 10-5,000."""
-    if not bands:
-        return None
-    lo_hi = []
-    for b in bands:
-        try:
-            lo, hi = (int(x) for x in str(b).split(","))
-        except ValueError:
-            return None
-        lo_hi.append((lo, hi))
-    if all(lo >= 10 and hi <= 5000 for lo, hi in lo_hi):
-        return 1.0
-    return 0.5
-
-
 def band_text(bands):
     if not bands:
         return None
     lows = [int(str(b).split(",")[0]) for b in bands]
     highs = [int(str(b).split(",")[1]) for b in bands]
     return "%s-%s people" % (format(min(lows), ","), format(max(highs), ","))
+
+
+APOLLO_KEEP = ("id", "name", "website_url", "primary_domain", "phone", "founded_year", "publicly_traded_symbol",
+               "annual_revenue_printed", "owned_by_organization_id", "latest_funding_round_date", "twitter_url",
+               "facebook_url")
+
+
+def apollo_revenue(org):
+    """Apollo's revenue in dollars: its number, or its printed form ("4.8M", "1.6B"), or None."""
+    try:
+        if org.get("annual_revenue") not in (None, ""):
+            return float(org["annual_revenue"])
+    except (TypeError, ValueError):
+        pass
+    m = re.fullmatch(r"\s*\$?([\d.]+)\s*([KMBT]?)\s*", str(org.get("annual_revenue_printed") or ""), re.I)
+    try:
+        return float(m.group(1)) * {"": 1, "K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}[m.group(2).upper()] if m else None
+    except ValueError:
+        return None
 
 
 def apollo_row(org, sl, aud, cfg, today=None):
@@ -411,26 +457,20 @@ def apollo_row(org, sl, aud, cfg, today=None):
         return None, "TVF or an affiliate"
     s, iso = sl["search"], sl["country"]["iso"].upper()
     bands = (s.get("filters") or {}).get("organization_num_employees_ranges") or []
-    si = inputs(aud, cfg, iso=iso, established=1.0)
-    size = band_size(bands)
-    if size is not None:
-        si["right_size"] = size
-    try:
-        young = int(org.get("founded_year") or 0) >= today.year - 1
-    except (TypeError, ValueError):
-        young = False
-    if young:
-        si["established"] = 0.5                      # founded this year or last
-    if s.get("signal"):
-        si["buying_signal"] = 1.0
+    si = inputs(aud, cfg, iso=iso, revenue=apollo_revenue(org))
     how = s.get("signal") or band_text(bands) or "industry search"
+    search = {"key": sl["key"], "signal": s.get("signal"), "country_iso": iso, "size_band": band_text(bands)}
+    if s.get("signal"):
+        # when the signal was seen: the judge's buying_trigger fades it to half after 60 days, gone after 120
+        search["signal_seen_at"] = today.isoformat()
     raw = {"kind": aud["key"], "audience": aud.get("label"), "services": aud.get("services") or [],
            "why_fit": why_fit(aud, " in %s, on Apollo (%s)" % (sl["country"]["name"], how)),
            "published_email": None,
-           "apollo": {k: org.get(k) for k in ("id", "name", "website_url", "primary_domain", "phone", "founded_year",
-                                              "publicly_traded_symbol", "annual_revenue_printed") if org.get(k)},
-           "apollo_search": {"key": sl["key"], "signal": s.get("signal"), "country_iso": iso,
-                             "size_band": band_text(bands)},
+           # 2026-10-07 (scoring v4): also the parent company (too_big / not_major, once it is a company we
+           # hold), the latest funding round and the company's own social pages (LinkedIn's left out, as
+           # everywhere in this engine)
+           "apollo": {k: org.get(k) for k in APOLLO_KEEP if org.get(k)},
+           "apollo_search": search,
            "scoring_inputs": si}
     return {"name": name[:200], "domain": domain, "source_url": "https://app.apollo.io/#/organizations/%s" % org.get("id"),
             "raw": raw}, None
@@ -633,8 +673,7 @@ def fdic_row(b, aud, cfg):
     lo, hi = int(fcfg.get("assets_min_thousands") or 0), int(fcfg.get("assets_max_thousands") or 10 ** 12)
     if not lo <= assets <= hi:
         return None, "outside the asset band"
-    si = inputs(aud, cfg, iso="US", established=1.0)
-    si["right_size"] = 1.0
+    si = inputs(aud, cfg, iso="US")                         # its size is judged from assets_thousands
     where = " in %s, %s, on the FDIC's register (%s bn dollars in assets)" % (
         (b.get("CITY") or "").title(), b.get("STALP") or "", format(round(assets / 1e6, 1), ","))
     raw = {"kind": aud["key"], "audience": aud.get("label"), "services": aud.get("services") or [],
@@ -707,6 +746,18 @@ def run_wikidata(cfg, limit, per_audience, skip_urls, skip_domains, emit=None, d
     auds = audiences(cfg, "wikidata")
     # every audience gets its share of the run, so the last in the list is not left with nothing
     per_audience = max(1, min(per_audience, limit // max(1, len(auds))))
+    # a judged project (scoring v4): the judge's Wikidata fields too, for every 50 companies staged
+    more = ((cfg or {}).get("judge") or {}).get("enabled") is True
+    got_more = {}
+    pending = []
+
+    def flush():
+        if more and pending:
+            add_wikidata_more(pending, got_more)
+        for r in pending:
+            if emit:
+                emit(r)
+        del pending[:]
     for aud in auds:
         if deadline and time.monotonic() > deadline:
             log("  stopping: this run's time is up (--max-minutes); the rest wait for the next run")
@@ -726,7 +777,7 @@ def run_wikidata(cfg, limit, per_audience, skip_urls, skip_domains, emit=None, d
         mkt = {q: market(isos, cfg) for q, (_, isos) in qids.items()}
         fresh = sorted((q for q in qids if "https://www.wikidata.org/wiki/" + q not in skip_urls
                         and mkt[q] < 3                                  # only in a consent-law country
-                        and not (qids[q][0] or 0) > 100000),            # the gate would archive them anyway
+                        and not (qids[q][0] or 0) > giant_lines(cfg)[0]),  # not_major would archive them
                        key=lambda q: size_order(q, qids[q][0], mkt[q]))
         took = 0
         for start in range(0, len(fresh), 200):
@@ -752,23 +803,61 @@ def run_wikidata(cfg, limit, per_audience, skip_urls, skip_domains, emit=None, d
                 skip_domains.add(row["domain"])
                 skip_urls.add(row["source_url"])
                 staged.append(row)
-                if emit:
-                    emit(row)
+                pending.append(row)
+                if not more or len(pending) >= 50:
+                    flush()                          # saved as found (in fifties when the judge's fields come too)
                 took += 1
                 if took >= per_audience or len(staged) >= limit:
                     break
+            flush()
             time.sleep(1.5)
         log("  %-28s %5d companies with a website, %5d new, %4d staged" % (aud["key"], len(qids), len(fresh), took))
         if len(staged) >= limit:
             break
+    flush()
+    if more and staged:
+        log("  Wikidata fields for the judge, of %d staged: %s" % (len(staged), ", ".join(
+            "%s %d" % (k, got_more.get(k, 0)) for k in ("socials", "revenue", "students", "parents", "classes"))))
     return staged, why_not
+
+
+def wikidata_extra(qids):
+    """The judge's Wikidata fields for up to 50 QIDs: tools/lcx_judge.wikidata_more, the very fetch its
+    --backfill-wikidata runs (a test stubs this)."""
+    import lcx_judge
+    return lcx_judge.wikidata_more(qids)
+
+
+def add_wikidata_more(rows, counts=None):
+    """Scoring v4 (2026-10-07): what tools/lcx_judge.py reads from Wikidata beyond the harvest's own query --
+    the company's YouTube, TikTok and Instagram accounts (P2397, P7085, P2003), revenue (P2139), pupils
+    (P2196), parent organisation and owner (P749, P127) with the parent's headcount, and its classes and
+    industries (P31, P452) -- onto each row's wikidata record, stamped details_at so --backfill-wikidata
+    leaves it be. Free, CC0, four queries for up to 50 companies. A failed fetch leaves the rows as they are:
+    they are staged anyway, and the back-fill fills them later."""
+    qids = [r["raw"]["wikidata"]["qid"] for r in rows if (r["raw"].get("wikidata") or {}).get("qid")]
+    if not qids:
+        return
+    try:
+        found = wikidata_extra(qids)
+    except Exception as e:                          # noqa: BLE001 -- one source down never stops the harvest
+        log("  Wikidata fields for the judge not fetched (%s): left to --backfill-wikidata" % str(e)[:100])
+        return
+    stamp = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    for r in rows:
+        rec = r["raw"].get("wikidata") or {}
+        fields = dict(found.get(rec.get("qid")) or {})
+        for k in fields:
+            if counts is not None and fields[k]:
+                counts[k] = counts.get(k, 0) + 1
+        rec.update(fields, details_at=stamp)
 
 
 def osm_order(row):
     """Places that publish an address first (someone to write to today), then those with a website
     and a phone or opening hours, then the rest."""
     return (0 if row["raw"].get("published_email") else 1,
-            -(row["raw"]["scoring_inputs"].get("established") or 0), row["name"].lower())
+            0 if (row["raw"].get("osm") or {}).get("complete") else 1, row["name"].lower())
 
 
 def run_osm(cfg, limit, cities_per_run, skip_urls, skip_domains, endpoints, per_place=None, emit=None, deadline=None):

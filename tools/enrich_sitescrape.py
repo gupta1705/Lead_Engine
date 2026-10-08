@@ -50,6 +50,22 @@ now records those under metadata.site_contact_routes, and contact-finding mode
 reads each lead that has no usable address ONCE under these rules, shortlisted
 leads included. LinkedIn links are never recorded, let alone followed.
 
+LCX SERVICES, SCORING V4 (the owner, 2026-10-07: "think and decide one"). A segment whose config has
+judge.enabled has every scoring input set by tools/lcx_judge.py from what is stored on the lead, on every
+chain run. For such a segment this pass writes the evidence and not the production-house scores:
+right_size (team page), genre_fit, distribution_relationship and collaboration_openness are not set
+(their evidence -- team_size_evidence, site_genre_evidence, site_platform_evidence, site_invitation --
+still is); reachable_decision_maker, which is the contact tools', still is. Two more things it does
+there only:
+  * metadata.dead_since: stamped on the first read that finds the domain does not resolve (an earlier
+    such read on record counts), cleared, with a 'domain_dead' enrichment_result, the moment the
+    domain answers again. A lead with no usable address whose stamp is judge.dead_after_days (7) old
+    and that has not been read since is read once more, so the judge's site_alive gate only ever
+    fires on two failed reads a week apart -- never on one DNS blip.
+  * site_about.lang and site_about.hreflang: the home page's <html lang> and its hreflang
+    alternates, kept for the non-English-site check.
+Every other segment runs exactly as before.
+
 Usage:
     python tools/enrich_sitescrape.py --limit 5 --dry-run
     python tools/enrich_sitescrape.py --limit 25
@@ -113,6 +129,9 @@ SOCIAL_NAME = {"instagram.com": "instagram", "facebook.com": "facebook", "x.com"
                "tiktok.com": "tiktok", "vimeo.com": "vimeo", "youtube.com": "youtube"}
 
 EMAIL_RE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.I)
+# the language a page says it is in, and the languages it says it is also in (LCX Services only: see above)
+HTML_LANG_RE = re.compile(r"""<html\b[^>]*?\blang\s*=\s*["']?([a-z]{2,3}(?:[-_][a-z0-9]{2,8})*)""", re.I)
+HREFLANG_RE = re.compile(r"""<link\b[^>]*?\bhreflang\s*=\s*["']?([a-z]{2,3}(?:[-_][a-z0-9]{2,8})*|x-default)""", re.I)
 
 # Addresses that are never a lead: asset pipelines, trackers, CMS boilerplate.
 EMAIL_NOISE = re.compile(
@@ -253,6 +272,30 @@ def has_mx(domain):
         return True
     except Exception:
         return False
+
+
+# getaddrinfo's answers that mean the name does not exist, as opposed to "try again" (a DNS server busy or
+# a laptop's network blinking: Windows 11002, EAI_AGAIN). Linux and Windows number them differently.
+_NO_SUCH_HOST = {e for e in (getattr(socket, "EAI_NONAME", None), getattr(socket, "EAI_NODATA", None),
+                             11001, 11004) if e is not None}
+
+
+def resolves(domain):
+    """Does the company's domain exist? True when the domain or www.<domain> resolves; False only when both
+    give a definite "no such host"; None when DNS could not say (a temporary failure), so nothing is decided.
+    LCX Services' site_alive gate archives on two dead reads a week apart, so "dead" must mean dead: a site
+    that answers only at www, or one read while DNS was down, is not (review, 2026-10-08)."""
+    unsure = False
+    for host in (domain, "www." + domain):
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except socket.gaierror as e:
+            if e.errno not in _NO_SUCH_HOST:
+                unsure = True
+        except (OSError, UnicodeError):
+            unsure = True
+    return None if unsure else False
 
 
 def classify_email(addr):
@@ -427,9 +470,18 @@ def _clean_text(fragment):
     return re.sub(r"\s+", " ", t).strip()
 
 
-def read_about(page, path, about):
+def read_about(page, path, about, lang=False):
     """Fill `about` with what the page says the company is: the title and description of the first page
-    that has them, and on an about-style page its first real paragraphs."""
+    that has them, and on an about-style page its first real paragraphs. With lang (a judged segment), also
+    the first page's <html lang> and hreflang alternates."""
+    if lang and "lang" not in about:
+        m = HTML_LANG_RE.search(page[:20000])
+        if m:
+            about["lang"] = m.group(1).lower().replace("_", "-")
+    if lang and "hreflang" not in about:
+        codes = sorted({c.lower().replace("_", "-") for c in HREFLANG_RE.findall(page[:300000])})
+        if codes:
+            about["hreflang"] = codes[:12]
     if not about.get("title"):
         m = re.search(r"(?is)<title[^>]*>(.*?)</title>", page)
         t = _clean_text(m.group(1)) if m else ""
@@ -452,9 +504,9 @@ def read_about(page, path, about):
             about["page"] = path
 
 
-def scrape_site(domain, company=None, paths=None, max_pages=None, about_only=False):
+def scrape_site(domain, company=None, paths=None, max_pages=None, about_only=False, lang=False):
     """Return findings for one domain, honouring robots.txt throughout. With about_only, only what the
-    company says about itself is read, from the home page and its about-style pages."""
+    company says about itself is read, from the home page and its about-style pages. lang: see read_about."""
     out = {"pages": 0, "emails": [], "invitation": None, "blocked": None,
            "error": None, "team_count": 0, "team_page": None,
            "team_leadership": False, "genre_terms": set(), "platform_claim": None,
@@ -499,7 +551,7 @@ def scrape_site(domain, company=None, paths=None, max_pages=None, about_only=Fal
         if not html:
             continue
         out["pages"] += 1
-        read_about(html, path, out["about"])
+        read_about(html, path, out["about"], lang=lang)
         if about_only:
             if out["about"].get("about"):
                 break                         # the home page's words and an about page: enough
@@ -602,20 +654,24 @@ def scrape_site(domain, company=None, paths=None, max_pages=None, about_only=Fal
     return out
 
 
-def write_content_signals(cur, eid, found):
+def write_content_signals(cur, eid, found, judged=False):
     """Genre and platform evidence from the site's own pages.
 
     Both are SELF-REPORTED, so both score 0.5 and both are gated in SQL on the
     current value being absent-or-zero: site self-description must never
     overwrite a full credit earned from news coverage or human research.
+    judged (a segment whose config has judge.enabled, LCX Services): the
+    evidence only -- genre_fit and distribution_relationship are production-house
+    criteria, and in an LCX lead they were a stale score the judge now deletes.
     """
     terms = sorted(found.get("genre_terms") or [])
     if terms:
-        cur.execute(
-            "select set_scoring_input(%s,'genre_fit','0.5'::jsonb)"
-            " from entities where id = %s"
-            "  and coalesce((metadata->'scoring_inputs'->>'genre_fit')::numeric,0) = 0",
-            (eid, eid))
+        if not judged:
+            cur.execute(
+                "select set_scoring_input(%s,'genre_fit','0.5'::jsonb)"
+                " from entities where id = %s"
+                "  and coalesce((metadata->'scoring_inputs'->>'genre_fit')::numeric,0) = 0",
+                (eid, eid))
         cur.execute(
             "update entities set metadata = metadata ||"
             " jsonb_build_object('site_genre_evidence', %s::jsonb)"
@@ -623,11 +679,12 @@ def write_content_signals(cur, eid, found):
             ('["' + '","'.join(t.replace('"', '') for t in terms[:8]) + '"]', eid))
     claim = found.get("platform_claim")
     if claim and platform_claim_ok(claim):
-        cur.execute(
-            "select set_scoring_input(%s,'distribution_relationship','0.5'::jsonb)"
-            " from entities where id = %s"
-            "  and coalesce((metadata->'scoring_inputs'->>'distribution_relationship')::numeric,0) = 0",
-            (eid, eid))
+        if not judged:
+            cur.execute(
+                "select set_scoring_input(%s,'distribution_relationship','0.5'::jsonb)"
+                " from entities where id = %s"
+                "  and coalesce((metadata->'scoring_inputs'->>'distribution_relationship')::numeric,0) = 0",
+                (eid, eid))
         cur.execute(
             "update entities set metadata = metadata ||"
             " jsonb_build_object('site_platform_evidence', to_jsonb(%s::text))"
@@ -646,6 +703,59 @@ def write_about(cur, eid, found):
                 " where id = %s", (_json.dumps(about), eid))
 
 
+def now_iso():
+    import datetime as dt
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def own_words(about):
+    """Did the read find anything the company says about itself? (A page's language alone is not that.)"""
+    return any(v for k, v in (about or {}).items() if k not in ("lang", "hreflang"))
+
+
+def judge_config(db):
+    """The segment's judge block when it is on (config judge.enabled: LCX Services' scoring v4), else {}."""
+    import json as _json
+    row = db.run(lambda cur: (cur.execute("select config->'judge' from segments where slug = %s", (SEGMENT,)),
+                              cur.fetchone())[1])
+    j = row[0] if row else None
+    if isinstance(j, str):
+        j = _json.loads(j or "null")
+    return j if isinstance(j, dict) and j.get("enabled") is True else {}
+
+
+def dead_after_days(judge):
+    try:
+        return max(0, int((judge or {}).get("dead_after_days", 7)))
+    except (TypeError, ValueError):
+        return 7
+
+
+def mark_dead(cur, eid, at):
+    """The domain did not resolve: metadata.dead_since, kept from the FIRST such read -- an earlier failed read
+    already on record (site_contact_routes or site_about, written before this stamp existed) is that first
+    read. Call it before write_routes replaces the old routes record."""
+    cur.execute("""
+        update entities set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{dead_since}', to_jsonb(coalesce(
+            metadata->>'dead_since',
+            least(case when position('does not resolve' in coalesce(metadata->'site_contact_routes'->>'blocked', '')) > 0
+                       then metadata->'site_contact_routes'->>'read_at' end,
+                  case when position('does not resolve' in coalesce(metadata->'site_about'->>'blocked', '')) > 0
+                       then metadata->'site_about'->>'read_at' end),
+            %s::text)))
+        where id = %s""", (at, eid))
+
+
+def mark_alive(cur, eid):
+    """The domain answered (whatever robots.txt then said): no longer dead, and no stale 'domain_dead'."""
+    cur.execute("""
+        update entities
+           set metadata = metadata - 'dead_since'
+                          - (case when metadata->>'enrichment_result' = 'domain_dead'
+                                  then 'enrichment_result' else '' end)
+         where id = %s and (metadata ? 'dead_since' or metadata->>'enrichment_result' = 'domain_dead')""", (eid,))
+
+
 def about_pass(db, limit, workers, dry_run=False):
     """--about: read what each company says about itself, and nothing else."""
     rows = db.run(lambda cur: (cur.execute("""
@@ -658,15 +768,27 @@ def about_pass(db, limit, workers, dry_run=False):
         log("nothing to read -- every lead with a website has its own words on record")
         return 0
     log("reading what %d compan(ies) say about themselves%s\n" % (len(rows), "  [DRY RUN]" if dry_run else ""))
+    judged = bool(judge_config(db))
 
     def read_one(t):
         eid, name, domain = t
         try:
-            if not has_mx(domain):
-                return t, {"about": {}, "blocked": "the domain does not resolve"}
-            return t, scrape_site(domain, name, paths=ABOUT_PATHS, max_pages=3, about_only=True)
+            alive = resolves(domain)
+            if alive is False:
+                return t, {"about": {}, "blocked": "the domain does not resolve", "dead": True}
+            if alive is None:                          # DNS could not say: nothing recorded, read next time
+                return t, {"about": {}, "error": "dns_unsure"}
+            return t, scrape_site(domain, name, paths=ABOUT_PATHS, max_pages=3, about_only=True, lang=judged)
         except Exception as exc:                       # never let one site kill the run
             return t, {"about": {}, "error": type(exc).__name__}
+
+    def write(cur, eid, found):
+        if judged:                                     # the site_alive gate's evidence (see the top)
+            if found.get("dead"):
+                mark_dead(cur, eid, now_iso())
+            else:
+                mark_alive(cur, eid)
+        write_about(cur, eid, found)
 
     got = 0
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
@@ -678,7 +800,7 @@ def about_pass(db, limit, workers, dry_run=False):
                 a.get("description") else "about page" if a.get("about") else "description" if has else
                 (found.get("blocked") or found.get("error") or "nothing usable"))))
             if not dry_run and not found.get("error"):
-                db.run(lambda cur, _e=eid, _f=found: write_about(cur, _e, _f))
+                db.run(lambda cur, _e=eid, _f=found: write(cur, _e, _f))
     log("\n%d of %d have their own words on record%s" % (got, len(rows), "  [DRY RUN]" if dry_run else ""))
     return 0
 
@@ -754,7 +876,7 @@ def rejudge_claims(db, dry_run=False):
     return 0
 
 
-def write_size(cur, eid, found):
+def write_size(cur, eid, found, judged=False):
     """Turn a counted team page into right_size -- or, more often, into nothing.
 
     WHY THIS IS DELIBERATELY TIMID. A live inspection of one team page showed
@@ -782,10 +904,17 @@ def write_size(cur, eid, found):
 
     The raw count is recorded either way, so the reviewer sees the evidence
     rather than a bare score.
+
+    judged (a segment whose config has judge.enabled, LCX Services): the
+    evidence only, marked not scored. 2-20 people is a production boutique's
+    band; LCX's buyers are sized by headcount, revenue or assets in the judge
+    (buyer_size), and a team-page count there was a right_size the owner's
+    2026-10-07 design retired.
     """
     n = found.get("team_count") or 0
     if n < 2:
         return
+    scored = bool(2 <= n <= 20 and found.get("team_leadership")) and not judged
     # record what we saw, always -- even when it is not scoreable
     cur.execute("""update entities set metadata = metadata || jsonb_build_object(
                        'team_size_evidence', jsonb_build_object(
@@ -793,10 +922,80 @@ def write_size(cur, eid, found):
                            'leadership_named', %s, 'method', 'site_team_page',
                            'scored', %s))
                    where id = %s""",
-                (n, found.get("team_page"), bool(found.get("team_leadership")),
-                 bool(2 <= n <= 20 and found.get("team_leadership")), eid))
-    if 2 <= n <= 20 and found.get("team_leadership"):
+                (n, found.get("team_page"), bool(found.get("team_leadership")), scored, eid))
+    if scored:
         cur.execute("select set_scoring_input(%s,'right_size','1'::jsonb)", (eid,))
+
+
+def targets_query(qualify, source, limit, judged=False, days=7):
+    """-> (sql, params): the sites this run reads, best-scoring first. judged / days: a segment whose config
+    has judge.enabled, and its judge.dead_after_days (see the top)."""
+    # Do not spend polite 2-second requests on companies the pipeline already
+    # knows are wrong. Every one of these signals was captured at discovery and
+    # was simply not being used: the first Wikidata sample wasted 4 of 10 slots
+    # on 4Kids Entertainment (dissolved 2017), 4Kids TV (2008), ABC Signature
+    # (2024) and Alchemy (2016) -- all already flagged `confirmed_dormant`.
+    where = ["s.slug = %s", "e.domain is not null",
+             # a major or an oversized shop: the gates reject it at P13 anyway
+             "coalesce(e.metadata->'scoring_inputs'->>'major_or_oversized_signal','false') <> 'true'",
+             # dissolved, per Wikidata P576. Nobody answers a dead company's inbox.
+             "coalesce(e.metadata->'scoring_inputs'->>'activity_signal','') <> 'confirmed_dormant'",
+             # a studio/network subsidiary. The review checklist requires
+             # founder/partner ownership with no parent on record, so a
+             # subsidiary fails review even if someone does reply.
+             "e.metadata->'discovery_raw'->'wikidata'->>'parent_organisation' is null"]
+    params = [SEGMENT]
+    if not qualify:
+        # contact-finding mode: every lead with no USABLE address (a retired junk address is no way
+        # in), shortlisted ones included, each read once under the routes rules. Until 2026-09-17 it
+        # took "no contact row at all" and, stamping nothing, re-read the same sites on every run.
+        where.append("e.status in ('discovered','enriched','scored','ready_for_review','shortlisted')")
+        usable = ("exists (select 1 from contacts c where c.entity_id = e.id and c.email is not null"
+                  " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
+        if judged:
+            # a judged segment also reads, once, a lead whose address came with the harvest (an OpenStreetMap
+            # email tag, Wikidata's P968): its score and its automatic shortlisting need its own site's words
+            # and accounts (auto_shortlist.require_site_read), not only an address (review, 2026-10-08)
+            where.append("(not %s or not (e.metadata ? 'site_contact_routes'))" % usable)
+        else:
+            where.append("not " + usable)
+        if not judged or days <= 0:                    # dead_after_days 0: one failed read is enough
+            where.append("not (e.metadata ? 'site_contact_routes')")
+        else:
+            # ...and, for a judged segment, a domain that did not resolve, once more, when its first failed read
+            # (dead_since, or a failed read on record from before the stamp) is `days` old and it has not been
+            # read since: the site_alive gate needs two failed reads a week apart, never one DNS blip
+            where.append("""(not (e.metadata ? 'site_contact_routes')
+                 or case when position('does not resolve' in coalesce(e.metadata->'site_contact_routes'->>'blocked', '')) > 0
+                              and e.metadata->'site_contact_routes' ? 'read_at'
+                         then coalesce((e.metadata->>'dead_since')::timestamptz,
+                                       (e.metadata->'site_contact_routes'->>'read_at')::timestamptz)
+                                <= now() - make_interval(days => %s)
+                              and (e.metadata->'site_contact_routes'->>'read_at')::timestamptz
+                                < coalesce((e.metadata->>'dead_since')::timestamptz,
+                                           (e.metadata->'site_contact_routes'->>'read_at')::timestamptz)
+                                  + make_interval(days => %s)
+                         else false end)""")
+            params += [days, days]
+    else:
+        where.append("e.status in ('discovered','enriched','scored','ready_for_review')")
+        # qualification mode: skip only what has already been read
+        # STAMP is versioned: bumping it makes every already-read site
+        # eligible for exactly one more pass. v2 = the pass that added genre
+        # and platform detection; sites read before it never looked for either.
+        where.append("coalesce(e.metadata->>'site_read','') <> %s")
+        params.append(SITE_STAMP)
+    if source:
+        where.append("e.source = %s")
+        params.append(source)
+    params.append(limit)
+    return """
+            select e.id, e.name, e.domain, e.fit_score
+            from entities e join segments s on s.id = e.segment_id
+            where %s
+            order by e.fit_score desc nulls last, e.name
+            limit %%s
+        """ % " and ".join(where), params
 
 
 def main():
@@ -846,55 +1045,16 @@ def main():
 
     from run_sql import load_db_url
     import psycopg2
-
-    # Do not spend polite 2-second requests on companies the pipeline already
-    # knows are wrong. Every one of these signals was captured at discovery and
-    # was simply not being used: the first Wikidata sample wasted 4 of 10 slots
-    # on 4Kids Entertainment (dissolved 2017), 4Kids TV (2008), ABC Signature
-    # (2024) and Alchemy (2016) -- all already flagged `confirmed_dormant`.
-    where = ["s.slug = %s", "e.domain is not null",
-             # a major or an oversized shop: the gates reject it at P13 anyway
-             "coalesce(e.metadata->'scoring_inputs'->>'major_or_oversized_signal','false') <> 'true'",
-             # dissolved, per Wikidata P576. Nobody answers a dead company's inbox.
-             "coalesce(e.metadata->'scoring_inputs'->>'activity_signal','') <> 'confirmed_dormant'",
-             # a studio/network subsidiary. The review checklist requires
-             # founder/partner ownership with no parent on record, so a
-             # subsidiary fails review even if someone does reply.
-             "e.metadata->'discovery_raw'->'wikidata'->>'parent_organisation' is null"]
-    if not args.qualify:
-        # contact-finding mode: every lead with no USABLE address (a retired junk address is no way
-        # in), shortlisted ones included, each read once under the routes rules. Until 2026-09-17 it
-        # took "no contact row at all" and, stamping nothing, re-read the same sites on every run.
-        where.append("e.status in ('discovered','enriched','scored','ready_for_review','shortlisted')")
-        where.append("not exists (select 1 from contacts c where c.entity_id = e.id and c.email is not null"
-                     " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
-        where.append("not (e.metadata ? 'site_contact_routes')")
-    else:
-        where.append("e.status in ('discovered','enriched','scored','ready_for_review')")
-        # qualification mode: skip only what has already been read
-        # STAMP is versioned: bumping it makes every already-read site
-        # eligible for exactly one more pass. v2 = the pass that added genre
-        # and platform detection; sites read before it never looked for either.
-        where.append("coalesce(e.metadata->>'site_read','') <> %s")
-    params = [SEGMENT]
-    if args.qualify:
-        params.append(SITE_STAMP)
-    if args.source:
-        where.append("e.source = %s")
-        params.append(args.source)
-    params.append(args.limit)
-
     from dbconn import Db
     db = Db()
+    # LCX Services' scoring v4: the judge sets the scores, this pass the evidence (see the top)
+    judge = judge_config(db)
+    judged = bool(judge)
+    days = dead_after_days(judge)
+    sql, params = targets_query(args.qualify, args.source, args.limit, judged, days)
     conn = db._live()
     with conn.cursor() as cur:
-        cur.execute("""
-            select e.id, e.name, e.domain, e.fit_score
-            from entities e join segments s on s.id = e.segment_id
-            where %s
-            order by e.fit_score desc nulls last, e.name
-            limit %%s
-        """ % " and ".join(where), params)
+        cur.execute(sql, params)
         targets = cur.fetchall()
 
     if not targets:
@@ -916,9 +1076,12 @@ def main():
     def read_one(t):
         eid, name, domain, score = t
         try:
-            if not has_mx(domain):
+            alive = resolves(domain)
+            if alive is False:
                 return (t, None, "no_mx")
-            return (t, scrape_site(domain, name), None)
+            if alive is None:                          # DNS could not say: left for a later pass, not dead
+                return (t, None, "dns_unsure")
+            return (t, scrape_site(domain, name, lang=judged), None)
         except Exception as exc:                       # never let one site kill the run
             return (t, None, type(exc).__name__)
 
@@ -933,11 +1096,15 @@ def main():
                 log("      domain does not resolve -- skipping, likely dead")
                 stats["no_mx"] += 1
                 if not args.dry_run:
-                    db.run(lambda cur, _e=eid: cur.execute(
-                        "update entities set metadata ="
-                        " jsonb_set(metadata,'{enrichment_result}','\"domain_dead\"')"
-                        " where id = %s", (_e,)))
-                    # tried, so contact-finding does not come back to it every run
+                    db.run(lambda cur, _e=eid: (
+                        # judged: when it was first found gone (before the routes record below is replaced)
+                        mark_dead(cur, _e, now_iso()) if judged else None,
+                        cur.execute(
+                            "update entities set metadata ="
+                            " jsonb_set(metadata,'{enrichment_result}','\"domain_dead\"')"
+                            " where id = %s", (_e,))))
+                    # tried, so contact-finding does not come back to it every run (a judged segment: until
+                    # its one re-read a week later, see the target query)
                     db.run(lambda cur, _e=eid: write_routes(cur, _e, {"blocked": "the domain does not resolve"}))
                 continue
 
@@ -947,10 +1114,12 @@ def main():
                 continue
 
             if not args.dry_run:
-                db.run(lambda cur, _e=eid: cur.execute(
+                db.run(lambda cur, _e=eid: (cur.execute(
                     "update entities set metadata ="
                     " jsonb_set(metadata,'{site_read}', to_jsonb(%s::text))"
-                    " where id = %s", (SITE_STAMP, _e)))
+                    " where id = %s", (SITE_STAMP, _e)),
+                    # judged: the domain answered (whatever robots.txt says next), so it is not dead
+                    mark_alive(cur, _e) if judged else None))
 
             if found["blocked"]:
                 log("      %s -- not fetched" % found["blocked"])
@@ -969,16 +1138,18 @@ def main():
                     def _write_no_email(cur, _e=eid, _f=found):
                         # Qualification evidence stands on its own: a site with
                         # no published address can still show a team page and a
-                        # partnership invitation, and both are scoreable.
-                        write_size(cur, _e, _f)
-                        write_content_signals(cur, _e, _f)
+                        # partnership invitation, and both are scoreable (a judged
+                        # segment: recorded, and the judge does the scoring).
+                        write_size(cur, _e, _f, judged)
+                        write_content_signals(cur, _e, _f, judged)
                         write_routes(cur, _e, _f)
-                        if _f.get("about"):
+                        if own_words(_f.get("about")):
                             write_about(cur, _e, _f)
                         if _f["invitation"]:
-                            cur.execute(
-                                "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                                (_e,))
+                            if not judged:
+                                cur.execute(
+                                    "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
+                                    (_e,))
                             write_invitation(cur, _e, _f["invitation"])
                         # NEVER zero a contact another source already found. In
                         # --qualify mode most rows arrive WITH an AICP contact;
@@ -1033,13 +1204,14 @@ def main():
                 cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
                             (_e, str(_r)))
                 if _f["invitation"]:
-                    cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                                (_e,))
+                    if not judged:                    # a production-house criterion (see the top)
+                        cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
+                                    (_e,))
                     write_invitation(cur, _e, _f["invitation"])
-                write_size(cur, _e, _f)
-                write_content_signals(cur, _e, _f)
+                write_size(cur, _e, _f, judged)
+                write_content_signals(cur, _e, _f, judged)
                 write_routes(cur, _e, _f)
-                if _f.get("about"):
+                if own_words(_f.get("about")):
                     write_about(cur, _e, _f)
                 cur.execute("""update entities
                                set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),

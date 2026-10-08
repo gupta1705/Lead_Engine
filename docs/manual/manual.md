@@ -281,7 +281,7 @@ harvests every Friday:
   first.
 - **Companies from Wikidata**: the same kinds of buyer and listed companies,
   each with its own website. The ones of 10 to 5,000 people come first;
-  companies of over 100,000 are left out.
+  companies of over 50,000 are left out.
 - **Local businesses from OpenStreetMap**, fewer than before: independent cafes,
   salons, gyms and shops that publish a website or an email address, two cities
   a week. A chain's branch is never one of them.
@@ -296,9 +296,22 @@ off its own website. A lead that fits well and still has nobody to write to gets
 the right person from Apollo: a marketing head at a brand, the head of training
 at a mid-size company, the principal of a school. Only someone in a fitting role
 who still works there is paid for, inside a weekly budget the owner set (120
-credits). A lead with an address and a good fit is shortlisted by itself, and
-its email is drafted within minutes. A lead nobody can be written to yet stays
-in To review.
+credits), and only for a lead scoring over 60 whose own website has been read.
+
+**How a lead is rated** (since 2026-10-07). Out of 100, on what the engine can
+check for itself. Does its own website show it is the kind of buyer it was filed
+as (30)? Is it the right size to buy and to answer (25)? Does it already post
+video or Instagram (20)? How directly do the services fit it (15)? Is there
+someone to write to (10)? A reason to buy now, such as hiring trainers, adds a
+little, and so does being in the US, the UK, India or the UAE. A software firm,
+staffing agency, competitor, university, charity or a company too big to answer
+loses 50, and a website not in English loses 15. Sanctioned countries, adult,
+gambling, tobacco and weapons businesses, very large companies and their brands,
+and dead websites are left out. Anything not yet known is left out of the
+rating, not counted as zero. A lead above 70 is shortlisted by itself, and its
+email drafted within minutes, once its website has been read and it has someone
+to write to; for a bank or a mid-size company, that must be a named person, not
+an info@ inbox. Until then it waits in To review.
 
 **The email** is short and the same for every lead: *Hi* and the person's first
 name (or *there*), *I'm writing from LCX. We work in three areas, and at least

@@ -7,8 +7,11 @@ Part one needs no key and no network: who gets picked out of a search, which
 searches are made and in what order, and when a reveal is refused as somebody
 who has moved on. Part two runs the lead selection and the write against the
 real database inside one transaction that is rolled back: a throwaway segment,
-leads in every state, then ROLLBACK. Not one credit is spent by this file.
-Exit code 1 on any failure.
+leads in every state, then ROLLBACK. LCX Services' scoring-v4 guards (the owner,
+2026-10-07: reveals only for leads over 60 whose own site was read and that are
+not the wrong buyer; banks and mid-size companies need a named person) are
+checked the same way, and that US Production Houses has none of them. Not one
+credit is spent by this file. Exit code 1 on any failure.
 """
 import datetime as dt
 import json
@@ -180,13 +183,25 @@ def offline():
           [ea.enrich_block(live)[k] for k in ("credits_per_week", "reveal_countries", "employer_check", "strict_roles",
                                               "skip_known_elsewhere")],
           [None, [], False, False, False])
+    check("  and none of LCX Services' 2026-10-07 guards: no site-read rule, no named-person rule, over 22.5",
+          [ea.enrich_block(live)[k] for k in ("site_read", "named_for", "score_over")], [False, [], 22.5])
+    for slug in ("lcx-clipping", "startup-acquisitions", "universal"):
+        cfg = json.loads((HERE.parent / "config" / ("segment.%s.json" % slug)).read_text(encoding="utf-8"))
+        check("  nor %s" % slug, [ea.enrich_block(cfg)[k] for k in ("site_read", "named_for")], [False, []])
 
     print("\n-- LCX Services (the owner, 2026-10-07: \"Enriching from apollo is acceptable\")")
     lcx = json.loads((HERE.parent / "config" / "segment.lcx-services.json").read_text(encoding="utf-8"))
     b = ea.enrich_block(lcx)
-    check("on, inside a stated budget: 120 a week, 700 kept for the others, over 43, four countries",
+    check("on, inside a stated budget: 120 a week, 700 kept for the others, over 60, four countries",
           (b["enabled"], b["credits_per_week"], b["keep_in_reserve"], b["score_over"], b["reveal_countries"]),
-          (True, 120, 700, 43.0, ["US", "GB", "IN", "AE"]))
+          (True, 120, 700, 60.0, ["US", "GB", "IN", "AE"]))
+    check("  scoring v4 (2026-10-07): only leads whose own site was read; banks and mid-size companies need a"
+          " named person, so an inbox alone does not end the search there",
+          (b["site_read"], b["named_for"]), (True, ["corporate_teams", "financial_services"]))
+    check("  the named-person rule follows the shortlist's: off with auto-shortlist off, or with no list",
+          (ea.enrich_block(dict(lcx, auto_shortlist=dict(lcx["auto_shortlist"], enabled=False)))["named_for"],
+           ea.enrich_block(dict(lcx, auto_shortlist=dict(lcx["auto_shortlist"], named_contact_for="corporate_teams")))
+           ["named_for"]), ([], []))
     check("  no 1-credit name lookups (every lead has a website)", b["by_name"], False)
     check("who to look for depends on the lead: a school's principal, a hotel's director of sales",
           (ea.roles_for(lcx, "schools")[0], ea.roles_for(lcx, "hospitality")[0]),
@@ -376,6 +391,112 @@ def database():
         conn.close()
 
 
+def lcx_guards():
+    """LCX Services' scoring-v4 guards on who is a candidate (the owner, 2026-10-07: "Apollo reveals only for leads
+    over 60 whose own site was read and that are not the wrong buyer"; "banks and mid-size companies need a named
+    person"), against the database, rolled back: enrichment.require_site_read and auto_shortlist.named_contact_for,
+    read through enrich_block() as main() reads them."""
+    print("\n-- LCX Services' guards: a credit only where the site was read, and a name for banks and corporates"
+          " (rolled back)")
+    import psycopg2
+    from run_sql import load_db_url
+    conn = psycopg2.connect(load_db_url())
+    conn.autocommit = False
+    cur = conn.cursor()
+    db = FakeDb(cur)
+    keep = ea.SEGMENT
+    try:
+        slug = "zz-lcx-guard-" + uuid.uuid4().hex[:6]
+        cfg = {"enrichment": {"provider": "apollo", "enabled": True, "score_over": 60, "require_site_read": True},
+               "auto_shortlist": {"enabled": True, "min_score": 70,
+                                  "named_contact_for": ["corporate_teams", "financial_services"]},
+               "rubric": [{"key": "reachable_decision_maker", "points": 10,
+                           "input": "metadata.scoring_inputs.reachable_decision_maker"}]}
+        cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'g', 'company', %s::jsonb)"
+                    " returning id", (slug, json.dumps(cfg)))
+        seg = cur.fetchone()[0]
+        ea.SEGMENT = slug
+
+        def lead(name, kind="consumer_brands", pages=3, judged=True, site_read=True, theirs=True, wrong=0.0, big=0.0,
+                 score=65, contact=None, gate=None):
+            """A lead as the site pass and tools/lcx_judge.py leave it: pages read, the judge's site_read and
+            site_theirs, its wrong_buyer and too_big; and a contact (None, 'inbox' or 'named')."""
+            dom = name.lower().replace(" ", "-") + ".example"
+            meta = {"kind": kind, "site_contact_routes": {"pages_read": pages},
+                    "scoring_inputs": dict({"wrong_buyer": wrong, "too_big": big}, **(gate or {}))}
+            if judged:
+                meta["lcx_judgement"] = {"site_read": site_read, "site_theirs": theirs}
+            cur.execute("insert into entities (segment_id, name, domain, source, status, fit_score, metadata) values"
+                        " (%s, %s, %s, 'test', 'ready_for_review', %s, %s::jsonb) returning id",
+                        (seg, name, dom, score, json.dumps(meta)))
+            eid = cur.fetchone()[0]
+            if contact == "named_role":
+                # a named person at accounting@ ranks below an unnamed info@ (sql/28): the drafter writes to info@
+                cur.execute("insert into contacts (entity_id, full_name, email, email_status, source) values"
+                            " (%s, null, %s, 'valid', 'test'), (%s, 'Raj Patel', %s, 'valid', 'test')",
+                            (eid, "info@" + dom, eid, "accounting@" + dom))
+            elif contact:
+                cur.execute("insert into contacts (entity_id, full_name, email, email_status, source) values"
+                            " (%s, %s, %s, 'valid', 'test')", (eid, "Ava Shah" if contact == "named" else None,
+                                                               ("ava@" if contact == "named" else "info@") + dom))
+            return name
+        ok = lead("Read And Theirs")
+        lead("Never Read", pages=0)
+        lead("Bot Wall Only", site_read=False)
+        lead("Not Judged Yet", judged=False)
+        lead("Wrong Buyer Half", wrong=0.5)
+        half_big = lead("Too Big Half", big=0.5)
+        lead("Too Big Full", big=1.0)
+        lead("Not Their Site", theirs=False)
+        unknown = lead("Theirs Unknown", theirs=None)
+        lead("Under Sixty", score=55)
+        corp = lead("Corporate Inbox Only", "corporate_teams", contact="inbox")
+        bank = lead("Bank Inbox Only", "financial_services", contact="inbox")
+        lead("Brand Inbox Only", contact="inbox")
+        lead("Corporate Named", "corporate_teams", contact="named")
+        role_named = lead("Bank Named Role Inbox", "financial_services", contact="named_role")
+        gated = [lead("A Major's Brand", gate={"oversized_signal": True}),
+                 lead("Brand Unsafe", gate={"brand_risk_signal": "unsafe"}),
+                 lead("Sanctioned Country", gate={"country_signal": "unpayable"}),
+                 lead("Consent Law Country", gate={"country_signal": "disallowed"}),
+                 lead("Dead Site", gate={"activity_signal": "dead"})]
+        b = ea.enrich_block(cfg)
+
+        def picked(unnamed=False, block=None):
+            bb = block or b
+            return sorted(r[1] for r in ea.candidates(db, unnamed, 50, 30, True, bb["score_over"], False, None,
+                                                      bb["site_read"], bb["named_for"]))
+        got = picked()
+        check("the default pass: read and theirs, not the wrong buyer, under too big, over 60; and the bank and"
+              " corporate with only an inbox", got, sorted([ok, half_big, unknown, corp, bank, role_named]))
+        check("  a bank whose only named person sits at accounting@: the drafter would write to info@, so Apollo"
+              " looks for a named one", role_named in got, True)
+        check("  never a lead a gate excludes (a major, brand-unsafe, sanctioned or consent-law, a dead site): gates"
+              " never archive a shortlisted lead, so the queue checks their signals itself",
+              [n for n in gated if n in got], [])
+        check("  never: a site not read, a bot wall, a lead not judged yet, the wrong buyer (even half), too big,"
+              " a site not theirs",
+              [n for n in ("Never Read", "Bot Wall Only", "Not Judged Yet", "Wrong Buyer Half", "Too Big Full",
+                           "Not Their Site") if n in got], [])
+        check("  a brand with an inbox has someone to write to; a corporate with a named person is done",
+              [n for n in ("Brand Inbox Only", "Corporate Named") if n in got], [])
+        check("--unnamed: every read lead whose only address has nobody's name on it",
+              picked(unnamed=True), sorted([bank, "Brand Inbox Only", corp]))
+        off = ea.enrich_block(dict(cfg, auto_shortlist=dict(cfg["auto_shortlist"], enabled=False)))
+        check("auto-shortlist off: an inbox is draftable again, so the corporate's is enough", corp in picked(block=off),
+              False)
+        plain = ea.enrich_block({"enrichment": {"provider": "apollo", "enabled": True, "score_over": 60}})
+        check("a project without the keys (US Production Houses): neither guard, every lead over the line with nobody",
+              picked(block=plain), sorted(["Read And Theirs", "Never Read", "Bot Wall Only", "Not Judged Yet",
+                                           "Wrong Buyer Half", "Too Big Half", "Too Big Full", "Not Their Site",
+                                           "Theirs Unknown"] + gated))
+    finally:
+        ea.SEGMENT = keep
+        conn.rollback()
+        cur.close()
+        conn.close()
+
+
 def lcx_run():
     """LCX Services' rules end to end, with Apollo stubbed: the country hold, the search at the current
     employer, the employer check, nobody paid for twice across projects, the weekly cap and the ledger."""
@@ -516,6 +637,13 @@ def main():
     except Exception as e:                       # noqa: BLE001 -- a missing database is a failure, not a crash
         RESULTS.append(False)
         print("FAIL  database part: %r" % (e,))
+    try:
+        lcx_guards()
+    except Exception as e:                       # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        RESULTS.append(False)
+        print("FAIL  LCX guards: %r" % (e,))
     try:
         lcx_run()
     except Exception as e:                       # noqa: BLE001

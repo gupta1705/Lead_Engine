@@ -756,11 +756,28 @@ def apollo_facts(lead):
     return strengths, gaps
 
 
+def lcxs_criterion(key, lead):
+    """LCX Services (scoring v4, 2026-10-07): tools/lcx_judge.py writes, beside every input it sets, the phrase it
+    matched or the reason (metadata.lcx_judgement), so the dialog says why rather than 'no source recorded'.
+    The contact criterion is not the judge's: it falls through to the generic reading."""
+    ev = lead.meta.get("lcx_judgement") if isinstance(lead.meta.get("lcx_judgement"), dict) else {}
+    why = ev.get(key)
+    if key == "reachable_decision_maker" or not isinstance(why, str):
+        return None
+    raw = lead.si.get(key)
+    if raw is None:
+        return UNCHECKED, why[:1].upper() + why[1:] if why else "Not known yet.", []
+    if (num(raw) or 0) > 0:
+        return FOUND, why[:1].upper() + why[1:] if why else "Credited.", []
+    return NONE, why[:1].upper() + why[1:] if why else "Assessed as 0.", []
+
+
 # ------------------------------------------------------------- assembly
 SEGMENTS = {
     "us-production-houses": (tvf_criterion, TVF_HOW, tvf_risks),
     "lcx-clipping": (lcx_criterion, LCX_HOW, lcx_risks),
     "startup-acquisitions": (startup_criterion, STARTUP_HOW, startup_risks),
+    "lcx-services": (lcxs_criterion, {}, None),
 }
 
 
@@ -817,9 +834,13 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
         "modifier_delta": round(delta, 1),
         "unchecked": [{"label": c["label"], "points": c["points"]} for c in criteria if c["state"] == UNCHECKED],
     }
-    if score is not None and total and abs((earned / total * 100 + delta) - score) > 1.0:
+    # sql/06's arithmetic: out of the points ASSESSED (an input that is unknown -- missing or JSON null -- counts
+    # neither way), not the whole rubric. Dividing by every point read LCX Services' scores, which leave unknowns
+    # out, as stale: 59 shown where 72.75 is right (2026-10-08).
+    assessed = sum(c["points"] for c in criteria if c["value"] is not None)
+    if score is not None and assessed and abs((earned / assessed * 100 + delta) - score) > 1.0:
         coverage["stale"] = ("The score on record (%s) was computed before the latest evidence changes; the next scoring "
-                             "run brings it to about %s." % (pts(score), pts(max(0, min(100, earned / total * 100 + delta)))))
+                             "run brings it to about %s." % (pts(score), pts(max(0, min(100, earned / assessed * 100 + delta)))))
 
     risks = risks_fn(lead, criteria) if risks_fn else []
 

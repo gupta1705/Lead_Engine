@@ -165,6 +165,30 @@ def main():
          "Operations" in step(mailing, "shortlisted"), False),
     ]
 
+    # LCX Services (scoring v4, 2026-10-07): an unknown input is JSON null, out of the score's denominator as in
+    # sql/06, so 55 of the 80 points known, plus 4 for the market, is 72.75 -- not stale. Its judge's evidence is the reason shown.
+    lxs_cfg = {"rubric": [{"key": "buyer_confirmed", "label": "Buyer", "points": 30},
+                          {"key": "buyer_size", "label": "Size", "points": 25},
+                          {"key": "content_activity", "label": "Content", "points": 20},
+                          {"key": "audience_fit", "label": "Fit", "points": 15},
+                          {"key": "reachable_decision_maker", "label": "Reach", "points": 10}],
+               "score_modifiers": [{"key": "priority_market", "label": "Market", "max_bonus": 4}]}
+    lxs = lead("lcx-services", lxs_cfg, {
+        "scoring_inputs": {"buyer_confirmed": 0.5, "buyer_size": 1.0, "content_activity": None, "audience_fit": 1.0,
+                           "reachable_decision_maker": 0, "priority_market": 1.0},
+        "lcx_judgement": {"buyer_confirmed": "Wikidata class or industry", "buyer_size": "450 people",
+                          "content_activity": "site not read", "priority_market": "GB"}},
+        name="Acme Toys", domain="acmetoys.example", fit_score=72.75)
+    cases += [
+        ("LCX Services: a score out of the points known is not stale", "stale" in lxs["coverage"], False),
+        ("  the judge's reason is what the dialog says", [c["why"] for c in lxs["criteria"][:3]],
+         ["Wikidata class or industry", "450 people", "Site not read"]),
+        ("  an unknown input is unchecked, not a zero", state(lxs, "content_activity"), ex.UNCHECKED),
+        ("  a truly stale LCX score still says so", "stale" in lead("lcx-services", lxs_cfg, {
+            "scoring_inputs": {"buyer_confirmed": 1.0, "buyer_size": 1.0, "content_activity": 1.0, "audience_fit": 1.0,
+                               "reachable_decision_maker": 1.0}}, fit_score=40)["coverage"], True),
+    ]
+
     for label, got, want in cases:
         ok = got == want
         bad += not ok

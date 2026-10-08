@@ -84,6 +84,14 @@ switched on by the project's own config, so US Production Houses runs exactly as
     real word with one, nor senior.
   * enrichment.skip_revealed_elsewhere: a person already revealed for another project is not paid for
     again (the same person must not get a first email from two projects, and the credit is saved).
+  * enrichment.require_site_read (scoring v4, the owner's decision 2026-10-07: "Apollo reveals only for
+    leads over 60 whose own site was read and that are not the wrong buyer"): a lead is a candidate only
+    once the site pass has read pages of its site and tools/lcx_judge.py found the company's own words
+    there (lcx_judgement.site_read), the site is the company's own (site_theirs is not false),
+    wrong_buyer is 0 and too_big under 1.
+  * auto_shortlist.named_contact_for (same day): banks and mid-size companies are shortlisted only with a
+    named person to write to (sql/14), so for those audiences the default pass also takes a lead whose only
+    address is an inbox with nobody's name on it.
 A project with a budget also stops the run if a credit cannot be written to the ledger, since its cap
 is read from there; when Apollo cannot say what is left, it spends nothing (tools/apollo_budget.py).
 """
@@ -146,6 +154,11 @@ def enrich_block(cfg):
             senior = re.compile(str(b["senior_titles"]), re.I)
         except re.error:
             senior = None
+    # auto_shortlist.named_contact_for (LCX Services, 2026-10-07): audiences the shortlist step only takes with
+    # a named person to write to, so a lead of theirs with only an info@ inbox is still one to find a person at
+    auto = (cfg or {}).get("auto_shortlist") or {}
+    named_for = [str(k) for k in auto.get("named_contact_for") or [] if str(k or "").strip()] \
+        if auto.get("enabled") is True and isinstance(auto.get("named_contact_for"), list) else []
     return {"provider": b.get("provider"),
             "enabled": b.get("enabled") is True,
             "verified_only": b.get("verified_only") is not False,
@@ -159,6 +172,8 @@ def enrich_block(cfg):
             "employer_check": b.get("current_employer_check") is True,
             "strict_roles": b.get("require_fitting_role") is True,
             "skip_known_elsewhere": b.get("skip_revealed_elsewhere") is True,
+            "site_read": b.get("require_site_read") is True,
+            "named_for": named_for,
             "senior": senior}
 
 
@@ -321,6 +336,41 @@ UNNAMED_SQL = """
   and not exists (select 1 from contacts c where c.entity_id = e.id and c.full_name is not null
                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)"""
 
+# auto_shortlist.named_contact_for (LCX Services, 2026-10-07): nobody to write to, as NO_EMAIL_SQL says, OR -- for
+# these audiences -- nobody NAMED to write to, by sql/14's own test of a name, so an info@-only bank over the line
+# is looked for a person at in the default pass (sql/14 never shortlists it on that inbox alone)
+NO_NAMED_SQL = """
+  and (not exists (select 1 from contacts c where c.entity_id = e.id
+                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)
+       or (coalesce(e.metadata->>'kind', '') = any(%s)
+           -- the contact the drafter would pick (sql/14's test) has nobody's name on it
+           and not exists (select 1 from (
+                             select c.full_name from contacts c
+                              where c.entity_id = e.id and c.email is not null
+                                and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500
+                              order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
+                                       c.created_at, c.id
+                              limit 1) top
+                            where nullif(btrim(coalesce(top.full_name, '')), '') is not null)))"""
+
+# enrichment.require_site_read (LCX Services, scoring v4, 2026-10-07): a credit only for a lead whose own site has
+# been read and is its own, that is not the wrong kind of buyer, and not too big to answer -- so nothing is
+# spent on a competitor, a software firm, a group's brand page, or a lead nobody has looked at yet. Read means
+# both: the site pass fetched its pages (so the free route to an address was tried first) and tools/lcx_judge.py
+# found the company's own words there (lcx_judgement.site_read: not a bot wall or a parked page), as the
+# 2026-10-07 simulation's queue had it. Until the judge has run on a lead, it is not a candidate.
+SITE_READ_SQL = """
+  and coalesce((e.metadata->'site_contact_routes'->>'pages_read')::int, 0) > 0
+  and coalesce((e.metadata->'lcx_judgement'->>'site_read')::boolean, false)
+  and coalesce((e.metadata->'scoring_inputs'->>'wrong_buyer')::numeric, 0) = 0
+  and coalesce((e.metadata->'scoring_inputs'->>'too_big')::numeric, 0) < 1
+  and coalesce(e.metadata->'lcx_judgement'->>'site_theirs', 'true') <> 'false'
+  -- nor one a gate excludes: gates never archive a shortlisted lead, so its signals are checked here
+  and coalesce(e.metadata->'scoring_inputs'->>'oversized_signal', 'false') <> 'true'
+  and coalesce(e.metadata->'scoring_inputs'->>'brand_risk_signal', '') <> 'unsafe'
+  and coalesce(e.metadata->'scoring_inputs'->>'country_signal', '') not in ('disallowed', 'unpayable')
+  and coalesce(e.metadata->'scoring_inputs'->>'activity_signal', '') <> 'dead'"""
+
 
 # reveal_countries are ISO codes; a lead saved from the search page carries Apollo's country name.
 COUNTRY_NAMES = {"US": ("UNITED STATES", "USA", "UNITED STATES OF AMERICA"),
@@ -337,21 +387,28 @@ def country_forms(codes):
     return out
 
 
-def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name=False, countries=None):
+def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name=False, countries=None,
+               site_read=False, named_for=None):
     """Open leads that Apollo could put a person behind -- and, when the config sets score_over, only
     the ones scoring above it (owner, 2026-09-21: "any lead over 22.5 with no contacts find and add
     them"). A lead without a website is included only when by_name is on: it is looked up by its
     name first. With countries (enrichment.reveal_countries), only leads based there: held leads are
     left out here, not after the limit, so they never crowd out the ones that can be paid for.
+    site_read (enrichment.require_site_read): only leads whose own site has been read and is theirs,
+    not the wrong buyer and not too big (SITE_READ_SQL). named_for (auto_shortlist.named_contact_for):
+    the default pass also takes a lead of those audiences whose only address has nobody's name on it
+    (NO_NAMED_SQL). Both are LCX Services' (2026-10-07); a project that sets neither runs as before.
     Shortlisted first, then a buying signal, then best score."""
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=stale_days)).replace(microsecond=0).isoformat()
+    named_for = [k for k in (named_for or []) if k] if not unnamed else []
     sql = """
         select e.id, e.name, e.domain, e.status, e.fit_score, e.metadata->>'kind',
                e.metadata->'apollo'->>'id', upper(e.metadata->>'hq_country')
         from entities e join segments s on s.id = e.segment_id
         where s.slug = %s and e.status = any(%s)
     """ + ("" if (by_name and not unnamed) else "  and e.domain is not null\n") + (
-        UNNAMED_SQL if unnamed else NO_EMAIL_SQL) + ("" if recheck else """
+        UNNAMED_SQL if unnamed else NO_NAMED_SQL if named_for else NO_EMAIL_SQL) + (
+        SITE_READ_SQL if site_read else "") + ("" if recheck else """
           and coalesce(e.metadata->>'apollo_checked_at', '') < %s""") + ("" if score_over is None else """
           and coalesce(e.fit_score, 0) > %s""") + ("" if not countries else """
           and upper(trim(coalesce(e.metadata->>'hq_country', ''))) = any(%s)""") + """
@@ -359,7 +416,7 @@ def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name
                  case when e.metadata ? 'buying_signal' then 0 else 1 end,
                  e.fit_score desc nulls last, e.name
         limit %s"""
-    args = ((SEGMENT, OPEN_STATUSES) + (() if recheck else (cutoff,))
+    args = ((SEGMENT, OPEN_STATUSES) + ((named_for,) if named_for else ()) + (() if recheck else (cutoff,))
             + (() if score_over is None else (score_over,)) + ((country_forms(countries),) if countries else ())
             + (limit,))
     return db.run(lambda cur: (cur.execute(sql, args), cur.fetchall())[1])
@@ -537,16 +594,21 @@ def main():
     over = args.score_over if args.score_over is not None else block["score_over"]
     above = "" if over is None else " scoring over %g" % over
     rows = candidates(db, args.unnamed, args.limit, block["stale_days"], args.recheck, over, block["by_name"],
-                      block["reveal_countries"])
+                      block["reveal_countries"], block["site_read"], block["named_for"])
     if args.lead:
         rows = [r for r in rows if any(x.lower() in (r[1] or "").lower() for x in args.lead)]
+    named = "" if args.unnamed or not block["named_for"] else " and ".join(block["named_for"])
+    read = " whose own site has been read" if block["site_read"] else ""
     if not rows:
-        log("nothing to enrich -- every open lead%s here already has %s, or Apollo was asked about it"
-            " in the last %d days" % (above, "a named person" if args.unnamed else "an address", block["stale_days"]))
+        log("nothing to enrich -- every open lead%s%s here already has %s%s, or Apollo was asked about it"
+            " in the last %d days" % (above, read, "a named person" if args.unnamed else "an address",
+                                      " (%s: a named person)" % named if named else "", block["stale_days"]))
         db.close(); return 0
 
-    log("apollo enrichment -- %s | %d lead(s)%s%s | budget %d credit(s)%s"
-        % (SEGMENT, len(rows), above, " without a name on the inbox" if args.unnamed else " with nothing to write to",
+    log("apollo enrichment -- %s | %d lead(s)%s%s%s | budget %d credit(s)%s"
+        % (SEGMENT, len(rows), above, read,
+           " without a name on the inbox" if args.unnamed else
+           " with nothing to write to" + (" (%s: nobody named)" % named if named else ""),
            budget, "  [DRY RUN: nothing is revealed]" if args.dry_run else ""))
     log("  roles: %s" % ("by each lead's audience (audiences[].contact_roles)"
                          if any(a.get("contact_roles") for a in cfg.get("audiences") or [])

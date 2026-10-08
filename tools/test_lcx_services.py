@@ -8,15 +8,21 @@ leads on its own ... like we source leads for us production houses", "email shou
 services" (a PDF deck attached), everywhere cold business email is allowed, sent once approved.
 
 Checked:
-  * the config: every one of the 18 services has buyers to find; a lead nobody can be written to can
-    never be auto-shortlisted; the countries; the weekly refresh's steps exist; Apollo is off; the one
-    template attaches the deck, which is built, five 16:9 pages, small; the generated SQL is the JSON's
-  * the harvest, offline: what a Wikidata or OpenStreetMap record becomes and what is left out (a
-    consent-law country, a chain's branch, a platform page, no name), the order, the city rotation
+  * the config: every one of the 18 services has buyers to find; the score (v4, the owner 2026-10-07:
+    "think and decide one"), by sql/06's arithmetic on the config's own weights: a 100-point pool, the
+    basics alone (64, 69 with a named person) never cross the line of 70 and one real signal from the
+    company does (72, 74), a perfect wrong buyer or giant stays out (62); the shortlist needs a usable
+    contact, a named one for banks and mid-size companies, and a read site; the countries; the weekly
+    refresh's steps exist; Apollo inside its budget; the one template attaches the deck, which is built,
+    five 16:9 pages, small; the generated SQL is the JSON's
+  * the harvest, offline: what a Wikidata, OpenStreetMap, Apollo or FDIC record becomes (only the inputs
+    a record settles by itself; the facts the judge reads kept) and what is left out (a consent-law
+    country, a chain's branch, a platform page, no name), the order, the city rotation
   * against the database, in ONE transaction rolled back at the end: staging -> the promote chain's
-    own SQL -> the published address lifted into a contact -> scored -> auto-shortlisted -> drafted
-    with the deck -> approval refuses a missing deck -> the page lists the draft with its deck and
-    opens it, and nothing else
+    own SQL and its judge step (tools/lcx_judge.py) -> the published address lifted into a contact ->
+    the site pass's text -> judged again, scored -> auto-shortlisted only with a contact (named for a
+    mid-size company) and a read site -> drafted with the deck -> approval refuses a missing deck -> the
+    page lists the draft with its deck and opens it, and nothing else
   * a project that starts its Write email box from its own email (outreach.compose_start)
   * the Apollo search page works on the project it shows; a project without it is refused
   * an address that answered us in another project gets nothing new
@@ -24,6 +30,7 @@ Nothing is sent and no network is used. Exit code 1 on any failure.
 """
 import argparse
 import datetime as dt
+import decimal
 import json
 import os
 import sys
@@ -48,6 +55,7 @@ import discover_lcx_services as disc  # noqa: E402
 import enrich_lcx_services as lift  # noqa: E402
 import explain  # noqa: E402
 import gen_segment_sql  # noqa: E402
+import lcx_judge  # noqa: E402
 import ops  # noqa: E402
 import outreach  # noqa: E402
 import outreach_compose  # noqa: E402
@@ -60,8 +68,32 @@ SERVICES = ["Reel Forge", "Airbnb / Property Content", "AI VFX + Animation", "Au
             "AI UGC Product Videos", "AI Podcasts / Audio Content", "Virtual Tours for Schools",
             "AI Reality Experiences", "Creator × Brand Marketplace", "Local Business Tech and Automation",
             "AI Business Assistant", "AI Simulations for Training", "AI Fashion Stylist", "AI Onboarding Employee"]
+# the promote chain's first steps, as tools/run_chain.py runs them: the judge (a Python step) after the merge,
+# before 04b fills what is still missing
 CHAIN = ["sql/05a_self_exclusion.sql", "sql/05_promote_minimal.sql", "sql/05c_merge_name_duplicates.sql",
-         "sql/04b_zero_unverified.sql"]
+         "tools/lcx_judge.py", "sql/04b_zero_unverified.sql"]
+
+
+def sql06(si, cfg):
+    """sql/06_score.sql's arithmetic, written out again here so the config is checked by the scorer's own rule
+    and not by the judge's copy of it: earned / assessed points x 100, plus each assessed modifier's value x
+    its max_bonus or max_penalty, clamped to 0..100, rounded half up to 2 places (numeric). A key that is
+    absent or None is not assessed."""
+    D = decimal.Decimal
+    earned = assessed = delta = D(0)
+    for c in cfg["rubric"]:
+        v = si.get(c["key"])
+        if v is not None:
+            earned += D(str(v)) * D(str(c["points"]))
+            assessed += D(str(c["points"]))
+    for m in cfg["score_modifiers"]:
+        v = si.get(m["key"])
+        if v is not None:
+            delta += D(str(v)) * D(str(m["max_penalty"] if "max_penalty" in m else m["max_bonus"]))
+    if not assessed:
+        return None
+    s = max(D(0), min(D(100), earned / assessed * 100 + delta))
+    return float(s.quantize(D("0.01"), rounding=decimal.ROUND_HALF_UP))
 
 
 def check(name, got, want):
@@ -131,12 +163,62 @@ def offline(cfg, uni):
     check("every one of the 18 services on the sheet has buyers to find", [s for s in SERVICES if s not in pitched], [])
     check("  and nothing is pitched that is not on the sheet", sorted(pitched - set(SERVICES)), [])
     check("  every audience is found somewhere", [a["key"] for a in cfg["audiences"] if not (a.get("wikidata") or a.get("osm"))], [])
+    print("\n-- the score (v4, the owner 2026-10-07: \"think and decide one\"), by sql/06's arithmetic on the config")
     rub = {r["key"]: r["points"] for r in cfg["rubric"]}
-    bonus = sum(m.get("max_bonus", 0) for m in cfg["score_modifiers"])
-    nobody = sum(p for k, p in rub.items() if k != "reachable_decision_maker") / sum(rub.values()) * 100 + bonus
-    check("a lead nobody can be written to can never be auto-shortlisted", nobody < cfg["auto_shortlist"]["min_score"], True)
-    inbox = (rub["reachable_decision_maker"] * 0.5 + rub["audience_fit"] + rub["established"]) / sum(rub.values()) * 100
-    check("  a published business address at a company of unknown size can", inbox > cfg["auto_shortlist"]["min_score"], True)
+    mods = {m["key"]: m for m in cfg["score_modifiers"]}
+    check("a pool of 100: confirmed in its own words 30, size 25, content 20, fit 15, reach 10",
+          (sum(rub.values()), rub), (100, {"buyer_confirmed": 30, "buyer_size": 25, "content_activity": 20,
+                                           "audience_fit": 15, "reachable_decision_maker": 10}))
+    check("  bonuses +8 trigger, +4 market; penalties -50 wrong buyer, -50 too big, -15 not English; one each",
+          ({k: m.get("max_bonus", m.get("max_penalty")) for k, m in mods.items()},
+           [k for k, m in mods.items() if ("max_bonus" in m) == ("max_penalty" in m)]),
+          ({"buying_trigger": 8, "priority_market": 4, "wrong_buyer": -50, "too_big": -50, "non_english_site": -15}, []))
+    check("  every input is read from metadata.scoring_inputs under its own key",
+          [x["key"] for x in cfg["rubric"] + cfg["score_modifiers"] if x["input"] != "metadata.scoring_inputs." + x["key"]],
+          [])
+    line = cfg["auto_shortlist"]["min_score"]
+    # the lattice the line was set on: a directory label (0.5), the right size, a full-fit audience, a
+    # business inbox and a priority market are "the basics"; the site read and linking no account (0)
+    basics = {"buyer_confirmed": 0.5, "buyer_size": 1.0, "content_activity": 0.0, "audience_fit": 1.0,
+              "reachable_decision_maker": 0.5, "priority_market": 1.0}
+    perfect = {k: 1.0 for k in list(rub) + ["buying_trigger", "priority_market"]}
+    lattice = [("the basics alone", basics, 64.0, False),
+               ("  the same with a named person: reach alone never pushes the basics over",
+                dict(basics, reachable_decision_maker=1.0), 69.0, False),
+               ("  + a strong buying trigger crosses", dict(basics, buying_trigger=1.0), 72.0, True),
+               ("  + one video or Instagram account crosses", dict(basics, content_activity=0.5), 74.0, True),
+               ("  + its own words confirming the audience crosses", dict(basics, buyer_confirmed=1.0), 79.0, True),
+               ("a perfect lead with both bonuses but the wrong buyer stays out", dict(perfect, wrong_buyer=1.0),
+                62.0, False),
+               ("  or too big", dict(perfect, too_big=1.0), 62.0, False)]
+    for name, si, want, over in lattice:
+        got = sql06(si, cfg)
+        check("%s: %g, %s the line of %g" % (name, want, "over" if over else "not over", line), (got, got > line),
+              (want, over))
+    check("the shortlist: above 70, only with a contact the drafter writes to (a named one for banks and mid-size"
+          " companies), and only once its content was assessed (its site read)",
+          {k: cfg["auto_shortlist"].get(k) for k in ("enabled", "min_score", "require_contact", "named_contact_for",
+                                                    "require_assessed")},
+          {"enabled": True, "min_score": 70, "require_contact": True,
+           "named_contact_for": ["corporate_teams", "financial_services"], "require_assessed": ["content_activity"]})
+    check("  every audience named there is one, and the assessed input is the rubric's",
+          ([k for k in cfg["auto_shortlist"]["named_contact_for"] if k not in {a["key"] for a in cfg["audiences"]}],
+           [k for k in cfg["auto_shortlist"]["require_assessed"] if k not in rub]), ([], []))
+    check("display bands: review 50, priority 85", (cfg["score_threshold_review"], cfg["score_threshold_priority"]),
+          (50, 85))
+    check("the gates: consent law, sanctioned countries, the majors, brand safety, a live site, a way in",
+          [(g["key"], g["exclude_when"]) for g in cfg["gates"]],
+          [("country_allowed", "disallowed"), ("payable_country", "unpayable"), ("not_major", True),
+           ("brand_safe", "unsafe"), ("site_alive", "dead"), ("usable_first_party_presence", False)])
+    check("  sanctioned: Russia, Belarus, Iran, North Korea, Syria, Cuba",
+          sorted(cfg["geography"]["unpayable_countries"]), ["BY", "CU", "IR", "KP", "RU", "SY"])
+    check("the judge is on, and every audience has its own words and size bands to be judged by",
+          (cfg["judge"]["enabled"], [a["key"] for a in cfg["audiences"] if not (a.get("site_words") and a.get("size_bands"))]),
+          (True, []))
+    check("  cafes keep full audience fit; banks and attractions half",
+          {a["key"]: a["fit"] for a in cfg["audiences"] if a["key"] in ("local_business", "financial_services", "attractions")},
+          {"local_business": 1.0, "financial_services": 0.5, "attractions": 0.5})
+    check("  the retired inputs are scored nowhere", [k for k in cfg["judge"]["retired_inputs"] if k in rub or k in mods], [])
     check("everywhere except the consent-law countries", (cfg["geography"]["allowed_countries"],
           sorted(cfg["geography"]["disallowed_countries"])), ([], ["AT", "CA", "DE", "IT"]))
     steps = cfg["pipelines"]["weekly_refresh"]
@@ -147,6 +229,8 @@ def offline(cfg, uni):
     check("Apollo is on (the owner, 2026-10-07: 'Enriching from apollo is acceptable'), inside a stated budget",
           (e["enabled"], e["provider"], e["credits_per_week"], e["keep_in_reserve"], e["reveal_countries"]),
           (True, "apollo", 120, 700, ["US", "GB", "IN", "AE"]))
+    check("  reveals only for leads over 60 whose own site was read (the owner, 2026-10-07)",
+          (e["score_over"], e["require_site_read"]), (60, True))
     check("  the discovery pages fit inside the week's cap with room for the reveals",
           cfg["apollo_discovery"]["pages_per_run"] <= e["credits_per_week"] - e["credits_per_run"], True)
     check("  Apollo searches only where its addresses may be written to without consent",
@@ -186,8 +270,13 @@ def offline(cfg, uni):
     check("a Wikidata company: its website, country, size and address", (row["domain"], row["raw"]["wikidata"]["country_iso"],
           row["raw"]["published_email"], row["source_url"]), ("acmefoods.example", "IN", "hello@acmefoods.example",
                                                                "https://www.wikidata.org/wiki/Q101"))
-    check("  scored for what it is", row["raw"]["scoring_inputs"], {"audience_fit": 1.0, "has_reachable_presence": True,
-          "established": 1.0, "right_size": 1.0, "oversized_signal": False, "country_signal": "allowed", "english_market": 1.0})
+    check("  staged with only what the record settles by itself; the judge sets the rest on each chain run",
+          row["raw"]["scoring_inputs"], {"audience_fit": 1.0, "has_reachable_presence": True, "oversized_signal": False,
+                                         "country_signal": "allowed"})
+    check("  a company over 50,000 people is oversized (not_major); one in a sanctioned country is unpayable",
+          (disc.wikidata_row(dict(good, employees=60000), brands, cfg)[0]["raw"]["scoring_inputs"]["oversized_signal"],
+           disc.wikidata_row(dict(good, isos=["RU"]), brands, cfg)[0]["raw"]["scoring_inputs"]["country_signal"]),
+          (True, "unpayable"))
     check("  and says what to pitch", row["raw"]["why_fit"].endswith("Pitch first: AI Video for Brands, AI UGC Product Videos,"
                                                                        " Explainer Videos, Creator × Brand Marketplace."), True)
     for name, rec, reason in (("only in a consent-law country", dict(good, isos=["DE"]), "a consent-law country"),
@@ -210,8 +299,18 @@ def offline(cfg, uni):
     row, why = disc.osm_row(el, city, cafes, cfg)
     check("an OpenStreetMap cafe: its own website and published address", (row["domain"], row["raw"]["published_email"],
           row["raw"]["osm"]["attribution"]), ("beanthere.example", "hello@beanthere.example", disc.ATTRIBUTION))
-    check("  a complete listing counts as established, a local business is the right size",
-          (row["raw"]["scoring_inputs"]["established"], row["raw"]["scoring_inputs"]["right_size"]), (1.0, 1.0))
+    check("  staged with only what the record settles; a complete listing (website and phone) noted for the order",
+          (row["raw"]["scoring_inputs"], row["raw"]["osm"]["complete"]),
+          ({"audience_fit": 1.0, "has_reachable_presence": True, "country_signal": "allowed"}, True))
+    tagged = disc.osm_row(dict(el, tags=dict(el["tags"], **{"contact:instagram": "https://instagram.com/beanthere",
+                                                           "youtube": "https://youtube.com/@beanthere"})),
+                          city, cafes, cfg)[0]
+    check("  the accounts it lists for itself are kept: the judge counts them as content",
+          ({k: v for k, v in tagged["raw"]["osm"].items() if k in disc.OSM_ACCOUNT_TAGS},
+           lcx_judge.judge({"name": "Bean There", "domain": "beanthere.example",
+                            "metadata": {"kind": "local_business", "discovery_raw": {"lcx_osm": tagged["raw"]}}},
+                           cfg)[0]["content_activity"]),
+          ({"contact:instagram": "https://instagram.com/beanthere", "youtube": "https://youtube.com/@beanthere"}, 1.0))
     for name, tags, reason in (("a chain's branch", dict(el["tags"], brand="Costa"), "a chain's branch"),
                                ("nothing to reach it by", {"amenity": "cafe", "name": "No Site"}, "no website or address of its own"),
                                ("no name", {"amenity": "cafe", "website": "https://x.example"}, "no name"),
@@ -232,8 +331,16 @@ def offline(cfg, uni):
           ('[~"^(amenity|leisure|shop)$"~"^(beauty|cafe|fitness_centre|hairdresser)$"]' in q,
            '[~"^(contact:)?(website|email)$"~"."]' in q, "(around:12000,51.5,-0.12)" in q), (True, True, True))
     # the two loops, with the network stubbed: what is found is saved as it is found, the even shares hold
-    real = (disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep)
+    real = (disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep, disc.wikidata_extra)
     disc.time.sleep = lambda s: None
+    extra_calls = []
+
+    def fake_extra(qids):
+        """The judge's Wikidata fields (lcx_judge.wikidata_more), stubbed: the config has judge.enabled, so the
+        harvest asks for them for every 50 companies staged."""
+        extra_calls.append(list(qids))
+        return {q: {"socials": {"youtube": "UC" + q}, "students": 400} for q in qids}
+    disc.wikidata_extra = fake_extra
     try:
         import re
 
@@ -279,8 +386,19 @@ def offline(cfg, uni):
         base = wd_base(disc.audiences(cfg, "wikidata")[0]["wikidata"][0])
         check("  the English-speaking market taken first within the same size", [r["raw"]["wikidata"]["qid"] for r in rows[:3]],
               ["Q%d" % (base + i) for i in (1, 3, 5)])
+        check("  each with the judge's Wikidata fields (accounts, pupils, ...), at most 50 a query, each fetched once",
+              (all(r["raw"]["wikidata"].get("socials") and r["raw"]["wikidata"].get("details_at") for r in rows),
+               max(len(c) for c in extra_calls) <= 50, sorted(q for c in extra_calls for q in c)
+               == sorted(r["raw"]["wikidata"]["qid"] for r in rows)), (True, True, True))
+
+        def down(qids):
+            raise OSError("Wikidata did not answer")
+        disc.wikidata_extra = down
+        rows, why = disc.run_wikidata(cfg, 20, 80, set(), set())
+        check("  Wikidata down for those fields: the companies are staged anyway, for the back-fill to fill",
+              (len(rows) > 0, any("details_at" in r["raw"]["wikidata"] for r in rows)), (True, False))
     finally:
-        disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep = real
+        disc.overpass, disc.wikidata_ids, disc.wikidata_details, disc.time.sleep, disc.wikidata_extra = real
     print("\n-- the corporate sources, offline")
     sls = disc.apollo_slices(cfg)
     now = dt.datetime(2026, 10, 9, 2, 0, tzinfo=dt.timezone.utc)
@@ -310,9 +428,8 @@ def offline(cfg, uni):
     check("  the funded slice: rounds in the last 90 days, and no free check (people search has no funding filter)",
           (funded["latest_funding_date_range"]["min"],
            any(k in funded for k in disc.COMPANY_ONLY)), ("2026-07-09", True))
-    check("  sizes: 10-5,000 people is the right size, anything above is half",
-          (disc.band_size(["11,50", "2001,5000"]), disc.band_size(["2001,5000", "5001,10000"]), disc.band_size([])),
-          (1.0, 0.5, None))
+    # sizes: since 2026-10-07 the judge sizes a lead by its audience's own bands (tools/test_lcx_judge.py);
+    # an Apollo row keeps the slice's band as text, below, and that band alone is half
     aud_corp = next(a for a in cfg["audiences"] if a["key"] == "corporate_teams")
     org = {"id": "a" * 24, "name": "Acme Training Ltd", "website_url": "https://www.acme-training.example/",
            "primary_domain": "acme-training.example", "founded_year": 2001, "linkedin_url": "https://linkedin.com/x"}
@@ -320,16 +437,21 @@ def offline(cfg, uni):
     check("an Apollo company: its website, Apollo's id, and the slice's country and size",
           (arow["domain"], arow["source_url"], arow["raw"]["apollo_search"]["country_iso"], arow["raw"]["apollo"]["id"]),
           ("acme-training.example", "https://app.apollo.io/#/organizations/" + "a" * 24, "GB", "a" * 24))
-    check("  scored from the slice, with its buying signal", arow["raw"]["scoring_inputs"],
-          {"audience_fit": 1.0, "has_reachable_presence": True, "established": 1.0, "country_signal": "allowed",
-           "english_market": 1.0, "right_size": 1.0, "buying_signal": 1.0})
+    check("  staged with only what the record settles; its buying signal kept, dated, for the judge to fade",
+          (arow["raw"]["scoring_inputs"], arow["raw"]["apollo_search"]["signal"],
+           arow["raw"]["apollo_search"]["signal_seen_at"], arow["raw"]["apollo_search"]["size_band"]),
+          ({"audience_fit": 1.0, "has_reachable_presence": True, "country_signal": "allowed"},
+           "hiring for training and onboarding now", "2026-10-07", "201-5,000 people"))
     check("  says why: the signal, the country, what to pitch",
           arow["raw"]["why_fit"].startswith("Mid-size company in United Kingdom, on Apollo (hiring for training and onboarding now)."),
           True)
     check("  never a LinkedIn link kept", "linkedin" in json.dumps(arow), False)
-    check("  a company founded this year is half established",
-          disc.apollo_row(dict(org, founded_year=2026), hiring, aud_corp, cfg, dt.date(2026, 10, 7))[0]
-          ["raw"]["scoring_inputs"]["established"], 0.5)
+    big = disc.apollo_row(dict(org, annual_revenue_printed="12B", owned_by_organization_id="b" * 24), hiring, aud_corp,
+                          cfg, dt.date(2026, 10, 7))[0]["raw"]
+    check("  revenue of $10B or more is oversized (not_major), and the parent company's id is kept for the judge",
+          (big["scoring_inputs"]["oversized_signal"], big["apollo"]["owned_by_organization_id"],
+           disc.apollo_row(dict(org, annual_revenue_printed="4.8M"), hiring, aud_corp, cfg,
+                           dt.date(2026, 10, 7))[0]["raw"]["scoring_inputs"]["oversized_signal"]), (True, "b" * 24, False))
     check("  TVF itself is never a lead", disc.apollo_row(dict(org, name="The Viral Fever", website_url="https://theviralfever.com"),
                                                           hiring, aud_corp, cfg)[1], "TVF or an affiliate")
     check("  Apollo's primary domain first, as a company saved from the search page has it",
@@ -358,9 +480,11 @@ def offline(cfg, uni):
               disc.run_fdic(cfg, 10, set(), set()), ([], {"FDIC BankFind did not answer": 1}))
     finally:
         disc.fdic_banks = keep_fb
-    check("  a bank: the financial-services audience, in the US, the right size",
-          (got[0]["raw"]["kind"], got[0]["raw"]["fdic"]["country_iso"], got[0]["raw"]["scoring_inputs"]["right_size"]),
-          ("financial_services", "US", 1.0))
+    check("  a bank: the financial-services audience, in the US, its assets kept (the judge sizes it by them)",
+          (got[0]["raw"]["kind"], got[0]["raw"]["fdic"]["country_iso"], got[0]["raw"]["fdic"]["assets_thousands"],
+           got[0]["raw"]["scoring_inputs"]),
+          ("financial_services", "US", 5000000, {"audience_fit": 0.5, "has_reachable_presence": True,
+                                                 "country_signal": "allowed"}))
     meta, email, src = lift.lift({"discovery_raw": {"lcx_osm": row["raw"]}, "why_fit": "a person's own words"})
     check("lifting: the audience, services and place go on the lead, a person's words stay",
           (meta["kind"], meta["audience"], meta["hq_city"], meta["hq_country"], meta["why_fit"], email, src),
@@ -429,13 +553,23 @@ def main_():
         print("\n-- the harvest, through the promote chain, to a draft with the deck")
         brands = next(a for a in cfg["audiences"] if a["key"] == "consumer_brands")
         cafes = next(a for a in cfg["audiences"] if a["key"] == "local_business")
+        corps = next(a for a in cfg["audiences"] if a["key"] == "corporate_teams")
         city = {"name": "London", "country": "GB", "lat": 51.5, "lon": -0.12}
-        staged = [disc.wikidata_row({"qid": "Q9%s1" % tag[:4].encode().hex()[:6], "label": "ZZ Acme Foods %s" % tag,
-                                     "webs": ["https://zz-acme-%s.example" % tag], "isos": ["IN"], "employees": 450,
-                                     "emails": []}, brands, cfg)[0],
+        bean_n, acme_n = "ZZ Bean There %s" % tag, "ZZ Acme Foods %s" % tag
+        toys_n, corp_n = "ZZ Unread Toys %s" % tag, "ZZ Northwind %s" % tag
+        qid = lambda n: "Q9%s%d" % (tag[:4].encode().hex()[:6], n)        # noqa: E731
+        staged = [disc.wikidata_row({"qid": qid(1), "label": acme_n, "webs": ["https://zz-acme-%s.example" % tag],
+                                     "isos": ["IN"], "employees": 450, "emails": []}, brands, cfg)[0],
                   disc.osm_row({"type": "node", "id": int(tag, 16), "tags": {
-                      "amenity": "cafe", "name": "ZZ Bean There %s" % tag, "website": "https://zz-bean-%s.example" % tag,
-                      "email": "hello@zz-bean-%s.example" % tag, "opening_hours": "Mo-Su 08:00-18:00"}}, city, cafes, cfg)[0]]
+                      "amenity": "cafe", "name": bean_n, "website": "https://zz-bean-%s.example" % tag,
+                      "email": "hello@zz-bean-%s.example" % tag, "opening_hours": "Mo-Su 08:00-18:00"}}, city, cafes, cfg)[0],
+                  # a brand that publishes an inbox on Wikidata, and whose site nobody has read
+                  disc.wikidata_row({"qid": qid(2), "label": toys_n, "webs": ["https://zz-toys-%s.example" % tag],
+                                     "isos": ["GB"], "employees": 300, "emails": ["mailto:hello@zz-toys-%s.example" % tag]},
+                                    brands, cfg)[0],
+                  # a listed mid-size company, which the site pass will find only an info@ inbox for
+                  disc.wikidata_row({"qid": qid(3), "label": corp_n, "webs": ["https://zz-northwind-%s.example" % tag],
+                                     "isos": ["GB"], "employees": 800, "emails": []}, corps, cfg)[0]]
         for r in staged:
             cur.execute("insert into staging_candidates (segment_id, name, domain, source, source_url, raw) values"
                         " (%s, %s, %s, %s, %s, %s)", (lx_id, r["name"], r["domain"],
@@ -451,12 +585,27 @@ def main_():
                                                               "https://www.wikidata.org/wiki/Q77%s" % tag[:4].encode().hex()[:5],
                                                               json.dumps(staged[0]["raw"])))
         cur.execute("select set_config('tvf.segment', %s, true)", (lx,))
-        for f in CHAIN:
-            cur.execute((ROOT / f).read_text(encoding="utf-8"))
+        lcx_judge.SEGMENT = lx
+
+        def chain(steps=CHAIN):
+            for f in steps:
+                if f.endswith(".py"):
+                    check("  the chain's judge step runs (exit 0)", lcx_judge.main([]), 0)
+                else:
+                    cur.execute((ROOT / f).read_text(encoding="utf-8"))
+        chain()
         cur.execute("select name, status, metadata from entities where segment_id = %s order by name", (lx_id,))
         got = {r[0]: r for r in cur.fetchall()}
-        acme, bean = got.get("ZZ Acme Foods %s" % tag), got.get("ZZ Bean There %s" % tag)
-        check("both are leads of LCX Services after the promote chain", (bool(acme), bool(bean)), (True, True))
+        check("all four are leads of LCX Services after the promote chain", sorted(n for n in got if n != "ZZ Ruled Out %s" % tag),
+              sorted([acme_n, bean_n, corp_n, toys_n]))
+        si = got[acme_n][2]["scoring_inputs"]
+        check("  judged at once: unknown as JSON null (no site read, nobody measured), reach 0, no retired key",
+              ({k: si.get(k, "absent") for k in ("buyer_confirmed", "buyer_size", "content_activity", "audience_fit",
+                                                 "reachable_decision_maker", "established", "right_size")},
+               got[acme_n][2]["lcx_judgement"]["buyer_confirmed"]),
+              ({"buyer_confirmed": 0.5, "buyer_size": 1.0, "content_activity": None, "audience_fit": 1.0,
+                "reachable_decision_maker": 0, "established": "absent", "right_size": "absent"},
+               "Wikidata class or industry"))
         cur.execute("select import_result from staging_candidates where segment_id = %s and name = %s", (lx_id, shield))
         check("a company ruled out before, found again: kept out, and the chain says why", [r[0] for r in cur.fetchall()],
               ["skipped_shielded_name"])
@@ -466,21 +615,66 @@ def main_():
         sys.argv = ["enrich_lcx_services.py"]
         lift.main()
         cur.execute("select e.name, c.email, c.source, c.email_status from contacts c join entities e on e.id = c.entity_id"
-                    " where e.segment_id = %s", (lx_id,))
-        check("the cafe's published address became its contact", [tuple(r) for r in cur.fetchall()],
-              [("ZZ Bean There %s" % tag, "hello@zz-bean-%s.example" % tag, "osm", "unverified")])
+                    " where e.segment_id = %s order by e.name", (lx_id,))
+        check("the published addresses became contacts (the cafe's on the map, the toy brand's on Wikidata)",
+              [tuple(r) for r in cur.fetchall()],
+              [(bean_n, "hello@zz-bean-%s.example" % tag, "osm", "unverified"),
+               (toys_n, "hello@zz-toys-%s.example" % tag, "wikidata", "unverified")])
+        # the site pass (tools/enrich_sitescrape.py), as it leaves a lead: the home page's own words, the accounts
+        # it links, and for the corporate an info@ inbox read off its site (reach 0.5, a role inbox)
+        read_at = dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+        site = {bean_n: ("%s | Café and coffee in London" % bean_n, "Our café serves speciality coffee and brunch every day.",
+                         {"instagram": "https://www.instagram.com/zzbean"}),
+                corp_n: ("%s | Stores nationwide" % corp_n,
+                         "Our 2,000 team members serve customers in 40 stores and a customer service centre.",
+                         {"youtube": "https://www.youtube.com/@zznorthwind", "instagram": "https://www.instagram.com/zznw"})}
+        for name, (title, desc, socials) in site.items():
+            cur.execute("update entities set metadata = metadata || jsonb_build_object('site_about', %s::jsonb,"
+                        " 'site_contact_routes', %s::jsonb) where segment_id = %s and name = %s",
+                        (json.dumps({"title": title, "description": desc, "about": "", "read_at": read_at}),
+                         json.dumps({"socials": socials, "pages_read": 3, "read_at": read_at}), lx_id, name))
+        cur.execute("insert into contacts (entity_id, email, email_status, source) select id, 'info@' || domain,"
+                    " 'unverified', 'site_scrape' from entities where segment_id = %s and name = %s", (lx_id, corp_n))
+        cur.execute("update entities set metadata = jsonb_set(metadata, '{scoring_inputs,reachable_decision_maker}', '0.5')"
+                    " where segment_id = %s and name = %s", (lx_id, corp_n))
+        # the toy brand's accounts are listed on Wikidata: content_activity is assessed, its site still unread
+        cur.execute("update entities set metadata = jsonb_set(metadata, '{discovery_raw,lcx_wikidata,wikidata,socials}',"
+                    " '{\"youtube\": \"UCzztoys\", \"instagram\": \"zztoys\"}'::jsonb) where segment_id = %s and name = %s",
+                    (lx_id, toys_n))
+        # the refresh's next promote_chain: its judge reads the new site text, then 04b (promote and merge have
+        # nothing new to take, and their temporary tables cannot be made twice in one transaction)
+        chain(CHAIN[CHAIN.index("tools/lcx_judge.py"):])
         cur.execute("select count(*) from score_segment(%s)", (lx,))
         cur.fetchone()
         cur.execute((ROOT / "sql" / "13_apply_gates.sql").read_text(encoding="utf-8"))
         cur.execute("select refresh_primary_contacts(%s)", (lx,))
         cur.execute((ROOT / "sql" / "14_auto_shortlist.sql").read_text(encoding="utf-8"))
-        cur.execute("select name, status, round(fit_score)::int, metadata->>'audience', metadata->>'hq_city' from entities"
-                    " where segment_id = %s order by name", (lx_id,))
+        cur.execute("select name, status, fit_score::float, metadata->>'audience', metadata->>'hq_city', status_reason,"
+                    " score_breakdown->'points_possible_assessed', metadata from entities where segment_id = %s"
+                    " order by name", (lx_id,))
         rows = {r[0]: r[1:] for r in cur.fetchall()}
-        check("the cafe, with an address: 25 + 20 + 15 + 15, +4 English, and shortlisted by itself", rows["ZZ Bean There %s" % tag],
-              ("shortlisted", 79, "Cafe, salon or gym", "London"))
-        check("the brand, nobody to write to yet: 54, under the line, left in To review", rows["ZZ Acme Foods %s" % tag][:2],
-              ("ready_for_review", 54))
+        check("the cafe: its own words 30, Instagram 10, one premises 12.5, fit 15, an inbox 5, +4 the UK: 76.5,"
+              " shortlisted by itself", rows[bean_n][:4], ("shortlisted", 76.5, "Cafe, salon or gym", "London"))
+        check("  and says why: over the line, someone to write to, its content assessed", rows[bean_n][4],
+              "auto-shortlisted: score 76.5 is above 70, with someone to write to; assessed: content_activity;"
+              " its site read")
+        check("the brand: over the line on the 80 points known (72.75), but nobody to write to and its site unread:"
+              " left in To review", (rows[acme_n][:2], rows[acme_n][5]), (("ready_for_review", 72.75), 80))
+        check("a published inbox, over the line, its accounts listed on Wikidata (content assessed), but its own"
+              " site never read: not shortlisted (require_site_read)",
+              (rows[toys_n][0], rows[toys_n][1] > 70, rows[toys_n][6]["scoring_inputs"]["content_activity"],
+               rows[toys_n][6]["lcx_judgement"]["site_checked"]), ("ready_for_review", True, 1.0, False))
+        check("a mid-size company at 99 with only an info@ inbox: held for a named person",
+              rows[corp_n][:2], ("ready_for_review", 99.0))
+        judged_vals = [(n, k, v) for n in (acme_n, bean_n, corp_n, toys_n) for k, v in rows[n][6]["scoring_inputs"].items()
+                       if k in {c["key"] for c in cfg["rubric"] + cfg["score_modifiers"]} and v not in (None, 0, 0.5, 1)]
+        check("every scored input on them is 0, 0.5, 1 or unknown, and no retired input is left",
+              (judged_vals, [(n, k) for n in rows if n in (acme_n, bean_n, corp_n, toys_n)
+                             for k in cfg["judge"]["retired_inputs"] if k in rows[n][6]["scoring_inputs"]]), ([], []))
+        check("  the judge's evidence is on the lead, for a reviewer to overrule",
+              (rows[bean_n][6]["lcx_judgement"]["buyer_confirmed"].startswith("own words: "),
+               rows[bean_n][6]["lcx_judgement"]["content_activity"], rows[corp_n][6]["lcx_judgement"]["site_read"]),
+              (True, "instagram", True))
         outreach.SEGMENT = lx
         outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
         cur.execute("select o.id, o.subject, o.body, o.attachments from outreach o join entities e on e.id = o.entity_id"
@@ -524,6 +718,34 @@ def main_():
                                             "metadata": {}, "fit_score": None, "score_breakdown": None}, [], None)
         check("a lead with nobody at it points to Apollo search, the way to add one by hand", ex["analysis"]["next_step"],
               "Find a way in: save a person at it from Apollo search.")
+
+        # ------------------------------------------------------------ a named person found at the corporate
+        print("\n-- a mid-size company is shortlisted once a named person is found (the owner, 2026-10-07)")
+        cur.execute("insert into contacts (entity_id, full_name, email, email_status, source) select id, 'Raj Patel',"
+                    " 'accounting@' || domain, 'unverified', 'site_scrape' from entities where segment_id = %s and name = %s",
+                    (lx_id, corp_n))
+        cur.execute((ROOT / "sql" / "14_auto_shortlist.sql").read_text(encoding="utf-8"))
+        cur.execute("select status from entities where segment_id = %s and name = %s", (lx_id, corp_n))
+        check("  a name on accounting@ is not enough: the drafter would still write to info@, so it waits",
+              cur.fetchone()[0], "ready_for_review")
+        cur.execute("insert into contacts (entity_id, full_name, role_title, email, email_status, source, verifier)"
+                    " select id, 'Nina Shah', 'Head of Learning and Development', 'nina@' || domain, 'valid', 'apollo',"
+                    " 'apollo' from entities where segment_id = %s and name = %s", (lx_id, corp_n))
+        cur.execute("select refresh_primary_contacts(%s)", (lx,))
+        cur.execute((ROOT / "sql" / "14_auto_shortlist.sql").read_text(encoding="utf-8"))
+        cur.execute("select status, status_reason from entities where segment_id = %s and name = %s", (lx_id, corp_n))
+        check("  as enrich_apollo writes one: shortlisted on the next chain run, and says why", cur.fetchone(),
+              ("shortlisted", "auto-shortlisted: score 99.0 is above 70, with a named person to write to;"
+                              " assessed: content_activity; its site read"))
+        outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
+        cur.execute("select c.email, o.body from outreach o join entities e on e.id = o.entity_id join contacts c"
+                    " on c.id = o.contact_id where e.segment_id = %s and e.name = %s", (lx_id, corp_n))
+        drafted = [(r[0], r[1].splitlines()[0]) for r in cur.fetchall()]
+        check("  and drafted to that person, not the info@ inbox", drafted, [("nina@zz-northwind-%s.example" % tag, "Hi Nina,")])
+        cur.execute("select status from entities where segment_id = %s and name = any(%s) order by name",
+                    (lx_id, [acme_n, toys_n]))
+        check("  the brand with nobody and the unread one still wait in To review", [r[0] for r in cur.fetchall()],
+              ["ready_for_review", "ready_for_review"])
 
         # ------------------------------------------------------------ a project with its own starting email
         print("\n-- a project that starts the Write email box from its own email")

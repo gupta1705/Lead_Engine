@@ -10,8 +10,8 @@ values (
   '{
   "entity_type": "company",
   "weekly_target": 1200,
-  "score_threshold_review": 25,
-  "score_threshold_priority": 70,
+  "score_threshold_review": 50,
+  "score_threshold_priority": 85,
   "brief": "LCX Services: businesses everywhere cold business email is allowed, offered every LCX service in one email with the services deck attached (docs/LCX Services.pdf; the deck is docs/decks/LCX Services - pitch deck.pdf). The owner, 2026-10-06: \"i wanna build outreach a single one offering all these services\" and \"it should generate the leads on its own\"; 2026-10-07: \"i want to reachout to buisnesses to normal corporates not just cafes and all think about whats the best places we can source our leads from and use it . Enriching from apollo is acceptable\". So it harvests by itself every Friday: mid-size corporates from Apollo''s company search (those hiring for content or training right now, recently funded ones, and each audience by size and country), listed companies and notable firms from Wikidata, US banks from the FDIC register, and a small stream of local businesses from OpenStreetMap. Then an address from the business itself or its own website, a named person from Apollo for a well-fitting lead that has none (inside a weekly credit cap), and a draft a person approves. docs/LCX_services.md.",
   "target_contact_roles": [
     "Owner",
@@ -34,6 +34,14 @@ values (
       "DE",
       "AT",
       "IT"
+    ],
+    "unpayable_countries": [
+      "RU",
+      "BY",
+      "IR",
+      "KP",
+      "SY",
+      "CU"
     ],
     "english_markets": [
       "US",
@@ -58,13 +66,67 @@ values (
       "BH",
       "OM"
     ],
-    "guidance": "The owner, 2026-10-06: \"Everywhere allowed\" -- every country except those whose law needs consent before a cold business email: Canada (CASL), Germany and Austria (UWG), Italy, the same set as LCX Clipping. A company is left out only on evidence: Wikidata says its only country is one of them, or the city it was found in is. english_markets earns a small bonus (score_modifiers.english_market) because the email and the deck are in English; it never leaves anyone out."
+    "guidance": "The owner, 2026-10-06: \"Everywhere allowed\" -- every country except those whose law needs consent before a cold business email: Canada (CASL), Germany and Austria (UWG), Italy, the same set as LCX Clipping. A company is left out only on evidence: Wikidata says its only country is one of them, or the city it was found in is. english_markets earns half the priority_market bonus (the US, the UK, India and the UAE, enrichment.reveal_countries, earn all of it) because the email and the deck are in English; it never leaves anyone out. unpayable_countries (2026-10-07, the owner''s decision that day): sanctioned countries LCX cannot invoice, left out by the payable_country gate: Russia, Belarus, Iran, North Korea, Syria and Cuba."
   },
   "audiences": [
     {
       "key": "corporate_teams",
       "label": "Mid-size company",
       "fit": 1.0,
+      "site_words": [
+        "stores?",
+        "branch(es)?",
+        "locations",
+        "restaurants",
+        "clinics?",
+        "hospitals?",
+        "contact cent(er|re)s?",
+        "call cent(er|re)s?",
+        "customer (service|support|care)",
+        "franchis(e|es|ees)",
+        "nationwide",
+        "field (sales|service|teams?)",
+        "technicians",
+        "drivers",
+        "agents",
+        "frontline",
+        "workforce",
+        "colleagues",
+        "team members",
+        "associates",
+        "employees",
+        "offices (in|across)"
+      ],
+      "size_bands": {
+        "employees": [
+          200,
+          5000
+        ],
+        "employees_half": [
+          [
+            50,
+            199
+          ],
+          [
+            5001,
+            20000
+          ]
+        ],
+        "revenue": [
+          20000000,
+          1000000000
+        ],
+        "revenue_half": [
+          [
+            4000000,
+            20000000
+          ],
+          [
+            1000000000,
+            5000000000
+          ]
+        ]
+      },
       "services": [
         "AI Onboarding Employee",
         "AI Simulations for Training",
@@ -94,6 +156,71 @@ values (
       "key": "consumer_brands",
       "label": "Consumer brand",
       "fit": 1.0,
+      "site_words": [
+        "shop( now| online)?",
+        "skin ?care",
+        "make-?up",
+        "cosmetics?",
+        "beauty",
+        "fragrances?",
+        "apparel",
+        "clothing",
+        "fashion",
+        "footwear",
+        "shoes",
+        "sneakers",
+        "jewell?ery",
+        "snacks?",
+        "foods?",
+        "drinks?",
+        "beverages?",
+        "beers?",
+        "wines?",
+        "spirits",
+        "coffee",
+        "tea",
+        "chocolates?",
+        "candy",
+        "sweets",
+        "furniture",
+        "homeware",
+        "toys?",
+        "collections?",
+        "free shipping",
+        "our brands?",
+        "range of products",
+        "products"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          1000
+        ],
+        "employees_half": [
+          [
+            10,
+            19
+          ],
+          [
+            1001,
+            5000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          500000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            500000000,
+            2500000000
+          ]
+        ]
+      },
       "services": [
         "AI Video for Brands",
         "AI UGC Product Videos",
@@ -130,6 +257,53 @@ values (
       "key": "retailers",
       "label": "Retailer",
       "fit": 1.0,
+      "site_words": [
+        "stores?",
+        "shops?",
+        "shopping",
+        "retail(er|ers)?",
+        "supermarkets?",
+        "department stores?",
+        "outlets?",
+        "boutiques?",
+        "free (shipping|delivery)",
+        "order online",
+        "next day delivery",
+        "click (and|&) collect",
+        "in-store",
+        "grocery",
+        "groceries"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          5000
+        ],
+        "employees_half": [
+          [
+            5,
+            19
+          ],
+          [
+            5001,
+            20000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          1000000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            1000000000,
+            3000000000
+          ]
+        ]
+      },
       "services": [
         "Shop Display Videos",
         "AI Fashion Stylist",
@@ -169,6 +343,60 @@ values (
       "key": "real_estate",
       "label": "Real estate developer or agent",
       "fit": 1.0,
+      "site_words": [
+        "real estate",
+        "propert(y|ies)",
+        "homes?",
+        "apartments?",
+        "villas?",
+        "residences?",
+        "residential",
+        "condos?",
+        "townships?",
+        "developers?",
+        "developments?",
+        "master communit(y|ies)",
+        "plots",
+        "off-?plan",
+        "new launch",
+        "for sale",
+        "to let",
+        "rentals?",
+        "estate agents?",
+        "realtors?",
+        "brokerage",
+        "housing"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          1000
+        ],
+        "employees_half": [
+          [
+            10,
+            19
+          ],
+          [
+            1001,
+            5000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          500000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            500000000,
+            2500000000
+          ]
+        ]
+      },
       "services": [
         "AI Real Estate Visualisation",
         "Airbnb / Property Content",
@@ -209,6 +437,58 @@ values (
       "key": "hospitality",
       "label": "Hotel or short stay",
       "fit": 1.0,
+      "site_words": [
+        "hotels?",
+        "resorts?",
+        "hostels?",
+        "inns?",
+        "lodges?",
+        "suites",
+        "stays?",
+        "rooms",
+        "accommodation",
+        "vacation rentals?",
+        "holiday (homes|lets|rentals)",
+        "serviced apartments",
+        "guest ?house",
+        "bed (and|&) breakfast",
+        "book direct",
+        "spa",
+        "restaurants?",
+        "dining",
+        "pubs?",
+        "hospitality"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          5000
+        ],
+        "employees_half": [
+          [
+            5,
+            19
+          ],
+          [
+            5001,
+            20000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          1000000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            1000000000,
+            3000000000
+          ]
+        ]
+      },
       "services": [
         "Airbnb / Property Content",
         "AI Reality Experiences",
@@ -258,6 +538,55 @@ values (
       "key": "publishers",
       "label": "Publisher",
       "fit": 1.0,
+      "site_words": [
+        "publish(er|ers|ing)",
+        "books?",
+        "titles",
+        "authors?",
+        "imprints?",
+        "novels?",
+        "fiction",
+        "non-fiction",
+        "manga",
+        "comics?",
+        "magazines?",
+        "audiobooks?",
+        "literature",
+        "bookshop",
+        "bookstore",
+        "readers",
+        "stories"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          1000
+        ],
+        "employees_half": [
+          [
+            10,
+            19
+          ],
+          [
+            1001,
+            5000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          500000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            500000000,
+            2500000000
+          ]
+        ]
+      },
       "services": [
         "Audiobooks and Audio Web Shows",
         "AI Podcasts / Audio Content"
@@ -285,6 +614,73 @@ values (
       "key": "financial_services",
       "label": "Bank, insurer or investment firm",
       "fit": 0.5,
+      "site_words": [
+        "bank(s|ing)?",
+        "credit union",
+        "savings",
+        "loans?",
+        "mortgages?",
+        "insurance",
+        "insurer",
+        "annuit(y|ies)",
+        "wealth",
+        "financial (advice|planning|services)",
+        "checking",
+        "deposits?",
+        "credit cards?",
+        "lending",
+        "financing",
+        "payments?",
+        "money transfer",
+        "send money",
+        "pensions?",
+        "trading",
+        "invest(ing|ments)?"
+      ],
+      "size_bands": {
+        "employees": [
+          100,
+          5000
+        ],
+        "employees_half": [
+          [
+            20,
+            99
+          ],
+          [
+            5001,
+            20000
+          ]
+        ],
+        "revenue": [
+          20000000,
+          2000000000
+        ],
+        "revenue_half": [
+          [
+            4000000,
+            20000000
+          ],
+          [
+            2000000000,
+            5000000000
+          ]
+        ],
+        "assets": [
+          1000000000,
+          10000000000
+        ],
+        "assets_half": [
+          [
+            300000000,
+            1000000000
+          ],
+          [
+            10000000000,
+            50000000000
+          ]
+        ]
+      },
       "services": [
         "AI Podcasts / Audio Content",
         "AI Simulations for Training",
@@ -322,6 +718,60 @@ values (
       "key": "studios_agencies",
       "label": "Studio or agency",
       "fit": 1.0,
+      "site_words": [
+        "production compan(y|ies)",
+        "films?",
+        "television",
+        "tv",
+        "animation",
+        "animated",
+        "studios?",
+        "agency",
+        "advertising",
+        "creative",
+        "content",
+        "videos?",
+        "branding",
+        "campaigns?",
+        "post-?production",
+        "vfx",
+        "visual effects",
+        "documentar(y|ies)",
+        "series",
+        "commercials?",
+        "entertainment",
+        "movies"
+      ],
+      "size_bands": {
+        "employees": [
+          11,
+          200
+        ],
+        "employees_half": [
+          [
+            2,
+            10
+          ],
+          [
+            201,
+            1000
+          ]
+        ],
+        "revenue": [
+          1000000,
+          50000000
+        ],
+        "revenue_half": [
+          [
+            200000,
+            1000000
+          ],
+          [
+            50000000,
+            250000000
+          ]
+        ]
+      },
       "services": [
         "Reel Forge",
         "AI VFX + Animation",
@@ -352,6 +802,59 @@ values (
       "key": "attractions",
       "label": "Theme park, museum or attraction",
       "fit": 0.5,
+      "site_words": [
+        "theme park",
+        "amusement park",
+        "water ?park",
+        "rides?",
+        "roller ?coasters?",
+        "attractions?",
+        "zoo",
+        "aquarium",
+        "museum",
+        "exhibits?",
+        "exhibitions?",
+        "tickets?",
+        "day out",
+        "family fun",
+        "adventure park",
+        "fun park",
+        "pleasure beach",
+        "pier",
+        "arcade",
+        "thrills?",
+        "family entertainment"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          1000
+        ],
+        "employees_half": [
+          [
+            10,
+            19
+          ],
+          [
+            1001,
+            5000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          500000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            500000000,
+            2500000000
+          ]
+        ]
+      },
       "services": [
         "AI Reality Experiences",
         "Explainer Videos"
@@ -387,6 +890,72 @@ values (
       "key": "schools",
       "label": "School",
       "fit": 1.0,
+      "site_words": [
+        "school",
+        "academy",
+        "ib world",
+        "igcse",
+        "a-?levels?",
+        "curriculum",
+        "admissions?",
+        "enrol(l)?(ment)?",
+        "pupils",
+        "students",
+        "pre-?k",
+        "kindergarten",
+        "primary",
+        "secondary",
+        "boarding",
+        "nursery",
+        "k-?12",
+        "grades?",
+        "early years",
+        "lyc[ée]e"
+      ],
+      "size_bands": {
+        "employees": [
+          20,
+          1000
+        ],
+        "employees_half": [
+          [
+            10,
+            19
+          ],
+          [
+            1001,
+            5000
+          ]
+        ],
+        "revenue": [
+          5000000,
+          500000000
+        ],
+        "revenue_half": [
+          [
+            1000000,
+            5000000
+          ],
+          [
+            500000000,
+            2500000000
+          ]
+        ],
+        "students": [
+          300,
+          3000
+        ],
+        "students_half": [
+          [
+            100,
+            299
+          ],
+          [
+            3001,
+            6000
+          ]
+        ]
+      },
       "services": [
         "Virtual Tours for Schools",
         "AI Reality Experiences"
@@ -419,6 +988,55 @@ values (
       "key": "local_business",
       "label": "Cafe, salon or gym",
       "fit": 1.0,
+      "site_words": [
+        "caf[eé]",
+        "coffee",
+        "salon",
+        "hair",
+        "beauty",
+        "spa",
+        "nails",
+        "gym",
+        "fitness",
+        "yoga",
+        "pilates",
+        "barber",
+        "brunch",
+        "bakery",
+        "appointment",
+        "classes",
+        "treatments?"
+      ],
+      "size_bands": {
+        "employees": [
+          2,
+          50
+        ],
+        "employees_half": [
+          [
+            1,
+            1
+          ],
+          [
+            51,
+            200
+          ]
+        ],
+        "revenue": [
+          200000,
+          20000000
+        ],
+        "revenue_half": [
+          [
+            50000,
+            200000
+          ],
+          [
+            20000000,
+            100000000
+          ]
+        ]
+      },
       "services": [
         "Local Business Tech and Automation",
         "AI Business Assistant"
@@ -452,6 +1070,52 @@ values (
       "key": "local_retail",
       "label": "Independent shop",
       "fit": 1.0,
+      "site_words": [
+        "boutique",
+        "clothing",
+        "fashion",
+        "shoes",
+        "jewell?ery",
+        "jewell?ers?",
+        "store",
+        "shop",
+        "collections?",
+        "bridal",
+        "sarees?",
+        "ethnic wear",
+        "gold",
+        "diamonds?"
+      ],
+      "size_bands": {
+        "employees": [
+          2,
+          50
+        ],
+        "employees_half": [
+          [
+            1,
+            1
+          ],
+          [
+            51,
+            200
+          ]
+        ],
+        "revenue": [
+          200000,
+          20000000
+        ],
+        "revenue_half": [
+          [
+            50000,
+            200000
+          ],
+          [
+            20000000,
+            100000000
+          ]
+        ]
+      },
       "services": [
         "Shop Display Videos",
         "AI Fashion Stylist",
@@ -483,7 +1147,7 @@ values (
       ]
     }
   ],
-  "audiences_guidance": "Who buys which of the 18 services on docs/LCX Services.pdf, where they are found (tools/discover_lcx_services.py) and who to write to there (contact_roles, the titles Apollo is searched for, best first). Every email offers every service; the audience decides who is found, what the lead says it fits (why_fit, Pitch first) and audience_fit in the rubric: 1.0 where the sheet''s services fit directly, 0.5 where the sale is slower (banks and insurers, attractions). corporate_teams (2026-10-07) is the owner''s \"normal corporates\": any industry, 201-5,000 people, for the training, onboarding and explainer services. wikidata entries match a class (P31), an industry (P452) or a stock-exchange listing (P414); osm entries are OpenStreetMap tag pairs; the Apollo searches are in apollo_discovery.",
+  "audiences_guidance": "Who buys which of the 18 services on docs/LCX Services.pdf, where they are found (tools/discover_lcx_services.py) and who to write to there (contact_roles, the titles Apollo is searched for, best first). Every email offers every service; the audience decides who is found, what the lead says it fits (why_fit, Pitch first) and audience_fit in the rubric: 1.0 where the sheet''s services fit directly, 0.5 where the sale is slower (banks and insurers, attractions). corporate_teams (2026-10-07) is the owner''s \"normal corporates\": any industry, 201-5,000 people, for the training, onboarding and explainer services. wikidata entries match a class (P31), an industry (P452) or a stock-exchange listing (P414); osm entries are OpenStreetMap tag pairs; the Apollo searches are in apollo_discovery. site_words (2026-10-07, scoring v4) are the words a business of that audience uses about itself on its own home page, which earn buyer_confirmed; size_bands are its sweet spot and the bands either side of it for buyer_size, in people, US dollars of revenue (assets for banks, pupils for schools).",
   "discovery": {
     "skip_known_elsewhere": true,
     "wikidata": {
@@ -795,41 +1459,76 @@ values (
   ],
   "rubric": [
     {
-      "key": "reachable_decision_maker",
-      "label": "Someone to write to: a named person (full) or the business''s own published address (half)",
-      "points": 50,
-      "input": "metadata.scoring_inputs.reachable_decision_maker",
-      "guidance": "1.0 a named person in a deciding role with their own verified address (Apollo, the site pass, or a person); 0.5 a business address (info@, hello@) the business publishes on OpenStreetMap, on Wikidata or on its own site (tools/enrich_lcx_services.py, enrich_contacts). Half the points on purpose: a lead nobody can be written to tops out at 50 (54 with the English bonus) and never crosses the auto-shortlist line at 55, so nothing is shortlisted that cannot be drafted."
+      "key": "buyer_confirmed",
+      "label": "The business is the buyer it was filed as, in its own words",
+      "points": 30,
+      "input": "metadata.scoring_inputs.buyer_confirmed",
+      "guidance": "Full credit when the company''s own website (its home-page title, description or About text) uses at least two of its audience''s words (audiences[].site_words): a hotel says rooms, suites or book direct, a school admissions, curriculum or IB, a developer apartments, villas or off-plan, a bank loans, mortgages or credit union. Half credit for one such word, or when a directory that sorts companies by what they are says so: Wikidata''s class or industry, an OpenStreetMap tag, the FDIC bank register. That half stands when the site was read and says nothing either way, and for a mid-size company (corporate_teams) from any source, since any employer that size is the audience unless the wrong-buyer check says otherwise. No credit when only Apollo''s keyword search says so and the company''s own site does not back it up (its ''retailers'' search returned OpenAI, Coinbase, CNET and IT-services firms), or when the site that answers is not this company''s (Afribank''s domain now serves an internet exchange). The heaviest weight, like international_ip_experience for the production houses: it separates a real buyer from a mislabelled one, and it is never unknown, because every lead carries a source label. Set by tools/lcx_judge.py on every chain run; the words it matched are on the lead (metadata.lcx_judgement). ADDED 2026-10-07 (scoring v4), replacing ''established'', which was 1.0 on all 593 Wikidata leads and 762 of 768 Apollo rows and so told nobody apart."
+    },
+    {
+      "key": "buyer_size",
+      "label": "Big enough to pay, small enough that one cold email reaches the person who decides (per buyer type)",
+      "points": 25,
+      "input": "metadata.scoring_inputs.buyer_size",
+      "guidance": "Full credit inside the audience''s sweet spot (audiences[].size_bands): mid-size companies 200-5,000 people or $20M-$1B revenue; banks and insurers 100-5,000 people, $20M-$2B, or $1-10bn of assets; retailers and hotels 20-5,000 people or $5M-$1B; studios and agencies 11-200 people or $1-50M; cafes, salons and independent shops 2-50 people, or several locations named on their own site; brands, developers, publishers, attractions and schools 20-1,000 people or $5-500M (schools also 300-3,000 pupils). Half credit in the band next to the sweet spot on either side, for one independent premises with a website, or for a company known only from Apollo''s search band (a filter, not a measurement). No credit outside both bands: above them is a procurement process, below them there is no budget. The first measure that applies wins: FDIC assets, revenue, headcount (pupils for a school), the OpenStreetMap premises, Apollo''s band. Unknown when no source measures the company: left out of the score (JSON null), not 0, so the score is out of the other 75 points; this mostly affects schools, attractions, hotels and developers that Wikidata gives no headcount. Set by tools/lcx_judge.py. REPLACES right_size (15) 2026-10-07: right_size scored ''Wikidata has no headcount'' as 0 on 176 leads and had the production houses'' team-page rule (2-20 named staff) written into 131 LCX leads by the site pass; a new key name keeps both stale values out."
+    },
+    {
+      "key": "content_activity",
+      "label": "Already pays for content: video and Instagram accounts it links to",
+      "points": 20,
+      "input": "metadata.scoring_inputs.content_activity",
+      "guidance": "Full credit for a video account (YouTube, TikTok or Vimeo) plus at least one more of those or Instagram, linked from the company''s own website or listed for it on Wikidata or OpenStreetMap. Half credit for exactly one of them. No credit when the site was read and links none of them: Facebook, X or LinkedIn alone earn nothing, because that is not where paid video lives. Unknown (left out, not 0) while the website has not been read, or refuses the website reader (robots.txt, a dead domain), and no directory lists an account: about 29% of sites refuse, and leaving this out stops 20 points from measuring whether robots.txt let us in. A directory''s listing can only raise the value. Why: LCX sells cheaper video, UGC and reels, and a company that already posts is the buyer our AI content makes cheaper; it weighs less than confirmation and size because a brand can be a good buyer before it has started. A lead is shortlisted automatically only once this is known (auto_shortlist.require_assessed). Set by tools/lcx_judge.py. ADDED 2026-10-07."
     },
     {
       "key": "audience_fit",
-      "label": "A buyer the services fit directly",
-      "points": 20,
+      "label": "How directly the 18 services fit this kind of buyer (what to pitch first; every email still offers all 18)",
+      "points": 15,
       "input": "metadata.scoring_inputs.audience_fit",
-      "guidance": "From the lead''s audience (config audiences, fit): 1.0 brands, retailers, real estate, hotels and short stays, publishers, studios and agencies, schools, cafes, salons and gyms, independent shops; 0.5 banks and insurers, attractions, where the sale is slower."
+      "guidance": "From the owner''s audience table (audiences[].fit), unchanged: 1.0 brands, retailers, real estate, hotels and short stays, publishers, studios and agencies, schools, mid-size companies, cafes, salons and gyms, independent shops; 0.5 banks and insurers, and attractions, where the sale is slower (vendor reviews and tenders). Written at discovery and rewritten by tools/lcx_judge.py from the lead''s audience on every chain run, so a person''s change of audience is picked up. LOWERED 2026-10-07 from 20 to 15: a slow-sale audience then costs 7.5 points, enough to order equal leads, never enough to exclude a strong one."
     },
     {
-      "key": "established",
-      "label": "An established business",
-      "points": 15,
-      "input": "metadata.scoring_inputs.established",
-      "guidance": "1.0 a company notable enough for Wikidata, or a local business that publishes its website and its phone or opening hours; 0.5 a local business with less on record."
-    },
-    {
-      "key": "right_size",
-      "label": "The size that buys this and answers a cold email",
-      "points": 15,
-      "input": "metadata.scoring_inputs.right_size",
-      "guidance": "1.0 at 10 to 5,000 people, or an independent local business; 0.5 at 1-9 or 5,001-50,000 people; 0 above 50,000 (a procurement process, not a reply). Unverified (0) when Wikidata gives no headcount."
+      "key": "reachable_decision_maker",
+      "label": "Named decision-maker identified and reachable",
+      "points": 10,
+      "input": "metadata.scoring_inputs.reachable_decision_maker",
+      "guidance": "Set by the tools, never by hand. Full credit for a named person with their own address: a person in a target role whom Apollo has verified, or a named personal address on the company''s own site. Half credit for a business inbox the company publishes (info@, hello@) on OpenStreetMap, on Wikidata or on its own site (tools/enrich_lcx_services.py, enrich_contacts). No credit while there is nobody. Only 10, the share the production houses give reach (10 of 110): whether a lead can be drafted is decided by the shortlist rule (someone the drafter will write to, a named person for banks and mid-size companies), not by these points, so reach no longer drowns fit. LOWERED 2026-10-07 from 50."
     }
   ],
   "score_modifiers": [
     {
-      "key": "english_market",
-      "label": "BONUS: an English-speaking business market",
+      "key": "buying_trigger",
+      "label": "BONUS: a reason to buy now (hiring trainers or content people, just raised money, opening or launching)",
+      "max_bonus": 8,
+      "input": "metadata.scoring_inputs.buying_trigger",
+      "guidance": "Full credit when Apollo''s signal search found the company hiring for training and onboarding, or for content and video, right now, hiring marketing staff for a launch (developers, hotels), or raising money in the last 90 days, once the company''s own site has been read and is theirs; before that it earns half. Half credit for hiring frontline staff (sales and service, stores) once the site has been read, since many of those hiring are software firms taking on account executives, and for a launch or opening phrase in its own words (''now open'', ''pre-launch'', ''admissions open'', ''we''re hiring''; judge.trigger_phrases). It fades: an Apollo signal is worth half after 60 days and nothing after 120. Cancelled for a company the wrong-buyer check marks 1.0, because a staffing firm''s or a training company''s hiring is its product. Rare, so a bonus whose absence costs nothing, unlike a 30-point criterion that would be 0 for every Wikidata, FDIC and OpenStreetMap lead. ADDED 2026-10-07 at +8: enough to carry a directory-label lead of the right size with an inbox in a priority market over the line (64 to 72), never enough to rescue a wrong type."
+    },
+    {
+      "key": "priority_market",
+      "label": "BONUS: LCX''s own markets (US, UK, India, UAE), half for other English-speaking markets",
       "max_bonus": 4,
-      "input": "metadata.scoring_inputs.english_market",
-      "guidance": "The email and the deck are in English. 1.0 in geography.english_markets, 0 in any other allowed country, absent when the country is unknown. Four points: enough to order two equal leads, never enough to shortlist a lead nobody can be written to."
+      "input": "metadata.scoring_inputs.priority_market",
+      "guidance": "Full credit for a business based in the US, the UK, India or the UAE (enrichment.reveal_countries), LCX''s first markets and the only countries Apollo reveals are paid for. Half credit in another English-speaking business market (geography.english_markets). No credit in any other allowed country; absent when the country is unknown. Small and additive, like india_diaspora_affinity for the production houses: it orders equal leads and never shortlists one on its own. REPLACES english_market (+4) 2026-10-07: the same size, but full credit now goes only to the four markets LCX sells to first."
+    },
+    {
+      "key": "wrong_buyer",
+      "label": "PENALTY: not a buyer of this (software firm, staffing agency, competitor, university, charity, investor, public body, vendor to the industry)",
+      "max_penalty": -50,
+      "input": "metadata.scoring_inputs.wrong_buyer",
+      "guidance": "1.0 (the full -50) on clear evidence in the company''s name, its page title or its domain, or when it describes itself plainly anywhere on its site (''a non-profit'', ''registered charity'', ''venture capital'', ''hedge fund'', ''staffing agency'', ''online courses'', ''corporate training'', ''AI video studio''). The kinds: software or SaaS vendors, IT-services firms and payment or till providers included; staffing, recruitment and outsourcing firms (their job posts are their clients''); e-learning, training and AI-content competitors (NIIT, Coursera, FranklinCovey, Hero Vired); universities, seminaries and business schools filed as anything but a school; charities, associations, societies and institutes; investment firms, holding companies, lessors and ratings agencies; government bodies, .gov and .mil domains included; agencies and software sold to the audience itself (a Shopify agency filed as a brand, hotel software filed as a hotel); B2B suppliers (OEM, private label, ingredients). 0.5 (-25) when the same word appears only in the description, or for a borderline type: asset managers, marketplaces and distributors, liquor stores and drinks distributors filed as brands, commercial property, REITs and lenders filed as developers, news and media titles filed as brands or retailers, consultancies and law firms filed as mid-size companies, a .org domain on a company audience, a non-profit publisher or attraction. Schools are exempt from the non-profit, college, institute and academy tests, because an Indian ''Public School'' is private. A bank''s legal form is not a non-profit: ''National Association'', ''Savings and Loan Association'', ''Building Society'', ''Credit Union'' and ''Institution for Savings'' are taken out before matching. The words are in judge.wrong_buyer and the other judge lists, and the phrase that matched is shown on the lead (metadata.lcx_judgement.wrong_buyer) so a reviewer can overrule it. -50, like client_work_dominance but sized to bite with a margin: a 1.0 lead with everything else perfect and both bonuses scores 62, eight points under the line, while a 0.5 is a warning a strong lead survives. ADDED 2026-10-07."
+    },
+    {
+      "key": "too_big",
+      "label": "PENALTY: too big to answer a cold email, or part of a large group",
+      "max_penalty": -50,
+      "input": "metadata.scoring_inputs.too_big",
+      "guidance": "1.0 (-50) for revenue of $2-10B, more than 20,000 people, more than $50bn of assets, a brand''s page on its group''s domain (courtyard.marriott.com), the company''s own words ''is now part of'' or ''was acquired by'', or, once fetched, a Wikidata parent organisation of more than 5,000 people or on the majors list. 0.5 (-25) for revenue of $1-2B, 5,001-20,000 people outside mid-size companies, a listed company with revenue over $500M, its own words ''one of the largest'', ''part of the ... group'', ''a subsidiary of'', ''investor relations'' or ''Fortune 500'', or an OpenStreetMap premises whose website is one page of a chain''s site. The highest value found wins. Like revenue_above_cap for the production houses: companies this size buy through procurement and have their own studios, and a 1.0 can never cross the line however perfect the rest. Anything bigger (over 50,000 people or $10B), and the named majors, is left out by the not_major gate instead. ADDED 2026-10-07."
+    },
+    {
+      "key": "non_english_site",
+      "label": "PENALTY: the company''s own website is not in English (the email and the deck are)",
+      "max_penalty": -15,
+      "input": "metadata.scoring_inputs.non_english_site",
+      "guidance": "1.0 (-15) when the home page''s title and description are not in English: more than 30% of the letters are not Latin (Chinese, Japanese, Cyrillic, Arabic, Devanagari, Thai, Greek, Hebrew, Korean), or at least 3 common words of another language appear and outnumber the English ones two to one. 0 when the text reads as English. Absent when the site has not been read or the text is too short to tell (the About paragraph is tried then). A soft penalty, so a strong lead still passes, which keeps the owner''s rule that language never leaves anyone out. An English cold email to a company that works in another language is rarely read: Zeeman, Gina Tricot, Clas Ohlson and Appart''City all sat in the shortlist of 2026-10-07. ADDED 2026-10-07."
     }
   ],
   "gates": [
@@ -838,14 +1537,35 @@ values (
       "label": "Not in a country where cold business email needs consent",
       "input": "metadata.scoring_inputs.country_signal",
       "exclude_when": "disallowed",
-      "guidance": "Fires only on confirmed evidence of a disallowed country (geography.disallowed_countries). Unknown always passes."
+      "guidance": "Fires only on confirmed evidence of a country in geography.disallowed_countries (CA, DE, AT, IT; the owner''s 2026-10-06 ''Everywhere allowed''). Unknown always passes. Written at discovery, and rewritten by tools/lcx_judge.py on every chain run from the same country the priority_market bonus uses: ''disallowed'', ''unpayable'' (the next gate) or ''allowed'', absent when the country is unknown. Unchanged 2026-10-07; the harvest already drops these countries."
     },
     {
-      "key": "not_giant",
-      "label": "Not a company of over 100,000 people",
+      "key": "payable_country",
+      "label": "Not in a sanctioned country LCX cannot invoice",
+      "input": "metadata.scoring_inputs.country_signal",
+      "exclude_when": "unpayable",
+      "guidance": "Fires only on evidence: the company''s country is in geography.unpayable_countries (Russia, Belarus, Iran, North Korea, Syria, Cuba), or, when no country is known, its domain ends .ru, .by, .ir or .su (judge.unpayable_tlds). ''Everywhere allowed'' was about consent law, not payment. The same input as country_allowed, another value. ADDED 2026-10-07 (the owner''s decision that day): 28 leads then, among them Bank of Russia, Rot Front, Citilink and Melnitsa Animation. Gates never archive a shortlisted lead, so the 3 already shortlisted (iConText, WeiT Media, VID) are only listed for a decision."
+    },
+    {
+      "key": "not_major",
+      "label": "Not a major, a major''s named brand, or a giant",
       "input": "metadata.scoring_inputs.oversized_signal",
       "exclude_when": true,
-      "guidance": "Set from Wikidata''s headcount. Companies that size buy through procurement and have in-house teams for all of this; a cold email from LCX is not how they buy. Unknown passes."
+      "guidance": "Fires on any of: the domain or the name is on the curated majors list (judge.majors: each group''s own domains and its named brands, such as Marriott''s Courtyard, LVMH''s Belmond or Merlin''s Legoland); more than 50,000 people; revenue of $10B or more; more than $100bn of assets; once fetched, a Wikidata parent organisation on the list. The production houses exclude majors and their named subsidiaries with a gate, and this mirrors it: a major''s hotel, park or brand buys through the group. Unknown always passes. Written by tools/lcx_judge.py (true or false). TIGHTENED 2026-10-07 from not_giant, ''over 100,000 people'' (the owner''s decision that day: over 50,000 people or $10B revenue, plus the named majors): 63 leads then, 55 by the list (Belmond, Fenty Beauty, Kylie Cosmetics, Zappos, both Legolands, Universal Studios Singapore, 1 Hotels, Emaar, Blackstone, AKQA...) and 8 giants (OpenAI, the NBA...)."
+    },
+    {
+      "key": "brand_safe",
+      "label": "Not adult, gambling, tobacco or weapons, and not a site taken over by gambling spam",
+      "input": "metadata.scoring_inputs.brand_risk_signal",
+      "exclude_when": "unsafe",
+      "guidance": "Fires only on evidence in the company''s name, page title or description: adult or porn words, casino, betting, gambling, slot-spam words, tobacco, vaping, firearms or ammunition (judge.unsafe_words); or the whole name is on judge.brand_risk_names (Vixen Media, bet365, Philip Morris, Smith & Wesson...); or, once fetched, its Wikidata class or industry is one of judge.unsafe_classes. These are a brand risk for TVF, and a domain that now serves gambling spam is not the company it was. Unknown always passes. ADDED 2026-10-07 (the owner''s decision that day): 13 leads then, among them guns.com, Sturm Ruger, Private Media Group, and a school, a music park and a drinks firm whose sites now carry slot or togel spam."
+    },
+    {
+      "key": "site_alive",
+      "label": "The company''s domain still resolves and is not a parked or default page",
+      "input": "metadata.scoring_inputs.activity_signal",
+      "exclude_when": "dead",
+      "guidance": "Fires only on evidence: the site pass found the domain does not resolve on two reads at least 7 days apart (metadata.dead_since, then a later read that also failed), or the home page is a parked or server-default page (an Apache or Ubuntu default page, ''It works'', ''Index of'', a domain for sale, an account suspended; judge.parked_titles). A robots.txt refusal, a timeout or a server error never fires it, as with the production houses'' is_active gate. Unknown always passes. ADDED 2026-10-07."
     },
     {
       "key": "usable_first_party_presence",
@@ -857,8 +1577,1153 @@ values (
   ],
   "auto_shortlist": {
     "enabled": true,
-    "min_score": 55,
-    "guidance": "Like the production houses: every lead in To review scoring above 55 is shortlisted by the last step of the promote chain, and a shortlisted lead with an address is drafted within minutes. 55 is just above what a lead nobody can be written to can score (50, 54 with the English bonus), so everything shortlisted can be drafted. Shortlisting sends nothing: every email is approved by a person. Leads at or below the line stay in To review, where a person can shortlist one by hand."
+    "min_score": 70,
+    "require_contact": true,
+    "named_contact_for": [
+      "corporate_teams",
+      "financial_services"
+    ],
+    "require_assessed": [
+      "content_activity"
+    ],
+    "require_site_read": true,
+    "guidance": "The owner, 2026-10-07: shortlist automatically above 70, only with a usable contact and a read site. A lead in To review is shortlisted by the last step of the promote chain (sql/14_auto_shortlist.sql) when all three hold: its score is strictly above min_score; it has a contact the drafter will actually write to (require_contact: the same contact_rank test tools/outreach.py drafts by), and for banks and mid-size companies (named_contact_for) that contact is a named person, not an info@ inbox; and its content_activity has been assessed (require_assessed), meaning its site was read or a directory lists its accounts, so a lead scored on the few points known is never shortlisted before anyone has read its site. 70 is where the production houses'' principle holds: the basics alone (a directory label, the right size, a full-fit audience, an inbox and a priority market score 64, 69 with a named person) stay out, and one real signal from the company carries a lead over (its own words confirming the audience 79, one video or Instagram account 74, a strong buying trigger 72). A lead over the line that fails the contact or site test stays in To review and is shortlisted on the first chain run after it gets one; one nobody can be written to waits for the Apollo reveal (enrichment.score_over) instead, and is never drafted. Shortlisting sends nothing: every draft still needs a person''s approval. Leads at or below the line stay in To review, where a person can shortlist one by hand. RAISED 2026-10-07 from 55, which a lead with an address and nothing else could cross. require_site_read (2026-10-08): the company''s own site was looked at (tools/lcx_judge.py''s lcx_judgement.site_checked: its own words read, or its pages read and none a bot wall); a directory listing its accounts is not enough. The owner: shortlist only ''with a read site''."
+  },
+  "judge": {
+    "enabled": true,
+    "retired_inputs": [
+      "established",
+      "right_size",
+      "english_market",
+      "genre_fit",
+      "collaboration_openness",
+      "distribution_relationship"
+    ],
+    "parked_titles": [
+      "default page",
+      "it works",
+      "domain (is )?for sale",
+      "buy this domain",
+      "this domain",
+      "parked",
+      "account suspended",
+      "index of",
+      "website coming soon"
+    ],
+    "botwall_titles": [
+      "client challenge",
+      "request rejected",
+      "just a moment",
+      "access denied",
+      "403 forbidden",
+      "attention required",
+      "country selector",
+      "captcha"
+    ],
+    "trigger_phrases": [
+      "now open",
+      "opening soon",
+      "grand opening",
+      "newly opened",
+      "new launch",
+      "launching soon",
+      "pre-?launch",
+      "now launching",
+      "under construction",
+      "admissions open",
+      "now enrol(l)?ing",
+      "enrol(l)?ments? open",
+      "we''?re hiring",
+      "now hiring",
+      "opening (in )?20(26|27)",
+      "coming (in )?20(26|27)",
+      "new (hotel|store|location|park|ride|attraction|campus|branch|project) (opens|opening)"
+    ],
+    "strong_signals": [
+      "training",
+      "content",
+      "raised money",
+      "marketing"
+    ],
+    "trigger_fades_after_days": {
+      "half": 60,
+      "gone": 120
+    },
+    "dead_after_days": 7,
+    "content_networks": {
+      "video": [
+        "youtube",
+        "tiktok",
+        "vimeo"
+      ],
+      "also": [
+        "instagram"
+      ]
+    },
+    "wrong_buyer": [
+      {
+        "label": "public body",
+        "value": 1.0,
+        "where": "any",
+        "words": [
+          "government agency",
+          "ministry of",
+          "federal (agency|financing)",
+          "statutory (body|authority)",
+          "public (body|authority|benefit corporation)",
+          "city council",
+          "county council",
+          "government of",
+          "state-owned",
+          "crown corporation",
+          "national library",
+          "treasury department"
+        ]
+      },
+      {
+        "label": "academic",
+        "value": 1.0,
+        "where": "title",
+        "exempt": [
+          "schools"
+        ],
+        "words": [
+          "universit(y|ies|é|at)",
+          "seminary",
+          "seminaries",
+          "research (institute|organi[sz]ation|centre|center)",
+          "faculty of",
+          "business school",
+          "management institute",
+          "pgdm",
+          "graduate degrees?",
+          "liberal arts"
+        ]
+      },
+      {
+        "label": "non-profit or association",
+        "value": 1.0,
+        "where": "any",
+        "exempt": [
+          "schools"
+        ],
+        "per_audience": {
+          "attractions": 0.5,
+          "publishers": 0.5
+        },
+        "words": [
+          "non-?profit",
+          "not-for-profit",
+          "registered charity",
+          "a charity",
+          "charitable (trust|organi[sz]ation|foundation)",
+          "501 ?\\(?c\\)? ?\\(?3\\)?",
+          "trade (body|association)",
+          "professional body",
+          "membership (body|organi[sz]ation)",
+          "learned society",
+          "association of",
+          "society (of|for)",
+          "chartered institute",
+          "royal (society|college)",
+          "advocacy (group|organi[sz]ation)"
+        ]
+      },
+      {
+        "label": "investor, holding or lessor",
+        "value": 1.0,
+        "where": "any",
+        "words": [
+          "venture capital",
+          "venture firm",
+          "private equity",
+          "alternative asset manager",
+          "hedge fund",
+          "investment firm",
+          "family office",
+          "capital management",
+          "holding company",
+          "aircraft leas(e|es|ing)",
+          "lessor",
+          "owner of commercial aircraft",
+          "credit ratings?",
+          "stock exchange",
+          "investment bank(ing)?",
+          "portfolio companies",
+          "backing (founders|startups)",
+          "acquiring controlling interests",
+          "institutional investors",
+          "private capital",
+          "investment (and|&) transformation",
+          "partners? with (the world''s most ambitious )?(founders|entrepreneurs)",
+          "we invest in",
+          "investment( and [a-z ]{3,40})? firm",
+          "quantitative (investment|trading)"
+        ]
+      },
+      {
+        "label": "non-profit (name or title)",
+        "value": 1.0,
+        "where": "nt",
+        "exempt": [
+          "schools"
+        ],
+        "per_audience": {
+          "attractions": 0.5,
+          "publishers": 0.5
+        },
+        "words": [
+          "charity",
+          "charities",
+          "humanitarian",
+          "ngo",
+          "non-governmental"
+        ]
+      },
+      {
+        "label": "asset manager",
+        "value": 0.5,
+        "where": "nt",
+        "words": [
+          "asset management",
+          "investment management",
+          "asset manager"
+        ]
+      },
+      {
+        "label": "staffing or outsourcing firm",
+        "value": 1.0,
+        "where": "any",
+        "words": [
+          "staffing",
+          "recruitment (agency|firm|specialists?|consultancy|company)",
+          "recruiting (firm|agency)",
+          "recruiters",
+          "talent solutions",
+          "executive search",
+          "workforce solutions",
+          "employment agency",
+          "job placement",
+          "remote (full-time )?jobs",
+          "virtual assistants?",
+          "offshore staff(ing)?",
+          "outsourced (staff|teams?)",
+          "hire (remote|offshore)",
+          "business process outsourcing",
+          "bpo services"
+        ]
+      },
+      {
+        "label": "staffing firm (name or title)",
+        "value": 1.0,
+        "where": "nt",
+        "words": [
+          "recruitment",
+          "recruiting",
+          "recruiters",
+          "staffing",
+          "headhunt(ers|ing)",
+          "talent (partners|brands|businesses|acquisition)"
+        ]
+      },
+      {
+        "label": "competitor: e-learning, training or AI content",
+        "value": 1.0,
+        "where": "any",
+        "exempt": [
+          "studios_agencies"
+        ],
+        "words": [
+          "ai (video|studio|agency|avatars?|ugc|content (studio|agency))",
+          "generative ai (studio|video|agency)",
+          "ugc (agency|platform|creators)",
+          "e-?learning",
+          "learning management system",
+          "lms",
+          "online (courses?|learning|degrees?)",
+          "explainer videos?",
+          "corporate training",
+          "training (company|provider|solutions|programs? for)",
+          "learning solutions",
+          "upskilling",
+          "edtech",
+          "ed-tech",
+          "bootcamps?",
+          "certification courses",
+          "talent development solutions",
+          "education (group|provider|services company)",
+          "pathway (programmes|programs|courses)"
+        ]
+      },
+      {
+        "label": "competitor: AI studio",
+        "value": 1.0,
+        "where": "any",
+        "only": [
+          "studios_agencies"
+        ],
+        "words": [
+          "ai (video|studio|agency|avatars?|ugc|animation|content)",
+          "generative ai"
+        ]
+      },
+      {
+        "label": "vendor to the industry (agency)",
+        "value": 1.0,
+        "where": "nt",
+        "exempt": [
+          "corporate_teams",
+          "studios_agencies"
+        ],
+        "words": [
+          "(marketing|digital|seo|ppc|shopify|e-?commerce|amazon|branding|social media|growth|performance) agency",
+          "shopify (plus )?(partner|agency|experts)",
+          "lead generation",
+          "performance marketing",
+          "print on demand",
+          "dropshipping",
+          "listing optimi[sz]ation",
+          "ecommerce website design"
+        ]
+      },
+      {
+        "label": "B2B supplier",
+        "value": 1.0,
+        "where": "nt",
+        "exempt": [
+          "studios_agencies"
+        ],
+        "words": [
+          "oem",
+          "private[- ]label",
+          "white[- ]label",
+          "contract manufactur(er|ing)",
+          "ingredient supplier",
+          "for brands worldwide",
+          "internet exchange",
+          "peering",
+          "for (the )?(food|beverage|brewing|distilling) industr(y|ies)",
+          "equipment manufacturer",
+          "process (engineering|systems)",
+          "beverage development",
+          "contract (brewing|bottling)",
+          "solutions for brands"
+        ]
+      },
+      {
+        "label": "marketplace or distributor",
+        "value": 0.5,
+        "where": "nt",
+        "exempt": [
+          "corporate_teams",
+          "financial_services",
+          "studios_agencies"
+        ],
+        "words": [
+          "marketplace",
+          "wholesaler?s?",
+          "distributor of",
+          "leading distributor",
+          "b2b"
+        ]
+      },
+      {
+        "label": "commercial property, not homes",
+        "value": 0.5,
+        "where": "nt",
+        "only": [
+          "real_estate"
+        ],
+        "words": [
+          "commercial real estate",
+          "office (space|buildings|parks?)",
+          "industrial (parks?|propert(y|ies)|real estate)",
+          "logistics (parks?|real estate)",
+          "reit",
+          "workspaces?",
+          "co-?working",
+          "property management",
+          "shopping (centres|centers|malls)",
+          "commercial propert(y|ies)",
+          "net lease(d)?",
+          "real estate invest(ment|ing|or)s?",
+          "investment propert(y|ies)"
+        ]
+      },
+      {
+        "label": "a media or news title",
+        "value": 0.5,
+        "where": "nt",
+        "exempt": [
+          "publishers",
+          "studios_agencies"
+        ],
+        "words": [
+          "breaking news",
+          "news,? reviews",
+          "tech news",
+          "sports (news|media)",
+          "journalism",
+          "media (company|brand|outlet)",
+          "news (site|website|outlet|organi[sz]ation)",
+          "product reviews",
+          "(business|finance|technology|tech|sports) news",
+          "news and analysis"
+        ]
+      },
+      {
+        "label": "drinks distributor or liquor store",
+        "value": 0.5,
+        "where": "nt",
+        "only": [
+          "consumer_brands"
+        ],
+        "words": [
+          "wines? (&|and) spirits",
+          "liquor (store|stores|retailer|mart)",
+          "distributing",
+          "beverage distributor",
+          "wine (importer|merchant|distributor)s?",
+          "importers? (of|and distributors)"
+        ]
+      },
+      {
+        "label": "a lender, not a developer",
+        "value": 0.5,
+        "where": "nt",
+        "only": [
+          "real_estate"
+        ],
+        "words": [
+          "construction loans?",
+          "lender",
+          "lending",
+          "hard money",
+          "bridge loans?"
+        ]
+      },
+      {
+        "label": "knowledge-work firm (in-house L&D)",
+        "value": 0.5,
+        "where": "nt",
+        "only": [
+          "corporate_teams"
+        ],
+        "words": [
+          "consult(ing|ancy) (firm|services)",
+          "management consult(ing|ants)",
+          "law firm",
+          "legal services",
+          "accounting firm",
+          "rankings"
+        ]
+      }
+    ],
+    "software": {
+      "words": [
+        "software",
+        "saas",
+        "(data|analytics|automation|ai|cloud|security|planning|finance|spend|payroll|commerce|work|project|hospitality|property|hotel|revenue|guest|booking|developer|api|engagement|reputation|observability|identity) (management )?(platform|software|system|suite|os)",
+        "platform (for|that|to)",
+        "ai coworkers",
+        "agentic",
+        "erp\\b",
+        "crm\\b",
+        "api-first",
+        "channel manager",
+        "point[- ]of[- ]sale",
+        "operations platform",
+        "all-in-one platform",
+        "integrates with",
+        "no-code",
+        "low-code",
+        "workflow automation",
+        "automate (data |your )?workflows",
+        "ai-powered (insights|platform|software)",
+        "enterprise ai",
+        "it services",
+        "it consulting",
+        "digital engineering",
+        "software development",
+        "staff augmentation",
+        "digital transformation (services|partner|company)",
+        "product engineering",
+        "custom software",
+        "(ai|cloud|application|data|software)(-native)? engineering",
+        "cloud (&|and) infrastructure",
+        "pos systems?",
+        "payment (solutions|platform|processing)"
+      ],
+      "bank_words": [
+        "software",
+        "saas"
+      ],
+      "not_for": [
+        "studios_agencies"
+      ]
+    },
+    "org_domain_audiences": [
+      "corporate_teams",
+      "consumer_brands",
+      "retailers"
+    ],
+    "name_words": [
+      "universit(y|ies|é|at)",
+      "seminary",
+      "society",
+      "association",
+      "institute",
+      "institution",
+      "council",
+      "committee",
+      "foundation",
+      "federation",
+      "hospice",
+      "charity",
+      "archives?",
+      "commission",
+      "ministry",
+      "authority",
+      "college",
+      "polytechnic",
+      "business school"
+    ],
+    "name_words_exempt": {
+      "schools": [
+        "college",
+        "institute",
+        "institution",
+        "foundation",
+        "academy",
+        "school",
+        "trust",
+        "society"
+      ]
+    },
+    "staffing_words": [
+      "recruit(ing|ment|ers)?",
+      "staffing",
+      "talent",
+      "workforce",
+      "manpower",
+      "careers"
+    ],
+    "staffing_names": [
+      "jobot",
+      "cybercoders",
+      "kforce",
+      "beacon hill",
+      "robert half",
+      "randstad",
+      "adecco",
+      "manpower(group)?",
+      "kelly services",
+      "teksystems",
+      "insight global",
+      "aerotek",
+      "virtual latinos",
+      "bruntwork",
+      "crossover",
+      "rise technical",
+      "24 seven talent",
+      "hays",
+      "michael page",
+      "page group",
+      "allegis",
+      "express employment",
+      "spherion",
+      "aston carter",
+      "vaco",
+      "motion recruitment",
+      "apex systems",
+      "collabera",
+      "cielo",
+      "hudson rpo",
+      "wurkforce",
+      "remote ?bliss",
+      "athena",
+      "time etc"
+    ],
+    "competitor_names": [
+      "niit",
+      "hero vired",
+      "upgrad",
+      "simplilearn",
+      "coursera",
+      "datacamp",
+      "udemy",
+      "skillsoft",
+      "cornerstone ondemand",
+      "gp strategies",
+      "franklin ?covey",
+      "acadecraft",
+      "extramarks",
+      "masters''? union",
+      "hurix ?digital",
+      "synthesia",
+      "elevenlabs",
+      "byju''?s",
+      "unacademy",
+      "great learning",
+      "emeritus",
+      "pluralsight",
+      "360learning",
+      "docebo",
+      "talentlms",
+      "eduonix",
+      "edureka",
+      "scaler",
+      "newton school",
+      "physics ?wallah",
+      "vedantu",
+      "toppr",
+      "whitehat jr",
+      "learnworlds",
+      "thinkific",
+      "kajabi",
+      "teachable",
+      "articulate",
+      "elucidat",
+      "eloomi",
+      "go1",
+      "degreed"
+    ],
+    "brand_risk_names": [
+      "vixen( media)?",
+      "private media",
+      "aylo",
+      "mindgeek",
+      "pornhub",
+      "brazzers",
+      "onlyfans",
+      "bet365",
+      "draftkings",
+      "fanduel",
+      "flutter entertainment",
+      "entain",
+      "william hill",
+      "paddy power",
+      "betway",
+      "pokerstars",
+      "philip morris",
+      "british american tobacco",
+      "juul",
+      "altria",
+      "smith (&|and) wesson",
+      "sturm,? ruger( &)?",
+      "glock",
+      "guns\\.com"
+    ],
+    "school_not_words": [
+      "universit(y|ies)"
+    ],
+    "legal_forms": [
+      "national association",
+      "n\\.a\\.",
+      "savings( and loan)? association",
+      "loan association",
+      "building society",
+      "co-?operative society",
+      "institution for savings",
+      "wine society",
+      "credit union",
+      "mutual (association|society)"
+    ],
+    "unsafe_words": [
+      "porn",
+      "xxx",
+      "sex videos",
+      "adult (movies|entertainment|content|films|industry)",
+      "casinos?",
+      "slot gacor",
+      "slot online",
+      "togel",
+      "judi",
+      "sportsbook",
+      "betting",
+      "gambling",
+      "tobacco",
+      "cigarettes?",
+      "vape",
+      "vaping",
+      "firearms",
+      "guns",
+      "ammunition",
+      "cannabis dispensary"
+    ],
+    "unsafe_classes": [
+      "pornograph(y|ic)",
+      "adult (film|entertainment)",
+      "casinos?",
+      "gambling",
+      "betting",
+      "bookmakers?",
+      "tobacco",
+      "cigarettes?",
+      "e-cigarettes?",
+      "arms (manufacturer|industry)",
+      "firearms?( manufacturer)?",
+      "weapons? (manufacturer|industry)",
+      "defen[cs]e (industry|contractor)",
+      "ammunition",
+      "cannabis"
+    ],
+    "unpayable_tlds": [
+      ".ru",
+      ".by",
+      ".ir",
+      ".su"
+    ],
+    "acquired_text": [
+      "is now part of",
+      "was acquired by",
+      "has been acquired",
+      "now operates as"
+    ],
+    "big_text": [
+      "world''?s largest",
+      "one of the (world''?s )?largest",
+      "fortune 500",
+      "investor relations",
+      "listed on the",
+      "ftse 100",
+      "s&p 500",
+      "part of the [a-z0-9&''. -]{2,40} group",
+      "a subsidiary of",
+      "a member of the [a-z0-9&''. -]{2,40} group",
+      "division of",
+      "a [a-z0-9&''. -]{2,30} company$"
+    ],
+    "several_locations": [
+      "(our|all) (locations|branches|stores|salons|studios|outlets|shops|clinics|cafes|hotels)",
+      "\\b([2-9]|[1-9]\\d) (locations|branches|stores|salons|studios|outlets|shops|clinics|cafes|hotels)\\b",
+      "find (a|your nearest) (store|salon|branch|location)",
+      "store locator"
+    ],
+    "too_big": {
+      "revenue_full": 2000000000,
+      "revenue_half": 1000000000,
+      "employees_full": 20000,
+      "employees_half": 5000,
+      "employees_half_not_for": [
+        "corporate_teams"
+      ],
+      "assets_full": 50000000000,
+      "listed_revenue_half": 500000000,
+      "parent_employees": 5000
+    },
+    "not_major": {
+      "employees_over": 50000,
+      "revenue_from": 10000000000,
+      "assets_from": 100000000000
+    },
+    "majors": {
+      "Marriott International": {
+        "domains": [
+          "marriott"
+        ],
+        "names": [
+          "marriott",
+          "courtyard by",
+          "sheraton",
+          "westin",
+          "ritz-carlton"
+        ]
+      },
+      "Hilton": {
+        "domains": [
+          "hilton.com"
+        ],
+        "names": [
+          "hilton hotels"
+        ]
+      },
+      "IHG Hotels & Resorts": {
+        "domains": [
+          "ihg",
+          "holidayinn",
+          "crowneplaza"
+        ],
+        "names": [
+          "holiday inn",
+          "crowne plaza"
+        ]
+      },
+      "Hyatt": {
+        "domains": [
+          "hyatt"
+        ],
+        "names": [
+          "hyatt"
+        ]
+      },
+      "Accor": {
+        "domains": [
+          "accor",
+          "fairmont.com",
+          "sofitel",
+          "novotel"
+        ]
+      },
+      "Wyndham Hotels & Resorts": {
+        "domains": [
+          "wyndhamhotels",
+          "ramada"
+        ]
+      },
+      "Radisson Hotel Group": {
+        "domains": [
+          "radissonhotels"
+        ]
+      },
+      "Choice Hotels": {
+        "domains": [
+          "choicehotels"
+        ]
+      },
+      "Best Western": {
+        "domains": [
+          "bestwestern"
+        ]
+      },
+      "Four Seasons": {
+        "domains": [
+          "fourseasons"
+        ],
+        "names": [
+          "four seasons"
+        ]
+      },
+      "MGM Resorts": {
+        "domains": [
+          "mgmresorts"
+        ]
+      },
+      "Caesars Entertainment": {
+        "domains": [
+          "caesars"
+        ]
+      },
+      "Disney": {
+        "domains": [
+          "disney",
+          "disneyland"
+        ],
+        "names": [
+          "disney(land)?"
+        ]
+      },
+      "Comcast NBCUniversal": {
+        "domains": [
+          "universalstudios",
+          "universalorlando",
+          "universalstudioshollywood",
+          "nbcuniversal"
+        ],
+        "names": [
+          "universal studios"
+        ]
+      },
+      "Warner Bros. Discovery": {
+        "domains": [
+          "warnerbros"
+        ],
+        "names": [
+          "warner bros"
+        ]
+      },
+      "Paramount": {
+        "domains": [
+          "paramount.com"
+        ]
+      },
+      "Sony": {
+        "domains": [
+          "sonypictures"
+        ]
+      },
+      "Merlin Entertainments": {
+        "domains": [
+          "legoland",
+          "merlinentertainments",
+          "altontowers",
+          "thorpepark",
+          "madametussauds",
+          "visitsealife",
+          "chessington"
+        ],
+        "names": [
+          "legoland",
+          "madame tussauds",
+          "sea life"
+        ]
+      },
+      "Six Flags": {
+        "domains": [
+          "sixflags",
+          "cedarfair"
+        ],
+        "names": [
+          "six flags"
+        ]
+      },
+      "United Parks & Resorts (SeaWorld)": {
+        "domains": [
+          "seaworld",
+          "buschgardens"
+        ]
+      },
+      "LVMH": {
+        "domains": [
+          "lvmh",
+          "belmond",
+          "sephora",
+          "fentybeauty"
+        ],
+        "names": [
+          "belmond",
+          "fenty beauty"
+        ]
+      },
+      "Unilever": {
+        "domains": [
+          "unilever"
+        ]
+      },
+      "Nestle": {
+        "domains": [
+          "nestle"
+        ]
+      },
+      "Procter & Gamble": {
+        "domains": [
+          "pg.com"
+        ]
+      },
+      "Reckitt": {
+        "domains": [
+          "reckitt"
+        ]
+      },
+      "AB InBev": {
+        "domains": [
+          "ab-inbev"
+        ]
+      },
+      "Diageo": {
+        "domains": [
+          "diageo"
+        ]
+      },
+      "L''Oreal": {
+        "domains": [
+          "loreal"
+        ]
+      },
+      "Estee Lauder Companies": {
+        "domains": [
+          "esteelauder",
+          "elcompanies"
+        ]
+      },
+      "Coty": {
+        "domains": [
+          "coty",
+          "kyliecosmetics"
+        ],
+        "names": [
+          "kylie cosmetics"
+        ]
+      },
+      "Amazon": {
+        "domains": [
+          "amazon",
+          "zappos",
+          "wholefoodsmarket"
+        ],
+        "names": [
+          "zappos"
+        ]
+      },
+      "Penguin Random House (Bertelsmann)": {
+        "domains": [
+          "penguinrandomhouse"
+        ]
+      },
+      "HarperCollins (News Corp)": {
+        "domains": [
+          "harpercollins"
+        ]
+      },
+      "Simon & Schuster": {
+        "domains": [
+          "simonandschuster"
+        ]
+      },
+      "Hachette Livre": {
+        "domains": [
+          "hachette"
+        ]
+      },
+      "Macmillan (Holtzbrinck)": {
+        "domains": [
+          "macmillan.com",
+          "macmillaneducation"
+        ]
+      },
+      "Springer Nature": {
+        "domains": [
+          "springernature"
+        ]
+      },
+      "WPP": {
+        "domains": [
+          "wpp",
+          "akqa",
+          "ogilvy.com"
+        ]
+      },
+      "Omnicom": {
+        "domains": [
+          "omnicom",
+          "bbdo"
+        ]
+      },
+      "Publicis Groupe": {
+        "domains": [
+          "publicis"
+        ]
+      },
+      "Interpublic": {
+        "domains": [
+          "interpublic",
+          "mccann.com"
+        ]
+      },
+      "Dentsu": {
+        "domains": [
+          "dentsu"
+        ]
+      },
+      "Havas": {
+        "domains": [
+          "havas"
+        ]
+      },
+      "Starwood Capital": {
+        "domains": [
+          "starwoodcapital",
+          "1hotels"
+        ],
+        "names": [
+          "1 hotels"
+        ]
+      },
+      "Genting": {
+        "domains": [
+          "rwsentosa",
+          "genting",
+          "rwgenting"
+        ]
+      },
+      "Blackstone": {
+        "domains": [
+          "blackstone.com"
+        ]
+      },
+      "Carlyle": {
+        "domains": [
+          "carlyle.com"
+        ]
+      },
+      "KKR": {
+        "domains": [
+          "kkr"
+        ]
+      },
+      "Emaar": {
+        "domains": [
+          "emaar"
+        ],
+        "names": [
+          "emaar"
+        ]
+      },
+      "Just Eat Takeaway": {
+        "domains": [
+          "justeattakeaway"
+        ]
+      },
+      "Seven & i Holdings": {
+        "domains": [
+          "7andi"
+        ]
+      },
+      "Kadokawa": {
+        "domains": [
+          "kadokawa"
+        ]
+      },
+      "Alibaba": {
+        "domains": [
+          "lazada",
+          "alibaba"
+        ]
+      },
+      "Banijay": {
+        "domains": [
+          "banijay"
+        ]
+      },
+      "Fremantle (RTL Group)": {
+        "domains": [
+          "fremantle"
+        ]
+      },
+      "Village Roadshow Theme Parks": {
+        "domains": [
+          "myfun.com.au"
+        ]
+      },
+      "Landry''s": {
+        "domains": [
+          "landrysinc"
+        ]
+      },
+      "Greystar": {
+        "domains": [
+          "greystar"
+        ]
+      },
+      "Jumeirah (Dubai Holding)": {
+        "domains": [
+          "jumeirah"
+        ]
+      },
+      "Move, Inc. (News Corp)": {
+        "domains": [
+          "realtor.com",
+          "move.com"
+        ]
+      },
+      "Travel + Leisure Co.": {
+        "domains": [
+          "travelandleisureco"
+        ]
+      },
+      "Nord Anglia Education": {
+        "domains": [
+          "nordangliaeducation"
+        ]
+      },
+      "Whitbread": {
+        "domains": [
+          "whitbread",
+          "premierinn"
+        ]
+      }
+    },
+    "guidance": "The word lists tools/lcx_judge.py reads to set the inputs above from what is stored on each lead: its name and domain, its discovery record (Wikidata, Apollo, the FDIC register, OpenStreetMap) and the site pass''s home-page title, description and About text. Change a word here, then run tools/gen_segment_sql.py lcx-services and apply sql/03f; the next chain run judges every lead again. Each entry is a word or phrase, matched as a whole word in upper or lower case; brackets and | work as in a regular expression for variants (''universit(y|ies)''), except several_locations, which matches anywhere. The *_names lists match the whole company name once Inc, Ltd, LLC, Group, plc, Corp, Co or Holdings is taken off, so ''Beacon Hill School'' is not the staffing firm Beacon Hill and ''Kforce Inc'' is. wrong_buyer rules: where ''any'' scores the value wherever the words appear (plain self-descriptions such as ''a non-profit'' or ''venture capital''); ''nt'' scores it in the name or page title and at most half in the description or About text; ''title'' counts only in the name or title (so ''university'' in a biotech description is not evidence). exempt audiences skip a rule, only audiences are the ones it applies to (a lead not yet placed in an audience is checked by every rule), per_audience changes its value. software: full in the name or title for every audience but studios and agencies; in the description full for mid-size companies (half for the bare word ''software'') and half for the rest; banks only on bank_words, at half. majors: each group''s own domains (the name before .com or .co.uk) and its named brands, a stop-gap until the Wikidata and Apollo parent fields are fetched for every lead. too_big and not_major hold the size lines in people and US dollars. retired_inputs are removed from every lead''s scoring inputs on each run. Set enabled to false to stop the judge (the chain then scores whatever inputs are stored). ADDED 2026-10-07 (scoring v4): the lists tested that day on the 2,402 live leads. 2026-10-08 (review): majors domains with a dot are a full registered domain (paramount.com), for names that are also common words; a bare name matches any ending. A name that only reads like a major''s brand is too_big''s -50, not the not_major gate, and a fund owning a stake never archives. Credit unions are not associations, so banks are out of the .org rule."
   },
   "enrichment": {
     "enabled": true,
@@ -868,7 +2733,8 @@ values (
     "credits_per_run": 110,
     "credits_per_week": 120,
     "keep_in_reserve": 700,
-    "score_over": 43,
+    "score_over": 60,
+    "require_site_read": true,
     "verified_only": true,
     "find_website_by_name": false,
     "recheck_after_days": 30,
@@ -880,7 +2746,7 @@ values (
     ],
     "current_employer_check": true,
     "senior_titles": "(founder|owner|ceo|chief executive|chief marketing|chief commercial|chief operating|chief people|(?<!vice )president|managing director|general manager|principal|head of school|head teacher|headmaster|headmistress)",
-    "guidance": "The owner, 2026-10-07: \"Enriching from apollo is acceptable\". Addresses come first from the business itself (what it publishes, then its own website: free); a lead that fits well (scoring over score_over) and still has nobody to write to gets one free Apollo people search for its audience''s contact_roles at its current employer, then 1 credit for the best person''s verified work address (tools/enrich_apollo.py, enrich_apollo_lcxs). The week''s cap, credits_per_week, covers this project''s Apollo spending together, the search page''s included: about 10 company pages and 110 people. The week runs from Friday 00:00 UTC, the refresh''s day. The ledger (apollo_spend, sql/33) counts every credit, so a refresh pressed by hand cannot spend the week twice, and nothing is spent once fewer than keep_in_reserve credits are left for the month (nor when Apollo cannot say what is left), so US Production Houses keeps its week. reveal_countries: only leads based in the US, the UK, India and the UAE. skip_revealed_elsewhere: nobody already revealed for another project is paid for again. Change the numbers here (then tools/gen_segment_sql.py lcx-services and sql/03f). A person is paid for only when their title is one of the audience''s contact_roles, shares a real word with one (marketing, brand, training, admissions...; not ''director'' or ''head''), or is senior (senior_titles: founder, chief executive, managing director, principal...): the only person Apollo lists is not a reason to spend.",
+    "guidance": "The owner, 2026-10-07: \"Enriching from apollo is acceptable\". Addresses come first from the business itself (what it publishes, then its own website: free); a lead that fits well (scoring over score_over) and still has nobody to write to gets one free Apollo people search for its audience''s contact_roles at its current employer, then 1 credit for the best person''s verified work address (tools/enrich_apollo.py, enrich_apollo_lcxs). The week''s cap, credits_per_week, covers this project''s Apollo spending together, the search page''s included: about 10 company pages and 110 people. The week runs from Friday 00:00 UTC, the refresh''s day. The ledger (apollo_spend, sql/33) counts every credit, so a refresh pressed by hand cannot spend the week twice, and nothing is spent once fewer than keep_in_reserve credits are left for the month (nor when Apollo cannot say what is left), so US Production Houses keeps its week. reveal_countries: only leads based in the US, the UK, India and the UAE. skip_revealed_elsewhere: nobody already revealed for another project is paid for again. Change the numbers here (then tools/gen_segment_sql.py lcx-services and sql/03f). A person is paid for only when their title is one of the audience''s contact_roles, shares a real word with one (marketing, brand, training, admissions...; not ''director'' or ''head''), or is senior (senior_titles: founder, chief executive, managing director, principal...): the only person Apollo lists is not a reason to spend. 2026-10-07 (scoring v4, the owner''s decision that day): a reveal is paid for only for a lead scoring over score_over, 60 (was 43), whose own site has been read (require_site_read: pages read, the site is the company''s own, wrong_buyer 0 and too_big under 1), so no credit goes on a competitor, a software firm or a lead nobody has looked at; a named person adds 10 points or more, so every paid reveal can carry a lead over the shortlist line at 70.",
     "require_fitting_role": true,
     "skip_revealed_elsewhere": true
   },
@@ -1081,6 +2947,7 @@ values (
       "promote_chain",
       "enrich_lcx_services",
       "enrich_contacts_lcxs",
+      "promote_chain",
       "enrich_apollo_lcxs",
       "promote_chain"
     ],

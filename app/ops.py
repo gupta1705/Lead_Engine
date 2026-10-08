@@ -152,7 +152,7 @@ JOBS = {
         "label": "Promote + score + gates",
         "group": "Process",
         "desc": "Staging into the pool: self-exclusion, promote, merge "
-                "duplicates, zero-unverified, score, apply gates.",
+                "duplicates, judge inputs (LCX Services), zero-unverified, score, apply gates, auto-shortlist.",
         "cmd": [PY, "tools/run_chain.py"],
     },
     "resolve_domains": {

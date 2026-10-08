@@ -32,6 +32,18 @@ What it checks:
      actually defines. That last one matters more than it looks: invariant 1
      (null != zero) means a typo'd key scores as "never assessed" forever and
      never raises an error -- the failure is silent by design.
+ 11. LCX Services' scoring v4 (the owner, 2026-10-07: "think and decide one"),
+     pinned the same way: config/segment.lcx-services.json is the config
+     sql/03f carries; 5 criteria / 5 modifiers / 6 gates with the decided
+     weights (30/25/20/15/10; +8, +4, -50, -50, -15); the shortlist above 70
+     only with a usable contact, a named one for banks and mid-size companies,
+     and content assessed; Apollo only over 60 with the site read; display
+     bands 50/85; no retired input (right_size, the production houses' team-page
+     rule among them) scored, and no criterion's guidance scoring by the team
+     page again; every word list the judge (tools/lcx_judge.py)
+     compiles parses; and docs/LCX_scoring_cheatsheet.md states the same
+     numbers. A pinned number changes only with an owner decision, and then
+     here, in the config and in the cheat sheet together.
 
 Usage:  python tools/verify_repo.py     (exit 0 = green)
 """
@@ -58,6 +70,35 @@ EXPECTED_PENALTY = {"revenue_above_cap": -20}
 # lowered to 45 on 2026-08-30 (owner decision) -- the verified band tops
 # out at 57, so 60 was an aspiration no lead could meet.
 EXPECTED_THRESHOLDS = {"score_threshold_review": 25, "score_threshold_priority": 45}
+
+# LCX Services, scoring v4: the owner's decisions of 2026-10-07 ("think and decide
+# one": this design; sanctioned countries, adult/gambling/tobacco/weapons and
+# companies over 50,000 people or $10B left out by gates; banks and mid-size
+# companies need a named person; -15 for a non-English site; auto-shortlist above
+# 70 only with a usable contact and a read site; Apollo reveals only over 60 with
+# the site read).
+LCX_CONFIG = ROOT / "config" / "segment.lcx-services.json"
+LCX_SQL = "03f_segment_lcx_services.sql"
+LCX_CHEATSHEET = ROOT / "docs" / "LCX_scoring_cheatsheet.md"
+LCX_COUNTS = {"rubric": 5, "score_modifiers": 5, "gates": 6}
+LCX_WEIGHTS = {"buyer_confirmed": 30, "buyer_size": 25, "content_activity": 20,
+               "audience_fit": 15, "reachable_decision_maker": 10}
+LCX_MODIFIERS = {"buying_trigger": 8, "priority_market": 4, "wrong_buyer": -50,
+                 "too_big": -50, "non_english_site": -15}
+LCX_GATES = {"country_allowed": "disallowed", "payable_country": "unpayable",
+             "not_major": True, "brand_safe": "unsafe", "site_alive": "dead",
+             "usable_first_party_presence": False}
+LCX_THRESHOLDS = {"score_threshold_review": 50, "score_threshold_priority": 85}
+LCX_SHORTLIST = {"enabled": True, "min_score": 70, "require_contact": True,
+                 "named_contact_for": ["corporate_teams", "financial_services"],
+                 "require_assessed": ["content_activity"]}
+LCX_ENRICHMENT = {"score_over": 60, "require_site_read": True}
+# retired 2026-10-07: established, right_size and english_market, and the
+# production houses' keys the site pass wrote into LCX leads (right_size's 2-20
+# named staff team-page rule among them)
+LCX_RETIRED = ["established", "right_size", "english_market", "genre_fit",
+               "collaboration_openness", "distribution_relationship"]
+LCX_UNPAYABLE = ["BY", "CU", "IR", "KP", "RU", "SY"]
 
 failures = []
 notices = []
@@ -507,6 +548,185 @@ def check_live_config(cfg):
         print("  ok    live    database config matches the repo exactly")
 
 
+def check_lcx_services():
+    """11. LCX Services' scoring v4, as the owner decided it on 2026-10-07.
+
+    The same reason as 4: the numbers below were settled by the owner on a
+    simulation of the 2,402 live leads, and a weight edited in passing would
+    quietly re-rank all of them. They are pinned here, and the cheat sheet a
+    reviewer reads is checked against the same config, so the two cannot
+    disagree.
+
+    The live database is not compared here: check_live_config (9) covers US
+    Production Houses only, and LCX Services' row changes when sql/03f is
+    applied, which is a deployment step (docs/LCX_services.md).
+    """
+    try:
+        cfg = json.loads(LCX_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        fail("%s is not readable JSON: %s" % (LCX_CONFIG.name, e))
+        return
+    print("  ok    json    " + LCX_CONFIG.name)
+
+    path = SQL_DIR / LCX_SQL
+    try:
+        embedded = extract_jsonb_literal(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as e:
+        fail("%s: could not read its embedded config JSON: %s" % (LCX_SQL, e))
+    else:
+        def same(a, b):
+            return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+        if not same(embedded, cfg):
+            differ = sorted(k for k in set(cfg) | set(embedded)
+                            if not same(cfg.get(k), embedded.get(k)))
+            fail("%s: embedded config has DRIFTED from %s; differing keys: %s\n"
+                 "        Fix: python tools/gen_segment_sql.py lcx-services"
+                 % (LCX_SQL, LCX_CONFIG.name, differ))
+        else:
+            print("  ok    match   %s == %s" % (LCX_SQL, LCX_CONFIG.name))
+
+    mark = len(failures)
+    for key, n in LCX_COUNTS.items():
+        if len(cfg.get(key) or []) != n:
+            fail("lcx-services config.%s: expected %d entries (scoring v4), found %d"
+                 % (key, n, len(cfg.get(key) or [])))
+    rubric = {c.get("key"): c for c in cfg.get("rubric") or []}
+    for key, pts in LCX_WEIGHTS.items():
+        got = (rubric.get(key) or {}).get("points")
+        if got != pts:
+            fail("lcx-services config.rubric.%s.points: expected %s (scoring v4), found %s"
+                 % (key, pts, got))
+    mods = {m.get("key"): m for m in cfg.get("score_modifiers") or []}
+    for key, val in LCX_MODIFIERS.items():
+        m = mods.get(key) or {}
+        got = m.get("max_bonus") if val > 0 else m.get("max_penalty")
+        if got != val:
+            fail("lcx-services config.score_modifiers.%s: expected %s %s, found %s"
+                 % (key, "max_bonus" if val > 0 else "max_penalty", val, got))
+    gates = {g.get("key"): g for g in cfg.get("gates") or []}
+    for key, when in LCX_GATES.items():
+        if key not in gates or gates[key].get("exclude_when") != when:
+            fail("lcx-services config.gates.%s: expected exclude_when %r, found %r"
+                 % (key, when, (gates.get(key) or {}).get("exclude_when")))
+    if len(failures) == mark:
+        print("  ok    lcx     5 criteria 30/25/20/15/10, modifiers +8 +4 -50 -50 -15,"
+              " 6 gates")
+
+    mark = len(failures)
+    for key, val in LCX_THRESHOLDS.items():
+        if cfg.get(key) != val:
+            fail("lcx-services config.%s: expected %s, found %s" % (key, val, cfg.get(key)))
+    auto = cfg.get("auto_shortlist") or {}
+    for key, val in LCX_SHORTLIST.items():
+        if auto.get(key) != val:
+            fail("lcx-services config.auto_shortlist.%s: expected %s, found %s"
+                 % (key, val, auto.get(key)))
+    enr = cfg.get("enrichment") or {}
+    for key, val in LCX_ENRICHMENT.items():
+        if enr.get(key) != val:
+            fail("lcx-services config.enrichment.%s: expected %s, found %s"
+                 % (key, val, enr.get(key)))
+    unpayable = (cfg.get("geography") or {}).get("unpayable_countries") or []
+    if sorted(unpayable) != LCX_UNPAYABLE:
+        fail("lcx-services config.geography.unpayable_countries: expected %s"
+             % LCX_UNPAYABLE)
+    audiences = {a.get("key"): a for a in cfg.get("audiences") or []}
+    missing = ([k for k in auto.get("named_contact_for") or [] if k not in audiences]
+               + [k for k in auto.get("require_assessed") or [] if k not in rubric])
+    if missing:
+        fail("lcx-services config.auto_shortlist names keys that are not audiences or"
+             " rubric criteria: %s" % missing)
+    if len(failures) == mark:
+        print("  ok    lcx     line 70 (contact required, named for corporate_teams +"
+              " financial_services, content assessed), Apollo over 60 with the site"
+              " read, bands 50/85")
+
+    mark = len(failures)
+    judge = cfg.get("judge") or {}
+    retired = judge.get("retired_inputs") or []
+    if [k for k in LCX_RETIRED if k not in retired]:
+        fail("lcx-services config.judge.retired_inputs must list %s" % LCX_RETIRED)
+    scored = set(rubric) | set(mods)
+    if scored & set(LCX_RETIRED):
+        fail("lcx-services scores a retired input again: %s (right_size carried the"
+             " production houses' team-page rule into LCX leads)"
+             % sorted(scored & set(LCX_RETIRED)))
+    # what a reviewer reads as the rule must not bring the team page back:
+    # buyer_size's dated "REPLACES right_size" note names that rule as the reason
+    # it went, so only the text before a criterion's REPLACES / ADDED history is
+    # held to it
+    for item in cfg.get("rubric") or []:
+        rule = re.split(r"\b(?:REPLACES|ADDED)\b", str(item.get("guidance") or ""))[0]
+        hit = re.search(r"(?i)team[- ]page|named staff|\bright_size\b", rule)
+        if hit:
+            fail("lcx-services config.rubric.%s.guidance scores by %r again (the"
+                 " production houses' team-page rule, retired for LCX Services"
+                 " 2026-10-07)" % (item.get("key"), hit.group(0)))
+    # the judge writes each scored input under the criterion's own key
+    # (tools/lcx_judge.py RUBRIC_KEYS, MODIFIER_KEYS); a gate reads one of its
+    # gate inputs, which may feed two gates (country_signal)
+    for item in (cfg.get("rubric") or []) + (cfg.get("score_modifiers") or []):
+        if item.get("input") != "metadata.scoring_inputs." + str(item.get("key")):
+            fail("lcx-services %s: its input must be metadata.scoring_inputs.%s,"
+                 " found %s" % (item.get("key"), item.get("key"), item.get("input")))
+    for item in cfg.get("gates") or []:
+        if not str(item.get("input", "")).startswith("metadata.scoring_inputs."):
+            fail("lcx-services gate %s: its input must sit under"
+                 " metadata.scoring_inputs, found %s" % (item.get("key"), item.get("input")))
+    if judge.get("enabled") is not True:
+        fail("lcx-services config.judge.enabled is not true: nothing would set the"
+             " scoring inputs")
+    no_words = [k for k, a in audiences.items()
+                if not (a.get("site_words") and a.get("size_bands"))]
+    if no_words:
+        fail("lcx-services audiences without site_words or size_bands (the judge"
+             " cannot place them): %s" % no_words)
+    try:
+        sys.path.insert(0, str(ROOT / "tools"))
+        import lcx_judge
+        lcx_judge.Lists(cfg)          # every word list compiled as the judge compiles it
+    except re.error as e:
+        fail("lcx-services config.judge: a word list is not a valid pattern (%s); the"
+             " chain's judge step would stop on it" % e)
+    except ImportError as e:
+        fail("could not import tools/lcx_judge.py: %s" % e)
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
+        fail("lcx-services config.judge is not shaped as tools/lcx_judge.py reads it"
+             " (%s: %s); the chain's judge step would stop on it" % (type(e).__name__, e))
+    if len(failures) == mark:
+        print("  ok    lcx     no retired input scored nor its team-page rule in any"
+              " guidance; the judge is on and every word list compiles")
+
+    mark = len(failures)
+    if not LCX_CHEATSHEET.exists():
+        fail("docs/LCX_scoring_cheatsheet.md is missing")
+    else:
+        text = LCX_CHEATSHEET.read_text(encoding="utf-8")
+
+        def stated(key, number):
+            """Its 'At a glance' row, | `key` | number | ..., says this number
+            (and no row says another)."""
+            rows = re.findall(r"^\|\s*`%s`\s*\|\s*([^|]+?)\s*\|" % re.escape(key),
+                              text, re.M)
+            return bool(rows) and all(r == str(number) for r in rows)
+        doc = "docs/LCX_scoring_cheatsheet.md"
+        for key, pts in LCX_WEIGHTS.items():
+            if not stated(key, pts):
+                fail("%s does not state `%s` at %s points" % (doc, key, pts))
+        for key, val in LCX_MODIFIERS.items():
+            if not stated(key, ("+%d" if val > 0 else "%d") % val):
+                fail("%s does not state `%s` at %+d" % (doc, key, val))
+        lines = ([("min_score", LCX_SHORTLIST["min_score"]),
+                  ("score_over", LCX_ENRICHMENT["score_over"])]
+                 + sorted(LCX_THRESHOLDS.items()))
+        for key, val in lines:
+            if not stated(key, val):
+                fail("%s does not state `%s` %s" % (doc, key, val))
+        if len(failures) == mark:
+            print("  ok    doc     LCX_scoring_cheatsheet.md states the config's weights,"
+                  " line and Apollo line")
+
+
 def main():
     print("TVF Lead Engine -- repo self-check (P0, repo half)\n")
     check_sql_parses()
@@ -518,6 +738,7 @@ def main():
         check_cheatsheet_current(cfg)
         check_n8n_workflows(cfg)
         check_live_config(cfg)
+    check_lcx_services()
     check_workflow_code_sync()
     check_connector_fixtures()
 
