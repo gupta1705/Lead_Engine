@@ -170,11 +170,12 @@ def cmd_draft(args):
 
     import llm
     gen = llm.make_generator(cfg, log=log)
-    part = "the paragraph about each company" if llm.partner_policy(cfg) else "the opening sentence"
+    part = ("the opener and the pitch" if llm.lcxs_policy(cfg) else
+            "the paragraph about each company" if llm.partner_policy(cfg) else "the opening sentence")
     if gen:
         log("  %s is written by %s from each lead's own facts;" % (part, gen.policy["model"]))
         log("  one that fails the checks falls back to the built-in text\n")
-    elif llm.policy(cfg) or llm.partner_policy(cfg):
+    elif llm.policy(cfg) or llm.partner_policy(cfg) or llm.lcxs_policy(cfg):
         log("  GROQ_API_KEY is not set, so %s is the built-in one\n" % part)
 
     # the files a template attaches (LCX Services: the services deck), read and fingerprinted once a run;
@@ -192,7 +193,7 @@ def cmd_draft(args):
             meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
             tpl = requested or pick_template(cfg, meta)
             # only a template that actually uses {{hook}} is worth a model call
-            use_gen = gen if "{{hook}}" in (tpl.get("body") or "") else None
+            use_gen = gen if ("{{hook}}" in (tpl.get("body") or "") or "{{pitch}}" in (tpl.get("body") or "")) else None
             ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen,
                                 contact_source=csource)
             # the production-house templates differ by whether the email greets a person by name

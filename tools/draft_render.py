@@ -669,6 +669,90 @@ def tvf_partnership_context(cfg, company, meta, seed, now, generator, person=Non
     }
 
 
+# -------------------------------------------------------- LCX Services: the opener and the pitch
+# The owner, 2026-10-08: an email structure Groq follows (tools/llm.py, generated_pitch). The owner's lines stay
+# word for word; the model writes an opener about the company and a pitch naming two of the services its kind of
+# buyer is pitched first. These are the only facts it sees: no address, no URL, the person's name only as
+# writing_to (which it must not use), and the company's own site words only when tools/lcx_judge.py found the site
+# readable and the company's own.
+_URLISH = re.compile(r"\S+@\S+|https?://\S+|www\.\S+", re.I)
+CONTENT_ACCOUNTS = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok", "vimeo": "Vimeo"}
+
+
+def _plain(text, limit):
+    s = " ".join(_URLISH.sub(" ", str(text or "")).split())
+    s = s.replace("{", "(").replace("}", ")")
+    if len(s) <= limit:
+        return s
+    cut = s[:limit]
+    return cut[:cut.rfind(" ")] if " " in cut else cut
+
+
+def lcxs_services(cfg, meta, n=3):
+    """[{name, what_it_does}] of the services this lead's audience is pitched first (metadata.services, put on
+    the lead by tools/enrich_lcx_services.py from its audience), in the deck's words; a lead saved by hand from
+    the search page has none, and gets generated_pitch.default_pitch."""
+    gp = cfg.get("generated_pitch") or {}
+    lines = gp.get("service_lines") or {}
+    if not lines:
+        raise ValueError("outreach.generated_pitch.service_lines is empty")
+    own = (meta or {}).get("services")
+    names = [s for s in (own if isinstance(own, list) else []) if s in lines] or         [s for s in gp.get("default_pitch") or [] if s in lines] or list(lines)
+    return [{"name": s, "what_it_does": lines[s]} for s in names[:n]]
+
+
+def lcxs_facts(cfg, company, meta, writing_to=None):
+    meta = meta or {}
+    facts = {"company": company, "they_are": meta.get("audience") or "a business"}
+    if writing_to:
+        facts["writing_to"] = writing_to
+    ev = meta.get("lcx_judgement") if isinstance(meta.get("lcx_judgement"), dict) else {}
+    about = meta.get("site_about") if isinstance(meta.get("site_about"), dict) else {}
+    if ev.get("site_read") is True and ev.get("site_theirs") is not False:
+        own = {"site_title": clean_title(_plain(about.get("title"), 160), 120),
+               "site_description": _plain(about.get("description"), 300),
+               "about_page": _plain(about.get("about"), 500)}
+        own = {k: v for k, v in own.items() if v}
+        if own:
+            facts["in_their_own_words"] = own
+    si = meta.get("scoring_inputs") if isinstance(meta.get("scoring_inputs"), dict) else {}
+    try:
+        trigger = float(si.get("buying_trigger") or 0)
+    except (TypeError, ValueError):
+        trigger = 0.0
+    if trigger > 0 and isinstance(meta.get("buying_signal"), str) and meta["buying_signal"].strip():
+        facts["reason_to_buy_now"] = meta["buying_signal"].strip()
+    routes = meta.get("site_contact_routes") if isinstance(meta.get("site_contact_routes"), dict) else {}
+    socials = routes.get("socials") if isinstance(routes.get("socials"), dict) else {}
+    posts = [label for key, label in CONTENT_ACCOUNTS.items() if key in {str(k).lower() for k in socials}]
+    if posts:
+        facts["already_posts_on"] = posts
+    facts["services_to_pitch"] = lcxs_services(cfg, meta)
+    return facts
+
+
+def lcxs_pitch_fallback(facts):
+    """The pitch when no model writes one: the two services this kind of buyer is pitched first, by name."""
+    names = [s["name"] for s in facts.get("services_to_pitch") or []][:2]
+    if len(names) == 1:
+        return "I'd start with %s." % names[0]
+    return "I'd start with %s and %s." % (names[0], names[1])
+
+
+def lcxs_context(cfg, company, meta, seed, generator, person=None):
+    facts = lcxs_facts(cfg, company, meta, writing_to=person)
+    wrote = None
+    if generator is not None:
+        try:
+            wrote = generator(facts, seed)
+        except Exception:                        # a model must never fail a draft run
+            wrote = None
+    opener = (wrote or {}).get("opener") or ""
+    pitch = (wrote or {}).get("pitch") or lcxs_pitch_fallback(facts)
+    return {"opener_block": (opener + "\n\n") if opener else "", "pitch": pitch,
+            "generated_hook": (opener + " " + pitch).strip() if wrote else ""}
+
+
 # -------------------------------------------------------- greeting, template
 def greeting_for(full_name, email, company, fallback=None):
     """A person -> first name. Anything else -> the segment's fallback. The
@@ -768,8 +852,9 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
     company = newsmatch.display_name(company or "")
     meta = meta or {}
     partnership = cfg.get("hook_style") == "tvf_partnership"
+    lcxs = cfg.get("hook_style") == "lcx_services"
     written = None
-    if generator is not None and not partnership:
+    if generator is not None and not partnership and not lcxs:
         try:
             written = generator(facts_for(company, meta, now), seed)
         except Exception:                    # a model must never fail a draft run
@@ -779,7 +864,7 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "company": company,
         "greeting_name": person or greeting_for(None, contact_email, company, cfg.get("greeting_fallback")),
         "contact_named": bool(person),
-        "hook": written or (None if partnership else hook_line(meta, company, cfg, seed, now)),
+        "hook": written or (None if (partnership or lcxs) else hook_line(meta, company, cfg, seed, now)),
         "generated_hook": written or "",
         "latest_work": latest_work(meta, now),
         "clip_math": clip_math(meta),
@@ -788,6 +873,8 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "postal_address": sender.get("postal_address", "") or "",
         "opener_subject": (opener_subject or "").strip(),
     }
+    if lcxs:
+        ctx.update(lcxs_context(cfg, company, meta, seed, generator, person))
     if partnership:
         import contacts
         ctx.update(tvf_partnership_context(cfg, company, meta, seed, now, generator, person,

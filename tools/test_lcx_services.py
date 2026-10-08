@@ -247,9 +247,11 @@ def offline(cfg, uni):
           (bool(o["templates"]), "compose" in o, o["send_from"], "sending_paused" in o), (True, False, "approver", False))
     check("TVF's Mumbai address goes under it (the owner's choice)", o["sender"]["postal_address"],
           uni["outreach"]["sender"]["postal_address"])
-    check("one template, the wording the owner approved", (tpl["subject"], tpl["body"].splitlines()[2]),
-          ("18 things LCX can do for {{company}}", "I'm writing from LCX. We work in three areas, and at least one of"
-           " them should be useful to {{company}}. Our services deck is attached."))
+    check("the template drafts use (v2, the structure Groq follows): the wording the owner approved, word for word",
+          (tpl["key"], tpl["subject"], tpl["body"].splitlines()[2]),
+          ("lcx_services_deck_v2", "18 things LCX can do for {{company}}", "{{opener_block}}I'm writing from LCX. We"
+           " work in three areas, and at least one of them should be useful to {{company}}. Our services deck is"
+           " attached."))
     check("  it attaches the deck", tpl["attachments"], ["docs/decks/LCX Services - pitch deck.pdf"])
     check("the deck is built: a PDF, five 16:9 pages, small enough to attach", build_deck.check(), [])
     docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -676,14 +678,40 @@ def main_():
                rows[bean_n][6]["lcx_judgement"]["content_activity"], rows[corp_n][6]["lcx_judgement"]["site_read"]),
               (True, "instagram", True))
         outreach.SEGMENT = lx
-        outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
-        cur.execute("select o.id, o.subject, o.body, o.attachments from outreach o join entities e on e.id = o.entity_id"
-                    " where e.segment_id = %s", (lx_id,))
+        # the model (Groq) is stubbed: the email structure Groq follows (2026-10-08), with what it would write
+        import llm
+        keep_gen = llm.make_generator
+        seen_facts = []
+
+        def stub_gen(cfg_, log=None):
+            def write(facts, seed=None):
+                seen_facts.append(facts)
+                return {"opener": "You serve speciality coffee and brunch every day and post on Instagram.",
+                        "pitch": "I'd start with Local Business Tech and Automation and AI Business Assistant."}
+            write.stats = {"ok": 1, "rejected": 0, "failed": 0, "skipped": 0}
+            write.policy = llm.lcxs_policy(cfg_)
+            return write
+        llm.make_generator = stub_gen
+        try:
+            outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
+        finally:
+            llm.make_generator = keep_gen
+        cur.execute("select o.id, o.subject, o.body, o.attachments, o.template_key, o.generated_hook from outreach o"
+                    " join entities e on e.id = o.entity_id where e.segment_id = %s", (lx_id,))
         drafts = cur.fetchall()
         check("one draft, for the cafe", [d[1] for d in drafts], ["18 things LCX can do for ZZ Bean There %s" % tag])
-        oid, subject, body, atts = drafts[0]
-        check("  greeting the inbox, offering the deck", body.splitlines()[:3], ["Hi there,", "", "I'm writing from LCX. We work in"
-              " three areas, and at least one of them should be useful to ZZ Bean There %s. Our services deck is attached." % tag])
+        oid, subject, body, atts, tkey, hook = drafts[0]
+        check("  the structure Groq follows (v2): greeting, its opener, the owner's lines, its pitch, the owner's close",
+              (tkey, body.split("\n\n")[:5], bool(hook)),
+              ("lcx_services_deck_v2", ["Hi there,", "You serve speciality coffee and brunch every day and post on Instagram.",
+               "I'm writing from LCX. We work in three areas, and at least one of them should be useful to ZZ Bean There"
+               " %s. Our services deck is attached." % tag,
+               "I'd start with Local Business Tech and Automation and AI Business Assistant.",
+               "If one fits, reply with its name and I'll send examples."], True))
+        check("  the model was handed the cafe's own words and its services, no address",
+              (seen_facts[0]["they_are"], [s["name"] for s in seen_facts[0]["services_to_pitch"]][:2],
+               "@" in json.dumps(seen_facts[0])),
+              ("Cafe, salon or gym", ["Local Business Tech and Automation", "AI Business Assistant"], False))
         check("  the deck is recorded on it, fingerprinted", [(a["name"], a["path"], a["bytes"] > 100000, len(a["sha256"]))
                                                              for a in atts],
               [("LCX Services - pitch deck.pdf", "docs/decks/LCX Services - pitch deck.pdf", True, 64)])
@@ -737,7 +765,11 @@ def main_():
         check("  as enrich_apollo writes one: shortlisted on the next chain run, and says why", cur.fetchone(),
               ("shortlisted", "auto-shortlisted: score 99.0 is above 70, with a named person to write to;"
                               " assessed: content_activity; its site read"))
-        outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
+        llm.make_generator = lambda cfg_, log=None: None        # the plain email: no model in tests
+        try:
+            outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
+        finally:
+            llm.make_generator = keep_gen
         cur.execute("select c.email, o.body from outreach o join entities e on e.id = o.entity_id join contacts c"
                     " on c.id = o.contact_id where e.segment_id = %s and e.name = %s", (lx_id, corp_n))
         drafted = [(r[0], r[1].splitlines()[0]) for r in cur.fetchall()]

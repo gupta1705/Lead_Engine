@@ -2813,7 +2813,78 @@ values (
       "guidance": "The block every email here ends with: the approver''s sign-off, the postal address and the way out. Edited from Outreach -> Footer."
     },
     "greeting_fallback": "there",
+    "hook_style": "lcx_services",
+    "generated_pitch": {
+      "enabled": true,
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "opener_words": [
+        10,
+        40
+      ],
+      "pitch_words": [
+        15,
+        55
+      ],
+      "max_calls_per_run": 200,
+      "requests_per_minute": 3,
+      "default_pitch": [
+        "AI Video for Brands",
+        "Explainer Videos",
+        "AI Business Assistant"
+      ],
+      "all_services": [
+        "Reel Forge",
+        "Airbnb / Property Content",
+        "AI VFX + Animation",
+        "Audiobooks and Audio Web Shows",
+        "AI Video for Brands",
+        "AI Real Estate Visualisation",
+        "Explainer Videos",
+        "Shop Display Videos",
+        "AI UGC Product Videos",
+        "AI Podcasts / Audio Content",
+        "Virtual Tours for Schools",
+        "AI Reality Experiences",
+        "Creator × Brand Marketplace",
+        "Local Business Tech and Automation",
+        "AI Business Assistant",
+        "AI Simulations for Training",
+        "AI Fashion Stylist",
+        "AI Onboarding Employee"
+      ],
+      "service_lines": {
+        "Reel Forge": "Long form videos cut into reels and distributed across 5 to 10 Instagram pages.",
+        "Airbnb / Property Content": "Property photos turned into cinematic reels, carousels and home tours.",
+        "AI VFX + Animation": "Existing footage made cinematic with AI environments and effects.",
+        "Audiobooks and Audio Web Shows": "Books adapted into audio shows. Writers keep the rights and the revenue.",
+        "AI Video for Brands": "Product, ad and campaign videos without separate shoots.",
+        "AI Real Estate Visualisation": "Blueprints turned into realistic visuals and walkthroughs before construction.",
+        "Explainer Videos": "Complex products, services and concepts explained visually.",
+        "Shop Display Videos": "Screen content for retail spaces showcasing collections, offers and promotions.",
+        "AI UGC Product Videos": "AI influencers creating recurring product content on a brand''s own page.",
+        "AI Podcasts / Audio Content": "AI characters in conversation about products, brands and financial services.",
+        "Virtual Tours for Schools": "Virtual field trips to space, the ocean, ancient civilisations and landmarks.",
+        "AI Reality Experiences": "Immersive VR experiences and games.",
+        "Creator × Brand Marketplace": "A platform for brands to discover nano and micro influencers and run campaigns.",
+        "Local Business Tech and Automation": "Billing, bookings, WhatsApp follow ups and dashboards for cafes, salons and gyms.",
+        "AI Business Assistant": "On demand answers on sales, tasks and inventory for business owners.",
+        "AI Simulations for Training": "Real world scenarios that test and score sales and customer facing teams.",
+        "AI Fashion Stylist": "An AI mirror near changing rooms that completes the look from store stock.",
+        "AI Onboarding Employee": "A digital trainer that teaches, tests and scores new hires across 10 to 15 parameters."
+      },
+      "guidance": "The owner, 2026-10-08: \"make a email structure for me that groq will follow\". The model (Groq, no retention, as for US Production Houses) writes v2''s opener and pitch from tools/draft_render.lcxs_facts(): the company''s audience, its own site''s title, description and about page (only when tools/lcx_judge.py found the site readable and theirs), a reason to buy now (an Apollo hiring or funding signal still counted in buying_trigger), the content accounts its site links to, and the services its audience is pitched first with service_lines (the deck''s own words). Every capitalised word and number it writes must be in those facts; it names only services it was given, exactly; it never names the company (the owner''s line does) nor the person; no claims about LCX beyond service_lines, no links, no sales or praise words; opener_words and pitch_words are the ranges. A rejected answer gets one retry, told why; then the opener is left out and the pitch is the plain one. default_pitch: for a lead saved by hand with no audience. Three requests a minute keeps inside Groq''s free plan. enabled false: every draft is the plain v2, with no model call."
+    },
     "templates": [
+      {
+        "key": "lcx_services_deck_v2",
+        "subject": "18 things LCX can do for {{company}}",
+        "body": "Hi {{greeting_name}},\n\n{{opener_block}}I''m writing from LCX. We work in three areas, and at least one of them should be useful to {{company}}. Our services deck is attached.\n\n{{pitch}}\n\nIf one fits, reply with its name and I''ll send examples.\n\n{{footer}}",
+        "attachments": [
+          "docs/decks/LCX Services - pitch deck.pdf"
+        ],
+        "guidance": "The owner, 2026-10-08: \"make a email structure for me that groq will follow\". Five parts, top to bottom: (1) the greeting, as v1; (2) {{opener_block}}: ONE sentence the model writes about the company from what its own site says, a reason to buy now and the content accounts it runs, left out when there is nothing of theirs on record or the answer fails a check; (3) the owner''s own lines from v1, word for word, with the deck attached; (4) {{pitch}}: one or two sentences the model writes naming two (at most three) of the services this lead''s audience is pitched first, exactly as the deck names them, with what each would do for them -- or, when no model writes it, \"I''d start with <first> and <second>.\"; (5) the owner''s close and the footer, as v1. The subject is v1''s. The model''s leash is generated_pitch''s (tools/llm.py LCXS_SYSTEM). A draft with model-written text is approved one at a time unless batch_approval.allow_generated says otherwise."
+      },
       {
         "key": "lcx_services_deck_v1",
         "subject": "18 things LCX can do for {{company}}",
@@ -2821,7 +2892,7 @@ values (
         "attachments": [
           "docs/decks/LCX Services - pitch deck.pdf"
         ],
-        "guidance": "The owner''s choice, 2026-10-06: a short email with the services deck attached as a PDF, in the wording the owner approved. {{greeting_name}} is the person''s first name when one is known, else ''there''. The deck in attachments goes with every email from this template; the sender checks it is the same file that was drafted and approved, and holds the email back if it changed."
+        "guidance": "The owner''s choice, 2026-10-06: a short email with the services deck attached as a PDF, in the wording the owner approved. {{greeting_name}} is the person''s first name when one is known, else ''there''. The deck in attachments goes with every email from this template; the sender checks it is the same file that was drafted and approved, and holds the email back if it changed. Kept for the drafts written with it before 2026-10-08; new drafts use v2, which the draft step picks first."
       }
     ],
     "batch_approval": {
@@ -2831,7 +2902,7 @@ values (
       "max_batch": 100,
       "allow_generated": false,
       "generated_sample_fraction": 0.25,
-      "guidance": "Every draft here comes from one template with no model-written sentence, so they may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company, the deck present)."
+      "guidance": "Every draft here comes from one template with no model-written sentence, so they may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company, the deck present). Since 2026-10-08 v2''s opener and pitch are written by a model, so those drafts are approved one at a time (allow_generated false); a draft the model did not write (the plain pitch) can still go in a batch."
     },
     "guidance": "The owner, 2026-10-06: one email offering every LCX service, with the services deck attached, to the businesses the weekly harvest finds. Like US Production Houses: a shortlisted lead with an address is drafted by itself from the one template, a person approves it (one at a time, or a spot-checked batch), and it goes from that person''s own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address''s daily limit, which it shares with every other project. One first email per company and per inbox; no follow-ups. Not paused: the owner chose ''send once approved''. Replies land in Outreach -> Replies."
   },

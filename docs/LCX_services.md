@@ -253,8 +253,30 @@ no longer qualify is the owner's call.
 ## The email and the deck
 
 - Subject: `18 things LCX can do for {{company}}`.
-- Body: the owner-approved short email, then the approver's sign-off over TVF's Mumbai address and
-  the opt-out.
+- Body (template `lcx_services_deck_v2`, 2026-10-08, the owner: "make a email structure for me that
+  groq will follow"), top to bottom:
+  1. `Hi {{greeting_name}},`
+  2. **The opener**, written by Groq: one sentence about the company, from what its own site says, a
+     reason to buy now (hiring trainers, just funded) and the video or Instagram accounts it runs.
+     Left out when nothing of theirs is on record.
+  3. The owner's lines, word for word: "I'm writing from LCX. We work in three areas, and at least
+     one of them should be useful to {{company}}. Our services deck is attached."
+  4. **The pitch**, written by Groq: one or two sentences naming two of the services its kind of
+     buyer is pitched first, exactly as the deck names them, with what each would do for them.
+     Without the model: "I'd start with <first> and <second>."
+  5. The owner's close: "If one fits, reply with its name and I'll send examples.", then the
+     approver's sign-off over TVF's Mumbai address and the opt-out.
+- **What Groq may write** (`outreach.generated_pitch`, `tools/llm.py` `LCXS_SYSTEM`,
+  `check_lcxs`): only facts from `tools/draft_render.lcxs_facts()`, which holds no address or
+  link. Every capitalised name and every number must come from those facts. It may name only
+  the services it was given, exactly as given. It never names the company or the person. It
+  makes no claims about LCX beyond the deck's own service lines: no clients, results or prices.
+  No sales words, no repeating a company's praise of itself, no links, nothing outside the word
+  ranges. A rejected answer gets one retry; after that the opener is left out and the pitch is
+  the plain one.
+- **Approval:** a draft with model-written text is approved one at a time
+  (`batch_approval.allow_generated` false). Drafts made before 2026-10-08 use v1, the plain email.
+  Tests: `tools/test_lcxs_pitch.py`.
 - The deck is `docs/decks/LCX Services - pitch deck.pdf`: five 16:9 pages, built from
   `docs/decks/lcx-services-deck.html` by `python tools/build_deck.py`. The pages are a cover, one
   page per cluster in the sheet's colours and words, and the next step.
