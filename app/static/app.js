@@ -1019,6 +1019,52 @@ async function startBatch() {
    sent from the writer's own Gmail inside that address's daily limit. Nothing is drafted in between. */
 const WRITABLE = ["discovered", "enriched", "scored", "ready_for_review", "shortlisted"];
 const COMPOSE_FIELDS = ["first_name", "company"];
+/* Rewrite is a proposal in the editor. Saving or approving remains a separate action. */
+function rewritePanel() {
+  return `<details class="email-rewrite"><summary>${icon("sparkle", 16)} Rewrite with AI</summary>
+    <div class="field"><label for="rewriteInstructions">How should it change?</label>
+      <textarea id="rewriteInstructions" class="rewrite-instructions" maxlength="2000" rows="2"
+        placeholder="For example: make this shorter and more conversational."></textarea></div>
+    <div class="rewrite-actions"><button type="button" class="btn compact" id="rewriteGo">${icon("sparkle", 16)} Rewrite draft</button>
+      <button type="button" class="btn compact subtle" id="rewriteUndo" hidden>Undo rewrite</button></div>
+    <div class="help" id="rewriteStatus" role="status">Review the result and edit anything before saving or approving.</div></details>`;
+}
+
+function bindRewrite(root, subject, body, endpoint, changed = () => {}) {
+  const go = $("#rewriteGo", root), undo = $("#rewriteUndo", root), status = $("#rewriteStatus", root);
+  let before = null, busy = false;
+  go.addEventListener("click", async () => {
+    if (busy) return;
+    if (!subject.value.trim() || !body.value.trim()) { status.textContent = "Write a subject and email first."; return; }
+    busy = true;
+    const snapshot = { subject: subject.value, body: body.value, ai_rewritten: body.dataset.aiRewritten === "true" };
+    const controls = $$("button, input, textarea", root).map((el) => [el, el.disabled]);
+    const oldGuard = modal.guard, busyGuard = () => false;
+    modal.guard = busyGuard;
+    controls.forEach(([el]) => { el.disabled = true; });
+    go.classList.add("loading"); status.textContent = "Rewriting your draft…";
+    try {
+      const result = await post(endpoint, { ...snapshot, instructions: $("#rewriteInstructions", root).value });
+      if (!body.isConnected) return;
+      before = snapshot; subject.value = result.subject; body.value = result.body; body.dataset.aiRewritten = "true";
+      undo.hidden = false;
+      status.textContent = "Rewritten. Review it before saving or approving.";
+    } catch (e) { if (body.isConnected) status.textContent = e.message; }
+    finally {
+      busy = false;
+      if (modal.guard === busyGuard) modal.guard = oldGuard;
+      controls.forEach(([el, disabled]) => { if (el.isConnected) el.disabled = disabled; });
+      go.classList.remove("loading");
+      if (body.isConnected) changed();
+    }
+  });
+  undo.addEventListener("click", () => {
+    if (!before || busy) return;
+    subject.value = before.subject; body.value = before.body; body.dataset.aiRewritten = String(before.ai_rewritten); before = null; undo.hidden = true;
+    status.textContent = "Restored the previous draft."; changed();
+  });
+}
+
 function composeOn() { return !!outreachPolicy().compose; }
 function canWrite(r) { return composeOn() && !!r.email && WRITABLE.includes(r.status); }
 function canWriteLead(d) {
@@ -1122,8 +1168,9 @@ async function openCompose(leads) {
             <button type="button" class="btn compact" data-insert="company">Company</button></span></div>
           <textarea id="cBody" class="compose-body${preset ? " long" : ""}">${esc(start)}</textarea>
           <div class="help">${preset ? "This project's email is already in: send it as it is, or change anything first."
-            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off and the postal address go under it.</div>
+            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off and opt-out go under it.</div>
           <div class="field-error" id="cErr" role="alert" hidden></div></div>
+        ${rewritePanel()}
         <div class="compose-preview" id="cPreviewBox">
           <div class="preview-head"><span class="small muted">How it reads for</span> <strong id="cWho"></strong><span class="grow"></span>
             <span class="pos num small muted" id="cPos"></span>
@@ -1183,6 +1230,7 @@ async function openCompose(leads) {
   };
   const dirty = () => subj.value.trim() !== startSubject.trim() || body.value !== start;
   modal.guard = () => !dirty() || confirm("Discard this email?");
+  bindRewrite(root, subj, body, "/api/outreach/rewrite", paint);
   subj.addEventListener("input", paint);
   body.addEventListener("input", paint);
   $$("[data-insert]", root).forEach((b) => b.addEventListener("click", () => {
@@ -1219,11 +1267,8 @@ async function openCompose(leads) {
 }
 
 /* ---------------------------------------------------------------- footer
-   The sign-off, the postal address and the opt-out are the same on every
-   email this project sends, so they are one setting rather than four lines
-   repeated in each template. The server refuses a footer with no address or
-   no way out -- both are required of commercial email, and both are what
-   keep a sending domain alive. */
+   The sign-off and opt-out are shared by the project. The postal address is
+   optional and omitted by default (owner, 2026-10-09). */
 function footerPreview(text, sender) {
   const vals = { sender_name: sender.name, sender_title: sender.title, postal_address: sender.postal_address };
   let out = text || "";
@@ -1240,14 +1285,14 @@ async function openFooter() {
     ${modalHead(`${typeIcon("mail")}<span class="key">Footer</span>`)}
     <div class="modal-body single"><div class="modal-main">
       <h2 class="modal-title" style="font-size:20px;line-height:24px;margin-bottom:4px">The end of every email</h2>
-      <p class="sub" style="margin-bottom:20px">Your sign-off, your postal address and the line that lets someone out. It goes on the opener and on every follow-up, so it is set once here rather than inside each template.</p>
+      <p class="sub" style="margin-bottom:20px">Your sign-off and the line that lets someone out. It goes on the opener and on every follow-up, so it is set once here rather than inside each template.</p>
       <div class="footer-grid">
         <div class="field"><label for="fName">Your name</label><input id="fName" type="text" value="${esc(d.sender.name)}" autofocus></div>
         <div class="field"><label for="fTitle">Your title</label><input id="fTitle" type="text" value="${esc(d.sender.title)}"></div>
       </div>
-      <div class="field" style="margin-top:12px"><label for="fPostal">Postal address</label>
+      <div class="field" style="margin-top:12px"><label for="fPostal">Postal address (optional)</label>
         <input id="fPostal" type="text" value="${esc(d.sender.postal_address)}" placeholder="Street, city, postcode, country">
-        <div class="help">Commercial email has to carry a real postal address. A missing one is what gets a sending domain blocked.</div></div>
+        <div class="help">Included only when {{postal_address}} is used in the footer below.</div></div>
       <div class="field" style="margin-top:16px"><label for="fText">Footer</label>
         <textarea id="fText" style="min-height:140px">${esc(d.text)}</textarea>
         <div class="help">Fields: ${d.fields.map((f) => `<code>{{${esc(f)}}}</code>`).join(" ")}</div></div>
@@ -1318,8 +1363,9 @@ function openMessage(id) {
       <div class="modal-main">
         ${isDraft
           ? `<div class="field" style="margin-bottom:14px"><label for="draftSubject">Subject</label><input id="draftSubject" type="text" value="${esc(r.subject || "")}"></div>
-             <div class="field"><label for="draftBody">Body</label><textarea id="draftBody" class="draft-body">${esc(r.body || "")}</textarea>
-             <div class="help">Edits are saved when you approve. Approving sends it: a person read exactly this text and stands behind it.</div></div>`
+             ${rewritePanel()}
+             <div class="field" style="margin-top:16px"><label for="draftBody">Body</label><textarea id="draftBody" class="draft-body">${esc(r.body || "")}</textarea>
+             <div class="help">Save your edits as a draft, or approve when it is ready to send.</div></div>`
           : `<h2 class="modal-title" style="font-size:20px;line-height:24px">${esc(r.subject || "(no subject)")}</h2>
              <div class="mail-body">${esc(r.body || "")}</div>
              ${r.triage_reason ? `<div class="section" style="margin-top:20px"><h3>${icon("sparkle", 16)} Triage note</h3><div class="body">${esc(r.triage_reason)}</div></div>` : ""}`}
@@ -1334,7 +1380,7 @@ function openMessage(id) {
             ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
-            ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">Part of this email was written by a model from this lead's own evidence. Every number in it was checked against that evidence.</dd>` : ""}
+            ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">This draft includes text written or rewritten by AI. Review its facts and wording before approving.</dd>` : ""}
           </dl></div></div>
         <div class="timestamps">${r.sent_at ? "Sent " + fmtDate(r.sent_at) + "<br>" : ""}Created ${fmtDate(r.created_at)}</div>
       </div>
@@ -1342,7 +1388,7 @@ function openMessage(id) {
     <div class="modal-foot">
       <span class="left">${esc(approverNote(r, isDraft) ?? (r.status === "approved" ? (o.paused ? "Approved. It waits here: sending is paused for this project." : o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : ""))}</span>
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
-      ${isDraft ? `<button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
+      ${isDraft ? `<button class="btn" id="draftSave">Save draft</button><button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
       ${isReply && r.status !== "cancelled" ? `<button class="btn" data-act="mark_negative">Mark negative</button><button class="btn primary" data-act="mark_positive">${icon("check", 16)} Mark positive</button>` : ""}
     </div>`, { label: r.subject || "Message", sheet: true });
@@ -1353,6 +1399,21 @@ function openMessage(id) {
   // the list stays in view beside the sheet, so a stray click could close it: an edited draft asks first
   if (isDraft) {
     const was = { s: r.subject || "", b: r.body || "" };
+    bindRewrite(root, $("#draftSubject", root), $("#draftBody", root), "/api/outreach/" + id + "/rewrite");
+    $("#draftSave", root).addEventListener("click", async (event) => {
+      if (o.busy) return;
+      o.busy = true;
+      const btn = event.currentTarget, subj = $("#draftSubject", root), body = $("#draftBody", root);
+      const controls = $$("button, input, textarea", root).map((el) => [el, el.disabled]);
+      controls.forEach(([el]) => { el.disabled = true; }); btn.classList.add("loading");
+      try {
+        await api("/api/outreach/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: subj.value, body: body.value, ai_rewritten: body.dataset.aiRewritten === "true" }) });
+        was.s = r.subject = subj.value; was.b = r.body = body.value;
+        flag("Draft saved", { desc: "Ready to review and approve." });
+      } catch (e) { toast(e.message, true); }
+      finally { o.busy = false; btn.classList.remove("loading"); controls.forEach(([el, disabled]) => { if (el.isConnected) el.disabled = disabled; }); }
+    });
     modal.guard = () => {
       const s = $("#draftSubject", root), bd = $("#draftBody", root);
       return !s || !bd || (s.value === was.s && bd.value === was.b) || confirm("Discard your changes to this draft?");
@@ -1371,7 +1432,7 @@ function openMessage(id) {
     try {
       if (b.dataset.act === "approve") {
         await api("/api/outreach/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value }) });
+          body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value, ai_rewritten: $("#draftBody", root).dataset.aiRewritten === "true" }) });
       }
       const res = await post("/api/outreach/" + id + "/decision", { action: b.dataset.act });
       const msg = { approve: res.can_send ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",

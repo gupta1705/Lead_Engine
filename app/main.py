@@ -663,6 +663,55 @@ def outreach_attachment(path: str = ""):
                         media_type=mimetypes.guess_type(name)[0] or "application/octet-stream")
 
 
+def _rewrite_email(body, cfg, person=None, context=None):
+    _render()  # adds tools/ to the import path
+    import email_rewrite
+    import llm
+    b = body or {}
+    try:
+        return email_rewrite.rewrite(b.get("subject", ""), b.get("body", ""),
+                                     b.get("instructions", ""), cfg, person, context)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except llm.Unavailable:
+        raise HTTPException(503, "Email rewriting is unavailable right now. Your draft is unchanged; try again shortly.")
+
+
+@app.post("/api/outreach/rewrite")
+def outreach_compose_rewrite(request: Request, body: dict = Body(...),
+                             segment: str = Depends(current_segment)):
+    """Rewrite the unsaved email in the compose window. Never creates or approves outreach."""
+    with cursor() as cur:
+        cfg = _policy().outreach_config(cur, segment)
+        if not cfg.get("compose"):
+            raise HTTPException(403, "Writing emails to picked leads is not on for this project.")
+        cur.execute("select email, name, title from app_users where lower(email) = lower(%s)",
+                    (getattr(request.state, "user", ""),))
+        person = cur.fetchone()
+    return _rewrite_email(body, cfg, dict(person) if person else None)
+
+
+@app.post("/api/outreach/{oid}/rewrite")
+def outreach_draft_rewrite(oid: str, request: Request, body: dict = Body(...),
+                           segment: str = Depends(current_segment)):
+    """Return an editable rewrite of the current draft, including unsaved edits. No write occurs."""
+    oid = _id(oid, "draft")
+    with cursor() as cur:
+        cur.execute("select o.status, o.direction, e.name as company, s.slug"
+                    " from outreach o join entities e on e.id = o.entity_id"
+                    " join segments s on s.id = e.segment_id where o.id = %s", (oid,))
+        row = cur.fetchone()
+        if not row or row["slug"] != segment:
+            raise HTTPException(404, "No such draft in this project.")
+        if row["status"] != "drafted" or row["direction"] != "outbound":
+            raise HTTPException(409, "Only outbound drafts can be rewritten.")
+        cfg = _policy().outreach_config(cur, segment)
+        cur.execute("select email, name, title from app_users where lower(email) = lower(%s)",
+                    (getattr(request.state, "user", ""),))
+        person = cur.fetchone()
+    return _rewrite_email(body, cfg, dict(person) if person else None, {"company": row["company"]})
+
+
 @app.patch("/api/outreach/{oid}")
 def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
     """Edit a draft's subject/body. Approval means a human read THIS text, so
@@ -686,9 +735,10 @@ def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
     with cursor() as cur:
         cur.execute(
             "update outreach set subject = coalesce(%s, subject),"
-            " body = coalesce(%s, body), updated_at = now()"
+            " body = coalesce(%s, body), generated_hook = case when %s then coalesce(%s, body)"
+            " else generated_hook end, updated_at = now()"
             " where id = %s and status = 'drafted' returning id",
-            (subject, text, oid))
+            (subject, text, (body or {}).get("ai_rewritten") is True, text, oid))
         if not cur.fetchone():
             raise HTTPException(409, "only drafts can be edited")
     return {"ok": True}
@@ -1018,10 +1068,8 @@ def footer_get(segment: str = Depends(current_segment)):
 def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
     """Save the footer and the sender it names.
 
-    It is refused unless what comes out carries a postal address and a way off
-    the list. That is the whole reason this is one setting instead of four
-    lines copied into every template: the part that has to be right on EVERY
-    email should be impossible to get wrong on one of them.
+    The footer must keep a way off the list. A postal address is optional,
+    and the default footer omits it (owner, 2026-10-09).
 
     Drafts waiting for approval get the new footer too: they cannot be approved
     with a footer that still says SET_ME. Only the footer is swapped, and a draft
@@ -1074,7 +1122,7 @@ def _rebuild_drafts(cur, segment, old_cfg, new_cfg, dr):
 
     ONLY the footer. Everything above it is left exactly as it stands, so a
     draft somebody rewrote by hand keeps their words and still ends with the
-    right address. The swap is by suffix, not by re-rendering the whole email:
+    current sign-off. The swap is by suffix, not by re-rendering the whole email:
     re-rendering would also silently apply every change the engine has made to
     greetings and hooks since the draft was written, which is not what saving
     a footer asked for. A draft that does not end with the old footer is left

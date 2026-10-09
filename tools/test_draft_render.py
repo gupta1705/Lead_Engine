@@ -6,9 +6,8 @@ regression table.
 
 Two things are guarded here and they fail in opposite directions.
 
-THE FOOTER must never be savable without a postal address and a way off the
-list: that is what commercial email is required to carry and what keeps a
-sending domain alive, and a footer is one careless keystroke from losing it.
+THE FOOTER keeps a working opt-out and supported fields. Postal addresses
+are optional and omitted by default (owner, 2026-10-09).
 
 THE PERSONALISATION must never say anything the lead's own row does not
 support. Every case below is built from the shape of real rows in the live
@@ -33,8 +32,8 @@ FOOTER_CASES = [
     ("empty", "   ", GOOD_SENDER, "empty"),
     ("sender not filled in yet", dr.DEFAULT_FOOTER,
      {"name": "SET_ME", "title": "x", "postal_address": "SET_ME street"}, "SET_ME"),
-    ("no postal address", '{{sender_name}}\nreply "no thanks" to stop',
-     {"name": "Ravi", "postal_address": ""}, "postal address"),
+    ("postal address is optional", '{{sender_name}}\nreply "no thanks" to stop',
+     {"name": "Ravi", "postal_address": ""}, None),
     ("address but no way out", "{{sender_name}}\n" + ADDR, GOOD_SENDER, "No way out"),
     ("unknown field", "{{sender_name}}\n{{fit_score}}\n" + ADDR + '\nreply "no thanks"',
      GOOD_SENDER, "not a field"),
@@ -229,8 +228,9 @@ def main():
         ("four paragraphs, then the sign-off", b1.split("\n\nWarm regards,")[0].count("\n\n"), 5),
         ("paragraph two is about them", "\n\nWhich is why Taste In Motion caught my attention." in b1
          or "\n\nWhich is why Taste In Motion drew me in." in b1, True),
-        ("the footer's sign-off, then the address and the way out",
-         "Warm regards,\n%s\n%s\n\n%s" % (real["sender"]["name"], real["sender"]["title"], ADDR) in b1, True),
+        ("the footer's sign-off and opt-out, without the address",
+         ("Warm regards,\n%s\n%s" % (real["sender"]["name"], real["sender"]["title"]) in b1
+          and ADDR not in b1 and "no thanks" in b1), True),
         ("their city in the ask", "work around your schedule in LA." in b1, True),
         ("the research note never reaches the email", "INTERNAL" in b1 + b4 + b5, False),
         ("nobody named: the samples' plain greeting, on Kartikeya's behalf",

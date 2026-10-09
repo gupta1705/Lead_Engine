@@ -491,7 +491,7 @@ def main_():
         check("the footer reads back with no problems", (bool(f["text"]), f["problems"]), (True, []))
         r = call("POST", "/api/outreach/footer", cookies=mine, json={"text": "Thanks,\n{{sender_name}}",
                                                                    "sender": {"postal_address": ""}})
-        check("a footer with no postal address is refused", r.status_code, 400)
+        check("a footer without an opt-out is refused", r.status_code, 400)
         r = call("POST", "/api/outreach/footer", cookies=mine, json={"text": f["text"], "sender": f["sender"]})
         check("saving the same footer: 200", (r.status_code, r.json().get("ok")), (200, True))
 

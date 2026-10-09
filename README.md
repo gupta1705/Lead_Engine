@@ -56,6 +56,14 @@ retakes the screenshots from the real UI and `python tools/md_to_pdf.py` rebuild
 
 The engine runs more than one segment from one deployment. Alongside the TVF co-production segment it now carries **LCX clipping**, a sales segment for creators and podcasters with a deep back catalogue and no shorts, discovered through Apple's podcast search and the YouTube Data API and scored on their own numbers. Switch segments from the Projects menu; see [`docs/LCX_clipping.md`](docs/LCX_clipping.md). The **startup acquisitions** segment finds Mumbai startups showing public signs of struggle that TVF could buy for little or back with its content and audience, from news headlines and each startup's own website; see [`docs/startups.md`](docs/startups.md). The **Universal** project has no harvest and no rubric: its Apollo search page searches Apollo's people and companies with Apollo's own filters, and saves the ones a person picks as leads (people search is free; revealing a person costs one Apollo credit). The client, its costs and its filters are documented in [`tools/apollo.py`](tools/apollo.py); the key is `APOLLO_API_KEY`.
 
+In **Outreach**, open a draft and choose **Rewrite with AI** to request a change in
+wording or tone. The rewrite uses the text currently in the editor, preserves the
+sign-off and personalisation fields, and stays editable. **Undo rewrite** restores
+the previous text; **Save draft** keeps it for later. Approving is the separate step
+that sends the email. The **Write email** window also offers rewriting. These use
+the existing `GROQ_API_KEY`; if the service is unavailable, the original text stays.
+Postal addresses are optional and omitted from the default footer.
+
 ## Where things are
 
 | Path | What |

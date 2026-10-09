@@ -914,7 +914,7 @@
    "title": "Clipping desk, LCX",
    "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
    "email_env": "GMAIL_SENDER_ADDRESS_LCX_CLIPPING",
-   "guidance": "sender.name and postal_address MUST be set before the first send. The sending addresses come from the environment variables named in outreach.mailboxes, never from config."
+   "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
   },
   "daily_send_cap": 120,
   "hook_style": "clipping",
@@ -1012,8 +1012,8 @@
   ],
   "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them.",
   "footer": {
-   "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
-   "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+   "text": "{{sender_name}}\n{{sender_title}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+   "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
   },
   "generated_hook": {
    "model": "openai/gpt-oss-120b",

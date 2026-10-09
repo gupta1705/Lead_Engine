@@ -2797,11 +2797,11 @@
       "name": "LCX",
       "title": "Business Development",
       "postal_address": "Contagious Online Media Network Pvt Ltd. 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
-      "guidance": "Never what a recipient reads as the sign-off: the email goes from the approver's own Gmail, signed with their name and title (app_users), with this postal address under it. The owner, 2026-10-06: TVF's Mumbai office address, as US Production Houses and Universal."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
     },
     "footer": {
-      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
-      "guidance": "The block every email here ends with: the approver's sign-off, the postal address and the way out. Edited from Outreach -> Footer."
+      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     },
     "greeting_fallback": "there",
     "hook_style": "lcx_services",

@@ -697,7 +697,7 @@
       "name": "SET_ME",
       "title": "Corporate Development, The Viral Fever",
       "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
-      "guidance": "Set before the first send. Gmail address comes from GMAIL_SENDER_ADDRESS in .env."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
     },
     "daily_send_cap": 10,
     "templates": [
@@ -710,8 +710,8 @@
     ],
     "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
-      "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
-      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+      "text": "{{sender_name}}\n{{sender_title}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     }
   },
   "schedule": [

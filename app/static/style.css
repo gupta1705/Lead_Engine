@@ -1186,3 +1186,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
   .check-grid { grid-template-columns: 1fr; }
   .uni-hero { padding: 14px; }
 }
+
+/* Email rewrite controls stay beside the text being edited. */
+.email-rewrite { margin-top: 16px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); }
+.email-rewrite summary { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 500; }
+.email-rewrite[open] summary { margin-bottom: 12px; }
+.rewrite-instructions { min-height: 68px; resize: vertical; }
+.rewrite-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

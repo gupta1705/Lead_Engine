@@ -19,12 +19,10 @@ one sentence -- which reads as a blast both to a person and to a spam filter
 -- while the same lead always renders identically, so a redraft never quietly
 changes text somebody already read.
 
-THE FOOTER is one setting per segment instead of four lines repeated in every
-template, because it is the part that must be right on EVERY email: the
-sign-off, the postal address and the way out. Templates end with {{footer}};
-the text lives in config outreach.footer.text and is edited in the app. It is
-validated before it can be saved -- commercial email needs a real postal
-address and a working opt-out, and a footer is easy to break by accident.
+THE FOOTER is one setting per segment: the sign-off and the way out. Templates
+end with {{footer}}; the text lives in config outreach.footer.text and is
+edited in the app. Postal addresses are optional and omitted by default
+(owner, 2026-10-09). The opt-out and supported fields are still validated.
 """
 import datetime as dt
 import hashlib
@@ -32,7 +30,7 @@ import re
 
 # ------------------------------------------------------------------- footer
 DEFAULT_FOOTER = (
-    "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\n"
+    "{{sender_name}}\n{{sender_title}}\n"
     "If this isn't relevant, reply \"no thanks\" and you won't hear from me again.")
 
 # What the footer is allowed to interpolate. Deliberately small: the footer is
@@ -79,8 +77,7 @@ def validate_footer(text, sender):
     problems = []
     text = (text or "").strip()
     if not text:
-        return ["The footer is empty. Every email needs a sign-off, a postal "
-                "address and a way out of the list."]
+        return ["The footer is empty. Every email needs a sign-off and a way out of the list."]
     unknown = sorted({p for p in PLACEHOLDER.findall(text) if p not in FOOTER_FIELDS})
     if unknown:
         problems.append("%s is not a field the footer can use. It can use: %s."
@@ -89,11 +86,7 @@ def validate_footer(text, sender):
     resolved = resolve_footer(text, sender)
     if "SET_ME" in resolved:
         problems.append("The footer still says SET_ME. Fill in the name and the "
-                        "postal address.")
-    if not _looks_like_address(resolved):
-        problems.append("No postal address in the footer. Commercial email has to "
-                        "carry a real postal address, and a missing one is what "
-                        "gets a sending domain blocked.")
+                        "sender details.")
     low = resolved.lower()
     if not any(m in low for m in OPT_OUT_MARKERS):
         problems.append("No way out. Keep a line telling the recipient how to stop "

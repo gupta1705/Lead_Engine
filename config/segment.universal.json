@@ -37,11 +37,11 @@
       "name": "The Viral Fever",
       "title": "Business Development",
       "postal_address": "Contagious Online Media Network Pvt Ltd. 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
-      "guidance": "Never what a recipient reads: an email here is written by a person and signed with their own name and title (app_users), with this postal address under it. The same company address as US Production Houses."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
     },
     "footer": {
-      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\n{{postal_address}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
-      "guidance": "The block every email here ends with: the writer's sign-off, TVF's postal address and the way out, as in US Production Houses. Edited from Outreach -> Footer."
+      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     },
     "guidance": "Owner, 2026-09-27: \"in the universal segment there should be a widget to send mail to them\". Universal leads come from Apollo, not a harvest, so there are no templates and nothing is drafted: a person picks leads (Leads page, or one lead) and writes one email with {{first_name}} and {{company}} in it (tools/outreach_compose.py). The page shows how it reads for each of them; approving it is the same gate as everywhere -- one approved email per company, checked like an approved draft -- and it goes out from the writer's own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address's daily limit, which it shares with every other project. A lead still in To review is shortlisted by being written to. Replies land in Outreach -> Replies."
   },
