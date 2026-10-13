@@ -3,6 +3,7 @@
 
     python tools/gen_manual.py            # build fixture, serve, shoot
     python tools/gen_manual.py --keep     # leave the preview server running
+    python tools/gen_manual.py --shots-only --only 10-operations   # one picture again, on the fixture built
 
 WHY IT IS SCRIPTED. A manual whose pictures were taken by hand rots the first
 time a button moves. This drives the actual UI -- the same HTML, CSS and
@@ -115,10 +116,29 @@ def build_outreach(fx):
                         "created_at": (now - timedelta(hours=6)).isoformat(),
                         "approved_at": None, "approved_by": None, "approval_mode": None,
                         "spot_checked": None, "folder": "inbox"})
+    # the sending window (owner, 2026-10-12), as the repo's config has it: the approved one holds its own
+    # second, 10:17:41 in New York's next 10:00-10:30, worded by the real tools/send_window.py
+    import outreach_policy as pol
+    import send_window as sw
+    seg_cfg = json.loads((ROOT / "config" / ("segment.%s.json" % SEGMENT)).read_text(encoding="utf-8"))
+    w = sw.window_cfg(seg_cfg.get("outreach") or {})
+    if w:
+        fx.setdefault("segment", {}).setdefault("outreach_policy", {})["send_window"] = {
+            k: w[k] for k in ("enabled", "start", "end", "timezone_of", "weekdays_only", "sender_timezone")}
+        for r in out:
+            if r["status"] == "approved":
+                ws, we = sw.next_window("America/New_York", w, now)
+                r.update(send_after=ws + timedelta(minutes=17, seconds=41), send_before=we, send_tz="America/New_York",
+                         send_tz_reason="company city New York, NY (OpenStreetMap)", send_reschedules=0, send_wait_why=None)
+                r["schedule"] = pol.schedule_view(r, w)
+                r["send_after"], r["send_before"] = r["send_after"].isoformat(), r["send_before"].isoformat()
     counts = {}
     for r in out:
         counts[r["folder"]] = counts.get(r["folder"], 0) + 1
     fx["outreach"] = {"rows": out, "counts": counts}
+    # the manual is shared: signed in as a made-up person, never whoever took the base snapshot
+    fx["auth"] = dict(fx.get("auth") or {}, user="you@theviralfever.com", name=SENDER["name"], title=SENDER["title"],
+                      must_change_password=False)
     fx["footer"] = dict(fx.get("footer") or {}, sender=SENDER, problems=[],
                         preview=dr.resolve_footer(dr.footer_text(cfg), SENDER),
                         drafts_pending=sum(1 for r in out if r["folder"] == "drafts"))
@@ -254,7 +274,9 @@ DROP_BADGE = """(() => {
 })()"""
 
 
-def capture(keep):
+def capture(keep, only=None):
+    """only: the names of the shots to take again (--only 10-operations), the rest left as they are -- a change
+    to one screen re-takes one picture, not twelve whose dates have moved on (2026-10-12)."""
     from playwright.sync_api import sync_playwright
     OUT.mkdir(parents=True, exist_ok=True)
     srv = subprocess.Popen([sys.executable, str(ROOT / "tools" / "ui_preview.py"), "--serve",
@@ -266,6 +288,8 @@ def capture(keep):
         with sync_playwright() as p:
             browser = p.chromium.launch(channel="chrome")
             for name, height, fn in SHOTS:
+                if only and name not in only:
+                    continue
                 ctx = browser.new_context(viewport={"width": 1360, "height": height},
                                           device_scale_factor=2, color_scheme="light")
                 page = ctx.new_page()
@@ -291,12 +315,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--keep", action="store_true", help="leave the preview server running")
     ap.add_argument("--shots-only", action="store_true", help="reuse the fixture already built")
+    ap.add_argument("--only", action="append", metavar="SHOT", help="take only this shot again (repeatable),"
+                    " e.g. --only 10-operations")
     a = ap.parse_args()
+    unknown = sorted(set(a.only or []) - {name for name, _h, _f in SHOTS})
+    if unknown:
+        ap.error("no such shot: %s (they are %s)" % (", ".join(unknown), ", ".join(n for n, _h, _f in SHOTS)))
     if not a.shots_only:
         log("building the manual fixture")
         build_fixture()
     log("taking screenshots")
-    capture(a.keep)
+    capture(a.keep, a.only)
     log("done -> %s" % OUT)
     return 0
 

@@ -923,7 +923,19 @@ values (
       "title": "Clipping desk, LCX",
       "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
       "email_env": "GMAIL_SENDER_ADDRESS_LCX_CLIPPING",
-      "guidance": "sender.name and postal_address MUST be set before the first send. The sending addresses come from the environment variables named in outreach.mailboxes, never from config."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
+    },
+    "send_window": {
+      "enabled": true,
+      "start": "10:00",
+      "end": "10:30",
+      "timezone_of": "recipient",
+      "sender_timezone": "Asia/Kolkata",
+      "fallback_timezone": "America/New_York",
+      "weekdays_only": true,
+      "min_gap_seconds": 45,
+      "min_lead_seconds": 120,
+      "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". Sending is paused for this project (sending_paused); the window applies from the day it is lifted. A show that names no place goes at New York''s 10:00 (fallback_timezone)."
     },
     "daily_send_cap": 120,
     "hook_style": "clipping",
@@ -1021,8 +1033,8 @@ values (
     ],
     "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox''s first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX''s own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them.",
     "footer": {
-      "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+      "text": "{{sender_name}}\n{{sender_title}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     },
     "generated_hook": {
       "model": "openai/gpt-oss-120b",

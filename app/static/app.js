@@ -812,7 +812,9 @@ async function openLead(id, opts) {
           if (!ob || !(ob.sent_at || ["approved", "sending", "send_unknown"].includes(ob.status))) return "";
           return `<div class="side-group"><div class="group-head">${icon("send", 16)} Outreach</div><div class="group-body"><dl class="details">
             <dt>${ob.sent_at ? "Reached out by" : "Approved by"}</dt><dd>${esc(ob.approved_by_name || ob.approved_by || "—")}${ob.sender_address ? `<div class="small muted">from ${esc(ob.sender_address)}</div>` : ""}</dd>
-            <dt>${ob.sent_at ? "Sent" : "Status"}</dt><dd>${ob.sent_at ? esc(fmtDate(ob.sent_at)) : "Approved, waiting to go out"}</dd>
+            ${!ob.sent_at && ob.schedule && ob.schedule.held ? `<dt>Goes out</dt><dd>Held back, not sent<div class="small muted">${esc(ob.schedule.held_why || "")}</div></dd>`
+              : !ob.sent_at && ob.schedule ? `<dt>Goes out</dt><dd>${esc(whenText(ob.schedule))}${ob.schedule.send_tz_reason ? `<div class="small muted">${esc(ob.schedule.send_tz_reason)}</div>` : ""}</dd>`
+              : `<dt>${ob.sent_at ? "Sent" : "Status"}</dt><dd>${ob.sent_at ? esc(fmtDate(ob.sent_at)) : "Approved, waiting to go out"}</dd>`}
           </dl></div></div>`; })()}
         ${det ? `<div class="side-group"><div class="group-head">Details</div><div class="group-body"><dl class="details">${det}</dl></div></div>` : ""}
         <div class="timestamps">Created ${fmtDate(d.created_at)}<br>Updated ${fmtDate(d.updated_at || d.created_at)}</div>
@@ -878,6 +880,54 @@ function stepLozenge(r) {
   const n = +r.sequence_step || 0;
   return n > 0 ? `<span class="lozenge new" title="Follow-up in the same thread">Follow-up ${n}</span> ` : "";
 }
+
+/* ------------------------------------------------------------ when it goes
+   Each approved email goes out at its own random second, 10:00-10:30 on its recipient's clock (owner,
+   2026-10-12: "some must be going at 10:17 some at 10:13"). The server writes the words
+   (tools/send_window.py): "Tue 14 Oct, 10:17 New York time (19:47 IST)" -- the recipient's clock, then
+   India's. The page adds the viewer's own clock only where it is neither, and keeps every older sentence
+   where an email has no time (a project without outreach.send_window). */
+function sendWindow() { return outreachPolicy().send_window || null; }
+function windowSpan() { const w = sendWindow() || {}; return `${w.start || "10:00"} and ${w.end || "10:30"}`; }
+/* Whose clock the window is on (review, 2026-10-12): the recipient's, or -- with timezone_of "sender" -- every
+   email at 10:00-10:30 on the sender's, India's. Every sentence below asks these, never says "recipient's" blindly. */
+function onSenderClock() { return (sendWindow() || {}).timezone_of === "sender"; }
+function senderPlace() { return (sendWindow() || {}).sender_place || "India"; }
+function itsClock() { return onSenderClock() ? `${senderPlace()}'s clock` : "its recipient's clock"; }
+function itsZone() { return onSenderClock() ? `${senderPlace()}'s time zone` : "its recipient's time zone"; }
+function itsWindow() { return onSenderClock() ? `its window on ${senderPlace()}'s clock` : "its recipient's window"; }
+function nextWindow() { return onSenderClock() ? `the next window on ${senderPlace()}'s clock` : "the recipient's next window"; }
+function clockAt(iso, tz) {
+  try {
+    return new Date(iso).toLocaleString("en-GB", Object.assign({ weekday: "short", hour: "2-digit", minute: "2-digit",
+      hourCycle: "h23" }, tz ? { timeZone: tz } : {}));
+  } catch (e) { return ""; }
+}
+/* "Tue 19:47" on this browser's clock, when that is neither the recipient's nor the sender's (India) */
+function yourClock(s) {
+  if (!s || !s.send_after) return "";
+  const mine = clockAt(s.send_after);
+  const sender = (sendWindow() || {}).sender_timezone || "Asia/Kolkata";
+  return mine && mine !== clockAt(s.send_after, s.send_tz) && mine !== clockAt(s.send_after, sender) ? mine : "";
+}
+function whenText(s) { const y = yourClock(s); return s.send_label + (y ? `; ${y} your time` : ""); }
+/* An approved email's own moment, for the sheet's foot: when, from whom, and why it moved if it did */
+function goesOutNote(r, name) {
+  const s = r.schedule;
+  if (!s) return null;
+  const by = name ? `Approved by ${name}. ` : "Approved. ";
+  // held back (a send error, or sending paused): it goes on no day, so no time is promised (review, 2026-10-12)
+  if (s.held) return `${by}Held back, not sent: ${s.held_why}.`;
+  if (s.reschedules > 0 && s.wait_why) return `${by}Its earlier window passed unsent (${s.wait_why}): now ${whenText(s)}.`;
+  return `${by}Goes out ${whenText(s)}${name ? ", from their address" : ""}.`;
+}
+/* "9 on Tue 14 Oct (6 New York, 3 UK), 3 on Wed 15 Oct (New York)": a batch's times, by the recipients' days */
+function windowsText(ws) {
+  return (ws || []).map((d) => `${d.count} on ${d.label}` + ((d.places || []).length
+    ? ` (${d.places.length > 1 ? d.places.map(([p, n]) => n + " " + p).join(", ") : d.places[0][0]})` : "")).join(", ");
+}
+/* "3 on Tue 14 Oct, 2 on Wed 15 Oct": approved emails by the day they go out, on India's clock */
+function scheduledText(days) { return (days || []).map((d) => `${d.count} on ${d.label}`).join(", "); }
 async function loadOutreach() {
   const o = state.outreach, token = ++o.token;
   if (!draftsOn() && o.folder === "drafts") o.folder = "outbox";   // a project whose emails a person writes
@@ -912,6 +962,18 @@ async function loadOutreach() {
       <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
       <td class="by-col">${r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
       ${(() => {   // when it last moved: sent, approved, or written -- not the draft's age on every tab
+        const s = r.schedule;
+        if (s && s.held && !r.sent_at && r.status === "approved") {
+          // held back: no time, because none will come (review, 2026-10-12); why, on hover and under the subject
+          return `<td class="nowrap when-cell" title="${esc("Held back, not sent: " + (s.held_why || ""))}"><div>Held</div><div class="secondary">${r.send_error ? "not sending" : "sending paused"}</div></td>`;
+        }
+        if (s && !s.held && !r.sent_at && ["approved", "sending"].includes(r.status)) {
+          // Approved is the queue: when each one goes, on its recipient's clock (and the viewer's, if neither)
+          const y = yourClock(s);
+          return `<td class="nowrap when-cell" title="${esc(whenText(s) + (s.send_tz_reason ? " · " + s.send_tz_reason : "")
+            + (s.reschedules && s.wait_why ? " · moved: " + s.wait_why : ""))}"><div>${esc(s.send_short)}</div>${y
+            ? `<div class="secondary">${esc(y)} your time</div>` : s.reschedules ? `<div class="secondary">moved ${s.reschedules}×</div>` : ""}</td>`;
+        }
         const at = r.sent_at || (r.status === "approved" ? r.approved_at : null) || r.created_at;
         const what = r.sent_at ? "Sent" : r.status === "approved" && r.approved_at ? "Approved" : r.direction === "inbound" ? "Received" : "Written";
         return `<td class="secondary nowrap" title="${esc(what + " " + fmtDate(at))}">${rel(at)}</td>`; })()}
@@ -922,6 +984,8 @@ async function loadOutreach() {
         : "Nothing in this folder yet."}</td></tr>`;
   // who reached out: the person who approved it, from which address (owner, 2026-09-26)
   $("#outreachTable").classList.toggle("show-by", ["outbox", "sent", "attention"].includes(o.folder));
+  // the Approved folder is a queue with times in it where the project has a sending window
+  $("#outreachWhenCol").textContent = o.folder === "outbox" && sendWindow() ? "Goes out" : "When";
   delegateOpen("#outreachBody", (id) => { setNav("mail", state.outreach.rows.map((r) => String(r.id))); openMessage(id); }, ".sel-col");
   $$("#outreachBody [data-sel]").forEach((c) => c.addEventListener("change", () => {
     if (c.checked) o.selected.add(c.dataset.sel); else o.selected.delete(c.dataset.sel);
@@ -964,7 +1028,7 @@ async function startBatch() {
     ${modalHead(`${icon("check", 16)}<span>Approve ${n} draft${n === 1 ? "" : "s"}</span>`)}
     <div class="modal-body single"><div class="modal-main">
       <div class="section-msg">${icon("info", 24)}<div><div class="title">Read these ${sample.length} first</div>
-        <div class="text">The server picked them at random from your selection. Approval unlocks when every one is ticked. Everything approved is sent exactly as written, and your name is recorded against the batch.${s.generated ? " This batch contains drafts whose opening line a model wrote, so the sample is larger." : ""}</div></div></div>
+        <div class="text">The server picked them at random from your selection. Approval unlocks when every one is ticked. Everything approved is sent exactly as written, and your name is recorded against the batch.${sendWindow() ? ` Each goes out between ${esc(windowSpan())} in ${esc(itsZone())}, at its own minute.` : ""}${s.generated ? " This batch contains drafts whose opening line a model wrote, so the sample is larger." : ""}</div></div></div>
       ${s.skipped.length ? `<div class="section-msg warning">${icon("warn", 24)}<div><div class="title">${s.skipped.length} will not be approved</div>
         <div class="text">${s.skipped.map((x) => esc((byId[x.id] || {}).company || x.id) + ": " + esc(x.reason)).join("<br>")}</div></div></div>` : ""}
       ${sample.map((r, i) => `<div class="sample-item">
@@ -1000,12 +1064,19 @@ async function startBatch() {
       const r = await post("/api/outreach/batch/approve", { ids: s.approvable, sample: s.sample, token: s.token });
       modal.close(true);
       o.selected.clear();
+      // with a sending window: when they go, by their recipients' own days (owner, 2026-10-12). A paused project's
+      // are held, and a held email is never promised a day, skipped drafts or not (second review, 2026-10-12)
+      const held = "They wait in Approved: sending is paused for this project.";
+      const when = !r.paused && (r.windows || []).length ? "Each at its own minute, " + windowSpan().replace(" and ", "-")
+        + " on " + itsClock() + ": " + windowsText(r.windows) + "." : "";
       flag("Approved " + r.approved + " draft" + (r.approved === 1 ? "" : "s"), {
         desc: r.skipped.length ? r.skipped.length + " skipped: " + [...new Set(r.skipped.map((x) => x.reason))].join("; ")
-                               : r.paused ? "They wait in Approved: sending is paused for this project."
+                                 + (r.paused ? ". " + held : when ? ". " + when : "")
+                               : r.paused ? held
+                               : when ? when + (r.can_send ? "" : " They go once a mailbox is connected.")
                                : (r.can_send ? "They go out within minutes, inside today's sending limit."
                                              : "They go out as soon as a mailbox is connected."),
-        kind: r.skipped.length ? "info" : "" });
+        kind: r.skipped.length ? "info" : "", ms: when ? 9000 : undefined });
       await loadOutreach();
     } catch (err) { toast(err.message, true); b.classList.remove("loading"); b.disabled = false; }
   });
@@ -1189,7 +1260,7 @@ async function openCompose(leads) {
     </div>
     <div class="modal-foot"><span class="left" id="cNote"></span>
       <button class="btn subtle" data-close>Cancel</button>
-      <button class="btn primary" id="cGo" disabled>${icon("send", 16)} <span id="cGoText">Approve and send</span></button></div>`,
+      <button class="btn primary" id="cGo" disabled>${icon("send", 16)} <span id="cGoText">${sendWindow() ? "Approve" : "Approve and send"}</span></button></div>`,
     { label: "New email", sheet: true });
 
   const root = $("#modalRoot");
@@ -1205,7 +1276,8 @@ async function openCompose(leads) {
     $("#cList", root).innerHTML = c.ready.map((x, i) => `<li class="${i === c.at ? "on" : ""}" data-at="${i}">
         <span class="rc-main"><span class="rc-name">${esc(x.first_name)}${x.named ? "" : ` <span class="warn-text small">(no first name known)</span>`}</span>
           <span class="small muted truncate">${esc(x.contact_name || "")}${x.contact_name ? " · " : ""}${esc(x.email)}</span>
-          <span class="small muted truncate">${esc(x.company_as_written || x.company)}</span></span>
+          <span class="small muted truncate">${esc(x.company_as_written || x.company)}</span>
+          ${x.window && x.window.enabled && x.window.window_label ? `<span class="small muted truncate" title="${esc(x.window.send_tz_reason || "")}">${icon("clock", 12)} ${esc(x.window.window_label)}</span>` : ""}</span>
         ${n > 1 ? `<button type="button" class="btn icon" data-drop="${esc(x.id)}" aria-label="Leave ${esc(x.company)} out">${icon("x", 14)}</button>` : ""}</li>`).join("");
     const bad = composeUnknown(subj.value + " " + body.value);
     const err = $("#cErr", root);
@@ -1222,9 +1294,12 @@ async function openCompose(leads) {
     }
     const ok = n > 0 && subj.value.trim() && body.value.trim() && body.value.trim() !== GREETING.trim() && !bad.length;
     $("#cGo", root).disabled = !ok;
-    $("#cGoText", root).textContent = n > 1 ? `Approve and send ${n} emails` : "Approve and send";
+    // with a sending window approving is not sending now: each goes at its own minute in its window
+    const verb = sendWindow() ? "Approve" : "Approve and send";
+    $("#cGoText", root).textContent = n > 1 ? `${verb} ${n} emails` : verb;
     const later = chk.paused || !boxes.length ? 0 : Math.max(0, n - room);
     $("#cNote", root).textContent = !boxes.length || chk.paused ? "They wait in Approved until they can go."
+      : sendWindow() ? `Each goes out between ${windowSpan()} in ${itsZone()}, from your address, signed by you.`
       : later ? `${n - later} go today; the other ${later} from tomorrow, within each day's limit.`
       : "Each goes on its own, from your address, signed by you.";
   };
@@ -1254,10 +1329,17 @@ async function openCompose(leads) {
       modal.guard = null; modal.close(true);
       state.leads.selected.clear();
       const n = r.approved, skipped = r.skipped || [];
+      // with a sending window, each one's own moment was drawn on approval: say the first, by its words
+      const first = (r.ready || []).map((x) => x.schedule).filter((s) => s && !s.held && s.send_after)
+        .sort((a, b) => String(a.send_after).localeCompare(String(b.send_after)))[0];
+      const fromAddr = (r.sends_from || [])[0] || "your address";
       flag(n ? `Approved ${n} email${n === 1 ? "" : "s"}` : "Nothing was approved", {
         kind: n ? (skipped.length ? "info" : "") : "err", ms: 8000,
         desc: (n ? (r.paused ? "They wait in Approved: sending is paused for this project."
-                  : r.can_send ? `They go out from ${(r.sends_from || [])[0] || "your address"} within minutes, inside its daily limit.`
+                  : first && !r.can_send ? `${n === 1 ? "It is set for" : "The first is set for"} ${whenText(first)}, but waits in Approved until the owner links a sending address to you.`
+                  : first ? (n === 1 ? `It goes out ${whenText(first)}, from ${fromAddr}.`
+                                     : `The first goes out ${whenText(first)}, from ${fromAddr}; each of the others at its own minute in ${itsWindow()}.`)
+                  : r.can_send ? `They go out from ${fromAddr} within minutes, inside its daily limit.`
                   : "They wait in Approved until the owner links a sending address to you.") : "")
           + (skipped.length ? ` ${skipped.length} skipped: ${[...new Set(skipped.map((s) => s.reason))].join("; ")}.` : "") });
       refreshCurrentView(); refreshOutreachCount(true);
@@ -1378,6 +1460,9 @@ function openMessage(id) {
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
             ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
+            ${r.schedule && r.schedule.held && !r.sent_at && r.status === "approved" ? `<dt>Goes out</dt><dd>Held back, not sent${r.send_error ? "" : `<div class="small muted">${esc(r.schedule.held_why || "")}</div>`}</dd>` : ""}
+            ${r.schedule && !r.schedule.held && !r.sent_at && ["approved", "sending"].includes(r.status) ? `<dt>Goes out</dt><dd>${esc(whenText(r.schedule))}${r.schedule.send_tz_reason ? `<div class="small muted">${esc(r.schedule.send_tz_reason)}</div>` : ""}${r.schedule.reschedules && r.schedule.wait_why ? `<div class="small muted">Moved ${r.schedule.reschedules === 1 ? "once" : r.schedule.reschedules + " times"}: ${esc(r.schedule.wait_why)}</div>` : ""}</dd>` : ""}
+            ${isDraft && sendWindow() ? `<dt>Next window</dt><dd id="msgWindow"><span class="skel" style="width:70%;height:12px"></span></dd>` : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
             ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">This draft includes text written or rewritten by AI. Review its facts and wording before approving.</dd>` : ""}
@@ -1386,9 +1471,9 @@ function openMessage(id) {
       </div>
     </div>
     <div class="modal-foot">
-      <span class="left">${esc(approverNote(r, isDraft) ?? (r.status === "approved" ? (o.paused ? "Approved. It waits here: sending is paused for this project." : o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.") : ""))}</span>
+      <span class="left" id="msgFootNote">${esc(footNote(r, isDraft))}</span>
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
-      ${isDraft ? `<button class="btn" id="draftSave">Save draft</button><button class="btn primary" data-act="approve">${icon("send", 16)} Approve and send</button>` : ""}
+      ${isDraft ? `<button class="btn" id="draftSave">Save draft</button><button class="btn primary" data-act="approve">${icon("send", 16)} ${sendWindow() ? "Approve" : "Approve and send"}</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
       ${isReply && r.status !== "cancelled" ? `<button class="btn" data-act="mark_negative">Mark negative</button><button class="btn primary" data-act="mark_positive">${icon("check", 16)} Mark positive</button>` : ""}
     </div>`, { label: r.subject || "Message", sheet: true });
@@ -1396,6 +1481,17 @@ function openMessage(id) {
   const root = $("#modalRoot");
   modal.current = { kind: "mail", id };
   bindNav(root);
+  // a draft names the window approving it now aims at, never a minute: the minute is drawn on approval
+  if (isDraft && sendWindow()) {
+    api("/api/outreach/" + encodeURIComponent(id) + "/window").then((w) => {
+      if (!modal.isOpen() || !modal.current || modal.current.id !== id) return;
+      const cell = $("#msgWindow", root), foot = $("#msgFootNote", root);
+      if (cell) cell.innerHTML = w && w.enabled && w.window_label
+        ? `${esc(w.window_label)}${w.send_tz_reason ? `<div class="small muted">${esc(w.send_tz_reason)}</div>` : ""}`
+        : '<span class="muted">—</span>';
+      if (foot) foot.textContent = footNote(r, true, w);
+    }).catch(() => { const cell = $("#msgWindow", root); if (cell) cell.textContent = "—"; });
+  }
   // the list stays in view beside the sheet, so a stray click could close it: an edited draft asks first
   if (isDraft) {
     const was = { s: r.subject || "", b: r.body || "" };
@@ -1435,18 +1531,28 @@ function openMessage(id) {
           body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value, ai_rewritten: $("#draftBody", root).dataset.aiRewritten === "true" }) });
       }
       const res = await post("/api/outreach/" + id + "/decision", { action: b.dataset.act });
-      const msg = { approve: res.can_send ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",
+      // held back (an old send error on it): no time to promise, and it does not go "within minutes" either
+      const heldNow = res.schedule && res.schedule.held ? res.schedule : null;
+      if (heldNow) res.schedule = null;
+      const msg = { approve: heldNow ? "Approved, held back" : res.can_send && !res.schedule ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",
         mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped" }[b.dataset.act];
       const perPerson = o.mbx && o.mbx.mode === "approver";
+      const from = res.sends_from && res.sends_from.length ? res.sends_from[0] : "";
+      // with a sending window it goes at the second just drawn for it, on its recipient's clock
       const desc = b.dataset.act === "approve"
-        ? r.company + (res.paused ? ": it waits in Approved, because sending is paused for this project."
-                       : res.can_send ? (res.sends_from && res.sends_from.length ? ": it goes out from " + res.sends_from[0] + " within minutes." : ": it goes out within minutes.")
+        ? r.company + (heldNow ? ": it is not sent while it is held back: " + heldNow.held_why + "."
+                       : res.paused ? ": it waits in Approved, because sending is paused for this project."
+                       : res.schedule && res.can_send ? ": goes out " + whenText(res.schedule) + (from ? ", from " + from : "") + "."
+                       : res.schedule ? ": set for " + whenText(res.schedule) + (perPerson
+                           ? ", but it waits in Approved until the owner links a sending address to you."
+                           : ", once a mailbox is connected.")
+                       : res.can_send ? (from ? ": it goes out from " + from + " within minutes." : ": it goes out within minutes.")
                        : perPerson ? ": it waits in Approved until the owner links a sending address to you."
                        : ": it goes out as soon as a mailbox is connected.")
         : b.dataset.act === "stop_sequence"
         ? (res.cancelled ? res.cancelled + " pending follow-up" + (res.cancelled === 1 ? "" : "s") + " cancelled." : "No further follow-ups will be drafted.")
         : res.entity_promoted === false ? "Reply recorded; the company was not in a state that could be promoted." : r.company;
-      flag(msg, { desc });
+      flag(msg, { desc, ms: res.schedule ? 7000 : undefined });
       modal.close(true);
       await loadOutreach();
     } catch (e) { toast(e.message, true); $$("#modalRoot .btn").forEach((x) => x.disabled = false); b.classList.remove("loading"); }
@@ -1525,7 +1631,20 @@ async function loadSchedule() {
   const rows = (d.schedule || []).filter((s) => s.enabled !== false).map((s) => ({
     name: s.name, run: last[s.pipeline],
     when: s.dow === "*" || s.dow == null ? `Daily ${hm(s)}` : `${DOW[s.dow]} ${hm(s)}` }));
-  rows.push({ name: "drafting and sending", when: "Every 15 minutes, when there is work", run: last.outreach });
+  rows.push({ name: "drafting and sending", run: last.outreach, when: sendWindow()
+    ? "Drafting every 15 minutes; each approved email at its own time, " + windowSpan().replace(" and ", "-")
+      + (onSenderClock() ? " on " + senderPlace() + "'s clock" : " in its recipient's zone")
+    : "Every 15 minutes, when there is work" });
+  // whether the timed sender runs on this server (review, 2026-10-12): off, the windows are kept only at the
+  // fifteen-minute ticks and most emails move to the next weekday -- said here, not found out from a missed day.
+  // Its runs are their own pipeline, "send" (second review, 2026-10-12): its Last run is theirs, and the tick's
+  // row above is the tick's alone, so a timed run a minute later can no longer hide a tick that failed
+  const loop = d.send_loop;
+  if (sendWindow() && loop) rows.push({ name: "timed sending", run: last.send, loop, when: "Every few seconds, each email at its own moment" });
+  // the latest Gmail refusal a send handled, in the last day (second review, 2026-10-12). That run ends OK -- it
+  // moved the address's emails and the others carried on -- so without this row a lasting refusal showed green
+  if (d.refused) rows.push({ name: "Gmail refused an address", run: { started_at: d.refused.at }, refusal: d.refused.detail,
+    when: d.refused.detail });
   const result = (r) => !r ? '<span class="muted">Not run yet</span>'
     : r.status === "running" ? '<span class="lozenge inprogress">Running</span>'
     : r.status === "failed" ? `<span class="lozenge removed" title="${esc(r.failed_detail || r.detail || "")}">Failed${r.failed_step ? " at " + esc(r.failed_step) : ""}</span>`
@@ -1533,9 +1652,13 @@ async function loadSchedule() {
   $("#runsTable").innerHTML = `<thead><tr><th>What</th><th>When</th><th>Last run</th><th>Result</th></tr></thead><tbody>` +
     rows.map((x) => `<tr><td class="primary-cell">${esc(x.name.charAt(0).toUpperCase() + x.name.slice(1))}</td><td>${esc(x.when)}</td>
       <td class="secondary nowrap" title="${esc(x.run ? fmtDate(x.run.started_at) : "")}">${x.run ? rel(x.run.started_at) + (x.run.trigger === "manual" ? " (by hand)" : "") : "—"}</td>
-      <td>${result(x.run)}</td></tr>`).join("") + "</tbody>";
+      <td class="nowrap">${x.refusal ? `<span class="lozenge moved" title="${esc(x.refusal)}">Emails moved</span>`
+        : x.loop ? `<span class="lozenge ${x.loop.on ? "success" : "removed"}" title="${esc(x.loop.why || "")}">${x.loop.on ? "On" : "Off"}</span>`
+          + (x.loop.on && x.run ? " " + result(x.run) : "")
+        : result(x.run)}</td></tr>`).join("") + "</tbody>";
   $("#runsSub").textContent = "What runs by itself, and how its last run went. Times are UTC." + (d.webhook_configured ? ""
-    : " Failures show only here: set ALERT_WEBHOOK_URL on the server to get a Slack or Discord ping.");
+    : " Failures show only here: set ALERT_WEBHOOK_URL on the server to get a Slack or Discord ping.")
+    + (sendWindow() && loop && !loop.on ? " Timed sending is off on this server: " + (loop.why || "") + "." : "");
 }
 
 /* The day's sending counter on the Outreach page (owner, 2026-09-21): how many emails left
@@ -1567,7 +1690,12 @@ function renderSendCounter(m) {
   const waiting = m.approved_waiting || 0, room = Math.max(0, limit - sent);
   const later = held ? waiting : Math.max(0, waiting - room);
   let queue = "";
-  if (later && limit) {
+  if ((m.scheduled || []).length && !held) {
+    // with a sending window each approved email already holds its day: say those, not a guess from today's room
+    queue = " · approved: " + scheduledText(m.scheduled);
+    title += ` Each approved email goes out at its own minute between ${windowSpan()} on ${itsClock()}: `
+      + scheduledText(m.scheduled) + " (days on India's clock).";
+  } else if (later && limit) {
     const days = held ? 0 : Math.ceil(later / limit);
     queue = held ? ` · ${later} approved waiting` : ` · ${later} more from tomorrow`;
     title += held ? "" : ` ${waiting} approved: ${Math.min(waiting, room)} go out today, the other ${later} ` +
@@ -1592,33 +1720,53 @@ function renderMailboxStrip(m) {
       const used = b.daily_cap ? Math.min(100, Math.round(100 * b.out_today / b.daily_cap)) : 0;
       return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">reconnect</span>`}</span>`;
     }).join("") : `<span class="mbx none">no sending address yet</span>`;
-    const waiting = a.approved_waiting ? `<span class="muted small">${a.approved_waiting} approved waiting</span>` : "";
+    // with a sending window: their approvals by the day each goes (India's clock); otherwise how many wait
+    const days = (a.scheduled || []).length && !m.paused ? scheduledText(a.scheduled) : "";
+    const waiting = days ? `<span class="muted small" title="${esc(`Approved, each going out at its own minute in ${itsWindow()} (days on India's clock)`)}">approved: ${esc(days)}</span>`
+      : a.approved_waiting ? `<span class="muted small">${a.approved_waiting} approved waiting</span>` : "";
     return `<div class="mbx-person ${a.me ? "me" : ""}"><span class="who">${avatar(a.name, a.email, "xs")}${esc(a.name)}${a.me ? " (you)" : ""}</span>${boxes}${waiting}</div>`;
   }).join("");
   el.innerHTML = `<div class="mbx-head"><strong>Sending today</strong>
-      <span class="muted small">${m.paused ? "Sending is paused for this project." : `Each person's approvals go out from their own sending address, up to its daily limit. Counts start again at ${esc(resets)}.`}</span></div>
+      <span class="muted small">${m.paused ? "Sending is paused for this project."
+        : sendWindow() ? `Each person's approvals go out from their own sending address, each at its own minute between ${esc(windowSpan())} on ${esc(itsClock())}, up to the address's daily limit. Counts start again at ${esc(resets)}.`
+        : `Each person's approvals go out from their own sending address, up to its daily limit. Counts start again at ${esc(resets)}.`}</span></div>
     <div class="mbx-people">${people}</div>`;
   el.hidden = false;
 }
 
-/* What approving (or an approval) does where each person sends from their own Gmail; null elsewhere. */
-function approverNote(r, isDraft) {
+/* What approving (or an approval) does where each person sends from their own Gmail; null elsewhere.
+   win: the draft's window (GET /api/outreach/{id}/window), once it has been asked for. */
+function approverNote(r, isDraft, win) {
   const m = state.outreach.mbx;
   if (!m || m.mode !== "approver" || m.paused) return null;
   if (isDraft) {
     const me = (m.accounts || []).find((a) => a.me) || { mailboxes: [] };
     const ok = me.mailboxes.filter((b) => b.usable).sort((a, b) => b.remaining - a.remaining);
     if (!ok.length) return "You have no sending address yet: approving keeps it in Approved until the owner links one to you.";
+    if (win && win.enabled && win.window_label)
+      return `Approving sends it from ${ok[0].address} in ${nextWindow()}, ${win.window_label}, at a random minute, signed by you.`;
     return `Approving sends it from ${ok[0].address} (${ok[0].remaining} of ${ok[0].daily_cap} left today), signed by you.`;
   }
   if (r.status === "approved") {
     const who = (m.accounts || []).find((a) => a.email.toLowerCase() === String(r.approved_by || "").toLowerCase());
     const name = who ? who.name : (r.approved_by_name || r.approved_by || "its approver");
-    return who && who.mailboxes.some((b) => b.usable)
-      ? `Approved by ${name}. It goes out from their address within minutes, inside its daily limit.`
-      : `Approved by ${name}. It waits here until the owner links a sending address to ${name}.`;
+    if (!(who && who.mailboxes.some((b) => b.usable))) return `Approved by ${name}. It waits here until the owner links a sending address to ${name}.`;
+    return goesOutNote(r, name) || `Approved by ${name}. It goes out from their address within minutes, inside its daily limit.`;
   }
   return null;
+}
+
+/* The sheet foot's one sentence: what approving this draft does, or what this approval will do. */
+function footNote(r, isDraft, win) {
+  const o = state.outreach;
+  const per = approverNote(r, isDraft, win);
+  if (per != null) return per;
+  if (o.paused) return !isDraft && r.status === "approved" ? "Approved. It waits here: sending is paused for this project." : "";
+  if (isDraft) return win && win.enabled && win.window_label
+    ? `Approving sends it in ${nextWindow()}, ${win.window_label}, at a random minute.` : "";
+  if (r.status !== "approved") return "";
+  if (r.schedule) return goesOutNote(r) + (o.canSend === false && !r.schedule.held ? " It goes once a mailbox is connected." : "");
+  return o.canSend === false ? "Approved. It goes out as soon as a mailbox is connected." : "Approved. It goes out within minutes, inside today's sending limit.";
 }
 
 /* Mailbox rotation and warm-up (LCX). With one mailbox there is nothing to show that

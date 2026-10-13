@@ -168,8 +168,81 @@ def main():
         check("another user's token is rejected", not pol.verify_sample(ok, sample, token, SECRET, "someone@else", SEG))
         check("a changed batch is rejected", not pol.verify_sample(ok[:3], sample, token, SECRET, "tester@x", SEG))
 
-        batch_id, approved = pol.apply_batch(cur, ok, sample, "tester@x", SEG, len(drafts), skipped)
+        # the sending window (owner, 2026-10-12) as the repo has it for this project, inside this transaction
+        # only: approving draws each one's own second in its recipient's window
+        block = json.loads((Path(__file__).resolve().parent.parent / "config" / ("segment.%s.json" % SEG))
+                           .read_text(encoding="utf-8"))["outreach"].get("send_window")
+        cur.execute("update segments set config = jsonb_set(config, '{outreach,send_window}', %s::jsonb) where slug = %s",
+                    (json.dumps(block), SEG))
+        batch_id, approved, schedule = pol.apply_batch(cur, ok, sample, "tester@x", SEG, len(drafts), skipped)
         check("four drafts approved", approved == 4)
+        cur.execute("select count(*) from outreach where approval_batch = %s and send_after is not null"
+                    " and send_before > send_after and send_tz is not null and send_tz_reason is not null", (batch_id,))
+        check("each approved one holds its own moment in its recipient's window, with its zone and why",
+              (cur.fetchone()[0], len(schedule)) == (4, 4), schedule)
+        check("  and the page's words for it: \"Tue 14 Oct, 10:17 New York time (19:47 IST)\"",
+              all(v and v["send_label"] and " time" in v["send_label"] for v in schedule.values()), schedule)
+
+        # moved for the same reason again and again: the third move is told (review, 2026-10-12), as a missed
+        # window's is -- never moved for ever in silence
+        wcfg_seg = pol.outreach_config(cur, SEG)
+        moved_id = sorted(schedule)[0]
+        cur.execute("update outreach set send_reschedules = 2 where id = %s", (moved_id,))
+        told = []
+        n_moved = pol.defer_rows(cur, [moved_id], wcfg_seg, SEG, "test: its address was at its daily limit", alerts=told)
+        cur.execute("select send_reschedules, send_wait_why from outreach where id = %s", (moved_id,))
+        check("defer_rows: moved to its next window with the reason, and its third move is told",
+              (n_moved, cur.fetchone(), told) == (1, (3, "test: its address was at its daily limit"), [moved_id]),
+              (n_moved, told))
+        told = []
+        other_id = sorted(schedule)[1]
+        pol.defer_rows(cur, [other_id], wcfg_seg, SEG, "test", alerts=told)
+        check("  a first move is not told", told == [], told)
+
+        # the page's words for an approved email that will not go (review, 2026-10-12): held, never a time
+        import send_window as sw
+        wcfg = sw.window_cfg(wcfg_seg)
+        cur.execute("select id, status, send_after, send_before, send_tz, send_tz_reason, send_reschedules, send_wait_why,"
+                    " send_error from outreach where id = %s", (other_id,))
+        cols = [d[0] for d in cur.description]
+        row = dict(zip(cols, cur.fetchone()))
+        plain = pol.schedule_view(row, wcfg)
+        check("an approved email with its moment: a time to show, not held",
+              (plain["held"], bool(plain["send_label"]), bool(plain["send_after"])) == (False, True, True), plain)
+        parked = pol.schedule_view(dict(row, send_error="recipient failed verification"), wcfg)
+        check("  parked with a send error (nothing sends it): held, with the reason, and no time at all",
+              (parked["held"], parked["held_why"], parked["send_label"], parked["send_short"], parked["send_after"])
+              == (True, "recipient failed verification", None, None, None), parked)
+        paused_v = pol.schedule_view(row, wcfg, paused="sending is paused for this project")
+        check("  sending paused for the project: held, saying so",
+              (paused_v["held"], paused_v["held_why"], paused_v["send_label"])
+              == (True, "sending is paused for this project", None), paused_v)
+        check("  a project without a window keeps its old words (no view)",
+              pol.schedule_view(dict(row, send_error="x"), None) is None)
+        summary = pol.window_summary({"a": plain, "b": parked})
+        check("  a batch's days count only the emails that go", sum(d["count"] for d in summary) == 1, summary)
+
+        # a follow-up keeps its first email's zone only when that was its recipient's, under today's config
+        fu_row = {"sequence_step": 1, "ptz": "Europe/London", "preason": "recipient: England, United Kingdom",
+                  "pplan": sw.plan_key(wcfg), "metadata": {"hq_country": "US"}}
+        check("a follow-up goes at its first email's clock",
+              pol._zone_for(fu_row, wcfg) == ("Europe/London", "same as the first email: recipient: England, United Kingdom"),
+              pol._zone_for(fu_row, wcfg))
+        own = sw.recipient_zone({"hq_country": "US"}, wcfg)
+        check("  not when that clock was the sender's (a project switched from \"sender\" to \"recipient\")",
+              pol._zone_for(dict(fu_row, ptz="Asia/Kolkata", preason="sender's clock (India)"), wcfg) == own,
+              pol._zone_for(dict(fu_row, ptz="Asia/Kolkata", preason="sender's clock (India)"), wcfg))
+        check("  nor when it was placed under another window config (its send_plan)",
+              pol._zone_for(dict(fu_row, pplan="0123456789ab"), wcfg) == own
+              and pol._zone_for(dict(fu_row, pplan=None), wcfg) == own)
+        cur.execute("update segments set config = config #- '{outreach,send_window}' where slug = %s", (SEG,))
+        cur.execute("select count(*) from outreach o join entities e on e.id = o.entity_id where e.segment_id = %s"
+                    " and o.status = 'approved' and o.send_after is not null", (seg_id,))
+        before = cur.fetchone()[0]
+        pol.settle_schedule(cur, SEG, pol.outreach_config(cur, SEG))
+        cur.execute("select count(*) from outreach where approval_batch = %s and send_after is null", (batch_id,))
+        check("the window switched off: the stored times are cleared, so they send as before",
+              (before >= 4, cur.fetchone()[0]) == (True, 4))
         cur.execute("select count(*), count(*) filter (where spot_checked), min(approved_by), min(approval_mode)"
                     " from outreach where approval_batch=%s", (batch_id,))
         cnt, spot, by, mode = cur.fetchone()

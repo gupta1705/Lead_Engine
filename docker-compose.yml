@@ -30,6 +30,12 @@ services:
       # P25 scheduler: on by default; the weekly refresh is read/enrich only,
       # nothing outbound. ALERT_WEBHOOK_URL (Discord/Slack) receives failures.
       - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-1}
+      # Not the server (review, 2026-10-12): this stack reaches the live database
+      # with this machine's SESSION_SECRET, and each person's sending address is
+      # sealed for the server's. 0 keeps the timed sender off here, and tells
+      # `outreach.py send` that an address it cannot read is the server's to send
+      # from, never one to mark "connect it again". docker-compose.prod.yml sets 1.
+      - SEND_LOOP_ENABLED=0
       - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
     env_file:
       - .env

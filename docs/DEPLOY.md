@@ -86,6 +86,10 @@ Keys go in Render, the service, **Environment**: `ALERT_WEBHOOK_URL`,
 `ANTHROPIC_API_KEY`, and `GMAIL_TOKEN_JSON` (the contents of
 `.gmail_token.json` after `python tools/outreach.py auth` on the laptop, since
 the cloud disk does not persist). The service restarts itself with new values.
+`SEND_LOOP_ENABLED=1` comes from render.yaml; a service not created from the
+Blueprint needs it set here by hand (2026-10-12): it is what tells the app it
+is the server, which holds the people's sealed sign-ins
+(docs/P25_unattended.md).
 
 ### Limits worth knowing
 
@@ -132,9 +136,14 @@ deploy/hf_push.sh https://huggingface.co/spaces/<you>/tvf-lead-engine
 It pushes a single-commit snapshot of `main` with the Space's front matter
 (port 8000) and without the spreadsheets Spaces refuse outside git-lfs. Git
 asks for your Hugging Face username and an access token with *write* scope.
-Then set `SUPABASE_DB_URL`, `SESSION_SECRET` and `SCHEDULER_ENABLED=1` under
-the Space's *Settings, Variables and secrets*. Spaces sleep after 48 idle
-hours; the same UptimeRobot ping keeps one awake.
+Then set `SUPABASE_DB_URL`, `SESSION_SECRET`, `SCHEDULER_ENABLED=1` and
+`SEND_LOOP_ENABLED=1` under the Space's *Settings, Variables and secrets*.
+`SEND_LOOP_ENABLED=1` says this is the server (2026-10-12): the timed sender
+runs there, and a person's sending address it cannot read is marked *connect
+it again*. Each address is sealed for the server's `SESSION_SECRET`, so moving
+to a Space with a new secret means linking every address again
+(`tools/users.py gmail`). Spaces sleep after 48 idle hours; the same
+UptimeRobot ping keeps one awake.
 
 ---
 

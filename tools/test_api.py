@@ -13,8 +13,10 @@ which only reads.
 
 Checked: the auth wall (401 for the API, a redirect for pages and files, tampered, expired and stale
 cookies), login and its limit on guesses, JSON-only writes, every read endpoint for every project,
-every write the page makes and the error each bad input gets (never a 500), that no secret appears
-in any response, and how long each call takes. Exit code 1 on any failure.
+every write the page makes and the error each bad input gets (never a 500), the sending window's
+answers (a draft's window, an approval's own moment, a batch's days, an approval that can no longer be
+withdrawn), that no secret appears in any response, and how long each call takes. Exit code 1 on any
+failure.
 """
 import io
 import json
@@ -417,12 +419,86 @@ def main_():
                                                                  json={"action": "approve"}).status_code, 409)
         check("approve a draft whose subject has a line break: refused",
               call("POST", "/api/outreach/%s/decision" % m_break, cookies=mine, json={"action": "approve"}).status_code, 409)
+        # the sending window (owner, 2026-10-12: each approved email at its own random second, 10:00-10:30 on its
+        # recipient's clock), switched on for the test project as the repo's US Production Houses config has it
+        block = json.loads((ROOT / "config" / "segment.us-production-houses.json").read_text(encoding="utf-8"))[
+            "outreach"]["send_window"]
+        cur.execute("update segments set config = jsonb_set(config, '{outreach,send_window}', %s::jsonb) where id = %s",
+                    (json.dumps(block), seg_id))
+        w = call("GET", "/api/outreach/%s/window" % m2, cookies=mine).json()
+        check("a draft's window: the 10:00-10:30 approving it aims at, its recipient's clock and why, never a minute",
+              (w.get("enabled"), "10:00-10:30" in (w.get("window_label") or ""), bool(w.get("send_tz_reason"))),
+              (True, True, True))
+        check("  another project's draft, or no such one: nothing to say",
+              (call("GET", "/api/outreach/%s/window" % m2, cookies=tvf).json(),
+               call("GET", "/api/outreach/%s/window" % uuid.uuid4(), cookies=mine).json(),
+               call("GET", "/api/outreach/nope/window", cookies=mine).status_code), ({"enabled": False}, {"enabled": False}, 404))
         kicks.clear()
         r = call("POST", "/api/outreach/%s/decision" % m2, cookies=mine, json={"action": "approve"})
         check("approve a good draft: 200, and the send is kicked", (r.status_code, r.json().get("ok"), kicks), (200, True, [(slug, "manual")]))
+        sched = r.json().get("schedule") or {}
+        check("  and the answer says when it goes: its own second in its recipient's window, in the page's words",
+              (bool(sched.get("send_label")), " time" in (sched.get("send_label") or ""), bool(sched.get("send_tz_reason"))),
+              (True, True, True))
+        ob = next((x for x in call("GET", "/api/outreach?folder=outbox", cookies=mine).json()["rows"] if x["id"] == m2), {})
+        check("  the Approved folder carries the same time, for its Goes out column",
+              ((ob.get("schedule") or {}).get("send_short"), (ob.get("schedule") or {}).get("send_after")),
+              (sched.get("send_short"), sched.get("send_after")))
+        check("  approved, its draft window has nothing more to say", call("GET", "/api/outreach/%s/window" % m2,
+                                                                         cookies=mine).json(), {"enabled": False})
+        lead_now = call("GET", "/api/leads/%s" % e2, cookies=mine).json()
+        check("  the lead's analysis says when it goes out", (lead_now["explain"]["analysis"]["next_step"],
+              (lead_now["outreach"].get("schedule") or {}).get("send_label")),
+              ("Approved: it goes out %s." % sched.get("send_label"), sched.get("send_label")))
         with conn.cursor() as _unused:
             cur.execute("select status, approved_by, approval_mode from outreach where id = %s", (m2,))
             check("  recorded against the person who approved it", list(cur.fetchone()), ["approved", email, "single"])
+            cur.execute("select send_after > now(), send_after < send_before, send_tz is not null from outreach where id = %s",
+                        (m2,))
+            check("  and its moment is kept on the email (sql/34), in the future", list(cur.fetchone()), [True, True, True])
+            # parked with a send error, nothing sends it: no time is promised anywhere (review, 2026-10-12)
+            cur.execute("update outreach set send_error = 'recipient failed verification' where id = %s", (m2,))
+        held = next((x for x in call("GET", "/api/outreach?folder=outbox", cookies=mine).json()["rows"] if x["id"] == m2), {})
+        hs = held.get("schedule") or {}
+        check("  held back with a send error: Approved says Held and why, and promises no time",
+              (hs.get("held"), hs.get("held_why"), hs.get("send_short"), hs.get("send_after")),
+              (True, "recipient failed verification", None, None))
+        lead_held = call("GET", "/api/leads/%s" % e2, cookies=mine).json()
+        check("  and the lead's analysis says it is held, not when it goes",
+              lead_held["explain"]["analysis"]["next_step"],
+              "Approved, but held back: recipient failed verification. It is not sent.")
+        with conn.cursor() as _unused:
+            cur.execute("update outreach set send_error = null where id = %s", (m2,))
+        sl = call("GET", "/api/schedule", cookies=mine).json().get("send_loop") or {}
+        check("Operations says whether the timed sender runs here (not in a test: the scheduler is off), and why",
+              (sl.get("on"), bool(sl.get("why"))), (False, True))
+        # second review, 2026-10-12: the timed sends are their own pipeline, "send", so the tick's line keeps its own
+        # last run; and a Gmail refusal a send handled (its run ends OK) is shown for a day, not hidden behind "OK"
+        with conn.cursor() as _unused:
+            cur.execute("insert into pipeline_runs (pipeline, step, trigger, status, detail, segment, started_at)"
+                        " values ('outreach', null, 'schedule', 'failed', 'failed at step(s) ''draft_outreach''', %s, now()),"
+                        " ('send', null, 'schedule', 'ok', null, %s, now()),"
+                        " ('send', 'send_outreach', 'schedule', 'ok',"
+                        "  'Gmail refused old@zz-api.example (403): its emails moved', %s, now() - interval '25 hours')",
+                        (slug, slug, slug))
+        sch = call("GET", "/api/schedule", cookies=mine).json()
+        last_ = sch.get("last") or {}
+        check("  /api/schedule: the tick's last run and the timed sender's, each under its own name",
+              ((last_.get("outreach") or {}).get("status"), (last_.get("send") or {}).get("status")), ("failed", "ok"))
+        check("  a refusal older than a day is not shown", sch.get("refused"), None)
+        with conn.cursor() as _unused:
+            cur.execute("insert into pipeline_runs (pipeline, step, trigger, status, detail, segment)"
+                        " values ('send', 'send_outreach', 'schedule', 'ok', 'Gmail refused zz-a@zz-api.example (403): its"
+                        " emails moved to their next window, saying why; the other addresses carry on', %s)", (slug,))
+        ref = call("GET", "/api/schedule", cookies=mine).json().get("refused") or {}
+        check("  the day's latest refusal is, with when it was",
+              ((ref.get("detail") or "").startswith("Gmail refused zz-a@zz-api.example (403)"), bool(ref.get("at"))),
+              (True, True))
+        main.segment_rows(force=True)                      # the window was switched on above, inside this test
+        pol_info = call("GET", "/api/segment", cookies=mine).json().get("outreach_policy") or {}
+        check("  the page knows whose clock the window is on, and the sender's place, for its sentences",
+              ((pol_info.get("send_window") or {}).get("timezone_of"), (pol_info.get("send_window") or {}).get("sender_place")),
+              ("recipient", "India"))
         check("approve it again: 409", call("POST", "/api/outreach/%s/decision" % m2, cookies=mine,
                                             json={"action": "approve"}).status_code, 409)
         check("edit it once approved: 409 (approval means THIS text)", call("PATCH", "/api/outreach/%s" % m2, cookies=mine,
@@ -461,6 +537,15 @@ def main_():
               (1, ["another selected draft goes to the same address or company"]))
         check("cancel the approved email: 200", call("POST", "/api/outreach/%s/decision" % m2, cookies=mine,
                                                      json={"action": "cancel"}).status_code, 200)
+        e_go, c_go = company("shortlisted")
+        with conn.cursor() as _unused:
+            m_go = draft(e_go, c_go, status="sending")
+        r = call("POST", "/api/outreach/%s/decision" % m_go, cookies=mine, json={"action": "cancel"})
+        check("withdrawing one already going out: 409, and why", (r.status_code, r.json().get("detail")),
+              (409, "already going out: it can no longer be withdrawn"))
+        cur.execute("update outreach set status = 'sent', sent_at = now() where id = %s", (m_go,))
+        r = call("POST", "/api/outreach/%s/decision" % m_go, cookies=mine, json={"action": "cancel"})
+        check("  one already sent: 409, already sent", (r.status_code, r.json().get("detail")), (409, "already sent"))
         check("a message that does not exist: 404", call("POST", "/api/outreach/%s/decision" % uuid.uuid4(), cookies=mine,
                                                          json={"action": "approve"}).status_code, 404)
         check("a message id that is not an id: 404, not a server error",
@@ -486,6 +571,52 @@ def main_():
         check("LCX batch: a forged spot-check token is refused",
               call("POST", "/api/outreach/batch/approve", cookies=ck_lcx,
                    json={"ids": [m2], "sample": [m2], "token": "forged"}).status_code, 409)
+        # a batch with a sending window: each approved one draws its own second, and the answer says when, by day
+        bslug = "zz-api-batch-" + uuid.uuid4().hex[:6]
+        cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'ZZ API batch', 'company',"
+                    " config #- '{outreach,sending_paused}' from segments where slug = 'lcx-clipping' returning id", (bslug,))
+        bseg = cur.fetchone()[0]
+        lcx_block = json.loads((ROOT / "config" / "segment.lcx-clipping.json").read_text(encoding="utf-8"))[
+            "outreach"]["send_window"]
+        cur.execute("update segments set config = jsonb_set(config, '{outreach,send_window}', %s::jsonb) where id = %s",
+                    (json.dumps(lcx_block), bseg))
+        main.segment_rows(force=True)
+        bck = dict(good, tvf_segment=bslug)
+        bids = []
+        for _ in range(3):
+            cur.execute("insert into entities (segment_id, name, domain, source, status, fit_score) values"
+                        " (%s, %s, %s, 'test', 'shortlisted', 50) returning id",
+                        (bseg, "ZZ API batch " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example"))
+            be = cur.fetchone()[0]
+            cur.execute("insert into contacts (entity_id, full_name, email, email_status) values (%s, 'Kay Doe', %s, 'valid')"
+                        " returning id", (be, "kay.%s@zz-api.example" % uuid.uuid4().hex[:6]))
+            bids.append(draft(be, cur.fetchone()[0]))
+        smp = call("POST", "/api/outreach/batch/sample", cookies=bck, json={"ids": bids}).json()
+        r = call("POST", "/api/outreach/batch/approve", cookies=bck,
+                 json={"ids": smp.get("approvable"), "sample": smp.get("sample"), "token": smp.get("token")})
+        wins = r.json().get("windows") or []
+        check("a batch with a sending window: approved, and when each goes by its recipients' days and places",
+              (r.status_code, r.json().get("approved"), sum(d["count"] for d in wins),
+               all(d["label"] and d["places"] and d["day"] for d in wins)), (200, 3, 3, True))
+        # second review, 2026-10-12: a paused project's are held, and a held email is never promised a day -- the
+        # answer has no windows for the page to put in its message, skipped drafts or not
+        cur.execute("update segments set config = jsonb_set(config, '{outreach,sending_paused}', '\"test pause\"')"
+                    " where id = %s", (bseg,))
+        pids = []
+        for _ in range(3):
+            cur.execute("insert into entities (segment_id, name, domain, source, status, fit_score) values"
+                        " (%s, %s, %s, 'test', 'shortlisted', 50) returning id",
+                        (bseg, "ZZ API batch " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example"))
+            be = cur.fetchone()[0]
+            cur.execute("insert into contacts (entity_id, full_name, email, email_status) values (%s, 'Kay Doe', %s, 'valid')"
+                        " returning id", (be, "kay.%s@zz-api.example" % uuid.uuid4().hex[:6]))
+            pids.append(draft(be, cur.fetchone()[0]))
+        smp = call("POST", "/api/outreach/batch/sample", cookies=bck, json={"ids": pids}).json()
+        r = call("POST", "/api/outreach/batch/approve", cookies=bck,
+                 json={"ids": smp.get("approvable"), "sample": smp.get("sample"), "token": smp.get("token")})
+        check("  the same in a paused project: approved, said to be paused, and no day promised",
+              (r.status_code, r.json().get("approved"), bool(r.json().get("paused")), r.json().get("windows")),
+              (200, 3, True, []))
 
         f = call("GET", "/api/outreach/footer", cookies=mine).json()
         check("the footer reads back with no problems", (bool(f["text"]), f["problems"]), (True, []))

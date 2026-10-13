@@ -253,10 +253,11 @@ an address that has already replied to us, or bounced an email from us, in any
 project: whoever answered is answered in that conversation, never sent a second
 cold email.
 
-**Approve and send** approves every one of them: you have read it and stand
-behind it, exactly as when approving a draft. Each goes on its own, from your
-own sending address, signed with your name and title, inside that address's
-daily limit (past the limit, the rest go from the next day). A lead still in To
+**Approve** approves every one of them: you have read it and stand behind it,
+exactly as when approving a draft. Each goes on its own, at its own minute
+between 10:00 and 10:30 on its recipient's clock (the list on the right shows
+each person's window), from your own sending address, signed with your name and
+title, inside that address's daily limit (see *When an email goes out*). A lead still in To
 review is shortlisted by being written to. Every company gets one first email
 and no more, as everywhere. The emails then sit in **Outreach** under Approved
 until they go, then under Sent; replies arrive under Replies. Until the owner
@@ -498,13 +499,17 @@ Every email lives here, in folders.
 | Folder | What is in it |
 |---|---|
 | **Drafts** | Written by the engine. Nothing has been sent. Waiting for you. |
-| **Approved** | You said yes. It goes out within minutes, inside the day's sending limit. |
+| **Approved** | You said yes. It goes out at its own minute between 10:00 and 10:30 on its recipient's clock, inside the day's sending limit; **Goes out** says when. |
 | **Sent** | Gone. |
 | **Replies** | Every reply, with its mark: Positive, Negative, or Needs triage if nobody has judged it yet. |
 | **Attention** | A send whose outcome is not known. Look at these. The folder shows only when something is in it. |
 
 Each row shows the company (the show, in LCX Clipping), the contact, the subject
-and when. A reply's mark sits in front of its subject.
+and when. In Approved the last column is **Goes out**: the day and minute it is
+sent, on the recipient's clock ("Tue 10:17 New York"), with your own clock under
+it when that is a third one; holding the mouse over it gives the whole sentence
+and why that time zone. Approved is in that order, the next to go first. A
+reply's mark sits in front of its subject.
 
 Nothing here needs a button to get it going. A shortlisted lead's email is
 drafted into Drafts within minutes, and in LCX Clipping a follow-up that falls
@@ -551,9 +556,11 @@ it checked against the evidence before it was kept. A written draft is approved
 on its own, never in a batch, because a random sample cannot stand for a
 sentence written once for one company.
 
-**Approve and send** records your name against the email and sends it. It is
-the only button on a draft. If you do not want to write to a company at all,
-reject the lead: its draft goes with it.
+**Approve** records your name against the email and sends it at its own minute
+in the recipient's next 10:00–10:30 (the draft shows that window under **Next
+window**, with why that time zone; the minute itself is drawn when you approve).
+It is the only button on a draft. If you do not want to write to a company at
+all, reject the lead: its draft goes with it.
 
 **Withdraw approval**, on an approved email that has not gone yet, takes your
 yes back. For a first email, as long as the lead stays shortlisted, a new one is
@@ -581,22 +588,44 @@ have not set them, it says so.
 
 **Sending today**, at the top of Outreach, lists everyone: each of their sending
 addresses with today's count out of its limit (for example `3/35`), anyone who
-has none linked yet, and how many of their approvals are waiting. The counts
-start again at midnight UTC, which is 5:30 am in India. An approval by someone
-with no sending address waits in Approved until the owner links one.
+has none linked yet, and their approvals by the day each goes out ("approved: 3
+on Tue 14 Oct, 2 on Wed 15 Oct", days on India's clock). The counts start again
+at midnight UTC, which is 5:30 am in India. An approval by someone with no
+sending address waits in Approved until the owner links one.
 
 In the other projects the email goes out from the project's own mailbox, inside
 the day's sending limit and each mailbox's warm-up, and the counter at the top of
-Outreach shows how many have gone out today against that limit. Either way,
-never to an address that failed verification.
+Outreach shows how many have gone out today against that limit, and the approved
+ones by the day each goes. Either way, never to an address that failed
+verification.
 
-Approve as many as you like. Anything past the day's limit waits in Approved and
-goes out from the next day on, oldest first, a day's limit at a time, until the
-queue is empty. The counter says how many are waiting ("31 more from
-tomorrow"), and holding the mouse over it says how many days the queue will
-take. When the day's limit
-is used up, it goes out first thing the next day. Until a mailbox is connected
-(see *What only you can do*), approved emails wait in Approved.
+## When an email goes out
+
+The owner, 12 October: *"send mails to the sender's time region between 10 to
+10:30AM and that must be randmized not like all mail going at 10:15 some must be
+going at 10:17 some at 10:13"*. So every approved email goes out at **its own
+minute between 10:00 and 10:30 on the recipient's clock**, Monday to Friday
+there: 10:00 in Mumbai would be 5:30 in London, before anyone reads email. The
+minute is drawn when you approve, and the email shows it as **Goes out**: "Tue 14
+Oct, 10:17 New York time (19:47 IST)", the recipient's time first, India's in the
+brackets.
+
+Where the recipient is comes from what the lead holds: the person's own record,
+the company's state or city, a phone's area code, its country. The reason sits
+under *Goes out* ("company state TX (FDIC)"). A lead that names no place goes at
+the project's own default (New York's 10:00 for LCX, Los Angeles' for US
+Production Houses, India's for Universal).
+
+Approve as many as you like. Two emails from one address are never sent closer
+than 45 seconds apart, so one window holds about 24 per address per window; the
+rest go in the next weekday's window, each at a new minute. An approval after
+the day's window, or at a weekend, goes in the next weekday's. If an email's
+window passes and it has not gone — the server was down, its address had used
+up its 35 for the day, Gmail refused the address — it moves to its next window
+at a new minute, never later the same afternoon, and says why: *Its earlier
+window passed unsent (…): now Wed 15 Oct, 10:04 New York time*. Until a sending
+address is connected (see *What only you can do*), approved emails wait in
+Approved, and move from window to window until one is.
 
 **One first email per inbox and per company.** An address that already has a
 first email from us, under any lead in the project, is not written to again, and
@@ -758,7 +787,15 @@ last ran ("by hand" if a person started it) and how that went:
 
 - **Weekly refresh**: Tuesday 02:00 for US Production Houses, Wednesday 02:00
   for LCX Clipping, Thursday 02:00 for Startup Acquisitions.
-- **Drafting and sending**: every 15 minutes, when there is work.
+- **Drafting and sending**: drafting every 15 minutes, when there is work; each
+  approved email at its own time, 10:00–10:30 in its recipient's zone.
+- **Timed sending**: whether the server's timed sender is **On**, and how its
+  last run went. If it says **Off**, hold the mouse over it for why: approved
+  emails then go only every 15 minutes and most move to the next weekday.
+- **Gmail refused an address**: shown only when Gmail turned one of the
+  sending addresses away in the last day, with which one and why. Its emails
+  have moved to their next window and the other addresses carry on; tell the
+  owner if it shows day after day.
 
 A failed run says which step failed; hold the mouse over it to read the error.
 If no alert webhook is set up, the panel says that failures show only here.
@@ -813,7 +850,8 @@ the app has a bug.
 
 **No email is ever sent that a person has not approved.** Approval means a human
 read that exact text, and approving is what sends it. Nothing goes out that
-nobody approved, and there is no "approve all without looking".
+nobody approved, and there is no "approve all without looking". Nor does an
+approved email go outside its own window: the database refuses that too.
 
 **One thread per company, ever.** An opener and at most two follow-ups. Checked
 across every project, not just the one you are in, and it survives resets and
@@ -890,11 +928,13 @@ webhook so a failed overnight run reaches you.
 
 # If something looks wrong
 
-**"I approved it but nothing was sent."** Approving sends within minutes. If it is
-still in Approved, either no mailbox is connected yet (see *What only you can
-do*) or today's sending limit is used up and it goes out tomorrow. A send the
-checks refused stays in Approved, with the reason under its subject. A send
-whose outcome is not known is in Attention.
+**"I approved it but nothing was sent."** It goes at its own minute in its
+recipient's next 10:00–10:30: look at **Goes out** in Approved. If that time
+has passed and it is still there, it has moved to its next window, and the
+email says why (no mailbox connected yet, see *What only you can do*; or its
+address's limit for the day was used up). A send the checks refused stays in
+Approved, with the reason under its subject. A send whose outcome is not known
+is in Attention.
 
 **"The screen is blank / says it cannot reach the database."** The free cloud
 instance goes to sleep when it is idle and takes a few seconds to wake. Reload

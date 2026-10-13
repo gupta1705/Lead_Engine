@@ -108,8 +108,12 @@ nobody is pitched by two projects from the same address.
 
 Then the scheduler's outreach tick drafts each shortlisted lead with an address, from the one
 template, with the deck attached. A person approves (one at a time or a spot-checked batch), and
-it goes from their own Gmail inside its daily limit. The Apollo search page stays for adding a
-lead by hand; what it spends there counts in the same week.
+it goes from their own Gmail inside its daily limit, at its own random minute between 10:00 and
+10:30 on its recipient's clock, Monday to Friday (`outreach.send_window`, the owner, 2026-10-12;
+`docs/runbook.md`, *Goes out*). Where the company is comes from its records here: the recipient's
+own Apollo record, the FDIC's state for a bank, OpenStreetMap's city, Wikidata's country, a phone's
+area code; one with no place at all goes at New York's 10:00. The Apollo search page stays for
+adding a lead by hand; what it spends there counts in the same week.
 
 ## Apollo: who is paid for, and the budget
 
@@ -293,6 +297,10 @@ Attachments (`sql/32`, `outreach.attachments`) are files under `docs/decks/` onl
 
 ## Changing it
 
+- **When emails go:** `outreach.send_window` (10:00-10:30 on the recipient's clock; `"timezone_of":
+  "sender"` puts every email on India's clock instead, `"enabled": false` sends as soon as approved),
+  then `python tools/gen_segment_sql.py lcx-services` and `python tools/run_sql.py
+  sql/03f_segment_lcx_services.sql`. Times already drawn under the old setting are drawn again.
 - **Another kind of buyer, a class, a tag, a city:** edit `audiences` or `osm_discovery.cities`,
   then `python tools/gen_segment_sql.py lcx-services` and `python tools/run_sql.py
   sql/03f_segment_lcx_services.sql`. The next Friday finds them.

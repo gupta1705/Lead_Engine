@@ -16,6 +16,8 @@ leaves the machine, and the server's secret is a test one. Checked:
     so only the server reads it, one address one person (--move to change), refresh and --cap; people
     have nothing to connect in the app
   * the Sending today list, "reached out by" on leads, the lead dialog and the per-person report
+  * with the repo's sending window (owner, 2026-10-12): an approval draws its own moment even before the
+    approver has an address, and Sending today counts each person's approvals by the day they go
 
 Exit code 1 on any failure.
 """
@@ -159,6 +161,8 @@ def api():
         # Kartikeya's own lines, from the repo's config (the owner's wording), given to a test login
         repo = json.loads((ROOT / "config" / "segment.us-production-houses.json").read_text(encoding="utf-8"))
         out["voices"] = {kart_email: repo["outreach"]["voices"]["kartikeyap@theviralfever.com"]}
+        # and its sending window (owner, 2026-10-12): each approval at its own second, 10:00-10:30 its recipient's clock
+        out["send_window"] = repo["outreach"]["send_window"]
         cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'ZZ accounts', 'company', %s)"
                     " returning id", (slug, json.dumps(cfg)))
         seg_id = cur.fetchone()[0]
@@ -259,6 +263,9 @@ def api():
               (200, "approved", kart_email, True))
         check("  no Gmail connected: it cannot go out yet, and the answer says so",
               (r.json()["can_send"], r.json()["sends_from"]), (False, []))
+        sched = r.json().get("schedule") or {}
+        check("  its own moment in its recipient's window is drawn even so, and said in the page's words",
+              (bool(sched.get("send_label")), sched.get("send_tz") is not None), (True, True))
 
         # ------------------------------------------------------------ sending addresses
         # owner, 2026-09-26: "no need for them to connect their gmails. I will manually connect the email id
@@ -370,6 +377,9 @@ def api():
                me_row["mailboxes"][0]["daily_cap"], strip["can_send"]), ("approver", True, [a_gmail], 35, True))
         kart_row = next(x for x in strip["accounts"] if x["email"] == kart_email)
         check("  Kartikeya: no sending address, one approval waiting", (kart_row["mailboxes"], kart_row["approved_waiting"]), ([], 1))
+        check("  and the day it goes out (India's clock), for the counter: one, on its day",
+              ([d["count"] for d in kart_row["scheduled"]], all(d["label"] and d["day"] for d in kart_row["scheduled"])),
+              ([1], True))
         check("  and nothing secret in it", "token" in json.dumps(strip).replace("tokens", ""), False)
 
         # ------------------------------------------------------------ reached out by

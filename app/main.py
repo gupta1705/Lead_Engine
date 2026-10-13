@@ -226,6 +226,7 @@ def segment_rows(force=False):
                             " config->'outreach'->'batch_approval' as batch_approval,"
                             " coalesce((config->'outreach'->>'compose')::boolean, false) as compose,"
                             " config->'outreach'->'compose_start' as compose_start,"
+                            " config->'outreach'->'send_window' as send_window,"
                             " coalesce(jsonb_array_length(case when jsonb_typeof(config->'outreach'->'templates') = 'array'"
                             "   then config->'outreach'->'templates' end), 0) > 0 as has_templates,"
                             " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
@@ -288,6 +289,24 @@ def _policy():
     return outreach_policy
 
 
+def _sw():
+    """tools/send_window.py -- when an approved email goes out: its own second in 10:00-10:30, its
+    recipient's clock (owner, 2026-10-12)."""
+    _policy()
+    import send_window
+    return send_window
+
+
+def _wcfg(cfg):
+    """The project's sending window with its defaults, or None: no block, enabled false -- or a block that
+    does not read, which the send itself refuses loudly and tools/verify_repo.py catches before a deploy.
+    A page is never broken by it."""
+    try:
+        return _sw().window_cfg(cfg)
+    except ValueError:
+        return None
+
+
 def outreach_policy_info(row):
     fu = row.get("follow_ups") or {}
     return {
@@ -302,7 +321,19 @@ def outreach_policy_info(row):
         # service in one email), or None for a box that starts from "Hi {{first_name}},"
         "compose_start": _compose_start(row) if row.get("compose") else None,
         "drafts": bool(row.get("has_templates", True)),
+        # each approved email at its own second, 10:00-10:30 on its recipient's clock (owner, 2026-10-12)
+        "send_window": _window_info(row.get("send_window")),
     }
+
+
+def _window_info(block):
+    w = _wcfg({"send_window": block}) if block else None
+    if not w:
+        return None
+    # sender_place: "India", for the page's sentences when timezone_of is "sender" -- every email then goes on
+    # the sender's clock, and saying "its recipient's time zone" would be wrong (review, 2026-10-12)
+    return dict({k: w[k] for k in ("enabled", "start", "end", "timezone_of", "weekdays_only", "sender_timezone")},
+                sender_place=_sw().place_name(w["sender_timezone"]))
 
 
 def _compose_start(row):
@@ -494,10 +525,21 @@ def lead(lead_id: str):
             c["id"] = str(c["id"])
             contacts.append(c)
         cur.execute(
-            "select id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at from outreach"
+            "select id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at,"
+            " send_after, send_before, send_tz, send_tz_reason, send_plan, send_reschedules, send_wait_why, send_error"
+            " from outreach"
             " where entity_id = %s and direction = 'outbound' and coalesce(sequence_step, 0) = 0"
             " and status not in ('cancelled', 'failed') order by created_at desc limit 1", (lead_id,))
         draft = cur.fetchone()
+        # when it goes (approved) or which window approving it aims at (a draft): the words explain.py and
+        # the lead sheet show, from tools/send_window.py's labels (owner, 2026-10-12)
+        timing = {}
+        if draft:
+            ocfg = (row.get("segment_config") or {}).get("outreach") or {}
+            wcfg = _wcfg(ocfg)
+            timing["schedule"] = _policy().schedule_view(dict(draft), wcfg, paused=_policy().sending_paused(ocfg))
+            if draft["status"] == "drafted" and wcfg:
+                timing["window"] = _policy().draft_window(cur, str(draft["id"]), ocfg)
 
     # What the score is made of, what nobody has checked yet, the analysis a
     # reviewer used to be left to do by ticking boxes, and every route in.
@@ -513,6 +555,10 @@ def lead(lead_id: str):
         outreach["approved_by_name"] = _display(outreach.get("approved_by"), _people())
         for k in ("approved_at", "sent_at"):
             outreach[k] = outreach[k].isoformat() if outreach.get(k) else None
+        for k in ("send_after", "send_before", "send_tz", "send_tz_reason", "send_plan", "send_reschedules",
+                  "send_wait_why", "send_error"):
+            outreach.pop(k, None)                 # one shape for a time, everywhere: schedule (and window)
+        outreach.update(timing)
     row["outreach"] = outreach
     row["explain"] = explain.explain_lead(slug, cfg, row, ranked, outreach)
     row["criteria"] = [dict(c, assessed=c["state"] != explain.UNCHECKED) for c in row["explain"]["criteria"]]
@@ -623,12 +669,20 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
     people = _people()
     me = people.get((getattr(request.state, "user", None) or "").lower())
     dr = _render()
+    pol = _policy()
+    # Approved is the queue: the next to go first (each email's own moment, owner 2026-10-12), then the
+    # ones with no time, oldest first -- the order they are sent in. One held back with a send error goes on
+    # no day, so it comes after the queue, not at its head (review, 2026-10-12)
+    order = ("(f.send_error is not null), f.send_after asc nulls first, f.created_at" if folder == "outbox"
+             else "coalesce(f.sent_at, f.created_at) desc")
     with cursor() as cur:
-        cfg = _policy().outreach_config(cur, segment)
+        cfg = pol.outreach_config(cur, segment)
+        wcfg = _wcfg(cfg)
+        paused = pol.sending_paused(cfg)
         cur.execute(
             "select f.* from outreach_folders f join entities e on e.id = f.entity_id"
             " where f.folder = any(%s) and e.segment_id = (select id from segments where slug = %s)"
-            " order by coalesce(f.sent_at, f.created_at) desc limit 200", (folders, segment))
+            " order by " + order + " limit 200", (folders, segment))
         rows = [dict(r) for r in cur.fetchall()]
         for r in rows:
             r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
@@ -636,6 +690,10 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
             r["approved_by_name"] = _display(r.get("approved_by"), people)
             if r["status"] == "drafted" and r["direction"] == "outbound":
                 r["body"] = dr.personalize(r["body"], cfg, me)
+            if r["direction"] == "outbound" and r["status"] in ("approved", "sending", "sent"):
+                # when it goes (or went): its recipient's clock and India's, and why that zone -- or, held back
+                # (a send error, or sending paused), no time at all and why
+                r["schedule"] = pol.schedule_view(r, wcfg, paused=paused)
         cur.execute("select f.folder, count(*) as n from outreach_folders f"
                     " join entities e on e.id = f.entity_id"
                     " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
@@ -791,6 +849,13 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
                         " where id=%s and status in ('drafted','approved')"
                         " returning id", (oid,))
             if not cur.fetchone():
+                # an approved email can be withdrawn until its moment comes; once claimed it is Gmail's
+                cur.execute("select status from outreach where id = %s", (oid,))
+                now = (cur.fetchone() or {}).get("status")
+                if now in ("sending", "send_unknown"):
+                    raise HTTPException(409, "already going out: it can no longer be withdrawn")
+                if now == "sent":
+                    raise HTTPException(409, "already sent")
                 raise HTTPException(409, "row is not in a state that allows cancel")
             if (msg["sequence_step"] or 0) > 0:
                 pol.stop_thread(cur, eid, "stopped: follow-up cancelled by %s" % user)
@@ -830,10 +895,36 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(400, "unknown action")
         if not cur.fetchone():
             raise HTTPException(409, "row is not in a state that allows " + action)
-    # approved: it is sent now, not when someone next opens a terminal (app/scheduler.py)
+        # Approving draws its own second in its recipient's next 10:00-10:30 (owner, 2026-10-12) and keeps
+        # it on the row; with no free minute in 60 days the approval is not made, and the page says why
+        try:
+            sched = pol.schedule_sends(cur, [oid], cfg, segment).get(oid)
+        except pol.NoSendSlot as e:
+            raise HTTPException(409, "cannot approve: %s" % e)
+    # approved: it is sent now, not when someone next opens a terminal (app/scheduler.py) -- or, with a
+    # sending window, at its own moment: the send loop is told it has a new one to wait for
     _scheduler.kick_outreach(segment, "manual")
+    _scheduler.wake_sender()
     return {"ok": True, "can_send": _can_send(segment, user), "paused": _send_paused(segment),
-            "sends_from": _sends_from(segment, user)}
+            "sends_from": _sends_from(segment, user), "schedule": sched}
+
+
+@app.get("/api/outreach/{oid}/window")
+def outreach_window(oid: str, segment: str = Depends(current_segment)):
+    """The window approving this draft now aims at -- {enabled, send_tz, send_tz_reason, window_label}, a
+    window and never a minute, which is drawn on approval -- or {"enabled": false}: no window for this
+    project, or not a draft of it."""
+    oid = _id(oid, "message")
+    with cursor() as cur:
+        cur.execute("select 1 from outreach o join entities e on e.id = o.entity_id"
+                    " where o.id = %s and o.direction = 'outbound' and o.status = 'drafted'"
+                    " and e.segment_id = (select id from segments where slug = %s)", (oid, segment))
+        if not cur.fetchone():
+            return {"enabled": False}
+        cfg = _policy().outreach_config(cur, segment)
+        if not _wcfg(cfg):
+            return {"enabled": False}
+        return _policy().draft_window(cur, oid, cfg)
 
 
 @app.post("/api/outreach/batch/sample")
@@ -904,11 +995,18 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         if len(sample) < pol.required_sample(len(ids), policy,
                                              bool(pol.generated_among(cur, ok))):
             raise HTTPException(400, "the spot-check sample is too small for this batch")
-        batch_id, approved = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
+        # each approved one gets its own second in its recipient's window (outreach_policy.schedule_sends)
+        batch_id, approved, schedule = pol.apply_batch(cur, ok, sample, user, segment, len(ids), skipped)
     if approved:
         _scheduler.kick_outreach(segment, "manual")          # approved means sent: no terminal step
+        _scheduler.wake_sender()
+    # "9 on Tue 14 Oct (6 New York, 3 UK), 3 on Wed 15 Oct": by the recipients' own days ([] without a window).
+    # A paused project's are held, and a held email is never shown a send time (second review, 2026-10-12): the
+    # times drawn now move on at each missed window until the pause is lifted, so none is promised
+    paused = _send_paused(segment)
     return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment, user),
-            "paused": _send_paused(segment), "sends_from": _sends_from(segment, user)}
+            "paused": paused, "sends_from": _sends_from(segment, user),
+            "windows": [] if paused else pol.window_summary(schedule)}
 
 
 def _compose_module():
@@ -961,6 +1059,7 @@ def outreach_compose(request: Request, body: dict = Body(...), segment: str = De
     out = _compose(request, body, segment, apply=True)
     if out["approved"]:
         _scheduler.kick_outreach(segment, "manual")            # approved means sent: no terminal step
+        _scheduler.wake_sender()                                # each at its own moment, where there is a window
     return out
 
 
@@ -1181,6 +1280,7 @@ def mailboxes_state(request: Request, segment: str = Depends(current_segment)):
                     " where e.segment_id = (select id from segments where slug = %s)"
                     "   and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null", (segment,))
         approved_waiting = cur.fetchone()["n"]
+        scheduled = _scheduled_by_day(cur, segment, _wcfg(cfg))
     keep = ("key", "email_env", "daily_cap", "warmup", "enabled", "cap_today", "sent_today",
             "remaining", "last_address", "warmup_day")
     out = []
@@ -1197,10 +1297,37 @@ def mailboxes_state(request: Request, segment: str = Depends(current_segment)):
             "mailboxes": out, "paused": pol.sending_paused(cfg),
             "sent_today": sum(int(r.get("sent_today") or 0) for r in out),
             "approved_waiting": int(approved_waiting),
+            # with a sending window: the approved emails by the day they go out, on India's clock
+            "scheduled": scheduled,
             "limit_today": min(segment_cap, sum(int(r.get("cap_today") or 0) for r in out if r.get("enabled"))),
             "resets_at": _dt.datetime.combine(now.date() + _dt.timedelta(days=1), _dt.time(0),
                                               tzinfo=_dt.timezone.utc).isoformat(),
             "can_send": any(r["connected"] for r in out) and not pol.sending_paused(cfg)}
+
+
+def _scheduled_by_day(cur, segment, wcfg, by_approver=False):
+    """Approved emails that hold a time, counted by the day they go out on the sender's clock (India):
+    [{day, label "Tue 14 Oct", count}], or {approver: [...]}. Empty without a window. The Outreach page's
+    counters say from it when the waiting ones go, instead of guessing from today's room."""
+    if not wcfg:
+        return {} if by_approver else []
+    from zoneinfo import ZoneInfo
+    sw = _sw()
+    tz = ZoneInfo(wcfg["sender_timezone"])
+    cur.execute("select lower(o.approved_by) as who, o.send_after from outreach o join entities e on e.id = o.entity_id"
+                " where e.segment_id = (select id from segments where slug = %s) and o.direction = 'outbound'"
+                "   and o.status = 'approved' and o.send_error is null and o.send_after is not null", (segment,))
+    groups = {}
+    for r in cur.fetchall():
+        day = sw._utc(r["send_after"]).astimezone(tz).date()
+        g = groups.setdefault(r["who"] if by_approver else None, {})
+        g[day] = g.get(day, 0) + 1
+
+    def days(g):
+        return [{"day": d.isoformat(), "label": sw.day_label(d), "count": n} for d, n in sorted(g.items())]
+    if by_approver:
+        return {k: days(g) for k, g in groups.items()}
+    return days(groups.get(None, {}))
 
 
 def _approver_mailboxes(cur, cfg, segment, me):
@@ -1214,13 +1341,16 @@ def _approver_mailboxes(cur, cfg, segment, me):
                 "   and o.status = 'approved' and o.send_error is null group by 1", (segment,))
     waiting = {r["who"]: int(r["n"]) for r in cur.fetchall()}
     paused = _policy().sending_paused(cfg)
+    by_day = _scheduled_by_day(cur, segment, _wcfg(cfg), by_approver=True)
     keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error")
     accounts = []
     for p in people:
         mine = [dict({k: b[k] for k in keep}) for b in boxes if b["user_email"].lower() == p["email"].lower()]
         accounts.append({"email": p["email"], "name": p["name"] or p["email"].split("@")[0],
                          "me": p["email"].lower() == me.lower(), "mailboxes": mine,
-                         "approved_waiting": waiting.get(p["email"].lower(), 0)})
+                         "approved_waiting": waiting.get(p["email"].lower(), 0),
+                         # their approvals with a time, by the day they go out (India's clock)
+                         "scheduled": by_day.get(p["email"].lower(), [])})
     accounts.sort(key=lambda a: (not a["me"], a["name"].lower()))           # yours first
     mine = next((a for a in accounts if a["me"]), {"mailboxes": [], "approved_waiting": 0})
     now = _dt.datetime.now(_dt.timezone.utc)
@@ -1345,6 +1475,10 @@ _scheduler = _sched_module.Scheduler(cursor, _ops_module, SEGMENT,
 
 @app.on_event("startup")
 def _start_scheduler():
+    # The zone data the sending window reads (tzdata, requirements.txt). Without it every email would go at
+    # the fallback zone's 10:00, so a server missing it does not start: the deploy's health check fails and
+    # the running version stays up (RuntimeError "time-zone data missing: pip install tzdata").
+    _sw().self_check()
     _scheduler.start()
 
 
@@ -1377,8 +1511,22 @@ def schedule_state(segment: str = Depends(current_segment)):
             r["started_at"] = r["started_at"].isoformat() if r["started_at"] else None
             r["finished_at"] = r["finished_at"].isoformat() if r["finished_at"] else None
             last[r["pipeline"]] = r
+        # The latest Gmail refusal a send handled, in the last day (second review, 2026-10-12). Such a run ends
+        # OK -- it moved that address's emails and the others carried on -- and with no alert webhook set an "OK"
+        # alone showed Operations green day after day while an address stayed refused. Its send_outreach step is
+        # the only OK one with a detail: what was refused (app/scheduler.py _refusal_note)
+        cur.execute(
+            "select detail, started_at from pipeline_runs where coalesce(segment, %s) = %s and step = 'send_outreach'"
+            " and status = 'ok' and detail is not null and started_at > now() - interval '24 hours'"
+            " order by started_at desc limit 1", (SEGMENT, segment))
+        f = cur.fetchone()
+        refused = {"detail": f["detail"], "at": f["started_at"].isoformat()} if f else None
+    # whether the timed sender runs in this server (review, 2026-10-12): off, a project with a sending window
+    # sends only at the fifteen-minute ticks and most of each window moves to the next weekday
     return {"schedule": _scheduler.schedule(segment),
             "webhook_configured": bool(_scheduler.alert_webhook()),
+            "send_loop": _scheduler.send_loop_state(),
+            "refused": refused,
             "last": last}
 
 

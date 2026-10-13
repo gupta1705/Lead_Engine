@@ -19,14 +19,23 @@ handed and can be told to fail, so nothing leaves the machine. What is checked:
   * the owner's pause, and a sender still saying SET_ME
   * a Gmail error on the send (send_unknown, never retried by itself), and a Gmail sign-in that
     fails before anything is sent (the email goes back to Approved, not stuck in 'sending')
+  * the sending window (owner, 2026-10-12; window_mode): an email goes only inside its own window,
+    the claim and sql/34's trigger refuse one outside it, a missed window moves once, never two
+    from one address under the gap, what cannot go moves to its next window with the reason, a
+    follow-up keeps its opener's zone and looks at its thread first, a sign-in this machine cannot
+    read is left alone, an email stuck in 'sending' is swept, and switching the window off clears
+    the times
 
 Exit code 1 on any failure.
 """
 import argparse
 import base64
+import contextlib
 import email
 import email.header
+import io
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -41,6 +50,20 @@ import outreach  # noqa: E402
 RESULTS = []
 SENDER = "sender@zz-send-test.example"
 REAL_USER_GMAIL = outreach.user_gmail_service
+# This machine plays the laptop (not the server: outreach.on_the_server) unless a check says otherwise
+os.environ["SCHEDULER_ENABLED"] = "0"
+os.environ.pop("SEND_LOOP_ENABLED", None)
+
+
+def run_logged(args):
+    """cmd_send, its output echoed, -> (rc, the run's summary line as a dict: tools/outreach.py SUMMARY_TAG)."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = outreach.cmd_send(args)
+    text = out.getvalue()
+    sys.stdout.write(text)
+    tagged = [ln for ln in text.splitlines() if ln.startswith(outreach.SUMMARY_TAG)]
+    return rc, (json.loads(tagged[-1][len(outreach.SUMMARY_TAG):]) if tagged else None)
 
 
 def approver_mode(cur, gmail):
@@ -57,8 +80,9 @@ def approver_mode(cur, gmail):
                 " select %s, 'send test (approver)', 'company', config from segments where slug = 'us-production-houses'"
                 " returning id", (slug,))
     seg_id = cur.fetchone()[0]
-    cur.execute("update segments set config = jsonb_set(config #- '{outreach,sending_paused}', '{outreach,send_from}',"
-                " '\"approver\"') where id = %s", (seg_id,))
+    # no sending window here, whatever the live config says: the window has its own section (window_mode)
+    cur.execute("update segments set config = jsonb_set(config #- '{outreach,sending_paused}' #- '{outreach,send_window}',"
+                " '{outreach,send_from}', '\"approver\"') where id = %s", (seg_id,))
     outreach.SEGMENT = slug
     tag = uuid.uuid4().hex[:6]
     asha, bala = "zz-asha-%s@example.com" % tag, "zz-bala-%s@example.com" % tag
@@ -147,6 +171,534 @@ def approver_mode(cur, gmail):
     check("  reconnected: it goes, from his own address", row(his)[:2], ["sent", bad])
 
 
+def window_mode(cur, gmail):
+    """The sending window (owner, 2026-10-12: "send mails to the sender's time region between 10 to 10:30AM and
+    that must be randmized"): each approved email holds its own second inside its recipient's 10:00-10:30
+    (send_after, sql/34) and goes then -- not before, not after its window, never two from one address under
+    the gap -- and what cannot go in its window moves to the next one with the reason."""
+    import time
+    import mailbox_store as store
+    import outreach_policy as pol
+    import send_window as sw
+    print("\n-- the sending window: each email at its own second, 10:00-10:30 on its recipient's clock")
+    block = {"enabled": True, "start": "10:00", "end": "10:30", "timezone_of": "recipient",
+             "sender_timezone": "Asia/Kolkata", "fallback_timezone": "America/New_York", "weekdays_only": True,
+             "min_gap_seconds": 2, "min_lead_seconds": 120, "guidance": "test"}
+    plan = sw.plan_key(sw.window_cfg({"send_window": block}))
+    slug = "zz-send-win-" + uuid.uuid4().hex[:6]
+    cur.execute("insert into segments (slug, name, entity_type, config)"
+                " select %s, 'send test (window)', 'company', config from segments where slug = 'us-production-houses'"
+                " returning id", (slug,))
+    seg_id = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(jsonb_set(config #- '{outreach,mailboxes}' #- '{outreach,send_from}'"
+                " #- '{outreach,sending_paused}', '{outreach,daily_send_cap}', '10'), '{outreach,send_window}', %s::jsonb)"
+                " where id = %s", (json.dumps(block), seg_id))
+    outreach.SEGMENT = slug
+    # each run stays a few seconds, as the app's send loop does: one that meets an address's gap waits it out
+    args = argparse.Namespace(limit=500, stay=5, max_seconds=30)
+
+    def approved(status="shortlisted", approver="test", seg=None):
+        cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'test', %s)"
+                    " returning id", (seg or seg_id, "ZZ win " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example",
+                                      status))
+        eid = cur.fetchone()[0]
+        cur.execute("insert into contacts (entity_id, full_name, email, email_status) values (%s, 'Kay Doe', %s, 'valid')"
+                    " returning id", (eid, "kay.%s@zz-win.example" % uuid.uuid4().hex[:6]))
+        cid = cur.fetchone()[0]
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status, approved_at,"
+                    " approved_by, approval_mode, created_at) values (%s, %s, 't', 'Hello', 'Hello Kay,\n\nBody',"
+                    " 'approved', now(), %s, 'single', clock_timestamp()) returning id", (eid, cid, approver))
+        return cur.fetchone()[0], eid, cid
+
+    def at(oid, after, before, tz="America/New_York"):
+        """Its own moment and window end, seconds from the database's clock now."""
+        cur.execute("update outreach set send_after = clock_timestamp() + make_interval(secs => %s),"
+                    " send_before = clock_timestamp() + make_interval(secs => %s), send_tz = %s,"
+                    " send_tz_reason = coalesce(send_tz_reason, 'test'), send_plan = %s where id = %s",
+                    (after, before, tz, plan, oid))
+
+    def timing(oid):
+        cur.execute("select status, send_after > clock_timestamp(), send_reschedules, send_wait_why, send_error,"
+                    " send_tz, send_tz_reason from outreach where id = %s", (oid,))
+        return list(cur.fetchone())
+
+    def follow_up(tz="Europe/London", reason="test: London"):
+        """An opener sent in a London window five days ago, under this config, and its follow-up, approved,
+        with no time yet."""
+        oid, eid, cid = approved("contacted")
+        cur.execute("update outreach set status = 'sent', sent_at = clock_timestamp() - interval '5 days',"
+                    " gmail_thread_id = %s, gmail_message_id = %s, sender_mailbox = 'default', sender_address = %s,"
+                    " send_tz = %s, send_tz_reason = %s, send_plan = %s where id = %s",
+                    ("zz-wthread-" + uuid.uuid4().hex[:8], "zz-wmsg-" + uuid.uuid4().hex[:8], SENDER, tz, reason,
+                     plan, oid))
+        cur.execute("insert into outreach (entity_id, contact_id, subject, body, status, sequence_step, parent_id,"
+                    " approved_at, approved_by, created_at) values (%s, %s, 'Re: Hello', 'Again', 'approved', 1, %s,"
+                    " now(), 'test', clock_timestamp()) returning id", (eid, cid, oid))
+        return cur.fetchone()[0], eid
+
+    a = approved()[0]; at(a, 600, 2400)                 # its moment is ten minutes away
+    b = approved()[0]; at(b, -5, 1200)                  # due now
+    c = approved()[0]; at(c, -2400, -600)               # its window passed unsent
+    h = approved()[0]                                   # approved while the window was off: no time yet
+    g = approved()[0]; at(g, -2400, -600)
+    cur.execute("update outreach set status = 'send_unknown', send_error = 'timed out' where id = %s", (g,))
+
+    # the claim, and sql/34's guard behind it, refuse an email outside its window
+    cur.execute("update outreach set status = 'sending' where id = %s and status = 'approved'"
+                " and send_after <= clock_timestamp() and clock_timestamp() < send_before returning id", (c,))
+    check("a claim after its window is refused by the claim's own condition", cur.fetchone(), None)
+    cur.execute("savepoint guard")
+    try:
+        cur.execute("update outreach set status = 'sending' where id = %s", (c,))
+        raised = None
+    except psycopg2.Error as e:
+        raised = "send window" in str(e)
+    cur.execute("rollback to savepoint guard")
+    check("  and by the database itself (sql/34's trigger raises)", raised, True)
+
+    cfg = pol.outreach_config(cur, slug)
+    moved = pol.settle_schedule(cur, slug, cfg)
+    check("the window passed unsent: moved to the next one at a new second, and says why",
+          (timing(c)[:4], moved["moved"]), (["approved", True, 1, "the server did not send it in its window"], 1))
+    check("  approved with no time: given one, in the future", (timing(h)[:3], moved["scheduled"]), (["approved", True, 0], 1))
+    check("  one whose outcome is unknown is not touched", timing(g)[:3], ["send_unknown", False, 0])
+    again = pol.settle_schedule(cur, slug, cfg)
+    check("  a second settle moves nothing again", (again["moved"], again["scheduled"], timing(c)[2]), (0, 0, 1))
+
+    n = len(gmail.sent)
+    outreach.cmd_send(args)
+    check("a run: the email due now goes, the one ten minutes away waits", (timing(b)[0], timing(a)[:3]),
+          ("sent", ["approved", True, 0]))
+    check("  the one given a time is not sent early", timing(h)[:2], ["approved", True])
+    check("  one email went", len(gmail.sent) - n, 1)
+
+    # never two from one address under the gap (2 s here): the second waits it out in the same run (--stay)
+    d = approved()[0]; at(d, -5, 1200)
+    e = approved()[0]; at(e, -4, 1200)
+    t0 = time.monotonic()
+    outreach.cmd_send(argparse.Namespace(limit=500, stay=20, max_seconds=60))
+    took = time.monotonic() - t0
+    cur.execute("select extract(epoch from (select sent_at from outreach where id = %s) - (select sent_at from outreach"
+                " where id = %s))", (e, d))
+    gap = cur.fetchone()[0]
+    check("two due at once from one address: both go in one run, the second after the gap",
+          (timing(d)[0], timing(e)[0], gap is not None and float(gap) >= 2.0, took < 30), ("sent", "sent", True, True))
+
+    # a follow-up goes at its first email's clock, and looks at its thread before it goes
+    fu, fu_eid = follow_up()
+    pol.settle_schedule(cur, slug, cfg)
+    check("a follow-up keeps its first email's time zone, and says so", timing(fu)[5:],
+          ["Europe/London", "same as the first email: test: London"])
+    # one whose first email went on the sender's clock (the project since switched to "recipient") is placed on
+    # its recipient's: here the fallback zone, as its lead names no place (review, 2026-10-12)
+    fu_s, _es = follow_up(tz="Asia/Kolkata", reason="sender's clock (India)")
+    pol.settle_schedule(cur, slug, cfg)
+    check("  not one whose first email went on the sender's clock: placed on its recipient's", timing(fu_s)[5:],
+          ["America/New_York", "fallback: no location held"])
+    cur.execute("update outreach set status = 'cancelled' where id = %s", (fu_s,))
+    at(fu, -5, 1200, tz="Europe/London")
+    reply_id = "zz-wreply-" + uuid.uuid4().hex[:8]
+    gmail.thread = [{"id": "zz-ours", "labelIds": ["SENT"], "payload": {"headers": [{"name": "From", "value": SENDER}]}},
+                    {"id": reply_id, "labelIds": ["INBOX"], "payload": {"headers": [{"name": "From",
+                                                                                     "value": "Kay <kay@zz-win.example>"}]}}]
+    n = len(gmail.sent)
+    outreach.cmd_send(args)
+    check("  a reply in its thread the app has not read yet: it waits for its next window, nothing sent",
+          (timing(fu)[:4], len(gmail.sent) - n), (["approved", True, 1, "a reply in the thread is not read yet"], 0))
+    cur.execute("insert into outreach (entity_id, direction, subject, body, status, triage, gmail_message_id)"
+                " values (%s, 'inbound', 'Re: Hello', 'Out of office', 'triaged', 'neutral', %s)", (fu_eid, reply_id))
+    at(fu, -5, 1200, tz="Europe/London")
+    outreach.cmd_send(args)
+    check("  once that reply is read as an auto-reply, it goes", timing(fu)[0], "sent")
+    gmail.thread = None
+
+    # review, 2026-10-12: a message in the thread from another of OUR addresses (a colleague's linked Gmail, the
+    # project's other mailboxes) is ours, as the pull counts it -- never a reply waiting to be read
+    ctag = uuid.uuid4().hex[:6]
+    colleague, colleague_login = "zz-colleague-%s@zz-mail.example" % ctag, "zz-coll-%s@example.com" % ctag
+    cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', 'C', 'T')",
+                (colleague_login,))
+    cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap, enabled)"
+                " values (%s, %s, 'sealed-for-the-server', 35, false)", (colleague_login, colleague))
+    fu3, _e3 = follow_up()
+    at(fu3, -5, 1200, tz="Europe/London")
+    gmail.thread = [{"id": "zz-ours", "labelIds": ["SENT"], "payload": {"headers": [{"name": "From", "value": SENDER}]}},
+                    {"id": "zz-coll-" + ctag, "labelIds": ["INBOX"],
+                     "payload": {"headers": [{"name": "From", "value": "A Colleague <%s>" % colleague.upper()}]}}]
+    outreach.cmd_send(args)
+    check("  a message in its thread from another of our addresses is ours: the follow-up goes", timing(fu3)[0], "sent")
+    # the thread cannot be read: tried again in its next window, never counted as an unread reply for ever
+    fu4, _e4 = follow_up()
+    at(fu4, -5, 1200, tz="Europe/London")
+    gmail.thread = None                                 # the look raises
+    outreach.cmd_send(args)
+    check("  its thread cannot be read just now: it moves to its next window, saying that, not 'a reply'",
+          timing(fu4)[:5], ["approved", True, 1,
+                            "its thread could not be read just now (RuntimeError): it tries again in its next window", None])
+
+    class Gone(Exception):
+        resp = type("R", (), {"status": 404})()
+    fu5, _e5 = follow_up()
+    at(fu5, -5, 1200, tz="Europe/London")
+    gmail.thread = Gone("HttpError 404: thread not found")
+    n = len(gmail.sent)
+    outreach.cmd_send(args)
+    check("  its thread is gone from Gmail (404): parked with the reason, not sent blind",
+          (timing(fu5)[0], timing(fu5)[4], len(gmail.sent) - n),
+          ("approved", "its Gmail thread cannot be read (404): the follow-up is not sent", 0))
+    gmail.thread = None
+
+    # second review, 2026-10-12: the look at the thread refused because of the ADDRESS -- a revoked sign-in whose
+    # cached access token has not run out yet (RefreshError), a permission taken away (403) -- is the address
+    # refused, as at the send: out for the run, named for the alert, its emails moved with that reason. It used to
+    # count as a passing problem with this one email, moved day after day, the owner told only after 3 moves
+    class RevokedAtThread(Exception):
+        pass
+    RevokedAtThread.__name__ = "RefreshError"
+    fu7, _e7 = follow_up()
+    at(fu7, -5, 1200, tz="Europe/London")
+    gmail.thread = RevokedAtThread("invalid_grant: Token has been expired or revoked.")
+    n = len(gmail.sent)
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        gmail.thread = None
+    check("  its look at the thread refused for the address (a revoked sign-in): the address is refused, as at a send",
+          (rc, timing(fu7)[:5], len(gmail.sent) - n),
+          (0, ["approved", True, 1, "Gmail refused %s (sign-in)" % SENDER, None], 0))
+    check("    and named in the run's last line, for the one alert", (summ or {}).get("refused"),
+          {"default": "Gmail refused %s (sign-in)" % SENDER})
+
+    class BarredAtThread(Exception):
+        resp = type("R", (), {"status": 403})()
+    fu8, _e8 = follow_up()
+    at(fu8, -5, 1200, tz="Europe/London")
+    gmail.thread = BarredAtThread("HttpError 403: Insufficient Permission")
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        gmail.thread = None
+    check("    a 403 that is not a rate limit: the same", (rc, timing(fu8)[3], sorted((summ or {}).get("refused") or {})),
+          (0, "Gmail refused %s (403)" % SENDER, ["default"]))
+
+    class SlowAtThread(Exception):
+        resp = type("R", (), {"status": 403})()
+        error_details = [{"reason": "userRateLimitExceeded"}]
+    fu9, _e9 = follow_up()
+    at(fu9, -5, 1200, tz="Europe/London")
+    gmail.thread = SlowAtThread("HttpError 403: User Rate Limit Exceeded")
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        gmail.thread = None
+    check("    a 403 rate limit is passing: only this email moves, and no address is refused",
+          (rc, timing(fu9)[3], (summ or {}).get("refused")),
+          (0, "its thread could not be read just now (403): it tries again in its next window", {}))
+
+    # Gmail refusing the address (429) in a timed run is handled, not a failed run (review, 2026-10-12): its email
+    # moves with the reason, and the run's last line names the address for the send loop's one alert
+    class Limited(Exception):
+        resp = type("R", (), {"status": 429})()
+    r429 = approved()[0]
+    at(r429, -5, 1200)
+    time.sleep(2.2)                                     # past the address's gap
+    gmail.fail = Limited("HttpError 429: rate limit")
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        gmail.fail = None
+    check("Gmail refuses the address (429) in a timed run: the run does not fail, the email moves, saying why",
+          (rc, timing(r429)[:4]), (0, ["approved", True, 1, "Gmail refused %s (429)" % SENDER]))
+    check("  and its last line names the refused address, for the send loop's one alert",
+          (summ or {}).get("refused"), {"default": "Gmail refused %s (429)" % SENDER})
+
+    fu2, _e2 = follow_up()
+    at(fu2, -5, 1200, tz="Europe/London")
+    real_answered = pol.answered_elsewhere
+
+    def window_closes(cur_, email, eid):
+        # its window closes between the run picking it and claiming it
+        cur_.execute("update outreach set send_after = clock_timestamp() - interval '2 minutes',"
+                     " send_before = clock_timestamp() - interval '1 second' where id = %s", (fu2,))
+        return real_answered(cur_, email, eid)
+    pol.answered_elsewhere = window_closes
+    time.sleep(2.2)                                     # past the address's gap, so the claim itself is what refuses
+    try:
+        outreach.cmd_send(args)
+    finally:
+        pol.answered_elsewhere = real_answered
+    cur.execute("select status, stopped_reason from outreach where id = %s", (fu2,))
+    check("a follow-up whose claim fails only because its window closed is not cancelled", list(cur.fetchone()),
+          ["approved", None])
+
+    # its address at the day's limit: moved to the next window, saying why, not sent late
+    cur.execute("select count(*) from outreach o join entities en on en.id = o.entity_id where en.segment_id = %s"
+                " and o.status = 'sent' and o.sent_at::date = current_date", (seg_id,))
+    today = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(config, '{outreach,daily_send_cap}', %s::jsonb) where id = %s",
+                (str(today), seg_id))
+    f = approved()[0]; at(f, -5, 1200)
+    outreach.cmd_send(args)
+    check("the day's limit reached: it moves to its next window with the reason",
+          timing(f)[:4], ["approved", True, 1, "the project's daily limit of %d was reached" % today])
+
+    # from the approver: a sign-in this machine cannot read is the server's -- untouched, never marked
+    tag = uuid.uuid4().hex[:6]
+    cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'send test (window, approver)',"
+                " 'company', config from segments where id = %s returning id", ("zz-send-wina-" + tag, seg_id))
+    seg2 = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(jsonb_set(config, '{outreach,send_from}', '\"approver\"'),"
+                " '{outreach,daily_send_cap}', '35') where id = %s", (seg2,))
+    people = {}
+    for who, name in (("pia", "Pia"), ("quinn", "Quinn"), ("ravi", "Ravi")):
+        people[who] = "zz-%s-%s@example.com" % (who, tag)
+        cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', %s, 'T')",
+                    (people[who], name))
+    cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap) values (%s, %s, 'sealed-for-the-server', 35)"
+                " returning id", (people["pia"], "pia.%s@zz-mail.example" % tag))
+    pia_box = cur.fetchone()[0]
+    ravi_addr = "ravi.%s@zz-mail.example" % tag
+    cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap) values (%s, %s, %s, 35)",
+                (people["ravi"], ravi_addr, store.encrypt({"refresh_token": "1//" + ravi_addr})))
+    outreach.SEGMENT = "zz-send-wina-" + tag
+    i_ = approved(approver=people["pia"], seg=seg2)[0]; at(i_, -5, 1200)
+    j_ = approved(approver=people["quinn"], seg=seg2)[0]; at(j_, -5, 1200)
+    k_ = approved(approver=people["ravi"], seg=seg2)[0]; at(k_, -5, 1200)
+    before = timing(i_)
+    outreach.cmd_send(args)
+    cur.execute("select last_error from user_mailboxes where id = %s", (pia_box,))
+    marked = cur.fetchone()[0]                          # read before timing() runs its own query
+    check("from the approver: a sign-in not readable here leaves the email untouched, and the address unmarked",
+          (timing(i_) == before, marked), (True, None))
+    check("  someone with no sending address: moved to the next window, saying so",
+          timing(j_)[:4], ["approved", True, 1, "Quinn has no sending address"])
+    cur.execute("select status, lower(sender_address) from outreach where id = %s", (k_,))
+    check("  and the one whose sign-in is here goes, from its approver's address", list(cur.fetchone()), ["sent", ravi_addr])
+
+    # a follow-up whose thread's address the database says cannot send (it needs connecting again) is not left
+    # alone all window for the loop to start runs for: it moves, saying so, on any machine (review, 2026-10-12)
+    people["sam"] = "zz-sam-%s@example.com" % tag
+    cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', 'Sam', 'T')",
+                (people["sam"],))
+    sam_addr = "sam.%s@zz-mail.example" % tag
+    cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap, last_error)"
+                " values (%s, %s, %s, 35, 'sign-in: revoked')", (people["sam"], sam_addr, store.encrypt({"refresh_token": "1//x"})))
+    so_, so_e, so_c = approved("contacted", approver=people["sam"], seg=seg2)
+    cur.execute("update outreach set status = 'sent', sent_at = clock_timestamp() - interval '5 days', gmail_thread_id = %s,"
+                " gmail_message_id = %s, sender_mailbox = %s, sender_address = %s where id = %s",
+                ("zz-sthread-" + tag, "zz-smsg-" + tag, sam_addr, sam_addr, so_))
+    cur.execute("insert into outreach (entity_id, contact_id, subject, body, status, sequence_step, parent_id, approved_at,"
+                " approved_by, created_at) values (%s, %s, 'Re: Hello', 'Again', 'approved', 1, %s, now(), %s,"
+                " clock_timestamp()) returning id", (so_e, so_c, so_, people["sam"]))
+    sfu = cur.fetchone()[0]
+    at(sfu, -5, 1200)
+    outreach.cmd_send(args)
+    check("a follow-up whose thread's address needs connecting again moves, saying so (not left alone all window)",
+          timing(sfu)[:4], ["approved", True, 1, "the thread's address %s needs connecting again" % sam_addr])
+
+    # Second review, 2026-10-12: only SEND_LOOP_ENABLED=1 makes a run the server. The laptop's own Docker stack
+    # (docker-compose.yml) has the scheduler on, reaches the live database with the laptop's SESSION_SECRET and
+    # says SEND_LOOP_ENABLED=0: its runs must leave every address it cannot read alone, never mark them all
+    real_boxes = store.mailboxes
+    pia_addr = "pia.%s@zz-mail.example" % tag
+    for env_now in ({"SCHEDULER_ENABLED": "1"}, {"SCHEDULER_ENABLED": "1", "SEND_LOOP_ENABLED": "0"}):
+        store.mailboxes = lambda *a, **k: [b for b in real_boxes(*a, **k) if tag in b["address"]]
+        saved = {k_: os.environ.get(k_) for k_ in ("SCHEDULER_ENABLED", "SEND_LOOP_ENABLED")}
+        os.environ.update(env_now)
+        try:
+            rc, summ = run_logged(args)
+        finally:
+            for k_, v_ in saved.items():
+                if v_ is None:
+                    os.environ.pop(k_, None)
+                else:
+                    os.environ[k_] = v_
+            store.mailboxes = real_boxes
+        cur.execute("select last_error from user_mailboxes where id = %s", (pia_box,))
+        marked = cur.fetchone()[0]
+        check("  not the server (%s): an address it cannot read is left alone, unmarked, its email untouched"
+              % " ".join("%s=%s" % kv for kv in sorted(env_now.items())),
+              (rc, marked, timing(i_) == before, str(i_) in ((summ or {}).get("left_alone") or [])), (0, None, True, True))
+
+    # second review, 2026-10-12: another machine's due email past the point where a run stops (here Gmail refuses
+    # this machine's one readable address, so the pass breaks off) is still named as left alone -- the send loop
+    # starts a run for any due email missing from left_alone, and one left out made it start one every few seconds
+    r_ = approved(approver=people["ravi"], seg=seg2)[0]
+    at(r_, -600, 1200)                                  # due before Pia's, so the pass reaches it first
+
+    class Limited2(Exception):
+        resp = type("R", (), {"status": 429})()
+    gmail.fail = Limited2("HttpError 429: rate limit")
+    store.mailboxes = lambda *a, **k: [b for b in real_boxes(*a, **k) if tag in b["address"]]
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        gmail.fail = None
+        store.mailboxes = real_boxes
+    check("a pass that breaks off (its one readable address refused): another machine's due email is still left alone",
+          (rc, timing(r_)[3], str(i_) in ((summ or {}).get("left_alone") or []), timing(i_) == before),
+          (0, "Gmail refused %s (429)" % ravi_addr, True, True))
+
+    # and a "server" that can read none of several sign-ins holds the wrong SESSION_SECRET (a second deployment, a
+    # secret that changed), not that many damaged rows: nothing is marked, the run fails loudly, the emails wait
+    tag2 = uuid.uuid4().hex[:6]
+    cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', 'Tess', 'T')",
+                ("zz-tess-%s@example.com" % tag2,))
+    cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap)"
+                " values (%s, %s, 'sealed-for-another-server', 35) returning id",
+                ("zz-tess-%s@example.com" % tag2, "tess.%s@zz-mail.example" % tag2))
+    tess_box = cur.fetchone()[0]
+    store.mailboxes = lambda *a, **k: [b for b in real_boxes(*a, **k)
+                                       if b["address"].lower() in (pia_addr, "tess.%s@zz-mail.example" % tag2)]
+    os.environ["SEND_LOOP_ENABLED"] = "1"
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        os.environ.pop("SEND_LOOP_ENABLED", None)
+        store.mailboxes = real_boxes
+    cur.execute("select count(*) from user_mailboxes where id in (%s, %s) and last_error is not null", (pia_box, tess_box))
+    n_marked = cur.fetchone()[0]
+    check("a server that can read none of several sign-ins: nothing marked, the run fails, the email waits untouched",
+          (rc, n_marked, timing(i_) == before, str(i_) in ((summ or {}).get("left_alone") or [])), (1, 0, True, True))
+    cur.execute("delete from user_mailboxes where id = %s", (tess_box,))
+
+    # the same unreadable sign-in ON THE SERVER: marked "connect it again" at once, as before the window (review,
+    # 2026-10-12) -- the run handles it (its email moves, saying so) and does not fail. Only this test's
+    # addresses are looked at here, so no live row is touched even inside the rolled-back transaction
+    store.mailboxes = lambda *a, **k: [b for b in real_boxes(*a, **k) if tag in b["address"]]
+    os.environ["SEND_LOOP_ENABLED"] = "1"
+    try:
+        rc, summ = run_logged(args)
+    finally:
+        os.environ.pop("SEND_LOOP_ENABLED", None)
+        store.mailboxes = real_boxes
+    cur.execute("select last_error from user_mailboxes where id = %s", (pia_box,))
+    marked = cur.fetchone()[0] or ""
+    check("on the server, a sign-in it cannot read is marked to connect again; its email moves, saying so",
+          ("cannot be read on the server" in marked, timing(i_)[:4]),
+          (True, ["approved", True, 1, "Pia's sending address needs linking again"]))
+    check("  handled, not a failed run, and named for the loop's one alert",
+          (rc, sorted((summ or {}).get("refused") or {})), (0, ["pia.%s@zz-mail.example" % tag]))
+
+    # an email left in 'sending' (a send that died between its claim and Gmail's answer)
+    outreach.SEGMENT = slug
+    s_ = approved()[0]
+    cur.execute("update outreach set status = 'sending', updated_at = clock_timestamp() - interval '20 minutes'"
+                " where id = %s", (s_,))
+    swept = pol.sweep_stale_sending(cur)
+    cur.execute("select status, send_error like 'left in sending for 15 minutes%%' from outreach where id = %s", (s_,))
+    check("left in 'sending' for 15 minutes: marked unknown, to check Gmail's Sent before resending",
+          (swept >= 1, list(cur.fetchone())), (True, ["send_unknown", True]))
+
+    # the window switched off: the times are cleared, and they go as soon as they can, as before
+    cur.execute("update segments set config = jsonb_set(jsonb_set(config, '{outreach,send_window,enabled}', 'false'),"
+                " '{outreach,daily_send_cap}', '50') where id = %s", (seg_id,))
+    outreach.cmd_send(args)
+    cur.execute("select count(*) from outreach o join entities en on en.id = o.entity_id where en.segment_id = %s"
+                " and o.status = 'approved' and o.send_after is not null", (seg_id,))
+    check("the window switched off: no times left, and the waiting ones go out",
+          (cur.fetchone()[0], timing(a)[0], timing(f)[0], timing(h)[0]), (0, "sent", "sent", "sent"))
+    check("  the one of unknown outcome is still left for a person", timing(g)[0], "send_unknown")
+
+    # a run with no window (its config read at its start) whose follow-up was just given a time by another
+    # process -- the window switched on, the send loop's settle -- leaves it for its window: the claim failing
+    # is not the reply guard, and it is never cancelled (review, 2026-10-12)
+    fu6, _e6 = follow_up()
+
+    def scheduled_meanwhile(cur_, email_, eid_):
+        cur_.execute("update outreach set send_after = clock_timestamp() + interval '1 hour',"
+                     " send_before = clock_timestamp() + interval '90 minutes', send_tz = 'Europe/London'"
+                     " where id = %s and send_after is null", (fu6,))
+        return real_answered(cur_, email_, eid_)
+    pol.answered_elsewhere = scheduled_meanwhile
+    try:
+        outreach.cmd_send(args)
+    finally:
+        pol.answered_elsewhere = real_answered
+    cur.execute("select status, stopped_reason from outreach where id = %s", (fu6,))
+    check("a run with no window whose follow-up was just given a time elsewhere: left for its window, not cancelled",
+          list(cur.fetchone()), ["approved", None])
+
+
+def pool_elsewhere(cur, gmail):
+    """The pool (review, 2026-10-12): a mailbox whose token is on another machine is not full. When this machine's
+    mailboxes are at their cap and another's still has room by the database's count, the emails are left for that
+    machine, untouched; "every mailbox was at its daily limit" is said only when it is true."""
+    import outreach_policy as pol
+    import send_window as sw
+    print("\n-- the pool: a mailbox connected only on another machine, with room left")
+    block = {"enabled": True, "start": "10:00", "end": "10:30", "timezone_of": "recipient",
+             "sender_timezone": "Asia/Kolkata", "fallback_timezone": "America/New_York", "weekdays_only": True,
+             "min_gap_seconds": 2, "min_lead_seconds": 120, "guidance": "test"}
+    plan = sw.plan_key(sw.window_cfg({"send_window": block}))
+    boxes = [{"key": "main", "email_env": "ZZ_MAIN_SENDER_ADDRESS", "daily_cap": 1},
+             {"key": "second", "email_env": "ZZ_SECOND_SENDER_ADDRESS", "daily_cap": 3}]
+    slug = "zz-send-pool-" + uuid.uuid4().hex[:6]
+    cur.execute("insert into segments (slug, name, entity_type, config)"
+                " select %s, 'send test (pool)', 'company', config from segments where slug = 'us-production-houses'"
+                " returning id", (slug,))
+    seg_id = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(jsonb_set(jsonb_set(config #- '{outreach,send_from}'"
+                " #- '{outreach,sending_paused}', '{outreach,daily_send_cap}', '50'), '{outreach,mailboxes}', %s::jsonb),"
+                " '{outreach,send_window}', %s::jsonb) where id = %s", (json.dumps(boxes), json.dumps(block), seg_id))
+    outreach.SEGMENT = slug
+
+    def mail(status="approved", box=None):
+        cur.execute("insert into entities (segment_id, name, domain, source, status) values (%s, %s, %s, 'test', %s)"
+                    " returning id", (seg_id, "ZZ pool " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example",
+                                      "shortlisted" if status == "approved" else "contacted"))
+        eid = cur.fetchone()[0]
+        cur.execute("insert into contacts (entity_id, full_name, email, email_status) values (%s, 'Kay Doe', %s, 'valid')"
+                    " returning id", (eid, "kay.%s@zz-pool.example" % uuid.uuid4().hex[:6]))
+        cid = cur.fetchone()[0]
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status, approved_at,"
+                    " approved_by, approval_mode, created_at, sent_at, sender_mailbox, sender_address) values"
+                    " (%s, %s, 't', 'Hello', 'Hello Kay,\n\nBody', %s, now(), 'test', 'single', clock_timestamp(),"
+                    " case when %s = 'sent' then clock_timestamp() end, %s, %s) returning id",
+                    (eid, cid, status, status, box, SENDER if box else None))
+        return cur.fetchone()[0]
+
+    def timing(oid):
+        cur.execute("select status, send_after > clock_timestamp(), send_reschedules, send_wait_why from outreach"
+                    " where id = %s", (oid,))
+        return list(cur.fetchone())
+
+    mail("sent", "main")                                # main has sent its one for today
+    due = mail()
+    cur.execute("update outreach set send_after = clock_timestamp() - interval '5 seconds', send_before ="
+                " clock_timestamp() + interval '20 minutes', send_tz = 'America/New_York', send_tz_reason = 'test',"
+                " send_plan = %s where id = %s", (plan, due))
+    # a follow-up in a thread the other machine's mailbox started, due now: only that machine can send it
+    opener = mail("sent", "second")
+    cur.execute("update outreach set gmail_thread_id = %s where id = %s", ("zz-pthread-" + uuid.uuid4().hex[:6], opener))
+    cur.execute("insert into outreach (entity_id, contact_id, subject, body, status, sequence_step, parent_id, approved_at,"
+                " approved_by, created_at, send_after, send_before, send_tz, send_tz_reason, send_plan)"
+                " select entity_id, contact_id, 'Re: Hello', 'Again', 'approved', 1, id, now(), 'test', clock_timestamp(),"
+                " clock_timestamp() - interval '5 seconds', clock_timestamp() + interval '20 minutes', 'America/New_York',"
+                " 'test', %s from outreach where id = %s returning id", (plan, opener))
+    theirs = cur.fetchone()[0]
+    real_connected = outreach.mailbox_connected
+    outreach.mailbox_connected = lambda mb: mb["key"] == "main"   # second's token is on another machine
+    args = argparse.Namespace(limit=500, stay=0, max_seconds=30)
+    try:
+        rc, summ = run_logged(args)
+        check("this machine's mailbox at its cap, another's with room: the email is left for that machine, untouched",
+              (rc, timing(due), str(due) in ((summ or {}).get("left_alone") or [])),
+              (0, ["approved", False, 0, None], True))
+        # second review, 2026-10-12: the run stopping early (no room here) still names the other machine's follow-up
+        # as left alone, so the send loop does not start a run for it every few seconds all window
+        check("  and the follow-up in the other machine's thread is named as left alone too, untouched",
+              (timing(theirs), str(theirs) in ((summ or {}).get("left_alone") or [])),
+              (["approved", False, 0, None], True))
+        for _ in range(3):
+            mail("sent", "second")                      # the other machine sends second's three
+        rc, summ = run_logged(args)
+        check("  every mailbox at its cap by the database's count: now it moves, saying so",
+              (rc, timing(due)), (0, ["approved", True, 1, "every mailbox was at its daily limit"]))
+    finally:
+        outreach.mailbox_connected = real_connected
+
+
 def check(name, got, want):
     ok = got == want
     RESULTS.append(ok)
@@ -179,25 +731,42 @@ class TxDb:
 
 
 class FakeGmail:
-    """users().messages().send(...).execute() records the raw message; fail= makes it raise."""
+    """users().messages().send(...).execute() records the raw message; fail= makes it raise.
+    users().threads().get(...).execute() answers with .thread (a follow-up's look at its thread)."""
 
     def __init__(self):
-        self.sent, self.fail = [], None
+        self.sent, self.fail, self.thread = [], None, None
+        self._kind = self._op = None
 
     def users(self):
         return self
 
     def messages(self):
+        self._kind = "messages"
+        return self
+
+    def threads(self):
+        self._kind = "threads"
         return self
 
     def send(self, userId, body):
-        self._body = body
+        self._body, self._op = body, "send"
         return self
 
     def get(self, **kw):
+        if self._kind == "threads":
+            self._op = "thread"
+            return self
         raise RuntimeError("no previous message in the test")
 
     def execute(self):
+        if self._op == "thread":
+            self._op = None
+            if self.thread is None:
+                raise RuntimeError("no thread in the test")
+            if isinstance(self.thread, Exception):
+                raise self.thread
+            return {"messages": self.thread}
         if self.fail:
             raise self.fail
         raw = base64.urlsafe_b64decode(self._body["raw"])
@@ -231,8 +800,8 @@ def main():
             seg_id = cur.fetchone()[0]
             # the project's own mailbox (the pool), whatever the live config says: sending from each
             # approver's own address has its own section below (approver_mode)
-            cur.execute("update segments set config = jsonb_set(config #- '{outreach,mailboxes}' #- '{outreach,send_from}',"
-                        " '{outreach,daily_send_cap}', '3') where id = %s", (seg_id,))
+            cur.execute("update segments set config = jsonb_set(config #- '{outreach,mailboxes}' #- '{outreach,send_from}'"
+                        " #- '{outreach,send_window}', '{outreach,daily_send_cap}', '3') where id = %s", (seg_id,))
             outreach.SEGMENT = slug
 
             def approved(subject="From TVF in India — a note", body=None, address=None, status="shortlisted",
@@ -473,6 +1042,8 @@ def main():
                   state(late[0])[0], "approved")
 
             approver_mode(cur, gmail)
+            window_mode(cur, gmail)
+            pool_elsewhere(cur, gmail)
     finally:
         conn.rollback()
         conn.close()

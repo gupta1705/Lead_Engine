@@ -146,12 +146,20 @@ def main():
     mailing = dict(TVF_CFG, outreach={"templates": [{"key": "opener"}]})
     reach = [{"email": "kay@example.com", "full_name": "Kay Doe", "rank": 60, "email_status": "valid"}]
 
-    def step(cfg, status, draft=None, contacts=reach):
+    def step(cfg, status, draft=None, contacts=reach, **timing):
         ranked = ex.rank_contacts([dict(c) for c in contacts], "example.com")
         row = {"name": "Example Films", "domain": "example.com", "status": status, "fit_score": 40,
                "metadata": {"scoring_inputs": dict(zeros)}}
         return ex.explain_lead("us-production-houses", cfg, row, ranked,
-                               {"status": draft} if draft else None)["analysis"]["next_step"]
+                               dict({"status": draft}, **timing) if draft else None)["analysis"]["next_step"]
+    # the sending window (owner, 2026-10-12): the words app/main.py carries on the email, from tools/send_window.py
+    label = "Tue 14 Oct, 10:17 New York time (19:47 IST)"
+    window = {"enabled": True, "send_tz": "America/New_York", "send_tz_reason": "company state NY (FDIC)",
+              "window_label": "Tue 14 Oct, 10:00-10:30 New York time (19:30-20:00 IST)"}
+    sched = {"send_after": "2026-10-14T14:17:41+00:00", "send_before": "2026-10-14T14:30:00+00:00",
+             "send_tz": "America/New_York", "send_tz_reason": "company state NY (FDIC)", "send_label": label,
+             "send_short": "Tue 10:17 New York", "window_label": window["window_label"], "reschedules": 0, "wait_why": None}
+    paused_cfg = dict(TVF_CFG, outreach={"templates": [{"key": "opener"}], "sending_paused": True})
     cases += [
         ("shortlisted, no draft yet: it is being drafted", step(mailing, "shortlisted")[:30],
          "Its email is being drafted; it"),
@@ -163,6 +171,29 @@ def main():
          "Shortlisted. This project has no email templates, so nothing is drafted for it."),
         ("shortlisted: never sent to Operations for an unchecked criterion",
          "Operations" in step(mailing, "shortlisted"), False),
+        ("drafted, with a sending window: approving sends it in its recipient's next window",
+         step(mailing, "shortlisted", "drafted", window=window),
+         "Read the email in Outreach and approve it. Approving sends it in its recipient's next window: "
+         "Tue 14 Oct, 10:00-10:30 New York time (19:30-20:00 IST)."),
+        ("  a window that is off says what it always said", step(mailing, "shortlisted", "drafted", window={"enabled": False}),
+         "Read the email in Outreach and approve it. Approving sends it."),
+        ("approved, with its own moment: when it goes out", step(mailing, "shortlisted", "approved", schedule=sched),
+         "Approved: it goes out Tue 14 Oct, 10:17 New York time (19:47 IST)."),
+        ("  an approved email with no time keeps the old words", step(mailing, "shortlisted", "approved", schedule=None),
+         "Approved: it goes out automatically, within the day's sending limit."),
+        ("approved while sending is paused: it waits, and says why", step(paused_cfg, "shortlisted", "approved", schedule=sched),
+         "Approved: it waits, because sending is paused for this project."),
+        # review, 2026-10-12: one parked with a send error is promised no time; a window on the sender's clock
+        # is not called the recipient's
+        ("approved but held back with a send error: says so, and no time",
+         step(mailing, "shortlisted", "approved", schedule={"held": True, "held_why": "recipient failed verification",
+                                                             "send_label": None}),
+         "Approved, but held back: recipient failed verification. It is not sent."),
+        ("drafted, the window on the sender's clock: it does not say the recipient's",
+         step(dict(TVF_CFG, outreach={"templates": [{"key": "opener"}], "send_window": {"timezone_of": "sender"}}),
+              "shortlisted", "drafted", window=dict(window, window_label="Tue 14 Oct, 10:00-10:30 India time")),
+         "Read the email in Outreach and approve it. Approving sends it in its next window, on the sender's clock: "
+         "Tue 14 Oct, 10:00-10:30 India time."),
     ]
 
     # LCX Services (scoring v4, 2026-10-07): an unknown input is JSON null, out of the score's denominator as in

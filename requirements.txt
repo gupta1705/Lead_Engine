@@ -13,3 +13,9 @@ bcrypt>=4.1,<5.0
 pglast>=6,<8
 # One Gmail per person (2026-09-26): each person's Google sign-in is kept encrypted (tools/mailbox_store.py).
 cryptography>=41,<47
+# The sending window (owner, 2026-10-12: "between 10 to 10:30AM", in the recipient's time zone):
+# tools/send_window.py reads every zone and the country tables from this package, never from the
+# machine, so Windows (no system zone files) and the slim image (no /usr/share/zoneinfo) agree. The
+# Dockerfile's PYTHONTZPATH="" makes the image use only this. Without it the app refuses to start
+# (send_window.self_check) rather than send everyone at India's 10:00.
+tzdata>=2025.2

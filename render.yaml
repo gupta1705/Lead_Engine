@@ -18,6 +18,20 @@
 #   SCHEDULER_ENABLED   the Tuesday 02:00 UTC weekly refresh runs here. It
 #                       only fires while the instance is awake -- keep it
 #                       awake with a free uptime ping (docs/DEPLOY.md).
+#   SEND_LOOP_ENABLED   the timed sender (owner, 2026-10-12: each email at its
+#                       own minute between 10:00 and 10:30 in its recipient's
+#                       time zone) runs here, in its own lane, so a weekly
+#                       refresh holding the job slot never makes a window pass
+#                       unsent. Since the review of 2026-10-12 it runs wherever
+#                       the scheduler runs unless this says "0"; "1" here is
+#                       explicit, and it is the one thing that tells
+#                       `outreach.py send` it is on the server, which holds the
+#                       sealed sign-ins of each person's sending address
+#                       (tools/users.py gmail): one it cannot read is marked
+#                       "connect it again". SCHEDULER_ENABLED does not count:
+#                       the laptop's docker-compose.yml turns the scheduler on
+#                       too, and says SEND_LOOP_ENABLED=0. TZ below is left as
+#                       it is: no code reads naive local time.
 #
 # Optional values are added later in the dashboard (service -> Environment):
 #   ALERT_WEBHOOK_URL, GMAIL_SENDER_ADDRESS, GOOGLE_OAUTH_CLIENT_ID,
@@ -50,6 +64,8 @@ services:
         generateValue: true        # Render generates a random one
       - key: SCHEDULER_ENABLED
         value: "1"
+      - key: SEND_LOOP_ENABLED
+        value: "1"                 # the timed sender; only this server can read the sign-ins
       - key: SEGMENT_SLUG
         value: us-production-houses
       - key: TZ

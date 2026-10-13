@@ -44,6 +44,11 @@ What it checks:
      compiles parses; and docs/LCX_scoring_cheatsheet.md states the same
      numbers. A pinned number changes only with an owner decision, and then
      here, in the config and in the cheat sheet together.
+ 12. Every project's outreach.send_window reads (owner, 2026-10-12: each approved
+     email at its own random second, 10:00-10:30 on its recipient's clock):
+     HH:MM with the start first, timezone_of recipient or sender, real IANA
+     zones and country codes, a guidance note; tzdata listed in
+     requirements.txt and readable (send_window.self_check()).
 
 Usage:  python tools/verify_repo.py     (exit 0 = green)
 """
@@ -727,6 +732,47 @@ def check_lcx_services():
                   " line and Apollo line")
 
 
+def check_send_window():
+    """12. Every project's sending window reads (owner, 2026-10-12: each approved email at its own random
+    second, 10:00-10:30 on its recipient's clock). A block that does not read stops that project's sends
+    (tools/send_window.window_cfg raises), so it is caught here, before a deploy: times as HH:MM with the
+    start first, timezone_of "recipient" or "sender", every zone a real IANA zone, every country a real
+    code, no key the code does not know. And the zone data is shipped (tzdata in requirements.txt, read by
+    send_window.self_check()): the server's slim image has none of its own, and without it every email
+    would go at the fallback zone's 10:00 -- the app refuses to start instead."""
+    mark = len(failures)
+    try:
+        sys.path.insert(0, str(ROOT / "tools"))
+        import send_window
+    except Exception as e:                      # noqa: BLE001 -- reported, not raised
+        fail("could not import tools/send_window.py: %s" % e)
+        return
+    reqs = (ROOT / "requirements.txt").read_text(encoding="utf-8") if (ROOT / "requirements.txt").exists() else ""
+    if not re.search(r"(?im)^\s*tzdata\b", reqs):
+        fail("requirements.txt does not list tzdata: the server would have no time-zone data and would not start")
+    try:
+        send_window.self_check()
+    except RuntimeError as e:
+        fail("send_window.self_check() failed here: %s" % e)
+    windows = 0
+    for path in sorted((ROOT / "config").glob("segment.*.json")):
+        try:
+            seg = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue                            # reported by the checks that own that file
+        block = (seg.get("outreach") or {}).get("send_window")
+        if block is None:
+            continue
+        windows += 1
+        for problem in send_window.config_problems(seg.get("outreach")):
+            fail("%s: %s" % (path.name, problem))
+        if not isinstance(block, dict) or not str(block.get("guidance") or "").strip():
+            fail("%s: outreach.send_window needs a guidance note (what it does and how to change it)" % path.name)
+    if len(failures) == mark:
+        print("  ok    window  %d project(s) send at a random second in their window; zones real, tzdata shipped"
+              % windows)
+
+
 def main():
     print("TVF Lead Engine -- repo self-check (P0, repo half)\n")
     check_sql_parses()
@@ -739,6 +785,7 @@ def main():
         check_n8n_workflows(cfg)
         check_live_config(cfg)
     check_lcx_services()
+    check_send_window()
     check_workflow_code_sync()
     check_connector_fixtures()
 

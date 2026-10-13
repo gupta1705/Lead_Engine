@@ -57,5 +57,6 @@ else
   echo
   echo "pushed. In the Space: Settings -> Variables and secrets -> add"
   echo "  SUPABASE_DB_URL (secret), SESSION_SECRET (secret, any long random string),"
-  echo "  SCHEDULER_ENABLED=1 -- then the Space rebuilds and comes up on its own."
+  echo "  SCHEDULER_ENABLED=1, SEND_LOOP_ENABLED=1 (this is the server: the timed sender runs here)"
+  echo "  -- then the Space rebuilds and comes up on its own."
 fi

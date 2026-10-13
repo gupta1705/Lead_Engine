@@ -11,9 +11,13 @@
 
 FROM python:3.11-slim
 
+# PYTHONTZPATH="": time zones come only from the tzdata package in requirements.txt, the same data the
+# sending window was tested with on Windows, never from whatever zone files the base image carries
+# (owner, 2026-10-12: each email between 10:00 and 10:30 in its recipient's time zone).
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONTZPATH=""
 
 # psycopg2-binary needs no build toolchain; curl is here for the healthcheck.
 RUN apt-get update \

@@ -230,7 +230,9 @@ JOBS = {
     "send_outreach": {
         "label": "Send approved emails",
         "group": "Outreach",
-        "desc": "Sends the emails a person approved, within the day's cap, from the connected mailboxes.",
+        "desc": "Sends each approved email at its own time in its sending window (10:00-10:30 on its "
+                "recipient's clock, or the sender's where the project says so), inside each address's daily "
+                "limit.",
         "cmd": [PY, "tools/outreach.py", "send"],
         "hidden": True,
     },
@@ -240,26 +242,112 @@ _LOCK = threading.Lock()
 _STATE = {}     # key -> {status, started, finished, rc, log}
 _CURRENT = {"key": None, "proc": None}
 
+# THE SEND'S OWN LANE (owner, 2026-10-12: each email "between 10 to 10:30AM", at its own minute). An
+# email timed for 10:13 in Mumbai is due at 04:43 UTC -- inside the Friday weekly refresh, which holds the
+# single slot above for two or three hours from 02:00 UTC. Waiting for the slot would send India's whole
+# window late, so a send runs beside the slot, never in it: one per project at a time (_SEND_LOCKS), at
+# most SEND_WORKERS at once across projects (memory: each is a Python process). It needs no slot to be
+# safe -- two senders can never send one email twice: the claim in tools/outreach.py cmd_send is atomic,
+# counted under an advisory lock per address, and sql/34 refuses a claim outside the email's window.
+_SEND_LOCKS = {}
+_SEND_GUARD = threading.Lock()
+_SEND_WORKERS = max(1, int(os.environ.get("SEND_WORKERS") or 2))
+_SEND_SEM = threading.BoundedSemaphore(_SEND_WORKERS)
+_SEND_ACTIVE = [0]              # workers held right now (run_send)
 
 
-def _execute(key, job, logpath, env_extra=None):
+def _send_lock(segment):
+    with _SEND_GUARD:
+        return _SEND_LOCKS.setdefault(segment, threading.Lock())
+
+
+def send_busy(segment):
+    """Is a send for this project running now (its lane)?"""
+    return _send_lock(segment).locked()
+
+
+def send_workers_free():
+    """How many send workers (SEND_WORKERS, default 2) are free right now. The send loop asks before it
+    starts projects' runs, and gives a free one to the project that has waited longest (app/scheduler.py)."""
+    with _SEND_GUARD:
+        return max(0, _SEND_WORKERS - _SEND_ACTIVE[0])
+
+
+def run_send(segment, env=None, stay=0, max_seconds=None, on_start=None, wait=0, busy=None):
+    """Run `outreach.py send` for one project in the send lane, to completion. -> (rc, logpath), or
+    (None, None) when a send for this project is already running or every send worker is busy -- the
+    next pass of the send loop (or the next tick) tries again. stay: seconds the run keeps going for the
+    next email's moment (tools/outreach.py --stay; the send loop passes 55, a tick 0). max_seconds: how long
+    a staying run may hold its worker (--max-seconds); the send loop keeps it short, so one busy project
+    cannot keep the others' due emails waiting past their window (review, 2026-10-12). on_start(): called
+    once the project's lane and a worker are both held, just before the run -- the caller records the run
+    then, and never records one that did not start.
+    The project's own lock is taken first, never waited for: a project never has two runs, and the one
+    running sends what is due. A worker second: one project never holds more than one of the SEND_WORKERS.
+    wait: seconds to wait for a free worker (second review, 2026-10-12). The tick passes a few minutes, as
+    run_blocking waited for the slot: a project with no sending window is sent only by the tick, and giving up
+    at once while timed projects held both workers left its approved email for the next tick, 15 minutes on.
+    The send loop passes 0: it looks again in seconds. busy: a dict that, when nothing ran, gets
+    busy["why"] = "project" (a send for it is already running) or "workers" (none came free in time)."""
+    lock = _send_lock(segment)
+    if not lock.acquire(blocking=False):
+        if busy is not None:
+            busy["why"] = "project"
+        return None, None
+    try:
+        if not (_SEND_SEM.acquire(timeout=wait) if wait and wait > 0 else _SEND_SEM.acquire(blocking=False)):
+            if busy is not None:
+                busy["why"] = "workers"
+            return None, None
+        with _SEND_GUARD:
+            _SEND_ACTIVE[0] += 1
+        try:
+            LOGDIR.mkdir(parents=True, exist_ok=True)
+            slug = "".join(ch if ch.isalnum() or ch == "-" else "-" for ch in str(segment).lower())
+            logpath = LOGDIR / ("send_outreach-%s-%d.log" % (slug, int(time.time() * 1000)))
+            with _LOCK:
+                # Operations shows the latest send's log under the job's own key
+                _STATE["send_outreach"] = {"status": "running", "started": time.time(),
+                                           "finished": None, "rc": None, "log": str(logpath)}
+            if on_start:
+                on_start()
+            extra = ["--stay", str(int(stay or 0))]
+            if max_seconds:
+                extra += ["--max-seconds", str(int(max_seconds))]
+            rc = _execute("send_outreach", JOBS["send_outreach"], logpath, dict(env or {}, SEGMENT_SLUG=segment),
+                          track=False, extra_args=extra)
+            return rc, str(logpath)
+        finally:
+            with _SEND_GUARD:
+                _SEND_ACTIVE[0] -= 1
+            _SEND_SEM.release()
+    finally:
+        lock.release()
+
+
+def _execute(key, job, logpath, env_extra=None, track=True, extra_args=None):
     """Run one job's subprocess to completion. Returns its exit code.
-    Assumes the caller already holds the slot (claimed _CURRENT['key']=key).
+    Assumes the caller already holds the slot (claimed _CURRENT['key']=key) -- or, with track=False, runs
+    in the send lane (run_send), which leaves the slot and its stop button alone.
     env_extra carries SEGMENT_SLUG, so the same tool serves every segment."""
+    with _LOCK:
+        state = _STATE.get(key)
     with io_open(logpath, "w") as logf:
         try:
             logf.write("[ops] %s  segment=%s\n" % (key, (env_extra or {}).get("SEGMENT_SLUG", "default")))
+            logf.flush()
             proc = subprocess.Popen(
-                job["cmd"], cwd=str(REPO), stdout=logf, stderr=subprocess.STDOUT,
+                list(job["cmd"]) + list(extra_args or []), cwd=str(REPO), stdout=logf, stderr=subprocess.STDOUT,
                 env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", **(env_extra or {})})
-            _CURRENT["proc"] = proc
+            if track:
+                _CURRENT["proc"] = proc
             rc = proc.wait()
         except Exception as e:
             logf.write("\nrunner error: %r\n" % (e,))
             rc = -1
     with _LOCK:
-        _STATE[key].update(status="done" if rc == 0 else "failed",
-                           finished=time.time(), rc=rc)
+        if state is not None:
+            state.update(status="done" if rc == 0 else "failed", finished=time.time(), rc=rc)
     return rc
 
 

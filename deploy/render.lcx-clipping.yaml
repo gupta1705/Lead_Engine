@@ -36,6 +36,8 @@ services:
         generateValue: true
       - key: SCHEDULER_ENABLED
         value: "1"
+      - key: SEND_LOOP_ENABLED
+        value: "1"                 # this is a server (2026-10-12): the timed sender runs here (render.yaml)
       - key: SEGMENT_SLUG
         value: lcx-clipping
       - key: SEGMENTS_ALLOWED

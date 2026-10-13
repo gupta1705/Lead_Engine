@@ -336,7 +336,23 @@ values (
       "name": "Vedansh Gupta",
       "title": "Outreach Consultant",
       "postal_address": "Contagious Online Media Network Pvt Ltd. 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
-      "guidance": "Set by the owner 2026-09-18 with the outreach template. postal_address MUST be set before the first send (approval refuses a draft that still says SET_ME). The Gmail address itself comes from GMAIL_SENDER_ADDRESS in .env, never from config."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
+    },
+    "send_window": {
+      "enabled": true,
+      "start": "10:00",
+      "end": "10:30",
+      "timezone_of": "recipient",
+      "sender_timezone": "Asia/Kolkata",
+      "fallback_timezone": "America/Los_Angeles",
+      "assumed_country": "US",
+      "country_zones": {
+        "US": "America/Los_Angeles"
+      },
+      "weekdays_only": true,
+      "min_gap_seconds": 45,
+      "min_lead_seconds": 120,
+      "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". The AICP''s houses are American (assumed_country), and most of them are in Los Angeles: a US company whose state is not known goes at Los Angeles'' 10:00, not New York''s (country_zones); its state, city or phone decides when one is known."
     },
     "daily_send_cap": 35,
     "send_from": "approver",
@@ -413,8 +429,8 @@ values (
     },
     "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
-      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The owner''s sign-off (2026-09-18): Warm regards, then the sender''s name and title -- Kartikeya until 2026-09-21, when the owner set Vedansh Gupta, Outreach Consultant, who writes on Kartikeya''s behalf (the templates'' opening says so). Under it, the postal address and the one-line way out that commercial email must carry and the footer check requires. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}. Templates end with {{footer}}; see tools/draft_render.py."
+      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     }
   }
 }'::jsonb

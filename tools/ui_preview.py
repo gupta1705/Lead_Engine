@@ -137,6 +137,93 @@ MOCK_JS = r"""
   const json = (obj, status) => new Response(JSON.stringify(obj), { status: status || 200,
     headers: { "Content-Type": "application/json" } });
   const RUN = { key: null, lines: {}, status: {} };
+  // ---- the sending window (owner, 2026-10-12), pretended: each approved email at its own second in
+  // 10:00-10:30 on its recipient's clock, written as tools/send_window.py writes it. A snapshot taken before
+  // the window existed gets one (?window=off leaves it out), so the screens show what approving now does.
+  const W = { start: [10, 0], end: [10, 30], off: new URLSearchParams(location.search).get("window") === "off" };
+  const ZONES = [["America/New_York", "New York", "company state NY (FDIC)"], ["Europe/London", "UK", "country GB"],
+                 ["America/Los_Angeles", "Los Angeles", "recipient: California, United States"], ["Asia/Kolkata", "India", "country IN"]];
+  const zoneOf = (id) => ZONES[[...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % ZONES.length];
+  const parts = (t, tz) => Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" })
+    .formatToParts(new Date(t)).map((p) => [p.type, p.value]));
+  const wallToUtc = (y, mo, d, h, mi, tz) => {           // a wall time in tz -> ms UTC (two corrections suffice)
+    let t = Date.UTC(y, mo - 1, d, h, mi);
+    for (let i = 0; i < 2; i++) { const p = parts(t, tz);
+      t += Date.UTC(y, mo - 1, d, h, mi) - Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute); }
+    return t;
+  };
+  const dayLabel = (t, tz) => new Date(t).toLocaleDateString("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+  const hm = (t, tz) => { const p = parts(t, tz); return p.hour.padStart(2, "0").replace("24", "00") + ":" + p.minute; };
+  const nextWindow = (tz, after) => {
+    for (let k = 0; k < 14; k++) {
+      const p = parts(after + k * 86400000, tz);
+      if (p.weekday === "Sat" || p.weekday === "Sun") continue;
+      const ws = wallToUtc(+p.year, +p.month, +p.day, W.start[0], W.start[1], tz), we = wallToUtc(+p.year, +p.month, +p.day, W.end[0], W.end[1], tz);
+      if (we - 60000 - Math.max(ws, after) >= 120000) return [ws, we];
+    }
+    return null;
+  };
+  const both = (ws, we, tz, name) => `${dayLabel(ws, tz)}, ${hm(ws, tz)}${we ? "-" + hm(we, tz) : ""} ${name} time`
+    + (tz === "Asia/Kolkata" ? "" : ` (${dayLabel(ws, "Asia/Kolkata").slice(0, 3) !== dayLabel(ws, tz).slice(0, 3)
+      ? dayLabel(ws, "Asia/Kolkata").slice(0, 3) + " " : ""}${hm(ws, "Asia/Kolkata")}${we ? "-" + hm(we, "Asia/Kolkata") : ""} IST)`);
+  const windowFor = (id) => {
+    if (W.off) return { enabled: false };
+    const [tz, name, why] = zoneOf(id), w = nextWindow(tz, Date.now() + 120000);
+    return w ? { enabled: true, send_tz: tz, send_tz_reason: why, window_label: both(w[0], w[1], tz, name) } : { enabled: false };
+  };
+  const scheduleFor = (id) => {
+    if (W.off) return null;
+    const [tz, name, why] = zoneOf(id), w = nextWindow(tz, Date.now() + 120000);
+    if (!w) return null;
+    const lo = Math.max(w[0], Date.now() + 120000), at = Math.floor((lo + Math.random() * (w[1] - 60000 - lo)) / 1000) * 1000;
+    return { send_after: new Date(at).toISOString(), send_before: new Date(w[1]).toISOString(), send_tz: tz, send_tz_reason: why,
+             send_label: both(at, null, tz, name), send_short: `${parts(at, tz).weekday} ${hm(at, tz)} ${name}`,
+             window_label: both(w[0], w[1], tz, name), reschedules: 0, wait_why: null };
+  };
+  const byDay = (scheds, tz, withPlaces) => {
+    const days = {};
+    scheds.filter((s) => s && !s.held && s.send_after).forEach((s) => { const t = Date.parse(s.send_after), z = tz || s.send_tz;
+      const key = new Date(t).toLocaleDateString("en-CA", { timeZone: z });
+      const d = (days[key] = days[key] || { day: key, label: dayLabel(t, z), count: 0, places: {} });
+      d.count += 1; const pl = ZONES.find((x) => x[0] === s.send_tz)[1]; d.places[pl] = (d.places[pl] || 0) + 1; });
+    return Object.values(days).sort((a, b) => a.day.localeCompare(b.day)).map((d) => withPlaces
+      ? { ...d, places: Object.entries(d.places).sort((a, b) => b[1] - a[1]) } : { day: d.day, label: d.label, count: d.count });
+  };
+  // review, 2026-10-12: ?clock=sender puts the window on the sender's clock (the page's sentences say so);
+  // ?held=1 parks the first approved email with a send error (Approved shows Held, never a time);
+  // ?loop=off shows Operations with the timed sender off
+  const Q = new URLSearchParams(location.search);
+  ready.then((FX) => {
+    const pol = (FX.segment.outreach_policy = FX.segment.outreach_policy || {});
+    if (!W.off && !pol.send_window)
+      pol.send_window = { enabled: true, start: "10:00", end: "10:30", timezone_of: "recipient", weekdays_only: true,
+                          sender_timezone: "Asia/Kolkata", sender_place: "India" };
+    if (W.off) pol.send_window = null;
+    if (pol.send_window && Q.get("clock") === "sender") pol.send_window.timezone_of = "sender";
+    let held = Q.get("held") === "1";
+    FX.outreach.rows.forEach((r) => {
+      if (held && r.direction !== "inbound" && r.status === "approved") { r.send_error = "recipient failed verification"; held = false; }
+      if (r.direction !== "inbound" && r.status === "approved" && r.send_error && pol.send_window)
+        r.schedule = { held: true, held_why: r.send_error, send_after: null, send_before: null, send_label: null,
+                       send_short: null, window_label: null, reschedules: 0, wait_why: null };
+      else if (r.direction !== "inbound" && r.status === "approved" && !r.schedule) r.schedule = scheduleFor(r.id);
+    });
+    FX.schedule = FX.schedule || {};
+    if (!FX.schedule.send_loop)
+      FX.schedule.send_loop = Q.get("loop") === "off"
+        ? { on: false, why: "SEND_LOOP_ENABLED=0: timed emails go only at the fifteen-minute ticks, and most of each window moves to the next weekday" }
+        : { on: true, why: "each approved email goes at its own second; the loop looks every few seconds" };
+    // the timed sends are their own pipeline, "send" (second review, 2026-10-12): a snapshot from before has none,
+    // so one is pretended, two minutes ago; ?refused=1 adds the day's latest Gmail refusal (Operations' extra row)
+    const last = (FX.schedule.last = FX.schedule.last || {});
+    if (pol.send_window && !last.send && FX.schedule.send_loop.on)
+      last.send = { pipeline: "send", trigger: "schedule", status: "ok", detail: null,
+                    started_at: new Date(Date.now() - 120000).toISOString(), finished_at: new Date(Date.now() - 65000).toISOString() };
+    if (Q.get("refused") === "1" && !FX.schedule.refused)
+      FX.schedule.refused = { at: new Date(Date.now() - 3600000).toISOString(), detail: "Gmail refused clipping@lcx.example.com (403):"
+        + " its emails moved to their next window, saying why; the other addresses carry on" };
+  });
   const folderOf = (r) => {
     if (r.direction === "inbound") return "inbox";
     return ({ drafted: "drafts", approved: "outbox", sending: "outbox", sent: "sent", cancelled: "cancelled" })[r.status] || "attention";
@@ -213,9 +300,22 @@ MOCK_JS = r"""
       counts.untriaged = FX.outreach.rows.filter((r) => r.direction === "inbound" && r.triage !== "positive" && r.triage !== "negative").length;
       return json({ rows: FX.outreach.rows.filter((r) => folderOf(r) === f), counts });
     }
+    if ((m = p.match(/^\/api\/outreach\/([^/]+)\/window$/))) {
+      const r = FX.outreach.rows.find((x) => x.id === m[1]);
+      return json(r && r.status === "drafted" && r.direction !== "inbound" ? windowFor(r.id) : { enabled: false });
+    }
     if ((m = p.match(/^\/api\/outreach\/([^/]+)\/decision$/))) {
       const r = FX.outreach.rows.find((x) => x.id === m[1]); if (!r) return json({ detail: "no such row" }, 404);
-      if (body.action === "approve") { r.status = "approved"; r.approved_at = new Date().toISOString(); }
+      if (body.action === "approve") {
+        r.status = "approved"; r.approved_at = new Date().toISOString(); r.approved_by = FX.auth.user;
+        r.approved_by_name = FX.auth.name; r.schedule = scheduleFor(r.id);
+        if (Q.get("held") === "1" && !FX.__held && !W.off) {    // the first approval, parked as the sender would
+          FX.__held = true; r.send_error = "recipient failed verification";
+          r.schedule = { held: true, held_why: r.send_error, send_after: null, send_before: null, send_label: null,
+                         send_short: null, window_label: null, reschedules: 0, wait_why: null };
+        }
+        return json({ ok: true, schedule: r.schedule, can_send: true, paused: null, sends_from: [] });
+      }
       else if (body.action === "cancel") r.status = "cancelled";
       else if (body.action === "mark_positive") { r.triage = "positive"; r.status = "triaged"; return json({ ok: true, entity_promoted: true }); }
       else if (body.action === "mark_negative") { r.triage = "negative"; r.status = "triaged"; }
@@ -249,7 +349,15 @@ MOCK_JS = r"""
       const sentToday = FX.outreach.rows.filter((r) => r.status === "sent" && r.sent_at
         && String(r.sent_at).slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
       const tomorrow = new Date(); tomorrow.setUTCHours(24, 0, 0, 0);
-      return json(FX.mailboxes || { segment_cap: cap, rotation: false, paused: FX.segment.sending_paused || null,
+      // approved emails by the day they go out, on India's clock (app/main.py _scheduled_by_day)
+      const waiting = FX.outreach.rows.filter((r) => r.direction !== "inbound" && r.status === "approved");
+      const scheduled = byDay(waiting.map((r) => r.schedule), "Asia/Kolkata", false);
+      if (FX.mailboxes) {
+        FX.mailboxes.scheduled = scheduled;
+        (FX.mailboxes.accounts || []).forEach((a) => { a.scheduled = byDay(waiting.filter((r) =>
+          String(r.approved_by || "").toLowerCase() === String(a.email).toLowerCase()).map((r) => r.schedule), "Asia/Kolkata", false); });
+      }
+      return json(FX.mailboxes || { segment_cap: cap, rotation: false, paused: FX.segment.sending_paused || null, scheduled,
         sent_today: sentToday, limit_today: cap, resets_at: tomorrow.toISOString(), can_send: true,
         approved_waiting: FX.outreach.rows.filter((r) => r.direction !== "inbound" && r.status === "approved").length,
         mailboxes: [
@@ -266,10 +374,15 @@ MOCK_JS = r"""
         skipped: [...gen].map((id) => ({ id, reason: "its opening line was written by a model; approve it on its own" })) });
     }
     if (p === "/api/outreach/batch/approve") {
+      const scheds = [];
       (body.ids || []).forEach((id) => { const r = FX.outreach.rows.find((x) => x.id === id);
         if (r) { r.status = "approved"; r.approved_by = FX.auth.user; r.approval_mode = "batch";
-                 r.approved_at = new Date().toISOString(); r.spot_checked = (body.sample || []).includes(id); } });
-      return json({ batch_id: "preview", approved: (body.ids || []).length, skipped: [] });
+                 r.approved_at = new Date().toISOString(); r.spot_checked = (body.sample || []).includes(id);
+                 r.schedule = scheduleFor(r.id); scheds.push(r.schedule); } });
+      // as app/main.py answers: a paused project's are held, so no day is promised for them
+      const paused = (FX.mailboxes && FX.mailboxes.paused) || FX.segment.sending_paused || null;
+      return json({ batch_id: "preview", approved: (body.ids || []).length, skipped: [], can_send: true, paused,
+                    windows: paused ? [] : byDay(scheds, null, true) });
     }
     // ---- writing one email to picked leads (Universal, 2026-09-27): tools/outreach_compose.py, in short ----
     if (p === "/api/outreach/compose/check" || p === "/api/outreach/compose") {
@@ -293,16 +406,17 @@ MOCK_JS = r"""
           return skipped.push({ id, company: r.name, reason: "it already has an email from us" });
         const first = String(r.contact_name || "").trim().split(/\s+/)[0] || "";
         ready.push({ id: r.id, company: r.name, company_as_written: r.name, contact_name: r.contact_name || null,
-                     email: r.email, first_name: first || "there", named: !!first });
+                     email: r.email, first_name: first || "there", named: !!first, window: windowFor(r.id) });
       });
       if (apply) {
         const now = new Date().toISOString();
         const fill = (t, x) => String(t || "").replace(/{{\s*first_name\s*}}/g, x.first_name).replace(/{{\s*company\s*}}/g, x.company);
         ready.forEach((x) => {
           const r = FX.leads.find((l) => l.id === x.id); r.status = "shortlisted";
+          x.schedule = scheduleFor(x.id);
           FX.outreach.rows.unshift({ id: "c" + Math.random().toString(16).slice(2), entity_id: x.id, company: x.company, domain: r.domain,
             contact_name: x.contact_name, contact_email: x.email, direction: "outbound", status: "approved",
-            subject: fill(body.subject, x).trim(), body: fill(body.body, x).trim() + "\n\n" + footer,
+            subject: fill(body.subject, x).trim(), body: fill(body.body, x).trim() + "\n\n" + footer, schedule: x.schedule,
             approved_by: me.user, approved_by_name: me.name, approval_mode: "compose", approved_at: now, created_at: now, sequence_step: 0 });
         });
       }
@@ -384,7 +498,9 @@ def serve(port, fixtures):
             path = self.path.split("?", 1)[0]
             if path in ("/", "/index.html"):
                 html = io.open(STATIC / "index.html", encoding="utf-8").read()
-                v = str(int(max(os.path.getmtime(STATIC / f) for f in ("app.js", "style.css"))))
+                # this file too: a change to the mock below must reach the browser, not its cached copy
+                v = str(int(max([os.path.getmtime(STATIC / f) for f in ("app.js", "style.css")]
+                                + [os.path.getmtime(__file__)])))
                 html = (html.replace('href="style.css"', 'href="style.css?v=%s"' % v)
                             .replace('<script src="app.js"></script>',
                                      '<script src="/__mock.js?v=%s"></script>\n<script src="app.js?v=%s"></script>' % (v, v)))

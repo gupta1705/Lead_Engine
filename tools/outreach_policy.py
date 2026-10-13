@@ -42,11 +42,23 @@ MAILBOXES
   starts counting on its first sending day. A segment without `mailboxes`
   has one implicit mailbox, the original single sender, so TVF is unchanged.
   Bounces (mailer-daemon replies) mark the address invalid and end the thread.
+
+THE SENDING WINDOW (owner, 2026-10-12: "send mails to the sender's time region between 10 to 10:30AM
+and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13")
+  A project with outreach.send_window gives every approved email its own second inside 10:00-10:30 in
+  its recipient's zone (tools/send_window.py says where and when), drawn when it is approved, on every
+  approval path, and stored on the row (sql/34), so the Approved list says when each one goes. One
+  function places them all (place_send): never two from one address closer than the gap, never more
+  in a window than its addresses hold, never more on a UTC day than their daily limits. A window that
+  passes unsent moves the email to the next window at a new random second (settle_schedule), never to
+  a late afternoon. A project without the block keeps no times and sends as it always did.
 """
+import datetime as dt
 import hashlib
 import hmac
 import json
 import math
+import random
 import re
 import secrets
 import time
@@ -508,22 +520,27 @@ def generated_among(cur, ids):
 
 
 def apply_batch(cur, approve_ids, sample_ids, user, segment, requested, skipped):
-    """Approve the checked drafts and record the batch. Returns (batch_id, approved)."""
+    """Approve the checked drafts, give each its moment in its recipient's window (schedule_sends), and
+    record the batch. Returns (batch_id, approved, {id: schedule view}) -- {} where the project has no window.
+    One email with no free minute in 60 days does not undo the batch: it stays approved with no time, and
+    the next settle_schedule tries it again."""
     batch_id = str(uuid.uuid4())
-    approved = 0
+    ids = []
     if approve_ids:
         cur.execute(
             "update outreach set status = 'approved', approved_at = now(), approved_by = %s,"
             " approval_mode = 'batch', approval_batch = %s, spot_checked = (id = any(%s::uuid[])),"
             " updated_at = now()"
-            " where id = any(%s::uuid[]) and status = 'drafted' and direction = 'outbound'",
+            " where id = any(%s::uuid[]) and status = 'drafted' and direction = 'outbound' returning id",
             (user, batch_id, [str(s) for s in sample_ids], [str(a) for a in approve_ids]))
-        approved = cur.rowcount
+        ids = [str(r["id"] if isinstance(r, dict) else r[0]) for r in cur.fetchall()]
+    approved = len(ids)
     cur.execute(
         "insert into outreach_approval_batches (id, segment_slug, approved_by, requested, approved, sample_ids, skipped)"
         " values (%s, %s, %s, %s, %s, %s::uuid[], %s::jsonb)",
         (batch_id, segment, user or "unknown", requested, approved, [str(s) for s in sample_ids], json.dumps(skipped)))
-    return batch_id, approved
+    schedule = schedule_sends(cur, ids, outreach_config(cur, segment), segment, strict=False) if ids else {}
+    return batch_id, approved, schedule
 
 
 # ---------------------------------------------------------------- mailboxes
@@ -662,3 +679,446 @@ def mark_bounce(cur, entity_id, contact_id):
         cur.execute("update contacts set email_status = 'invalid', verifier = 'bounce',"
                     " email_verified_at = now(), updated_at = now() where id = %s", (contact_id,))
     return stop_thread(cur, entity_id, "bounced: the address rejected the email")
+
+
+# ------------------------------------------------------------ the sending window
+# The owner, 2026-10-12: "I want you to send mails to the sender's time region between 10 to 10:30AM and
+# that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so
+# on". Where a reader is and when their window opens are tools/send_window.py's (pure, no database); this
+# part reads and writes the rows (sql/34). Every function takes a cursor, never commits, and works with
+# the app's dict cursor and the tools' tuple cursor alike.
+MISSES_TO_ALERT = 3          # windows an email may miss (a pause aside) before the owner is told
+
+
+class NoSendSlot(ValueError):
+    """No free second in any window of the next 60 days for this approver (or this project's mailboxes)."""
+
+
+def _sw():
+    import send_window
+    return send_window
+
+
+def _dicts(cur):
+    cols = [d[0] for d in cur.description]
+    return [dict(r) if isinstance(r, dict) else dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _first(cur):
+    r = cur.fetchone()
+    if r is None:
+        return None
+    return list(r.values())[0] if isinstance(r, dict) else r[0]
+
+
+def db_now(cur):
+    """The database's clock now: clock_timestamp(), not now(), which is the transaction's start and in a long
+    one minutes old. Every moment is drawn and compared on the clock the sender's claim checks against."""
+    cur.execute("select clock_timestamp() as now")
+    return _first(cur)
+
+
+# what placing an email needs: where its reader is (the lead's metadata, the contact's own Apollo record)
+# and, for a follow-up, the zone its first email went in -- a thread keeps one clock
+_SCHED_SQL = """
+select o.id, o.status, coalesce(o.sequence_step, 0) as sequence_step, lower(o.approved_by) as approver,
+       e.metadata, c.notes, c.linkedin_url, p.send_tz as ptz, p.send_tz_reason as preason, p.send_plan as pplan,
+       o.send_after, o.send_before, o.send_tz, o.send_tz_reason, o.send_plan, o.send_reschedules,
+       o.send_wait_why, o.send_error
+from outreach o
+join entities e on e.id = o.entity_id
+left join contacts c on c.id = o.contact_id
+left join outreach p on p.id = o.parent_id
+where {where}
+order by (coalesce(o.sequence_step, 0) > 0) desc, o.created_at
+"""
+_SEG_APPROVED = ("e.segment_id = (select id from segments where slug = %(segment)s)"
+                 " and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null")
+_WRITE_SQL = ("update outreach set send_after = %s, send_before = %s, send_tz = %s, send_tz_reason = %s,"
+              " send_plan = %s, send_wait_why = %s where id = %s and status = 'approved'")
+# a move to the next window: guarded by the window it was in, so two settles at once move it once
+_MOVE_SQL = ("update outreach set send_after = %s, send_before = %s, send_reschedules = send_reschedules + 1,"
+             " send_wait_why = %s where id = %s and status = 'approved' and send_before = %s"
+             " returning send_reschedules")
+_UNPLACED_SQL = ("update outreach set send_after = null, send_before = null, send_plan = null, send_wait_why = %s"
+                 " where id = %s and status = 'approved'")
+
+# The moments a key already holds. From the approver: that person's approvals in every project that sends
+# from the approver -- their addresses are theirs whatever they approved for, and Universal, LCX Services
+# and US Production Houses all send through them. From the pool: the project's own.
+_PLACED_APPROVER_SQL = """
+select o.id, o.send_after from outreach o
+join entities e on e.id = o.entity_id
+join segments s on s.id = e.segment_id
+where o.direction = 'outbound' and o.status = 'approved' and o.send_error is null
+  and o.send_after >= %(lo)s and o.send_after < %(hi)s
+  and lower(o.approved_by) = %(person)s and s.config->'outreach'->>'send_from' = 'approver'
+"""
+_SENT_APPROVER_SQL = """
+select coalesce(o.sent_at, o.updated_at) as at from outreach o
+where o.direction = 'outbound' and o.status in ('sent', 'sending', 'send_unknown')
+  and coalesce(o.sent_at, o.updated_at) >= %(lo)s
+  and (lower(o.approved_by) = %(person)s or lower(o.sender_address) = any(%(addrs)s::text[]))
+"""
+_PLACED_POOL_SQL = """
+select o.id, o.send_after from outreach o join entities e on e.id = o.entity_id
+where e.segment_id = (select id from segments where slug = %(segment)s)
+  and o.direction = 'outbound' and o.status = 'approved' and o.send_error is null
+  and o.send_after >= %(lo)s and o.send_after < %(hi)s
+"""
+_SENT_POOL_SQL = """
+select coalesce(o.sent_at, o.updated_at) as at from outreach o join entities e on e.id = o.entity_id
+where e.segment_id = (select id from segments where slug = %(segment)s)
+  and o.direction = 'outbound' and o.status in ('sent', 'sending', 'send_unknown')
+  and coalesce(o.sent_at, o.updated_at) >= %(lo)s
+"""
+
+
+SENDER_CLOCK = "sender's clock"          # how send_window.recipient_zone's reason starts in sender mode
+
+
+def _zone_for(row, w):
+    """(zone, why) for one row. A follow-up goes at its first email's clock; anything else is placed from
+    what its lead holds (send_window.recipient_zone).
+    The first email's zone is kept only when it was its recipient's, under the config in force now (review,
+    2026-10-12): one placed on the sender's clock, or under another window config (its send_plan), is
+    resolved again -- a project switched from "sender" to "recipient" must not send a New York follow-up at
+    India's 10:00, 00:30 in New York."""
+    if (int(row.get("sequence_step") or 0) > 0 and row.get("ptz") and w.get("timezone_of") == "recipient"
+            and not str(row.get("preason") or "").startswith(SENDER_CLOCK)
+            and row.get("pplan") == _sw().plan_key(w)):
+        return row["ptz"], "same as the first email: %s" % (row.get("preason") or row["ptz"])
+    meta = row.get("metadata")
+    if isinstance(meta, str):
+        meta = json.loads(meta or "{}")
+    return _sw().recipient_zone(meta or {}, w, {"notes": row.get("notes"), "linkedin_url": row.get("linkedin_url")})
+
+
+class _Placer:
+    """place_send's memory inside one transaction: each key's capacity, the moments it already holds and
+    what it has sent. A batch of a hundred is then a hundred UPDATEs, not four hundred queries, and each
+    moment drawn is seen by the next draw."""
+
+    def __init__(self, cur, w, cfg, segment, now, rng=None):
+        self.cur, self.w, self.cfg, self.segment = cur, w, cfg or {}, segment
+        self.now = _sw()._utc(now)
+        self.rng = rng or random.SystemRandom()
+        self.approver_mode = self.cfg.get("send_from") == "approver"
+        self.keys = {}
+
+    def key(self, row):
+        """Who sends it: the approver's own addresses (send_from "approver"), or the project's mailboxes."""
+        if self.approver_mode:
+            return "approver:" + str(row.get("approver") or "").lower()
+        return "segment:" + self.segment
+
+    def lock(self, rows):
+        """Every key these rows use, locked in one order before anything is drawn: two approvals for one
+        person wait for each other (never one second twice), and two settles never deadlock."""
+        for k in sorted({self.key(r) for r in rows}):
+            self._state(k)
+
+    def _state(self, k):
+        st = self.keys.get(k)
+        if st is not None:
+            return st
+        cur, sw = self.cur, _sw()
+        cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-schedule:" + k,))
+        p = {"lo": self.now - dt.timedelta(days=1), "hi": self.now + dt.timedelta(days=63), "segment": self.segment}
+        if self.approver_mode:
+            import mailbox_store as store
+            person = k.split(":", 1)[1]
+            boxes = [b for b in store.mailboxes(cur, user_email=person) if b["usable"]] if person else []
+            # one person's addresses, each with its own limit: n draws can share a gap, the day holds their sum
+            n = max(1, len(boxes))
+            daily = sum(int(b["daily_cap"]) for b in boxes) if boxes else store.DEFAULT_CAP
+            p.update(person=person, addrs=[b["address"].lower() for b in boxes])
+            cur.execute(_PLACED_APPROVER_SQL, p)
+            placed = {str(r["id"]): sw._utc(r["send_after"]) for r in _dicts(cur)}
+            cur.execute(_SENT_APPROVER_SQL, p)
+            sent = [sw._utc(r["at"]) for r in _dicts(cur) if r["at"]]
+
+            def daily_for(day, _d=daily):
+                return _d
+        else:
+            every = mailbox_list(self.cfg, self.segment)
+            boxes = [b for b in every if b["enabled"]]
+            n = max(1, len(boxes))
+            cur.execute(USAGE_SQL, {"segment": self.segment, "default": every[0]["key"]})
+            first = {r["mailbox"]: r["first_sent"] for r in _dicts(cur)}
+            ceiling = int(self.cfg.get("daily_send_cap", 20))
+
+            def daily_for(day, _b=boxes, _f=first, _c=ceiling):
+                # the project's ceiling, and each mailbox's warm-up cap on THAT day
+                return min(_c, sum(cap_today(b, _f.get(b["key"]), day) for b in _b))
+            cur.execute(_PLACED_POOL_SQL, p)
+            placed = {str(r["id"]): sw._utc(r["send_after"]) for r in _dicts(cur)}
+            cur.execute(_SENT_POOL_SQL, p)
+            sent = [sw._utc(r["at"]) for r in _dicts(cur) if r["at"]]
+        st = {"n": n, "daily_for": daily_for, "placed": placed, "sent": sent}
+        self.keys[k] = st
+        return st
+
+    def place(self, row, zone, after=None):
+        """-> (moment, window end) for one row: the first window from `after` (else now) with a free second
+        that fits every rule, the second drawn uniformly over the free ones. NoSendSlot when none in 60 days.
+          * the approval's lead time (min_lead_seconds) and never in a window's last minute
+          * at most n x slots_per_window in one window (n: the key's addresses)
+          * at most the key's daily limit placed and sent on the window's UTC day -- "35 a day" is a UTC-day
+            count everywhere (mailbox_store.USAGE_SQL), so a window is counted on the day the claim counts it
+          * no two moments of the key closer than spacing_s / n"""
+        sw, w = _sw(), self.w
+        st = self._state(self.key(row))
+        oid = str(row["id"])
+        others = [t for i, t in st["placed"].items() if i != oid]
+        sent, n = st["sent"], st["n"]
+        spacing = float(w["spacing_s"])
+        pad, tail = dt.timedelta(seconds=spacing), dt.timedelta(seconds=w["tail_s"])
+        start = max(self.now, sw._utc(after)) if after else self.now
+        lead = self.now + dt.timedelta(seconds=w["min_lead_seconds"])
+        for ws, we, _day in sw.windows(zone, w, start):
+            lo, hi = max(ws, lead, start), we - tail
+            if (hi - lo).total_seconds() < 60:
+                continue
+            if sum(1 for t in others if ws <= t < we) >= n * sw.slots_per_window((we - ws).total_seconds(), w):
+                continue
+            day = ws.date()                                   # ws is UTC: the day the cap counts it on
+            used = sum(1 for t in others if t.date() == day) + sum(1 for t in sent if t.date() == day)
+            if used >= st["daily_for"](day):
+                continue
+            taken = [t for t in others + sent if ws - pad <= t < we + pad]
+            m = sw.pick_moment(lo, hi, taken, spacing / n, self.rng)
+            if m is not None:
+                st["placed"][oid] = m
+                return m, we
+        raise NoSendSlot("no free sending minute in the next 60 days")
+
+
+def place_send(cur, row, zone, wcfg, cfg, segment, now, rng=None, after=None):
+    """The one capacity rule, for one row ({id, approver}): -> (send_after, send_before). See _Placer.place.
+    Used by approving (schedule_sends), a missed window (settle_schedule) and a deferral (defer_rows)."""
+    return _Placer(cur, wcfg, cfg, segment, now, rng).place(row, zone, after=after)
+
+
+def _place_rows(cur, rows, w, cfg, segment, now=None, rng=None, why=None, strict=False):
+    """Resolve each row's zone, draw its moment, store both. -> {id: schedule view}."""
+    if not rows:
+        return {}
+    placer = _Placer(cur, w, cfg, segment, now or db_now(cur), rng)
+    placer.lock(rows)
+    plan = _sw().plan_key(w)
+    out = {}
+    for r in rows:
+        zone, reason = _zone_for(r, w)
+        try:
+            sa, sb = placer.place(r, zone)
+        except NoSendSlot as e:
+            if strict:
+                raise
+            cur.execute(_UNPLACED_SQL, (str(e), r["id"]))
+            continue
+        cur.execute(_WRITE_SQL, (sa, sb, zone, reason, plan, why, r["id"]))
+        out[str(r["id"])] = schedule_view(dict(r, status="approved", send_after=sa, send_before=sb, send_tz=zone,
+                                               send_tz_reason=reason, send_wait_why=why), w)
+    return out
+
+
+def schedule_sends(cur, ids, cfg, segment, now=None, rng=None, strict=True):
+    """Give each approved email its own moment in its recipient's next window and store it, with the zone
+    and why (sql/34). -> {id: schedule view}; {} where the project has no window. Every approval path calls
+    it: one at a time and a batch (app/main.py), an email a person wrote (tools/outreach_compose.py).
+    strict: an email with no free minute in 60 days raises NoSendSlot, so a single approval says so and is
+    not made; otherwise it stays approved with no time and the reason, and settle_schedule tries again."""
+    w = _sw().window_cfg(cfg)
+    ids = [str(i) for i in ids or []]
+    if not w or not ids:
+        return {}
+    cur.execute(_SCHED_SQL.replace("{where}", "o.id = any(%(ids)s::uuid[]) and o.status = 'approved'"), {"ids": ids})
+    return _place_rows(cur, _dicts(cur), w, cfg, segment, now, rng, strict=strict)
+
+
+def settle_schedule(cur, segment, cfg, paused=False, now=None, rng=None):
+    """Bring every approved email of the project in line with its window config. -> {cleared, scheduled,
+    replanned, moved, alert_ids}. Run by the sender before each run and by the app's send loop.
+      window off   every stored time is cleared: the emails send as they did before the window existed
+      no time yet  placed (an approval made while the window was off, or with no free minute then)
+      placed under another config (send_plan)   placed again, zone and all ("the sending window changed")
+      window passed unsent (server down, the job busy, a cap)   moved to the next window at a new random
+                   second, never sent late; one that has missed MISSES_TO_ALERT and was not paused is
+                   returned in alert_ids
+    Never touches a parked email (send_error) or one sending or of unknown outcome."""
+    sw = _sw()
+    out = {"cleared": 0, "scheduled": 0, "replanned": 0, "moved": 0, "alert_ids": []}
+    w = sw.window_cfg(cfg)
+    if not w:
+        cur.execute("update outreach o set send_after = null, send_before = null, send_plan = null"
+                    " from entities e where e.id = o.entity_id"
+                    " and e.segment_id = (select id from segments where slug = %s)"
+                    " and o.direction = 'outbound' and o.status = 'approved' and o.send_after is not null", (segment,))
+        out["cleared"] = cur.rowcount
+        return out
+    now = sw._utc(now or db_now(cur))
+    plan = sw.plan_key(w)
+    cur.execute(_SCHED_SQL.replace("{where}", _SEG_APPROVED + " and (o.send_after is null or o.send_plan is distinct"
+                                   " from %(plan)s or o.send_before <= %(now)s)"),
+                {"segment": segment, "plan": plan, "now": now})
+    rows = _dicts(cur)
+    if not rows:
+        return out
+    placer = _Placer(cur, w, cfg, segment, now, rng)
+    placer.lock(rows)
+    for r in rows:
+        oid = r["id"]
+        if r["send_after"] is not None and r.get("send_plan") == plan:
+            # its window passed unsent: the same zone, the next window. The reason is this move's, not the
+            # last one's -- a row deferred yesterday for a cap and missed today because the server was down
+            # must not still say "at its daily limit"
+            zone = r.get("send_tz") or _zone_for(r, w)[0]
+            try:
+                sa, sb = placer.place(r, zone, after=now)
+            except NoSendSlot as e:
+                cur.execute(_UNPLACED_SQL, (str(e), oid))
+                continue
+            why = "sending is paused" if paused else "the server did not send it in its window"
+            cur.execute(_MOVE_SQL, (sa, sb, why, oid, r["send_before"]))
+            got = _first(cur)
+            if got is not None:
+                out["moved"] += 1
+                if not paused and int(got) >= MISSES_TO_ALERT:
+                    out["alert_ids"].append(str(oid))
+            continue
+        replan = r["send_after"] is not None
+        zone, reason = _zone_for(r, w)
+        try:
+            sa, sb = placer.place(r, zone)
+        except NoSendSlot as e:
+            cur.execute(_UNPLACED_SQL, (str(e), oid))
+            continue
+        cur.execute(_WRITE_SQL, (sa, sb, zone, reason, plan,
+                                 "the sending window changed in the config" if replan else None, oid))
+        out["replanned" if replan else "scheduled"] += 1
+    return out
+
+
+def defer_rows(cur, ids, cfg, segment, why, now=None, rng=None, alerts=None):
+    """Move approved emails, still in their window, to the next one at a new random second, saying why (the
+    sender: an address at its daily limit, no address linked, Gmail refusing it, a reply not read yet).
+    -> how many moved. Nothing happens where the project has no window.
+    alerts: a list the ids are added to that have now moved MISSES_TO_ALERT times or more -- the same count
+    settle_schedule alerts on, so an email moved every day for one reason is told of, not moved for ever
+    (review, 2026-10-12)."""
+    w = _sw().window_cfg(cfg)
+    ids = [str(i) for i in ids or []]
+    if not w or not ids:
+        return 0
+    cur.execute(_SCHED_SQL.replace("{where}", "o.id = any(%(ids)s::uuid[]) and o.status = 'approved'"
+                                              " and o.send_before is not null"), {"ids": ids})
+    rows = _dicts(cur)
+    if not rows:
+        return 0
+    placer = _Placer(cur, w, cfg, segment, now or db_now(cur), rng)
+    placer.lock(rows)
+    moved = 0
+    for r in rows:
+        zone = r.get("send_tz") or _zone_for(r, w)[0]
+        try:
+            sa, sb = placer.place(r, zone, after=r["send_before"])
+        except NoSendSlot:
+            continue                                  # left where it is: settle_schedule moves it when it passes
+        cur.execute(_MOVE_SQL, (sa, sb, why, r["id"], r["send_before"]))
+        got = _first(cur)
+        if got is not None:
+            moved += 1
+            if alerts is not None and int(got) >= MISSES_TO_ALERT:
+                alerts.append(str(r["id"]))
+    return moved
+
+
+def sweep_stale_sending(cur, minutes=15):
+    """An email left in 'sending' (the sender stopped between its claim and Gmail's answer: a crash, a
+    deploy) becomes 'send_unknown', so a person checks Gmail's Sent before it is sent again. -> how many."""
+    cur.execute("update outreach set status = 'send_unknown',"
+                " send_error = 'left in sending for 15 minutes (the sender stopped mid-send): check Gmail Sent"
+                " before resending', updated_at = clock_timestamp()"
+                " where direction = 'outbound' and status = 'sending'"
+                " and updated_at < clock_timestamp() - make_interval(mins => %s)", (int(minutes),))
+    return cur.rowcount
+
+
+def _iso(t):
+    return _sw()._utc(t).isoformat() if t else None
+
+
+def schedule_view(row, wcfg, paused=None):
+    """The one shape every API returns for an email's time, or None when it has none:
+    {send_after, send_before (ISO UTC), send_tz, send_tz_reason, send_label "Tue 14 Oct, 10:17 New York time
+    (19:47 IST)", send_short "Tue 10:17 New York", window_label "Tue 14 Oct, 10:00-10:30 New York time
+    (19:30-20:00 IST)", reschedules, wait_why, held: false}. An approved email of a project whose window is off
+    has no time any more (settle_schedule clears it), so it gets None too.
+    HELD (review, 2026-10-12): an approved email that will not go -- parked with a send_error (park(), or
+    unclaim with a reason), which nothing sends and settle_schedule leaves alone, or one of a project whose
+    sending is paused (`paused`: outreach_policy.sending_paused) -- gets {held: true, held_why} and no time at
+    all: a "Goes out Tue 10:13" that passes and stays would be a promise nobody keeps."""
+    if not row:
+        return None
+    if wcfg is not None and row.get("status") == "approved" and (row.get("send_error") or paused):
+        return {"held": True, "held_why": row.get("send_error") or paused,
+                "send_after": None, "send_before": None, "send_tz": row.get("send_tz"),
+                "send_tz_reason": row.get("send_tz_reason"), "send_label": None, "send_short": None,
+                "window_label": None, "reschedules": int(row.get("send_reschedules") or 0),
+                "wait_why": row.get("send_wait_why")}
+    if not row.get("send_after") or not row.get("send_before") or not row.get("send_tz"):
+        return None
+    if wcfg is None and row.get("status") == "approved":
+        return None
+    sw = _sw()
+    from zoneinfo import ZoneInfo
+    w = wcfg or sw.DEFAULTS
+    sa, sb, zone = sw._utc(row["send_after"]), sw._utc(row["send_before"]), row["send_tz"]
+    ws = sw._wall_to_utc(sb.astimezone(ZoneInfo(zone)).date(), w["start"], ZoneInfo(zone))
+    if not ws <= sa < sb:
+        ws = sa                                       # a time placed under another window: label what it holds
+    return {"send_after": _iso(sa), "send_before": _iso(sb), "send_tz": zone,
+            "send_tz_reason": row.get("send_tz_reason"),
+            "send_label": sw.send_label(sa, zone, w), "send_short": sw.send_short(sa, zone),
+            "window_label": sw.window_label(ws, sb, zone, w),
+            "reschedules": int(row.get("send_reschedules") or 0), "wait_why": row.get("send_wait_why"),
+            "held": False}
+
+
+def draft_window(cur, oid, cfg):
+    """{enabled, send_tz, send_tz_reason, window_label} for a draft: the window approving it now aims at --
+    a window, never a minute. The minute is drawn on approval; one shown here would promise a time nobody
+    holds. {"enabled": False} where the project has no window (or no such email)."""
+    sw = _sw()
+    try:
+        w = sw.window_cfg(cfg)
+    except ValueError:
+        w = None
+    if not w:
+        return {"enabled": False}
+    cur.execute(_SCHED_SQL.replace("{where}", "o.id = %(id)s"), {"id": str(oid)})
+    rows = _dicts(cur)
+    if not rows:
+        return {"enabled": False}
+    zone, reason = _zone_for(rows[0], w)
+    nw = sw.next_window(zone, w, db_now(cur))
+    return {"enabled": True, "send_tz": zone, "send_tz_reason": reason,
+            "window_label": sw.window_label(nw[0], nw[1], zone, w) if nw else None}
+
+
+def window_summary(schedules):
+    """What a batch approval did, by the recipient's own day and place, for the page to say "9 on Tue 14 Oct
+    (6 New York, 3 UK), 3 on Wed 15 Oct": [{day, label, count, places: [[place, n]]}], by date."""
+    sw = _sw()
+    days = {}
+    for v in (schedules or {}).values():
+        if not v or v.get("held") or not v.get("send_after"):
+            continue                                  # held: it goes on no day
+        d = sw.local_day(v["send_after"], v["send_tz"])
+        place = sw.place_name(v["send_tz"])
+        days.setdefault(d, {})
+        days[d][place] = days[d].get(place, 0) + 1
+    return [{"day": d.isoformat(), "label": sw.day_label(d), "count": sum(p.values()),
+             "places": [[k, n] for k, n in sorted(p.items(), key=lambda kv: (-kv[1], kv[0]))]}
+            for d, p in sorted(days.items())]

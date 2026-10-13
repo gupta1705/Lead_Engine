@@ -8,6 +8,9 @@
 #   * the container n8n stays internal too (reach its editor over an SSH
 #     tunnel: ssh -L 5680:localhost:5680 user@host, after uncommenting below)
 #   * the scheduler is on, so the server runs the pipeline unattended
+#   * SEND_LOOP_ENABLED=1: this is the server (2026-10-12). The timed sender
+#     runs here, and `outreach.py send` knows it holds the sealed sign-ins: one
+#     it cannot read is marked "connect it again" (the local stack says 0)
 #
 # Required in .env on the server: SUPABASE_DB_URL, SESSION_SECRET, DOMAIN.
 # Optional: ALERT_WEBHOOK_URL, GMAIL_SENDER_ADDRESS, GOOGLE_OAUTH_*,
@@ -18,6 +21,7 @@ services:
     ports: !reset []
     environment:
       - SCHEDULER_ENABLED=1
+      - SEND_LOOP_ENABLED=1
     expose:
       - "8000"
 

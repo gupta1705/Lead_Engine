@@ -13,7 +13,8 @@ app unless a terminal command is shown.
 | Tue 02:00 UTC | `weekly_refresh`: promote → enrich → score again → gates | app scheduler, unattended |
 | Wed / Thu 02:00 UTC | LCX's and Startups' own `weekly_refresh`, harvests included | app scheduler, unattended |
 | Fri 02:00 UTC | LCX Services' `weekly_refresh`: Wikidata, Apollo (10 pages), FDIC and OpenStreetMap harvests, published addresses, the site pass, Apollo people (within 120 credits a week, 700 kept in reserve), score, auto-shortlist (docs/LCX_services.md) | app scheduler, unattended |
-| Every 15 min | Drafting and sending, when there is work | app scheduler, unattended |
+| Every 15 min | Drafting (and sending, for a project without a sending window), when there is work | app scheduler, unattended |
+| Every few seconds | Each approved email at its own random second, 10:00–10:30 on its recipient's clock, Monday to Friday (*Goes out*, below) | app scheduler's send loop, unattended (since 2026-10-12) |
 | Hourly | Replies and bounces fetched from each sent thread's mailbox (`outreach.py pull`, read-only), while there are threads from the last 60 days | app scheduler, unattended (since 2026-09-21) |
 | **Tue/Wed** | **Review the band** (below) | **you, ~1.5 h** |
 | **Wed** | **Approve drafts, send** (below) | **you, ~45 min** |
@@ -52,8 +53,12 @@ sent once approved. Nothing between them needs a button.
    draft here within minutes of being shortlisted. Drafts are inert until
    approved.
 2. Read every draft. Fix the hook if the evidence sentence reads wrong.
-   **Approve and send** means: a person read this exact text and stands behind
-   it, and it goes out within minutes from the connected mailbox.
+   **Approve** means: a person read this exact text and stands behind it. It
+   goes out at its own random minute in its recipient's next 10:00–10:30
+   window (the draft shows that window under *Next window*; the minute is drawn
+   when you approve, and the email then shows it as *Goes out*). In a project
+   without a sending window the button still says **Approve and send**, and
+   the email goes within minutes.
 
    One email per company, ever, enforced by the database; the daily cap in
    config is a hard ceiling, and what it holds back goes first the next day.
@@ -80,6 +85,90 @@ sent once approved. Nothing between them needs a button.
   mailbox and keeps each follow-up on its opener's mailbox. Before sending,
   `SEGMENT_SLUG=lcx-clipping python tools/outreach.py mailboxes` shows what
   each can send today. A new mailbox starts at ten a day and grows on its own.
+
+## Goes out — when an approved email is sent (since 2026-10-12)
+
+The owner, 2026-10-12: *"send mails to the sender's time region between 10 to
+10:30AM and that must be randmized not like all mail going at 10:15 some must
+be going at 10:17 some at 10:13"*. Every project has an `outreach.send_window`
+in its config (config/segment.<slug>.json) that does this:
+
+- **One email, one moment.** When an email is approved — one at a time, in a
+  batch, or written on the Universal page — it is given its own second between
+  10:00 and 10:30 on its **recipient's** clock: 10:13:41, 10:17:08… Approved
+  shows it in *Goes out* ("Tue 10:17 New York"); the email itself says it in
+  full, "Tue 14 Oct, 10:17 New York time (19:47 IST)", with India's time in the
+  brackets and your own clock beside it when you are elsewhere.
+- **Where the recipient is** comes from what the lead holds, best first: the
+  person's own Apollo record, the company's state or city (FDIC,
+  OpenStreetMap, the search-page save), another person at the company, a
+  phone's area code, the country. The reason is kept on the email and shown
+  under *Goes out* ("company state TX (FDIC)", "phone area code 312"). A
+  country with several zones and no region goes at its main business zone (the
+  US at New York's, except US Production Houses, which uses Los Angeles'); a
+  lead with no place at all goes at the project's `fallback_timezone`.
+- **Monday to Friday on the recipient's clock.** An approval after today's
+  window, or at a weekend, takes the next weekday's. The Gulf's weekend is
+  Saturday and Sunday in this rule too; nothing in the pool needs otherwise
+  yet (one UAE lead).
+- **Never a burst.** Two emails from one address are never closer than
+  `min_gap_seconds` (45). A 30-minute window holds **about 24 per address per
+  window** once their minutes are drawn at random (31 is only the ceiling if
+  they were packed end to end); the rest of a big batch to one place go the
+  next weekday.
+- **The daily limit is still a UTC day** — "35 a day" counts from 00:00 UTC
+  (05:30 in India), on every counter and in every check. A window is counted
+  on the UTC day it falls in.
+
+**Why an email moved.** An email whose window passes unsent — the server was
+down, its address hit its daily limit, Gmail refused the address, a reply in
+the thread has not been read yet, sending is paused — moves to its next window
+at a new random minute; it is never sent late in the afternoon. The email then
+says *Its earlier window passed unsent (the reason): now …*. One that has
+missed three windows in a row (a pause aside) raises the alert.
+
+**Changing it.** Edit `outreach.send_window` in the project's config, then
+`python tools/gen_segment_sql.py <slug>` (US Production Houses: the hand sync
+into sql/03 and 03b), `python tools/verify_repo.py`, and run the SQL file live.
+
+- Every email on the **sender's** clock instead (10:00–10:30 India time for
+  everyone): `"timezone_of": "sender"`.
+- **Off**: `"enabled": false`. The stored times are cleared at the next send,
+  and approved emails go out as soon as they can, as before.
+- Another window: `"start"` / `"end"` as `"HH:MM"`. Times already drawn under
+  the old setting are drawn again.
+
+**Where it runs.** The timed sender (the *send loop*) runs wherever the app's
+scheduler runs, unless `SEND_LOOP_ENABLED=0` (since the review of 2026-10-12;
+it used to need `SEND_LOOP_ENABLED=1`). Operations → *Automatic runs* has a
+*Timed sending* row that says **On** or **Off** and why, and the server's log
+says `send loop ON` or `OFF` when it starts; the row also shows the timed
+sender's last run. Off, timed emails go only at the fifteen-minute ticks and
+most of each window moves to the next weekday. Only the server can read the
+sign-ins (they are sealed for it): a laptop running the app leaves those
+emails alone, and the server, finding one it cannot read, marks the address
+*reconnect* at once. The server is whatever has `SEND_LOOP_ENABLED=1`
+(render.yaml sets it; set it by hand in Render's Environment tab if the
+service is not synced from render.yaml). The laptop's Docker stack says `0`
+and must keep saying it: it reaches the live database with the laptop's own
+`SESSION_SECRET`. If none of several addresses can be read on the server, the
+send fails on Operations and marks nothing: put the server's `SESSION_SECRET`
+back, or link every address again. The send runs in its own lane beside
+the weekly refresh, so India's 04:30–05:00 UTC window is not held up by
+Friday's 02:00 refresh. If Render's memory runs close to 512 MB during that
+refresh, set `SEND_WORKERS=1` in Render's Environment tab. An email left
+mid-send for 15 minutes (a crash, a deploy) is marked *Unknown* and lands in
+*Attention*: check Gmail's Sent before resending it.
+
+**When Gmail refuses an address** (a 429 daily limit, a 403, a sign-in):
+that address's emails move to their next window with the reason, the other
+addresses keep sending, and the alert names the address once a day. It is not
+a failed run, so Operations → *Automatic runs* says it in its own row,
+*Gmail refused an address*, with the latest refusal for 24 hours (the alert
+webhook is not set yet). A refusal that lasts day after day (an account barred
+from sending) needs the owner: link the address again, or switch it off. An
+approved email held back with a send error shows *Held* in *Goes out*, never
+a time.
 
 ## Friday — triage and KPIs (~30 min)
 
@@ -111,6 +200,8 @@ sent once approved. Nothing between them needs a button.
 | LCX refresh `Failed at discover_youtube` | `YOUTUBE_API_KEY` is not set in Render's Environment tab. It has failed that way since 2026-09-16; set the key and press **Run weekly refresh**. |
 | Same company appears twice | It shouldn't — the database forbids it. If you see it, `sql/05c` merges name pairs; run the chain. |
 | A lead is obviously wrong (non-US, a school, a network) | Reject it with the reason. It is shielded by name from ever re-importing. |
+| An approved email's *Goes out* moved to another day | Open it: the reason is under *Goes out* (its address was at its daily limit, Gmail refused the address, a reply is not read yet, sending is paused). Nothing to do unless it keeps moving — three misses in a row raise the alert. |
+| *Goes out* is at an odd hour for the person | The zone and its reason are under *Goes out* ("country US, no region: main business zone"). A better place on the lead (its state or city) fixes the next approval; switching to the sender's clock is one line of config (*Goes out*, above). |
 | No alert arrived for a failure | `ALERT_WEBHOOK_URL` unset (Operations → *Automatic runs* then says failures show only there), or the webhook was revoked. There is no test button (2026-09-19); post a test message to the webhook from a terminal. |
 
 ## Monthly — five minutes

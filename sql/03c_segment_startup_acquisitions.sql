@@ -706,7 +706,20 @@ values (
       "name": "SET_ME",
       "title": "Corporate Development, The Viral Fever",
       "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
-      "guidance": "Set before the first send. Gmail address comes from GMAIL_SENDER_ADDRESS in .env."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
+    },
+    "send_window": {
+      "enabled": true,
+      "start": "10:00",
+      "end": "10:30",
+      "timezone_of": "recipient",
+      "sender_timezone": "Asia/Kolkata",
+      "fallback_timezone": "Asia/Kolkata",
+      "assumed_country": "IN",
+      "weekdays_only": true,
+      "min_gap_seconds": 45,
+      "min_lead_seconds": 120,
+      "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". Sending is paused for this project (sending_paused). Its startups are in Mumbai and elsewhere in India, so one that names no country is taken to be Indian (assumed_country)."
     },
     "daily_send_cap": 10,
     "templates": [
@@ -719,8 +732,8 @@ values (
     ],
     "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
-      "text": "{{sender_name}}\n{{sender_title}}\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The last block of every email in this segment. Edited in the app: Outreach -> Footer. It may use {{sender_name}}, {{sender_title}} and {{postal_address}}, and it is refused unless it carries a postal address and a way out -- both are required of commercial email and both are what keep a sending domain alive. Templates end with {{footer}}; see tools/draft_render.py."
+      "text": "{{sender_name}}\n{{sender_title}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     }
   },
   "schedule": [

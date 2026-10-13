@@ -42,11 +42,11 @@ place per action.
 | **Board** | One column per pipeline state: To review, Shortlisted, Contacted, In conversation (Universal, which sends no email: the first two). Each column has its state's dot and a count. A card: the company's tile, name and website, its score ring; the numbers that made it interesting (where the project has them); tags (source only where the project has more than one; kind; place); at the foot the person the email goes to ("No contact yet" when there is no address) and, once an email has gone, who reached out. The toolbar is one search box. While the first answer is on its way the columns show placeholder cards, not "Nothing to review". |
 | **Leads** | The whole pool, every status, best score first, in a framed table: the company with its tile, status pill ("by" whoever reached out), score with its bar, source, contact, location or evidence. Search, status, source and address filters, each shown only where it can change something. Export this view. |
 | **Lead sheet** | Opens from the right, beside the list it came from. Head: status pill, the website, the list position with previous and next, close. Body: the company's tile, name and score ring; its tags; Analysis (verdict, next step, strengths, gaps, risks); Score breakdown (coverage bar and key, then every criterion found / checked, nothing found / not checked yet, with why and a source); research notes and the decision note where they exist. Side: contacts (every address best first, the one drafts use marked, junk struck through; phone, contact page, socials, what was tried), who reached out, details. Foot: Shortlist, Reject (asks for a reason), Undo decision. |
-| **Outreach** | Sending today (each person, each of their addresses with a bar of today's count against its limit; or the project's one counter), folders as tabs with counts (Drafts, Approved, Sent, Replies, Attention only when something is in it), and the list: company, contact, subject, by (on Approved, Sent and Attention), when. An email opens in a sheet like a lead: a draft is editable until approved, Approve and send is its only action. |
+| **Outreach** | Sending today (each person, each of their addresses with a bar of today's count against its limit; or the project's one counter), folders as tabs with counts (Drafts, Approved, Sent, Replies, Attention only when something is in it), and the list: company, contact, subject, by (on Approved, Sent and Attention), when -- on Approved, **Goes out** (2026-10-12): the email's own minute on its recipient's clock ("Tue 10:17 New York"), the viewer's clock under it only when that is a third one, the full sentence and why that zone on hover, the next to go first. An email opens in a sheet like a lead: a draft is editable until approved, and shows its **Next window** (a window, never a minute: the minute is drawn on approval); **Approve** is its only action (**Approve and send** in a project without a sending window); an approved one says **Goes out** with the reason under it, and why it moved if it did. |
 | **Reports** | Status donut with its legend; outreach results as tiles; By person; By source where a project has more than one. |
 | **Operations** | Run weekly refresh; the automatic runs and how each last went; mailboxes where there is rotation; the job log, drawn as a terminal. |
 | **Apollo search** | (A project with `ui.search_page` "apollo": Universal, and LCX Services since 2026-10-06; every call names the project the page shows, and what is saved lands only there.) People or Companies as a segmented control over one large search bar, what a search costs under it (and, since 2026-10-07, what it spent written to the project's Apollo ledger, `apollo_spend`, so a weekly budget counts it), the filters Apollo's own app offers in a column beside the results, saved searches. |
-| **Writing an email** | (Universal, 2026-09-27: "in the universal segment there should be a widget to send mail to them". A project can start the box from its own email, `outreach.compose_start`, sent as it is or changed first.) Tick boxes on the Leads page for every lead that can be written to (an address, not contacted or rejected, no email yet), a bar with the one action, **Write email to N**, and **Write email** in one lead's sheet. The sheet: To, subject, the email with **First name** / **Company** buttons for `{{first_name}}` and `{{company}}`, and under it the email exactly as each person will read it (arrows, or a click on a name), sign-off and footer included. Beside it: the writer's sending address with today's room, everyone it goes to with how they are greeted (flagged when no first name is known, each removable), and who cannot be written to and why. **Approve and send N** is the approval: one approved email per company (`approval_mode` 'compose'), sent like any other. Universal's Outreach page has no Drafts folder: nothing there is ever drafted. |
+| **Writing an email** | (Universal, 2026-09-27: "in the universal segment there should be a widget to send mail to them". A project can start the box from its own email, `outreach.compose_start`, sent as it is or changed first.) Tick boxes on the Leads page for every lead that can be written to (an address, not contacted or rejected, no email yet), a bar with the one action, **Write email to N**, and **Write email** in one lead's sheet. The sheet: To, subject, the email with **First name** / **Company** buttons for `{{first_name}}` and `{{company}}`, and under it the email exactly as each person will read it (arrows, or a click on a name), sign-off and footer included. Beside it: the writer's sending address with today's room, everyone it goes to with how they are greeted (flagged when no first name is known, each removable), and who cannot be written to and why. **Approve N** (Approve and send N without a sending window) is the approval: one approved email per company (`approval_mode` 'compose'), sent like any other; each recipient in the list shows the 10:00-10:30 on their clock it goes in, and the toast names the first one's minute. Universal's Outreach page has no Drafts folder: nothing there is ever drafted. |
 | **Attachments** | (2026-10-06, LCX Services: "email should be a pitch deck of services", then a PDF deck attached.) An email's files show as a paperclip beside its subject in Outreach and under **Attached** in the sheet's Details, each opening from the app (`/api/outreach/attachment`, files under `docs/decks/` only), so the person approving reads exactly what goes with it; in a batch's sample too. |
 | **Login** | A card on the canvas, the mark above it. Self-contained: it sits outside the login wall. |
 
@@ -101,8 +101,16 @@ colour by adding a token to both themes.
   looked; it scores 0 for now, so the score is a floor). A not-checked
   criterion is never drawn as a plain `0`, and the sheet shows how many of the
   110 points have been checked (owner's review, 2026-09-17).
-- **One primary action per dialog.** Shortlist or Approve and send is the
-  indigo button; Reject and Undo decision are subtle.
+- **One primary action per dialog.** Shortlist or Approve (Approve and send
+  where a project has no sending window) is the indigo button; Reject and Undo
+  decision are subtle.
+- **A time is the server's words, both clocks.** Every time an email is shown
+  or promised -- Approved's Goes out, the sheet, a toast, the lead's next step,
+  the batch and the Write email boxes -- is the sentence `tools/send_window.py`
+  writes: the recipient's clock first, India's in brackets ("Tue 14 Oct, 10:17
+  New York time (19:47 IST)"). The page adds the viewer's own clock only when it
+  is a third one, and where an email has no time the older sentence stays
+  (2026-10-12).
 - **Colour never carries meaning alone.** Every pill has a word; the donut has
   a legend with counts; the score ring has its number.
 - **Nothing outbound without a person.** There is no Draft or Send button:
@@ -134,8 +142,10 @@ The first command snapshots real data into `logs/ui_fixtures.<segment>.json`
 (gitignored; it carries contact details). The second serves `app/static` on
 http://127.0.0.1:8123 with a mocked `/api` that applies the same filters,
 records decisions in memory and fakes job runs, so every screen and flow can
-be exercised with no password anywhere near the tooling. `tools/gen_manual.py`
-retakes the manual's screenshots through the same preview.
+be exercised with no password anywhere near the tooling. It also pretends the
+sending window (an approval draws a minute in one of four zones' next
+10:00-10:30); add `?window=off` to the address to see a project without one.
+`tools/gen_manual.py` retakes the manual's screenshots through the same preview.
 
 ## Status palette
 

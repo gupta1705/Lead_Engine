@@ -924,8 +924,28 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
         "Network-owned": "Reject it, or pitch the network separately: networks have editors on staff.",
     }
     writes_email = bool((lead.cfg.get("outreach") or {}).get("templates"))
+    # when it goes (owner, 2026-10-12: each email at its own random minute, 10:00-10:30 on its recipient's
+    # clock): the words tools/send_window.py writes, carried on the email by app/main.py -- a draft names the
+    # window approving it aims at, never a minute; an approved one, its own second. Without them, as before.
+    sched = (outreach or {}).get("schedule") or None
+    window = (outreach or {}).get("window") or {}
+    paused = bool((lead.cfg.get("outreach") or {}).get("sending_paused"))
+    # whose clock the window is on: the recipient's, or with timezone_of "sender" everyone's 10:00 on the
+    # sender's (review, 2026-10-12: the words said "its recipient's" whatever the config said)
+    on_sender = ((lead.cfg.get("outreach") or {}).get("send_window") or {}).get("timezone_of") == "sender"
     if status == "shortlisted" and draft == "drafted":
         step = "Read the email in Outreach and approve it. Approving sends it."
+        if window.get("enabled") and window.get("window_label"):
+            step = ("Read the email in Outreach and approve it. Approving sends it in %s: %s."
+                    % ("its next window, on the sender's clock" if on_sender else "its recipient's next window",
+                       window["window_label"]))
+    elif status == "shortlisted" and draft in ("approved", "sending") and paused and draft == "approved":
+        step = "Approved: it waits, because sending is paused for this project."
+    elif status == "shortlisted" and draft == "approved" and sched and sched.get("held"):
+        # parked with a send error: nothing sends it, so no time is promised (review, 2026-10-12)
+        step = "Approved, but held back: %s. It is not sent." % sched["held_why"]
+    elif status == "shortlisted" and draft in ("approved", "sending") and sched and sched.get("send_label"):
+        step = "Approved: it goes out %s." % sched["send_label"]
     elif status == "shortlisted" and draft in ("approved", "sending"):
         step = "Approved: it goes out automatically, within the day's sending limit."
     elif status == "shortlisted" and not draft and writes_email and lead.best():

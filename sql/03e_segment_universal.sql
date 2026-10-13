@@ -46,11 +46,23 @@ values (
       "name": "The Viral Fever",
       "title": "Business Development",
       "postal_address": "Contagious Online Media Network Pvt Ltd. 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
-      "guidance": "Never what a recipient reads: an email here is written by a person and signed with their own name and title (app_users), with this postal address under it. The same company address as US Production Houses."
+      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
+    },
+    "send_window": {
+      "enabled": true,
+      "start": "10:00",
+      "end": "10:30",
+      "timezone_of": "recipient",
+      "sender_timezone": "Asia/Kolkata",
+      "fallback_timezone": "Asia/Kolkata",
+      "weekdays_only": true,
+      "min_gap_seconds": 45,
+      "min_lead_seconds": 120,
+      "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". Each written email is placed when its writer approves it (Write email); a lead that names no place goes at India''s 10:00 (fallback_timezone)."
     },
     "footer": {
-      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\n{{postal_address}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "The block every email here ends with: the writer''s sign-off, TVF''s postal address and the way out, as in US Production Houses. Edited from Outreach -> Footer."
+      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
+      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     },
     "guidance": "Owner, 2026-09-27: \"in the universal segment there should be a widget to send mail to them\". Universal leads come from Apollo, not a harvest, so there are no templates and nothing is drafted: a person picks leads (Leads page, or one lead) and writes one email with {{first_name}} and {{company}} in it (tools/outreach_compose.py). The page shows how it reads for each of them; approving it is the same gate as everywhere -- one approved email per company, checked like an approved draft -- and it goes out from the writer''s own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address''s daily limit, which it shares with every other project. A lead still in To review is shortlisted by being written to. Replies land in Outreach -> Replies."
   },

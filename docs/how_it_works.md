@@ -116,9 +116,14 @@ before approving it.
 ## 7. Send
 
 Approved emails go out from a real Gmail mailbox, **at most 35 a day** for
-production houses. Approve more than that and the rest go out the next day,
-oldest first. A counter at the top of the Outreach page shows how many have gone
-out today, and how many are waiting.
+production houses, each **at its own minute between 10:00 and 10:30 on the
+recipient's clock**, Monday to Friday (the owner, 12 October: "some must be
+going at 10:17 some at 10:13"). The minute is drawn when the email is approved,
+and the Outreach page shows it as *Goes out*: "Tue 14 Oct, 10:17 New York time
+(19:47 IST)". Approve more than a window or a day holds and the rest go in the
+next weekday's window; one whose window passes unsent moves to the next at a new
+minute, never later the same day. The top of the Outreach page shows how many
+have gone out today, and the approved ones by the day each goes.
 
 ## 8. Replies
 
@@ -170,7 +175,9 @@ tvf-lead-engine.onrender.com. It has two halves:
 **The scheduler** is a clock inside the server. Once a week it runs the full
 refresh for each project: production houses on Tuesday at 7:30 am India time,
 LCX on Wednesday, startups on Thursday. Every 15 minutes it drafts emails for
-newly shortlisted leads and sends whatever has been approved.
+newly shortlisted leads. Each approved email goes out at its own minute between
+10:00 and 10:30 on its recipient's clock, Monday to Friday: a second clock in
+the server looks every few seconds for the next one due.
 
 **The database** is **Supabase**. It is where everything is kept: every company,
 person, email, score and decision. Think of it as a set of very large, very fast

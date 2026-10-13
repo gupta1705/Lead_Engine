@@ -18,6 +18,10 @@ WHAT MAKES A SEND SAFE, layer by layer:
   * the address:  refuses to send when the contact email failed verification
   * the identity: GMAIL_SENDER_ADDRESS comes from .env, never from config,
                   so a config typo cannot impersonate anyone
+  * the moment:   with outreach.send_window, only from the email's own random
+                  second until its window closes, 10:00-10:30 on its
+                  recipient's clock -- checked by the claim and by the
+                  database itself (sql/34, cmd_send)
 
 THE ONE NETWORK CALL IN `draft`. A segment with outreach.generated_hook on lets
 a model write the opening sentence from that lead's own facts (tools/llm.py).
@@ -417,6 +421,149 @@ def _message(body, attachments=None):
     return msg
 
 
+# The sending window (owner, 2026-10-12: "send mails to the sender's time region between 10 to 10:30AM and
+# that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13"). Each
+# approved email of a project with outreach.send_window holds its own second, send_after, inside its
+# recipient's 10:00-10:30 (tools/outreach_policy.schedule_sends); these are what the sender adds for it.
+#
+# What is due: an email inside its own window. One with no time is never sent by a timed project (the
+# settle at the start of every run gives it one), and in an untimed project an email that somehow holds a
+# time still keeps it -- so the claim below can never trip sql/34's guard, which refuses a claim outside it.
+PICK_SQL = """
+select o.id, o.entity_id, o.subject, o.body,
+       c.email, c.email_status, e.name, e.status as ent_status,
+       o.sequence_step, p.gmail_thread_id, p.stopped_reason,
+       (select s.gmail_message_id from outreach s
+         where (s.id = o.parent_id or s.parent_id = o.parent_id)
+           and s.direction = 'outbound' and s.status = 'sent'
+           and s.sequence_step < o.sequence_step
+         order by s.sequence_step desc limit 1) as prev_message_id,
+       exists (select 1 from outreach r where r.entity_id = o.entity_id
+                and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
+       p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver, o.attachments,
+       o.send_after, o.send_before, o.send_tz
+from outreach o
+join entities e on e.id = o.entity_id
+left join contacts c on c.id = o.contact_id
+left join outreach p on p.id = o.parent_id
+where o.status = 'approved' and o.direction = 'outbound'
+  and o.send_error is null
+  and e.segment_id = (select id from segments where slug = %(segment)s)
+  and (case when o.send_after is null then not %(timed)s
+            else o.send_after <= clock_timestamp() and clock_timestamp() < o.send_before end)
+order by (o.sequence_step > 0) desc, o.send_after nulls first, o.created_at limit %(n)s
+"""
+# The claim: atomic, committed before Gmail is touched, and -- for an email with a time -- only inside its
+# window, on the database's clock (the same clock sql/34's guard reads).
+CLAIM_SQL = """
+update outreach set status = 'sending', sender_mailbox = %s, sender_address = %s, updated_at = clock_timestamp()
+where id = %s and status = 'approved'
+  and (send_after is null or (send_after <= clock_timestamp() and clock_timestamp() < send_before))
+returning sender_mailbox
+"""
+# Seconds since an address last sent, or may have: its last 'sent' row, or a send in flight or of unknown
+# outcome. Read inside the claim's lock, so two runs never put two emails from one address closer than the
+# gap (min_gap_seconds): a dense window never bursts.
+GAP_SQL = """
+select extract(epoch from clock_timestamp() - greatest(
+  (select max(sent_at) from outreach where direction = 'outbound' and sender_address is not null
+     and lower(sender_address) = lower(%(a)s) and status = 'sent'),
+  (select max(updated_at) from outreach where direction = 'outbound'
+     and lower(sender_address) = lower(%(a)s) and status in ('sending', 'send_unknown'))))
+"""
+# What a run staying on (--stay) waits for: an email whose moment comes within the stay, its window still open
+SOON_SQL = """
+select o.id, coalesce(o.sequence_step, 0) as sequence_step, lower(o.approved_by) as approver,
+       p.sender_mailbox as parent_mailbox, extract(epoch from o.send_after - clock_timestamp()) as wait
+from outreach o
+join entities e on e.id = o.entity_id
+left join outreach p on p.id = o.parent_id
+where o.status = 'approved' and o.direction = 'outbound' and o.send_error is null
+  and e.segment_id = (select id from segments where slug = %(segment)s)
+  and o.send_after <= clock_timestamp() + make_interval(secs => %(stay)s)
+  and o.send_before > clock_timestamp() + interval '5 seconds'
+order by o.send_after
+"""
+
+
+def _rows(cur):
+    cols = [d[0] for d in cur.description]
+    return [dict(r) if isinstance(r, dict) else dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _due_text(at, zone):
+    """"10:13:41 New York time": the moment an email was due, on its recipient's clock (the log)."""
+    from zoneinfo import ZoneInfo
+    import send_window as sw
+    loc = sw._utc(at).astimezone(ZoneInfo(zone or "UTC"))
+    return "%s %s time" % (loc.strftime("%H:%M:%S"), sw.place_name(zone) if zone else "UTC")
+
+
+def on_the_server():
+    """Is this the machine that sends: SEND_LOOP_ENABLED=1, which only the server deploys set (render.yaml,
+    deploy/render.lcx-clipping.yaml, docker-compose.prod.yml, the Hugging Face Space's variables)? Review,
+    2026-10-12: a sign-in the SERVER cannot read means its SESSION_SECRET changed or the row is damaged, and
+    the owner must see "connect it again" at once, as before the sending window existed; on any other machine
+    (the laptop, whose secret differs by design) it is simply the server's to send. Read from the process's
+    own environment only, never .env: nothing in a laptop's .env may make a terminal run mark the server's
+    addresses.
+    Second review, 2026-10-12: SCHEDULER_ENABLED=1 no longer counts. docker-compose.yml turns the scheduler on
+    for the laptop's own Docker stack too, which reaches the live database with the laptop's SESSION_SECRET;
+    its first send would have marked every person's address "connect it again", and the server would then have
+    held every email until the owner linked each address again. That stack now says SEND_LOOP_ENABLED=0."""
+    return str(os.environ.get("SEND_LOOP_ENABLED") or "").strip().lower() in ("1", "true", "yes")
+
+
+# The last line of every send run: what it did, for the app's send loop (app/scheduler.py), which reads it
+# from the run's log to alert once and to know which due emails this machine could do nothing with
+SUMMARY_TAG = "SEND-SUMMARY "
+
+
+def _http_code(e):
+    code = getattr(getattr(e, "resp", None), "status", None)
+    return int(code) if str(code or "").isdigit() else None
+
+
+def _rate_limited(e):
+    """Is a Gmail 403 a rate or quota limit (rateLimitExceeded, userRateLimitExceeded, dailyLimitExceeded,
+    quotaExceeded), a passing thing, rather than the address losing its permission? Read from what the error
+    carries: googleapiclient's HttpError keeps Google's reason in error_details, reason and content."""
+    text = " ".join(str(getattr(e, k, "") or "") for k in ("error_details", "reason", "content")) + " " + str(e)
+    text = text.lower().replace(" ", "")
+    return any(w in text for w in ("ratelimit", "quota", "dailylimit", "limitexceeded"))
+
+
+def thread_unread(db, svc, thread_id, own):
+    """Does a follow-up's thread hold a message from them the app has not read yet? The hourly pull reads
+    replies, and a follow-up timed for 10:13 can fall between a reply landing and the pull reading it: one
+    look at the thread first (owner's rule: a reply stops the sequence). Anything the app already holds as
+    an auto-reply (triage neutral) lets the follow-up go, as the pull would.
+    own: every address of ours (the project's mailboxes and every address linked in the app) -- a message from
+    a colleague's address in the thread is ours, as cmd_pull counts it, never a reply waiting to be read
+    (review, 2026-10-12). -> (True | False, None), or (None, the error) when the thread cannot be read: the
+    sender decides what that means, so one unreadable thread can never hold its follow-up back for ever."""
+    try:
+        t = svc.users().threads().get(userId="me", id=thread_id, format="metadata",
+                                      metadataHeaders=["From"]).execute()
+        theirs = []
+        for m in t.get("messages", []) or []:
+            if {"SENT", "DRAFT"} & set(m.get("labelIds") or []):
+                continue                                        # ours, or not yet sent by anyone
+            hdrs = {h["name"].lower(): h["value"] for h in (m.get("payload") or {}).get("headers", [])}
+            frm = (hdrs.get("from") or "").lower()
+            if any(a and a in frm for a in own):
+                continue                                        # ours, from another of our addresses
+            theirs.append(m["id"])
+        if not theirs:
+            return False, None
+        known = db.run(lambda cur: (cur.execute(
+            "select gmail_message_id from outreach where direction = 'inbound' and triage = 'neutral'"
+            " and gmail_message_id = any(%s)", (theirs,)), [r[0] for r in cur.fetchall()])[1])
+        return bool(set(theirs) - set(known)), None
+    except Exception as e:                                      # noqa: BLE001 -- the caller says what it means
+        return None, e
+
+
 def cmd_send(args):
     """Send approved drafts, spread across the segment's mailboxes.
 
@@ -441,51 +588,244 @@ def cmd_send(args):
     VALIDATION before claiming: one well-formed recipient, no unfilled
     {{placeholders}}, company still sendable. A follow-up whose company has
     replied, moved on, or whose thread was stopped is CANCELLED with the reason.
+
+    THE SENDING WINDOW (outreach.send_window; owner, 2026-10-12). Each approved email holds its own second
+    inside its recipient's 10:00-10:30 (send_after, sql/34), and goes then, not before:
+      * every run first settles the times (outreach_policy.settle_schedule): one approved with no time gets
+        one, one whose window passed unsent moves to the next window at a new random second, and a window
+        turned off in the config clears them all, so the project sends as it did before
+      * only an email inside its own window is picked, and the claim checks the window again on the
+        database's clock; sql/34's trigger refuses any claim outside it, whoever makes it
+      * never two from one address closer than min_gap_seconds (checked inside the claim's lock): the email
+        tries the approver's other addresses, then waits out the gap in this run
+      * an email that cannot go in its window -- its address at its daily limit, no address linked, Gmail
+        refusing the address, an unread reply in its thread -- is moved to its next window with the reason
+        (outreach_policy.defer_rows), never sent late in the afternoon. Gmail refusing an address is then
+        handled, not a failed run (review, 2026-10-12): the run ends 0 and its last line (SUMMARY_TAG) names
+        the address, so the send loop alerts once instead of holding every other address of the project
+      * a sign-in this machine cannot read (sealed for the server) leaves its emails untouched, for the
+        server; on the server itself (on_the_server) it is marked "connect it again", as it always was --
+        but when none of several can be read there, the run fails loudly and marks nothing: that is the
+        machine's SESSION_SECRET, not every row damaged at once (second review, 2026-10-12)
+      * a pool mailbox whose token is on another machine, with room left today, leaves its share of the
+        emails to that machine rather than calling every mailbox full
+      * --stay N keeps the run going while the next email's moment is under N seconds away (the app's send
+        loop, app/scheduler.py), up to --max-seconds
+    A project without the block sends exactly as before: no times, no gap, no waiting.
     """
     import datetime as dt
+    import time as _time
     import outreach_policy as pol
+    import send_window as sw
     from dbconn import Db
     db = Db()
     cfg = load_outreach_config(db)
     paused = pol.sending_paused(cfg)
+    try:
+        wcfg = sw.window_cfg(cfg)
+    except ValueError as e:
+        db.close()
+        sys.exit("config outreach.send_window is invalid: %s" % e)
+    timed = wcfg is not None
+    stay = max(0, int(getattr(args, "stay", 0) or 0)) if timed else 0
+    max_seconds = max(1, int(getattr(args, "max_seconds", 900) or 900))
+    started = _time.monotonic()
+    # the times first, paused or not: a pause moves each missed window on ("sending is paused"), so the
+    # day it is lifted nothing goes out late
+    st = db.run(lambda cur: pol.settle_schedule(cur, SEGMENT, cfg, paused=bool(paused)))
+    if any(st[k] for k in ("cleared", "scheduled", "replanned", "moved")):
+        log("sending window: %d given a time, %d placed again (the window changed), %d moved to their next window,"
+            " %d times cleared (the window is off)" % (st["scheduled"], st["replanned"], st["moved"], st["cleared"]))
+    if st["alert_ids"]:
+        log("  %d email(s) have missed %d windows unsent: see Outreach -> Approved"
+            % (len(st["alert_ids"]), pol.MISSES_TO_ALERT))
+    # what this run did, for its last line (SUMMARY_TAG): the app's send loop alerts from it once, and does not
+    # start another run for due emails this machine could do nothing with (left_alone)
+    counts = {"deferred": 0, "parked": 0, "cancelled": 0}
+    alert_ids = list(st["alert_ids"])
+    signin_failed, refused, left_alone = [], {}, set()
+    mbmap, sent = {}, 0
+    approver_mode = cfg.get("send_from") == "approver"
+
+    def finish(rc=0):
+        """Every way out of a run after the settle: Gmail's refusals said once, and the summary line."""
+        db.close()
+        if signin_failed:
+            # a failed step is what raises the alert and shows on Operations: sign in again with
+            # `python tools/outreach.py auth`, then update the mailbox's token variable on the server
+            failed = list(dict.fromkeys(signin_failed))
+            if approver_mode:
+                log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, the owner links it"
+                    " again: python tools/users.py gmail <login>." % ", ".join(failed))
+            else:
+                log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
+                    " `python tools/outreach.py auth`, then update %s on the server"
+                    % (", ".join(failed), ", ".join(mbmap[k]["token_env"] for k in failed if k in mbmap)))
+            if timed:
+                # handled (review, 2026-10-12): each of that address's emails moved to its next window with the
+                # reason, and the other addresses carried on. A failed run would hold the whole project back
+                # (the send loop backs off after a crash), so it ends 0 and the loop alerts from the summary
+                log("  its emails moved to their next window, saying why; the run itself did not fail")
+            else:
+                rc = rc or 1
+        log(SUMMARY_TAG + json.dumps({
+            "sent": sent, "deferred": counts["deferred"], "parked": counts["parked"],
+            "cancelled": counts["cancelled"], "left_alone": sorted(left_alone),
+            "refused": {k: refused.get(k) or "Gmail refused %s" % k for k in dict.fromkeys(signin_failed)},
+            "alert_ids": list(dict.fromkeys(alert_ids))}, sort_keys=True))
+        return rc
+
     if paused:
         # not a failure: approved emails wait in Approved until the pause is lifted in the config
         log("not sending for %s: %s (config outreach.sending_paused)" % (SEGMENT, paused))
-        db.close()
-        return 0
+        return finish(0)
     if pol.sender_unset(cfg.get("sender")):
         sys.exit("refusing to send: config outreach.sender still contains SET_ME")
+
+    def pick(n):
+        return db.run(lambda cur: (cur.execute(PICK_SQL, {"segment": SEGMENT, "timed": timed, "n": max(1, n)}),
+                                   _rows(cur))[1])
+
+    def hold(ids, why, company=""):
+        """Due emails that cannot go in this run. With a window: moved to their next window at a new random
+        second, saying why (outreach_policy.defer_rows). Without one they wait, as they always did. Either
+        way this run is done with them (left_alone): one that could not be moved is not picked again."""
+        ids = [str(i) for i in ids if i]
+        if not ids:
+            return
+        left_alone.update(ids)
+        if timed:
+            again = []
+            n = db.run(lambda cur: pol.defer_rows(cur, ids, cfg, SEGMENT, why, alerts=again))
+            counts["deferred"] += n
+            alert_ids.extend(again)                    # moved MISSES_TO_ALERT times: the owner is told
+            log("  %-32s moved to the next window (%d): %s" % (company[:32] if company else "", n, why))
+        else:
+            log("  %-32s waits: %s" % (company[:32] if company else "", why))
+
     # Two ways a project sends. The pool (LCX): the project's own mailboxes, from .env / Render, the one
     # with the most room first. From the approver (owner, 2026-09-26; US Production Houses): the Gmail of
     # the person who approved the email, connected by them in the app (tools/mailbox_store.py), each
     # address with its own daily limit -- nobody's approval goes out from somebody else's address.
-    approver_mode = cfg.get("send_from") == "approver"
-    owner_of, by_owner = {}, {}
+    by_owner, boxes_of, foreign_owners, names, box_of = {}, {}, set(), {}, {}
+    room = None                                         # the project's own ceiling today (the pool)
+    db_room = {}                                        # the pool: every enabled mailbox's room today, by the database
+    order, connected = [], {}
+
+    def thread_box_why(mb):
+        """Why a follow-up's thread address (or pool mailbox) cannot send, by the database or the config --
+        true on every machine -- or None when it can, here or on the machine that holds its sign-in."""
+        if approver_mode:
+            b = box_of.get(mb or "")
+            if b is None:
+                return "the thread's address %s is no longer linked to anyone" % mb
+            if not b["enabled"]:
+                return "the thread's address %s is switched off" % mb
+            if b["last_error"]:
+                return "the thread's address %s needs connecting again" % mb
+            return None
+        if mb not in mbmap:
+            return "the thread's mailbox %s is no longer in the project's config" % mb
+        if not mbmap[mb]["enabled"]:
+            return "the thread's mailbox %s is switched off in the config" % mb
+        return None
+
+    def foreign(r):
+        """An email this machine leaves alone, untouched: its thread's mailbox, or every sign-in its
+        approver has, is readable only elsewhere (the server; another machine with the pool's token). One
+        whose address the database says cannot send is not foreign: it moves, saying why, on any machine."""
+        if int(r["sequence_step"] or 0) > 0:
+            mb = r["parent_mailbox"] or (order[0] if order else None)
+            return mb not in connected and mb not in refused and thread_box_why(mb) is None
+        return approver_mode and (r["approver"] or "") in foreign_owners
+
+    def elsewhere():
+        """The pool: enabled mailboxes whose token is not on this machine, with room left today by the
+        database's count -- the emails this machine cannot send are theirs, not "every mailbox is full"."""
+        return [k for k, left in db_room.items() if left > 0 and k not in connected and k not in refused]
+
     if approver_mode:
         import mailbox_store as store
         boxes = db.run(lambda cur: store.mailboxes(cur, with_token=True))
-        usable = [b for b in boxes if b["usable"]]
-        connected = {b["address"].lower(): b["address"].lower() for b in usable}
-        mbmap = {b["address"].lower(): b for b in usable}
-        order = [b["address"].lower() for b in usable]
-        remaining = {b["address"].lower(): b["remaining"] for b in usable}
+        box_of = {b["address"].lower(): b for b in boxes}
+        server = on_the_server()
+        # A sign-in sealed for the server cannot be read on a laptop: that address is the server's to send
+        # from. It used to be tried here, fail, and be marked "connect it again" by a run that never could.
+        # On the server (on_the_server) one that cannot be read is damaged: marked, as it always was -- unless
+        # none of several can, which is the machine's secret, not the rows (below).
+
+        def readable_here(b):
+            try:
+                return store.credentials(b) is not None
+            except Exception:                           # noqa: BLE001 -- no secret or library here
+                if server:
+                    raise                               # on the server that is a crash the owner hears of
+                return False
+        readable, unreadable = [], []
         for b in boxes:
-            owner_of[b["address"].lower()] = b["user_email"].lower()
             if b["usable"]:
+                (readable if readable_here(b) else unreadable).append(b)
+        if server and unreadable and not readable and len(unreadable) >= 2:
+            # Not one of several can be opened (second review, 2026-10-12): that is this machine's SESSION_SECRET,
+            # not every row damaged at once -- a deployment told it is the server that is not (a Hugging Face
+            # Space or a second portal, each with its own secret), or a secret that changed. Marking each one
+            # would make the owner link every address again for a setting; nothing is marked, the run fails
+            # loudly (Operations, the alert) and the emails wait untouched.
+            log("none of the %d saved sign-ins can be read here: this server's SESSION_SECRET is not the one they"
+                " were sealed for (another deployment's, or it changed). Nothing was marked. Put the right"
+                " SESSION_SECRET back, or link each address again (python tools/users.py gmail <login>)."
+                % len(unreadable))
+            if timed:
+                left_alone.update(str(r["id"]) for r in pick(args.limit))
+            return finish(1)
+        for b in unreadable if server else []:
+            why = ("sign-in: the saved sign-in for %s cannot be read on the server; connect it again in the"
+                   " app (python tools/users.py gmail <login>)" % b["address"])
+            db.run(lambda cur, _b=b, _w=why: store.mark_error(cur, _b["id"], _w))
+            b.update(usable=False, last_error=why)
+            signin_failed.append(b["address"].lower())
+            refused[b["address"].lower()] = "Gmail sign-in for %s cannot be read on the server" % b["address"]
+            log("  mailbox %s: its saved sign-in cannot be read on the server -- marked to connect again"
+                % b["address"])
+        usable = [b for b in boxes if b["usable"]]
+        connected = {b["address"].lower(): b["address"].lower() for b in readable}
+        mbmap = {b["address"].lower(): b for b in readable}
+        order = [b["address"].lower() for b in readable]
+        remaining = {b["address"].lower(): b["remaining"] for b in readable}
+        for b in boxes:
+            boxes_of.setdefault(b["user_email"].lower(), []).append(b)
+            if b["address"].lower() in connected:
                 by_owner.setdefault(b["user_email"].lower(), []).append(b["address"].lower())
             log("  mailbox %-40s %-5s %-30s cap %3d, %3d out today, %3d left" % (
                 b["address"], "on" if b["usable"] else "off", b["user_email"], b["daily_cap"], b["out_today"],
                 remaining.get(b["address"].lower(), 0)))
-        if not usable:
-            # not a failure: approved emails wait in Approved until the owner links their approver a Gmail
-            log("no sending address linked yet: approved emails wait (the owner runs tools/users.py gmail <login>)")
-            db.close(); return 0
+            if b["usable"] and b["address"].lower() not in connected:
+                log("    its sign-in cannot be read on this machine; left for the server")
+        foreign_owners = {b["user_email"].lower() for b in usable} - set(by_owner)
+        names = dict(db.run(lambda cur: (cur.execute("select lower(email), name from app_users"),
+                                         [(r[0], r[1]) for r in cur.fetchall()])[1]))
         daily_cap = None
         sent_today = sum(b["sent_today"] for b in boxes)
+        if not usable:
+            # not a failure: approved emails wait in Approved until the owner links their approver a Gmail
+            relink = any(b["enabled"] and b["last_error"] for b in boxes)
+            log("no sending address can send: approved emails wait (the owner runs tools/users.py gmail <login>)")
+            if timed:
+                due = pick(args.limit)
+                hold([r["id"] for r in due], "every sending address needs connecting again" if relink
+                     else "no sending address is linked yet", "%d due" % len(due))
+            return finish(0)
+        if not readable:
+            log("every sign-in is the server's: nothing is sent from this machine")
+            if timed:
+                left_alone.update(str(r["id"]) for r in pick(args.limit))
+            return finish(0)
         budget = min(sum(remaining.values()), args.limit)
-        if budget <= 0:
+        if budget <= 0 and not timed:
             log("nothing can go today: every connected Gmail is at its daily limit")
-            db.close(); return 0
+            return finish(0)
+        # with a window, each due email is looked at even so: each moves to its next window with its own
+        # reason (this person's address at its limit, that one with no address at all)
     else:
         connected = {mb["key"]: env(mb["email_env"]).strip() for mb in MAILBOXES
                      if mb["enabled"] and mailbox_connected(mb)}
@@ -496,303 +836,478 @@ def cmd_send(args):
         mbmap = {mb["key"]: mb for mb in MAILBOXES}
         today = dt.datetime.now(dt.timezone.utc).date()
         status = db.run(lambda cur: pol.mailbox_status(cur, SEGMENT, MAILBOXES, today))
-        order = [st["key"] for st in status]
-        remaining = {st["key"]: (st["remaining"] if st["key"] in connected else 0) for st in status}
-        for st in status:
+        order = [st_["key"] for st_ in status]
+        remaining = {st_["key"]: (st_["remaining"] if st_["key"] in connected else 0) for st_ in status}
+        # Every enabled mailbox's room by the database, wherever its token is (review, 2026-10-12): one not
+        # connected HERE is not full. This machine's mailboxes at their cap leave the rest for the machine
+        # holding the others' tokens; "every mailbox was at its daily limit" is said only when it is true.
+        db_room = {st_["key"]: st_["remaining"] for st_ in status if st_["enabled"]}
+        for st_ in status:
             log("  mailbox %-10s %-5s cap %3d today, %3d sent, %3d left" % (
-                st["key"], "on" if st["key"] in connected else "off", st["cap_today"], st["sent_today"], remaining[st["key"]]))
+                st_["key"], "on" if st_["key"] in connected else "off", st_["cap_today"], st_["sent_today"],
+                remaining[st_["key"]]))
 
         daily_cap = int(cfg.get("daily_send_cap", 20))
-        sent_today = sum(st["sent_today"] for st in status)
+        sent_today = sum(st_["sent_today"] for st_ in status)
         budget = min(max(0, daily_cap - sent_today), sum(remaining.values()), args.limit)
+        room = max(0, daily_cap - sent_today)           # the project's own ceiling today, whoever sends
         if budget <= 0:
             log("nothing can go today: segment %d/%d sent, connected mailboxes have %d left"
                 % (sent_today, daily_cap, sum(remaining.values())))
-            db.close(); return 0
-
-    rows = db.run(lambda cur: (cur.execute("""
-        select o.id, o.entity_id, o.subject, o.body,
-               c.email, c.email_status, e.name, e.status,
-               o.sequence_step, p.gmail_thread_id, p.stopped_reason,
-               (select s.gmail_message_id from outreach s
-                 where (s.id = o.parent_id or s.parent_id = o.parent_id)
-                   and s.direction = 'outbound' and s.status = 'sent'
-                   and s.sequence_step < o.sequence_step
-                 order by s.sequence_step desc limit 1) as prev_message_id,
-               exists (select 1 from outreach r where r.entity_id = o.entity_id
-                        and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
-               p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver, o.attachments
-        from outreach o
-        join entities e on e.id = o.entity_id
-        left join contacts c on c.id = o.contact_id
-        left join outreach p on p.id = o.parent_id
-        where o.status = 'approved' and o.direction = 'outbound'
-          and o.send_error is null
-          and e.segment_id = (select id from segments where slug = %s)
-        order by (o.sequence_step > 0) desc, o.created_at limit %s
-    """, (SEGMENT, budget * 3)), cur.fetchall())[1])
-    if not rows:
-        log("nothing approved to send"); db.close(); return 0
+            if timed:
+                picked = pick(args.limit * 3)
+                due = [r for r in picked if not foreign(r)]
+                # the ones another machine sends (their thread's mailbox is there) are left alone too, and said so:
+                # the send loop starts no new run for them every few seconds (second review, 2026-10-12)
+                left_alone.update(str(r["id"]) for r in picked if foreign(r))
+                if room > 0 and elsewhere():
+                    left_alone.update(str(r["id"]) for r in due)
+                    log("  %d due: left for the machine holding mailbox(es) %s, which have room today"
+                        % (len(due), ", ".join(elsewhere())))
+                else:
+                    hold([r["id"] for r in due], "the project's daily limit of %d was reached" % daily_cap
+                         if room <= 0 else "every mailbox was at its daily limit", "%d due" % len(due))
+            return finish(0)
 
     email_re = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", re.I)
-    services, sent, by_box, signin_failed = {}, 0, {}, []
+    services, by_box = {}, {}
+    # without a window the run stops at the day's room, as it always did; with one each due email is looked
+    # at, so the ones that cannot go move to their next window with their own reason
+    stop_at = args.limit if timed else budget
+    own_cache = []                  # every address of ours, for a follow-up's look at its thread
+
+    def own_addresses():
+        if not own_cache:
+            import mailbox_store as store_
+            got = {a.strip().lower() for a in (env(mb["email_env"]) for mb in MAILBOXES) if a}
+            got |= {b["address"].lower() for b in db.run(lambda cur: store_.mailboxes(cur))}
+            own_cache.append(got)
+        return own_cache[0]
+
+    def who(addr):
+        return names.get(addr or "") or ((addr or "").split("@")[0] or "nobody")
 
     def park(oid, why):
         """Take the row out of the sendable set, visibly, without burning cap."""
+        counts["parked"] += 1
         db.run(lambda cur, _o=oid, _w=why: cur.execute(
             "update outreach set send_error=%s, updated_at=now()"
             " where id=%s and status='approved'", (_w, _o)))
 
     def cancel(oid, why):
         """A follow-up that must never go out: cancelled with the reason."""
+        counts["cancelled"] += 1
         db.run(lambda cur, _o=oid, _w=why: cur.execute(
             "update outreach set status='cancelled', stopped_reason=%s, updated_at=now()"
             " where id=%s and status='approved'", (_w, _o)))
 
-    for (oid, eid, subject, body, email, estatus, company, ent_status,
-         step, thread_id, stopped, prev_mid, replied, parent_mb, approver, atts) in rows:
-        if sent >= budget:
-            break
-        step = int(step or 0)
-        if step > 0:
-            why = None
-            if replied:
-                why = "paused: reply received"
-            elif stopped:
-                why = "thread stopped: %s" % stopped
-            elif ent_status != "contacted":
-                why = "company is now '%s'" % ent_status
-            if why:
-                log("  %-32s follow-up %d CANCELLED: %s" % (company[:32], step, why))
-                cancel(oid, why)
-                continue
-        problem = None
-        if not email or not email_re.match(email.strip()):
-            problem = "recipient address missing or malformed: %r" % (email,)
-        elif estatus == "invalid":
-            problem = "recipient failed verification"
-        elif re.search(r"{{\w+}}", (subject or "") + (body or "")):
-            problem = "unfilled {{placeholder}} in subject or body"
-        elif re.search(r"[\r\n]", subject or ""):
-            # the email library refuses it (an embedded header), and that used to happen after the claim,
-            # leaving the row stuck in 'sending' and the rest of the run unsent (found 2026-09-21)
-            problem = "the subject has a line break in it"
-        elif step == 0 and ent_status not in ("shortlisted", "contacted"):
-            problem = "entity is now '%s' -- approval predates that decision" % ent_status
-        elif step > 0 and not thread_id:
-            problem = "the opener has no Gmail thread to follow up in"
-        elif step == 0:
-            # one opener per inbox and per company, not per lead row: one address filed under two
-            # leads, or one company found under two websites, must not get two first emails
-            # ("you won't hear from me again", 2026-09-21)
-            problem = db.run(lambda cur, _o=oid, _m=email: (cur.execute(_DUPLICATE_SQL, {
-                "oid": _o, "email": _m, "statuses": TAKEN_AT_SEND}),
-                                                           cur.fetchone())[1][0])
-        if not problem and atts:
-            # the deck a person approved, byte for byte (outreach_policy.attachment_problem), or nothing goes
-            problem = pol.attachment_problem(atts)
-        if not problem:
-            # an address that answered us under another lead or project since this was approved, or
-            # bounced, gets nothing new from any project (outreach_policy.ANSWERED_SQL)
-            why = db.run(lambda cur, _m=email, _e=eid: pol.answered_elsewhere(cur, _m, _e))
-            if why and step > 0:
-                log("  %-32s follow-up %d CANCELLED: %s" % (company[:32], step, why))
-                cancel(oid, why)
-                continue
-            problem = why
-        if problem:
-            log("  %-32s PARKED: %s" % (company[:32], problem))
-            park(oid, problem)
-            continue
-
-        # 1. pick the mailbox
-        if step > 0:
-            mb_key = parent_mb or order[0]
-            if mb_key not in connected:
-                log("  %-32s follow-up %d waits: mailbox %s is not connected on this machine" % (company[:32], step, mb_key))
-                continue
-            if remaining.get(mb_key, 0) <= 0:
-                log("  %-32s follow-up %d waits: mailbox %s is at today's cap" % (company[:32], step, mb_key))
-                continue
-        elif approver_mode:
-            # the approver's own addresses only, the one with the most room today first
-            mine = by_owner.get(approver or "", [])
-            open_ = [k for k in mine if k in connected and remaining.get(k, 0) > 0]
-            if not open_:
-                log("  %-32s waits: %s" % (company[:32], (
-                    "%s has no Gmail connected" % (approver or "nobody") if not mine else
-                    "%s's Gmail is at today's limit" % approver)))
-                continue
-            mb_key = max(open_, key=lambda k: (remaining[k], -mine.index(k)))
+    def claim(cur, _o, _k, _a):
+        """One claim at a time per segment (per address, from the approver), counted against the day's cap
+        as it stands NOW: two runs at once (a deploy's old and new server, a terminal run) each took the whole
+        day's budget from their start. -> the claimed row, "cap", ("gap", seconds still to wait), or None."""
+        if approver_mode:
+            cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send-mailbox:" + _k,))
+            cur.execute(store.OUT_TODAY_FOR_SQL, (_k,))
+            if cur.fetchone()[0] >= int(mbmap[_k]["daily_cap"]):
+                return "cap"
         else:
-            mb_key = pol.pick_mailbox([(k, remaining.get(k, 0)) for k in order], set(connected))
-            if not mb_key:
-                log("  every connected mailbox is at today's cap")
+            cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send:" + SEGMENT,))
+            cur.execute(OUT_TODAY_SQL, (SEGMENT,))
+            if cur.fetchone()[0] >= daily_cap:
+                return "cap"
+        if timed:
+            cur.execute(GAP_SQL, {"a": _a})
+            since = cur.fetchone()[0]
+            if since is not None and float(since) < float(wcfg["min_gap_seconds"]):
+                return {"gap": float(wcfg["min_gap_seconds"]) - float(since)}
+        cur.execute(CLAIM_SQL, (_k, _a, _o))
+        return cur.fetchone()
+
+    def one_pass():
+        """Every due email once. -> {id: monotonic moment} for the ones waiting out an address's gap."""
+        nonlocal sent
+        gap_wait = {}
+        rows = pick(max(1, stop_at - sent) * 3)
+
+        def rest(i):
+            """This pass's due emails from row i on that are this machine's to settle."""
+            return [str(x["id"]) for x in rows[i:] if not foreign(x) and str(x["id"]) not in left_alone]
+
+        def give_up(i, why):
+            """No address on this machine can send any more in this run: the rest of this pass's due emails
+            move on with the reason -- or, in the pool, stay for the machine whose mailboxes still have room."""
+            if timed and elsewhere():
+                log("  %d due: left for the machine holding mailbox(es) %s, which have room today"
+                    % (len(rest(i)), ", ".join(elsewhere())))
+                left_alone.update(rest(i))
+            elif timed:
+                hold(rest(i), why, "%d due" % len(rest(i)))
+        for i, r in enumerate(rows):
+            if sent >= stop_at:
+                break
+            oid, eid, company = r["id"], r["entity_id"], r["name"] or ""
+            if str(oid) in left_alone:                  # settled earlier in this run as not this run's to send
+                continue
+            subject, body, email, atts = r["subject"], r["body"], r["email"], r["attachments"]
+            step, ent_status, thread_id = int(r["sequence_step"] or 0), r["ent_status"], r["gmail_thread_id"]
+            approver = r["approver"]
+            if step > 0:
+                why = None
+                if r["replied"]:
+                    why = "paused: reply received"
+                elif r["stopped_reason"]:
+                    why = "thread stopped: %s" % r["stopped_reason"]
+                elif ent_status != "contacted":
+                    why = "company is now '%s'" % ent_status
+                if why:
+                    log("  %-32s follow-up %d CANCELLED: %s" % (company[:32], step, why))
+                    cancel(oid, why)
+                    continue
+            problem = None
+            if not email or not email_re.match(email.strip()):
+                problem = "recipient address missing or malformed: %r" % (email,)
+            elif r["email_status"] == "invalid":
+                problem = "recipient failed verification"
+            elif re.search(r"{{\w+}}", (subject or "") + (body or "")):
+                problem = "unfilled {{placeholder}} in subject or body"
+            elif re.search(r"[\r\n]", subject or ""):
+                # the email library refuses it (an embedded header), and that used to happen after the claim,
+                # leaving the row stuck in 'sending' and the rest of the run unsent (found 2026-09-21)
+                problem = "the subject has a line break in it"
+            elif step == 0 and ent_status not in ("shortlisted", "contacted"):
+                problem = "entity is now '%s' -- approval predates that decision" % ent_status
+            elif step > 0 and not thread_id:
+                problem = "the opener has no Gmail thread to follow up in"
+            elif step == 0:
+                # one opener per inbox and per company, not per lead row: one address filed under two
+                # leads, or one company found under two websites, must not get two first emails
+                # ("you won't hear from me again", 2026-09-21)
+                problem = db.run(lambda cur, _o=oid, _m=email: (cur.execute(_DUPLICATE_SQL, {
+                    "oid": _o, "email": _m, "statuses": TAKEN_AT_SEND}),
+                                                               cur.fetchone())[1][0])
+            if not problem and atts:
+                # the deck a person approved, byte for byte (outreach_policy.attachment_problem), or nothing goes
+                problem = pol.attachment_problem(atts)
+            if not problem:
+                # an address that answered us under another lead or project since this was approved, or
+                # bounced, gets nothing new from any project (outreach_policy.ANSWERED_SQL)
+                why = db.run(lambda cur, _m=email, _e=eid: pol.answered_elsewhere(cur, _m, _e))
+                if why and step > 0:
+                    log("  %-32s follow-up %d CANCELLED: %s" % (company[:32], step, why))
+                    cancel(oid, why)
+                    continue
+                problem = why
+            if problem:
+                log("  %-32s PARKED: %s" % (company[:32], problem))
+                park(oid, problem)
+                continue
+            if foreign(r):
+                log("  %-32s left for the server: its sign-in is not readable on this machine" % company[:32])
+                left_alone.add(str(oid))
+                continue
+
+            # 1. the addresses it may leave from, best first
+            if step > 0:
+                mb_key = r["parent_mailbox"] or order[0]
+                if mb_key in refused:
+                    hold([oid], refused[mb_key], company)
+                    continue
+                if mb_key not in connected:
+                    # not foreign (above): the database or the config says its thread's address cannot send.
+                    # It moves, saying so, instead of staying due all window for a run to start for it again
+                    hold([oid], thread_box_why(mb_key) or "the thread's address %s cannot send" % mb_key, company)
+                    continue
+                if remaining.get(mb_key, 0) <= 0:
+                    hold([oid], "the thread's address was at its daily limit", company)
+                    continue
+                cands = [mb_key]
+            elif approver_mode:
+                # the approver's own addresses only, the one with the most room today first
+                mine = by_owner.get(approver or "", [])
+                if not mine:
+                    hold([oid], ("%s's sending address needs linking again" % who(approver))
+                         if boxes_of.get(approver or "") else "%s has no sending address" % who(approver), company)
+                    continue
+                cands = sorted([k for k in mine if k in connected and remaining.get(k, 0) > 0],
+                               key=lambda k: (-remaining[k], mine.index(k)))
+                if not cands:
+                    gone = [k for k in mine if k in refused]
+                    hold([oid], refused[gone[0]] if gone and not [k for k in mine if k in connected]
+                         else "%s's address was at its daily limit" % who(approver), company)
+                    continue
+            else:
+                cands = [k for k, left in sorted(((k, remaining.get(k, 0)) for k in order), key=lambda kv: -kv[1])
+                         if k in connected and left > 0]
+                if not cands:
+                    log("  every connected mailbox is at today's cap")
+                    give_up(i, next(iter(refused.values())) if refused and not connected
+                            else "every mailbox was at its daily limit")
+                    break
+            if room is not None and timed and sent >= room:
+                hold(rest(i), "the project's daily limit of %d was reached" % daily_cap, "%d due" % len(rest(i)))
                 break
 
-        # 2. claim, and take the mailbox the database settled on. One claim at a time per segment (per
-        #    address, from the approver), counted against the day's cap as it stands NOW: two runs at once
-        #    (a deploy's old and new server, a terminal run) each took the whole day's budget from their start
-        def claim(cur, _o=oid, _k=mb_key, _a=connected[mb_key]):
-            if approver_mode:
-                cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send-mailbox:" + _k,))
-                cur.execute(store.OUT_TODAY_FOR_SQL, (_k,))
-                if cur.fetchone()[0] >= int(mbmap[_k]["daily_cap"]):
-                    return "cap"
-            else:
-                cur.execute("select pg_advisory_xact_lock(hashtext(%s))", ("outreach-send:" + SEGMENT,))
-                cur.execute(OUT_TODAY_SQL, (SEGMENT,))
-                if cur.fetchone()[0] >= daily_cap:
-                    return "cap"
-            cur.execute("update outreach set status='sending', sender_mailbox=%s, sender_address=%s, updated_at=now()"
-                        " where id=%s and status='approved' returning sender_mailbox", (_k, _a, _o))
-            return cur.fetchone()
-        claimed = db.run(claim)
-        if claimed == "cap":
-            if approver_mode:
-                log("  %s is at its daily limit of %d (counting every run's sends)" % (mb_key, mbmap[mb_key]["daily_cap"]))
-                remaining[mb_key] = 0
+            # 2. claim, and take the mailbox the database settled on. An address under its gap passes the
+            #    email on to the approver's next address; the project's day at its cap stops the run
+            claimed, gaps, capped = None, [], False
+            for k in cands:
+                got = db.run(lambda cur, _k=k: claim(cur, oid, _k, connected[_k]))
+                if got == "cap":
+                    capped = True
+                    if approver_mode:
+                        log("  %s is at its daily limit of %d (counting every run's sends)" % (k, mbmap[k]["daily_cap"]))
+                        remaining[k] = 0
+                        continue
+                    break
+                if isinstance(got, dict):
+                    gaps.append(got["gap"])
+                    continue
+                claimed = got if got else False
+                break
+            if claimed is None:
+                if capped and not approver_mode:
+                    log("  the day's cap of %d is reached (counting every run's sends)" % daily_cap)
+                    if timed:
+                        hold(rest(i), "the project's daily limit of %d was reached" % daily_cap,
+                             "%d due" % len(rest(i)))
+                    break
+                if gaps:
+                    # every address it may use sent under the gap ago: it goes in this run once the gap passes
+                    wait = max(0.5, min(gaps))
+                    gap_wait[str(oid)] = _time.monotonic() + wait
+                    log("  %-32s waits %.0fs: its address sent under %ds ago" % (company[:32], wait, wcfg["min_gap_seconds"]))
+                    continue
+                hold([oid], "%s's address was at its daily limit" % who(approver) if step == 0
+                     else "the thread's address was at its daily limit", company)
                 continue
-            log("  the day's cap of %d is reached (counting every run's sends)" % daily_cap)
-            break
-        if not claimed:
-            if step > 0:
-                log("  %-32s follow-up %d refused by the database guard" % (company[:32], step))
-                cancel(oid, "blocked at send: reply received or thread stopped")
-            else:
-                log("  %-32s skipped: no longer approved" % company[:32])
-            continue
-        mb_key = claimed[0]
-        if mb_key not in connected:
-            log("  %-32s waits: its thread's mailbox %s is not connected on this machine" % (company[:32], mb_key))
-            db.run(lambda cur, _o=oid: cur.execute(
-                "update outreach set status='approved', sender_mailbox=null, sender_address=null,"
-                " updated_at=now() where id=%s and status='sending'", (_o,)))
-            continue
-        sender_addr = connected[mb_key]
+            if claimed is False:
+                # Why the claim matched nothing, read again whether or not this run has a window (review,
+                # 2026-10-12): a run started before a project's window was switched on still claims, and another
+                # process may have just given the email its time. Only a reply or a stop is the follow-up guard
+                # refusing it (sql/23, sql/24); a window that is not open is not.
+                now_ok = db.run(lambda cur: (cur.execute(
+                    "select status, send_after is not null,"
+                    " coalesce(send_after <= clock_timestamp() and clock_timestamp() < send_before, false)"
+                    " from outreach where id = %s", (oid,)), cur.fetchone())[1])
+                st_now, has_time, in_window = now_ok or (None, False, False)
+                if st_now != "approved":
+                    log("  %-32s skipped: no longer approved (%s)" % (company[:32], st_now or "gone"))
+                    continue
+                if has_time and not in_window:
+                    # its window closed while this run worked, or it was just given one: the next settle moves
+                    # it to its next window; it is not cancelled
+                    log("  %-32s its window is not open now: it goes in its own window" % company[:32])
+                    left_alone.add(str(oid))
+                    continue
+                if step > 0:
+                    log("  %-32s follow-up %d refused by the database guard" % (company[:32], step))
+                    cancel(oid, "blocked at send: reply received or thread stopped")
+                else:
+                    log("  %-32s skipped: no longer approved" % company[:32])
+                continue
+            mb_key = claimed[0]
+            if mb_key not in connected:
+                log("  %-32s waits: its thread's mailbox %s is not connected on this machine" % (company[:32], mb_key))
+                db.run(lambda cur, _o=oid: cur.execute(
+                    "update outreach set status='approved', sender_mailbox=null, sender_address=null,"
+                    " updated_at=clock_timestamp() where id=%s and status='sending'", (_o,)))
+                left_alone.add(str(oid))
+                continue
+            sender_addr = connected[mb_key]
 
-        def unclaim(why=None, _o=oid):
-            """Nothing reached Gmail: back to Approved. With a reason it is parked for a person to look at."""
-            db.run(lambda cur: cur.execute(
-                "update outreach set status='approved', sender_mailbox=null, sender_address=null,"
-                " send_error=%s, updated_at=now() where id=%s and status='sending'", (why, _o)))
+            def unclaim(why=None, _o=oid):
+                """Nothing reached Gmail: back to Approved. With a reason it is parked for a person to look at."""
+                if why:
+                    counts["parked"] += 1
+                db.run(lambda cur: cur.execute(
+                    "update outreach set status='approved', sender_mailbox=null, sender_address=null,"
+                    " send_error=%s, updated_at=clock_timestamp() where id=%s and status='sending'", (why, _o)))
 
-        if mb_key not in services:
-            try:
-                services[mb_key] = (user_gmail_service(db, mbmap[mb_key]) if approver_mode
-                                    else gmail_service(mbmap[mb_key]))
-            except (Exception, SystemExit) as e:
-                # a revoked or expired sign-in, or a rotated client secret: the email goes back to
-                # Approved untouched (it used to stay in 'sending' for good), this mailbox sits the rest
-                # of the run out, and the run ends failed so the owner is told. A person's own Gmail is
-                # marked for reconnecting, which the app shows them until they do.
-                unclaim()
-                signin_failed.append(mb_key)
-                if approver_mode:
-                    db.run(lambda cur, _b=mbmap[mb_key], _e=e: store.mark_error(cur, _b["id"], "sign-in: %s" % _e))
-                log("  mailbox %s: Gmail sign-in failed (%s) -- %s goes back to Approved"
-                    % (mb_key, str(e)[:120], company[:32]))
+            def refuse(why):
+                """Gmail refused the address (sign-in, permission, a limit): out for the rest of the run, and
+                every email it would have sent waits for its next window."""
+                refused[mb_key] = why
                 connected.pop(mb_key, None)
                 remaining[mb_key] = 0
-                if not connected:
-                    break
-                continue
-        svc = services[mb_key]
+                hold([oid], why, company)
 
-        # 3. send
-        try:
-            msg = _message(body, atts)
-            msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
-            # our own Message-ID, one per row: an unknown outcome can be settled by searching Sent for
-            # rfc822msgid:<tvf-...>, and a transport-level resend of the same POST is recognisable.
-            # The row id without its dashes keeps the header on one line (folded at 78 characters)
-            msg["Message-ID"] = "<tvf-%s@%s>" % (str(oid).replace("-", ""), sender_addr.rsplit("@", 1)[-1])
-        except Exception as e:
-            unclaim("could not build the message: %s" % str(e)[:300])
-            log("  %-32s PARKED: could not build the message: %s" % (company[:32], str(e)[:70]))
-            continue
-        request_body = {}
-        if step > 0:
-            request_body["threadId"] = thread_id
-            if prev_mid:
+            def address_refused(e, code, what=""):
+                """Gmail refused the ADDRESS, not this email -- a sign-in, a permission, a rate or daily limit --
+                at the send or at a follow-up's look at its thread (second review, 2026-10-12: one path for
+                both, so a revoked sign-in seen first at the thread is not taken for a passing problem with one
+                email). The email goes back to Approved untouched, the address sits the rest of the run out and
+                its emails move with the reason (refuse), the summary names it for the one alert, and a person's
+                own Gmail whose sign-in failed is marked for reconnecting. -> True when no address is left here
+                (the pass stops)."""
+                unclaim()
+                signin_failed.append(mb_key)
+                if approver_mode and (type(e).__name__ == "RefreshError" or code == 401):
+                    db.run(lambda cur, _b=mbmap[mb_key], _e=e: store.mark_error(cur, _b["id"], "sign-in: %s" % _e))
+                log("  mailbox %s: Gmail refused%s (%s: %s) -- %s goes back to Approved"
+                    % (mb_key, (" " + what) if what else "", code or "sign-in", str(e)[:100], company[:32]))
+                refuse("Gmail refused %s (%s)" % (sender_addr, code or "sign-in"))
+                if not connected:
+                    give_up(i + 1, refused[mb_key])
+                    return True
+                return False
+
+            if mb_key not in services:
                 try:
-                    prev = svc.users().messages().get(
-                        userId="me", id=prev_mid, format="metadata",
-                        metadataHeaders=["Message-ID"]).execute()
-                    hdrs = {h["name"].lower(): h["value"]
-                            for h in prev.get("payload", {}).get("headers", [])}
-                    if hdrs.get("message-id"):
-                        msg["In-Reply-To"] = hdrs["message-id"]
-                        msg["References"] = hdrs["message-id"]
-                except Exception as e:
-                    log("  %-32s (could not read the previous message id: %s; sending in the thread anyway)"
-                        % (company[:32], type(e).__name__))
-        request_body["raw"] = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        remaining[mb_key] = remaining.get(mb_key, 0) - 1      # an unknown outcome still used the slot
-        try:
-            resp = svc.users().messages().send(userId="me", body=request_body).execute()
-        except Exception as e:
-            code = getattr(getattr(e, "resp", None), "status", None)
-            code = int(code) if str(code or "").isdigit() else None
-            if type(e).__name__ == "RefreshError" or (code and 400 <= code < 500):
-                # Gmail answered and refused: nothing went out. Only a timeout or a server error is a
-                # real unknown; calling a refusal "unknown" wedged every row a run touched (2026-09-21)
-                if type(e).__name__ == "RefreshError" or code in (401, 403, 429):
-                    # the mailbox, not the email (sign-in, permission, rate or daily limit): the email
-                    # goes back to Approved untouched and the mailbox sits the rest of the run out
+                    services[mb_key] = (user_gmail_service(db, mbmap[mb_key]) if approver_mode
+                                        else gmail_service(mbmap[mb_key]))
+                except (Exception, SystemExit) as e:
+                    # a revoked or expired sign-in, or a rotated client secret: the email goes back to
+                    # Approved untouched (it used to stay in 'sending' for good), this mailbox sits the rest
+                    # of the run out, and the run ends failed so the owner is told. A person's own Gmail is
+                    # marked for reconnecting, which the app shows them until they do.
                     unclaim()
                     signin_failed.append(mb_key)
-                    if approver_mode and (type(e).__name__ == "RefreshError" or code == 401):
+                    if approver_mode:
                         db.run(lambda cur, _b=mbmap[mb_key], _e=e: store.mark_error(cur, _b["id"], "sign-in: %s" % _e))
-                    log("  mailbox %s: Gmail refused (%s: %s) -- %s goes back to Approved"
-                        % (mb_key, code or "sign-in", str(e)[:100], company[:32]))
-                    connected.pop(mb_key, None)
-                    remaining[mb_key] = 0
+                    log("  mailbox %s: Gmail sign-in failed (%s) -- %s goes back to Approved"
+                        % (mb_key, str(e)[:120], company[:32]))
+                    refuse("Gmail refused %s (sign-in)" % sender_addr)
                     if not connected:
+                        give_up(i + 1, refused[mb_key])
                         break
                     continue
-                unclaim("Gmail refused this email (%s): %s" % (code, str(e)[:300]))
-                remaining[mb_key] = remaining.get(mb_key, 0) + 1
-                log("  %-32s PARKED: Gmail refused it (%s)" % (company[:32], code))
+            svc = services[mb_key]
+
+            # a follow-up timed for its window looks at its thread first: a reply the hourly pull has not
+            # read yet stops it (it goes back to Approved and moves to its next window)
+            if timed and step > 0:
+                unread, err = thread_unread(db, svc, thread_id, own_addresses() | {sender_addr.lower()})
+                if unread:
+                    unclaim()
+                    hold([oid], "a reply in the thread is not read yet", company)
+                    continue
+                if unread is None:
+                    # the thread could not be read (review, 2026-10-12). One that is not there (deleted in Gmail:
+                    # 404) never will be: parked, visibly, never sent blind. A refusal of the address itself is
+                    # handled as one at the send (address_refused). Anything else (a 429 or 403 rate limit, a
+                    # timeout, a server error) is tried again in its next window -- and after MISSES_TO_ALERT
+                    # moves the owner is told -- instead of counting as an unread reply for ever
+                    code = _http_code(err)
+                    if code in (400, 404, 410):
+                        unclaim("its Gmail thread cannot be read (%s): the follow-up is not sent" % code)
+                        log("  %-32s PARKED: its Gmail thread cannot be read (%s)" % (company[:32], code))
+                        continue
+                    if type(err).__name__ == "RefreshError" or code == 401 or (code == 403 and not _rate_limited(err)):
+                        # the address, not this thread (second review, 2026-10-12): a revoked sign-in whose cached
+                        # access token has not run out yet, a permission taken away. Taken for a passing problem,
+                        # each of that address's follow-ups moved day after day and the owner heard after 3 moves
+                        if address_refused(err, code, "a look at the thread"):
+                            break
+                        continue
+                    unclaim()
+                    log("  %-32s its thread could not be read (%s): it tries again in its next window"
+                        % (company[:32], code or type(err).__name__))
+                    hold([oid], "its thread could not be read just now (%s): it tries again in its next window"
+                         % (code or type(err).__name__), company)
+                    continue
+
+            # 3. send
+            try:
+                msg = _message(body, atts)
+                msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
+                # our own Message-ID, one per row: an unknown outcome can be settled by searching Sent for
+                # rfc822msgid:<tvf-...>, and a transport-level resend of the same POST is recognisable.
+                # The row id without its dashes keeps the header on one line (folded at 78 characters)
+                msg["Message-ID"] = "<tvf-%s@%s>" % (str(oid).replace("-", ""), sender_addr.rsplit("@", 1)[-1])
+            except Exception as e:
+                unclaim("could not build the message: %s" % str(e)[:300])
+                log("  %-32s PARKED: could not build the message: %s" % (company[:32], str(e)[:70]))
                 continue
-            log("  %-32s UNKNOWN OUTCOME via %s: %s" % (company[:32], mb_key, str(e)[:70]))
-            db.run(lambda cur, _o=oid, _err=str(e)[:400]: cur.execute(
-                "update outreach set status='send_unknown', send_error=%s,"
-                " updated_at=now() where id=%s and status='sending'", (_err, _o)))
-            continue
-        # 4. record
-        db.run(lambda cur, _o=oid, _e=eid, _m=resp: (
-            cur.execute(
-                "update outreach set status='sent', sent_at=now(),"
-                " gmail_message_id=%s, gmail_thread_id=%s, updated_at=now()"
-                " where id=%s and status='sending'",
-                (_m.get("id"), _m.get("threadId"), _o)),
-            cur.execute(
-                "update entities set status='contacted', status_changed_at=now(),"
-                " updated_at=now() where id=%s and status='shortlisted'", (_e,))))
-        sent += 1
-        by_box[mb_key] = by_box.get(mb_key, 0) + 1
-        log("  %-32s SENT%s via %-8s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", mb_key, email))
-    db.close()
+            request_body = {}
+            if step > 0:
+                request_body["threadId"] = thread_id
+                if r["prev_message_id"]:
+                    try:
+                        prev = svc.users().messages().get(
+                            userId="me", id=r["prev_message_id"], format="metadata",
+                            metadataHeaders=["Message-ID"]).execute()
+                        hdrs = {h["name"].lower(): h["value"]
+                                for h in prev.get("payload", {}).get("headers", [])}
+                        if hdrs.get("message-id"):
+                            msg["In-Reply-To"] = hdrs["message-id"]
+                            msg["References"] = hdrs["message-id"]
+                    except Exception as e:
+                        log("  %-32s (could not read the previous message id: %s; sending in the thread anyway)"
+                            % (company[:32], type(e).__name__))
+            request_body["raw"] = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+            remaining[mb_key] = remaining.get(mb_key, 0) - 1      # an unknown outcome still used the slot
+            try:
+                resp = svc.users().messages().send(userId="me", body=request_body).execute()
+            except Exception as e:
+                code = getattr(getattr(e, "resp", None), "status", None)
+                code = int(code) if str(code or "").isdigit() else None
+                if type(e).__name__ == "RefreshError" or (code and 400 <= code < 500):
+                    # Gmail answered and refused: nothing went out. Only a timeout or a server error is a
+                    # real unknown; calling a refusal "unknown" wedged every row a run touched (2026-09-21)
+                    if type(e).__name__ == "RefreshError" or code in (401, 403, 429):
+                        # the mailbox, not the email (sign-in, permission, rate or daily limit): the email
+                        # goes back to Approved untouched and the mailbox sits the rest of the run out
+                        if address_refused(e, code):
+                            break
+                        continue
+                    unclaim("Gmail refused this email (%s): %s" % (code, str(e)[:300]))
+                    remaining[mb_key] = remaining.get(mb_key, 0) + 1
+                    log("  %-32s PARKED: Gmail refused it (%s)" % (company[:32], code))
+                    continue
+                log("  %-32s UNKNOWN OUTCOME via %s: %s" % (company[:32], mb_key, str(e)[:70]))
+                db.run(lambda cur, _o=oid, _err=str(e)[:400]: cur.execute(
+                    "update outreach set status='send_unknown', send_error=%s,"
+                    " updated_at=clock_timestamp() where id=%s and status='sending'", (_err, _o)))
+                continue
+            # 4. record
+            db.run(lambda cur, _o=oid, _e=eid, _m=resp: (
+                cur.execute(
+                    "update outreach set status='sent', sent_at=clock_timestamp(),"
+                    " gmail_message_id=%s, gmail_thread_id=%s, updated_at=clock_timestamp()"
+                    " where id=%s and status='sending'",
+                    (_m.get("id"), _m.get("threadId"), _o)),
+                cur.execute(
+                    "update entities set status='contacted', status_changed_at=now(),"
+                    " updated_at=now() where id=%s and status='shortlisted'", (_e,))))
+            sent += 1
+            by_box[mb_key] = by_box.get(mb_key, 0) + 1
+            due = ""
+            if r["send_after"] is not None:
+                late = (dt.datetime.now(dt.timezone.utc) - sw._utc(r["send_after"])).total_seconds()
+                due = " (due %s, %+ds)" % (_due_text(r["send_after"], r["send_tz"]), round(late))
+            log("  %-32s SENT%s%s via %-8s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", due,
+                                                     mb_key, email))
+        # Every due email of another machine's (foreign) is left alone and said so, including the ones past a
+        # break above (no address left here, the project's day at its limit): the send loop starts a new run
+        # only for due emails missing from the summary's left_alone, and one left out made it start a run every
+        # few seconds for the rest of the window (second review, 2026-10-12)
+        left_alone.update(str(x["id"]) for x in rows if foreign(x))
+        return gap_wait
+
+    while True:
+        waiting = one_pass()
+        if not (timed and stay > 0) or sent >= stop_at or not connected:
+            break
+        left = max_seconds - (_time.monotonic() - started)
+        now_m = _time.monotonic()
+        waits = [t - now_m for t in waiting.values()]
+        soon = db.run(lambda cur: (cur.execute(SOON_SQL, {"segment": SEGMENT, "stay": stay}), _rows(cur))[1])
+        waits += [float(x["wait"]) for x in soon
+                  if str(x["id"]) not in waiting and str(x["id"]) not in left_alone and not foreign(dict(x))]
+        if not waits:
+            break
+        nap = max(1.0, min(waits))
+        if nap >= left:
+            break
+        log("  ...the next email's moment is %.0fs away; the run waits for it" % nap)
+        _time.sleep(nap)
     if approver_mode:
         log("\n%d sent this run (%s); each address has its own daily limit"
             % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none"))
     else:
         log("\n%d sent this run (%s); %d sent today in the segment (ceiling %d)"
             % (sent, ", ".join("%s %d" % kv for kv in by_box.items()) or "none", sent_today + sent, daily_cap))
-    if signin_failed:
-        # a failed step is what raises the alert and shows on Operations: sign in again with
-        # `python tools/outreach.py auth`, then update the mailbox's token variable on the server
-        failed = list(dict.fromkeys(signin_failed))
-        if approver_mode:
-            log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, the owner links it"
-                " again: python tools/users.py gmail <login>." % ", ".join(failed))
-        else:
-            log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
-                " `python tools/outreach.py auth`, then update %s"
-                " on the server" % (", ".join(failed), ", ".join(mbmap[k]["token_env"] for k in failed if k in mbmap)))
-        return 1
-    return 0
+    return finish(0)
 
 
 def cmd_pull(args):
@@ -987,6 +1502,10 @@ def main():
     sub.add_parser("mailboxes")
     s = sub.add_parser("send"); s.add_argument("--limit", type=int, default=500,
                                                help="most emails this run; the mailbox and segment caps still apply")
+    s.add_argument("--stay", type=int, default=0,
+                   help="a project with a sending window: keep going while the next email's moment is under this many"
+                        " seconds away (the app's send loop uses 55); 0, the default, is one pass")
+    s.add_argument("--max-seconds", type=int, default=900, help="the longest a --stay run keeps going")
     sub.add_parser("pull")
     t = sub.add_parser("triage"); t.add_argument("--limit", type=int, default=50)
     f = sub.add_parser("followups"); f.add_argument("--limit", type=int, default=60)

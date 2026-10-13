@@ -118,7 +118,12 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
     Runs every recipient through exactly what an approval checks. With apply=False (the page asking
     before approving) nothing is kept; with apply=True each recipient that passes becomes an approved
     email (approval_mode 'compose', approved by `person`) and its lead is shortlisted if it was not.
-    Refused (nothing written) when the email itself cannot go."""
+    Refused (nothing written) when the email itself cannot go.
+
+    Where the project has a sending window (outreach.send_window, owner 2026-10-12), each ready recipient
+    carries "window" -- the 10:00-10:30 on their clock that approving now aims at, never a minute -- and,
+    once approved, "schedule": the second drawn for it (tools/outreach_policy.schedule_view). A recipient
+    with no free minute in 60 days is skipped with that reason."""
     import draft_render as dr
     import outreach_policy as pol
     if not isinstance(entity_ids, (list, tuple)):
@@ -139,6 +144,8 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
     if why:
         raise Refused(why)
     footer = dr.footer_for(cfg, person["name"], person["title"])
+    import send_window as sw
+    timed = sw.window_cfg(cfg) is not None              # read once: a malformed block stops here, loudly
     cur.execute(RECIPIENTS_SQL, (ids, segment))
     rows = {str(r["id"]): r for r in cur.fetchall()}
     ready, skipped = [], [{"id": i, "company": None, "reason": "not a lead of this project"} for i in not_ids]
@@ -164,7 +171,7 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
                 continue
             f = fields_for(r)
             cur.execute("savepoint compose_row")
-            reason, oid = None, None
+            reason, oid, window, sched = None, None, {"enabled": False}, None
             try:
                 subj, text = message(subject or "(subject)", body or "(email)", f, footer)
                 if r["status"] != "shortlisted":
@@ -182,9 +189,18 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
                     if bad:
                         reason = bad[0]["reason"]
                     else:
+                        # the window it would go in, never a minute: the minute is drawn on approval
+                        if timed:
+                            window = pol.draft_window(cur, oid, cfg)
                         cur.execute("update outreach set status = 'approved', approved_at = now(), approved_by = %s,"
                                     " approval_mode = 'compose', spot_checked = true, updated_at = now()"
                                     " where id = %s and status = 'drafted'", (person["email"], oid))
+                        if apply and timed:
+                            # approving it is when its own second in its recipient's 10:00-10:30 is drawn
+                            # (owner, 2026-10-12), the same as an approved draft
+                            sched = pol.schedule_sends(cur, [oid], cfg, segment).get(oid)
+            except pol.NoSendSlot as e:
+                reason = str(e)
             except Exception as e:                     # noqa: BLE001 -- one recipient, reported, not the rest
                 reason = "could not be written (%s)" % str(e).splitlines()[0][:120]
             if reason:
@@ -192,9 +208,12 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
                 skipped.append(dict(base, reason=reason))
                 continue
             cur.execute("release savepoint compose_row")
-            ready.append(dict(base, contact_name=r["full_name"], email=r["email"], role=r["role_title"],
-                              first_name=f["first_name"], named=f["named"], company_as_written=f["company"],
-                              outreach_id=oid if apply else None))
+            item = dict(base, contact_name=r["full_name"], email=r["email"], role=r["role_title"],
+                        first_name=f["first_name"], named=f["named"], company_as_written=f["company"],
+                        outreach_id=oid if apply else None, window=window)
+            if apply:
+                item["schedule"] = sched
+            ready.append(item)
     finally:
         if not apply:
             cur.execute("rollback to savepoint compose_all")        # asking changes nothing

@@ -13,6 +13,8 @@ nothing; approving makes exactly one approved email per company, rendered for ea
 writer's own sign-off and the project's footer, approval_mode 'compose', and shortlists a lead that
 was still in To review; every refusal (unknown field, empty or two-line subject, no name and title,
 a project without compose) writes nothing; one email per company and per inbox holds across writes.
+With the repo's sending window (owner, 2026-10-12): the page's question names each recipient's
+window and no minute; approving draws each one's own second and keeps it on the email.
 Exit code 1 on any failure.
 """
 import json
@@ -167,6 +169,10 @@ def main_():
         check("  and what approving will do: no Gmail linked to them yet", (j["can_send"], j["mailboxes"]), (False, []))
         check("  asking changed nothing: the To review lead is still in To review", status_of(a), "ready_for_review")
         check("  and nothing was written", (openers(a), openers(b)), ([], []))
+        # the sending window (owner, 2026-10-12): the page names the window approving aims at, never a minute
+        check("  each says the 10:00-10:30 on its recipient's clock that approving aims at, and why that zone",
+              all(x["window"]["enabled"] and "10:00-10:30" in x["window"]["window_label"] and x["window"]["send_tz_reason"]
+                  and "schedule" not in x for x in j["ready"]), True)
         r = call("POST", "/api/outreach/compose/check", cookies=as_writer, json={"ids": [a], "body": "Hi {{last_name}}"})
         check("  an unknown field is caught while writing", (r.status_code, "{{last_name}}" in r.json()["detail"]), (400, True))
 
@@ -200,6 +206,12 @@ def main_():
         j = r.json()
         check("approved: one email for each of the two", (r.status_code, j["approved"]), (200, 2))
         check("  sent on at once (the scheduler's kick)", kicks[-1:], [(slug, "manual")])
+        check("  each drew its own second in its recipient's window on approval, in the page's words",
+              all(x.get("schedule") and x["schedule"]["send_label"] and x["schedule"]["send_tz"] for x in j["ready"]), True)
+        cur.execute("select count(*) from outreach where entity_id = any(%s::uuid[]) and direction = 'outbound'"
+                    " and status = 'approved' and send_after is not null and send_after < send_before"
+                    " and send_after > now()", ([a, b],))
+        check("  and keeps it on the email (send_after, sql/34), in the future", cur.fetchone()[0], 2)
         oa = openers(a)
         check("  one approved email for the To review lead, written here", [(o[0], o[1], o[2]) for o in oa],
               [("approved", "compose", writer)])
@@ -218,6 +230,7 @@ def main_():
               sorted(x["entity_id"] for x in r.json()["rows"]), sorted([a, b, f]))
         msg = [x for x in r.json()["rows"] if x["entity_id"] == a][0]
         check("  and say how they were approved", (msg["approval_mode"], msg["approved_by_name"]), ("compose", "Asha Rao"))
+        check("  and when each goes out, for the Goes out column", bool(msg.get("schedule") and msg["schedule"]["send_short"]), True)
 
         print("\n-- once only")
         r = call("POST", "/api/outreach/compose", cookies=as_writer, json=good)
@@ -232,6 +245,7 @@ def main_():
         r = call("GET", "/api/segment", cookies=as_writer)
         pol = r.json()["outreach_policy"]
         check("compose on, no Drafts folder (nothing is drafted)", (pol["compose"], pol["drafts"]), (True, False))
+        check("  its sending window, for the page's words", (pol["send_window"] or {}).get("start"), "10:00")
         check("  the Outreach page is not hidden", "outreach" in r.json()["ui"].get("hide_routes", []), False)
         r = call("GET", "/api/segment", cookies=tvf)
         pol = r.json()["outreach_policy"]
