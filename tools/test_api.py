@@ -239,6 +239,12 @@ def main_():
                  json={"action": "approve"})
         check("  nor approve an email that way", r.status_code, 401)
         check("the login page is public", call("GET", "/login").status_code, 200)
+        r = call("GET", "/privacy")
+        check("the privacy policy is public (Google's consent screen links to it), and self-contained",
+              (r.status_code, "Limited Use" in r.text, 'src="app.js"' in r.text or 'href="style.css"' in r.text),
+              (200, True, False))
+        check("  but only that page: its file under /static stays behind the wall",
+              call("GET", "/privacy.html").status_code, 302)
         check("health is public and says ok", (call("GET", "/api/health").status_code,
                                                call("GET", "/api/health").json()), (200, {"ok": True}))
         check("auth state: set up, not signed in", call("GET", "/api/auth/state").json(),

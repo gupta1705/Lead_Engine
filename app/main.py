@@ -58,6 +58,7 @@ app = FastAPI(title="TVF Lead Engine", docs_url=None, redoc_url=None, openapi_ur
 # the public side of this wall.
 AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup",
                "/api/health",
+               "/privacy",                     # what Google's consent screen links to (static/privacy.html)
                "/api/mailboxes/server-key")   # a public key, for the owner's laptop (app/mailbox_connect.py)
 # what a person still on a starting password may call: the screen that replaces it
 MUST_CHANGE_OK = ("/api/auth/state", "/api/auth/password", "/api/auth/profile", "/api/auth/logout",
@@ -1789,6 +1790,15 @@ def schedule_run_now(pipeline: str, segment: str = Depends(current_segment)):
                      daemon=True).start()
     return {"ok": True, "pipeline": pipeline, "segment": segment}
 
+
+
+@app.get("/privacy")
+def privacy_page():
+    # public: Google's consent screen for connecting a Gmail links here (owner, 2026-10-14). Self-contained,
+    # like the login page, so nothing else needs to be on the public side of the wall.
+    from fastapi.responses import HTMLResponse
+    html = io.open(os.path.join(HERE, "static", "privacy.html"), encoding="utf-8").read()
+    return HTMLResponse(html)
 
 
 @app.get("/login")

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Privacy policy — TVF Lead Engine</title>
+<style>
+/* Self-contained on purpose, like login.html: this page sits OUTSIDE the auth wall (Google's consent screen
+   links to it, 2026-10-14), so it must not pull the app's assets with it. Tokens mirror style.css. */
+:root {
+  color-scheme: light;
+  --canvas: #F1F2F5; --surface: #FFFFFF; --text: #101828; --subtle: #475467; --border: #E4E7EC; --brand: #4F46E5;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; --canvas: #08090C; --surface: #14161B; --text: #F0F1F3; --subtle: #B9BEC7;
+          --border: #FFFFFF14; --brand: #818CF8; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--text); font: 15px/1.6 var(--font); }
+main { max-width: 720px; margin: 40px auto; padding: 32px; background: var(--surface); border: 1px solid var(--border);
+       border-radius: 16px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0 0 4px; }
+h2 { font-size: 17px; margin: 28px 0 6px; }
+p, li { color: var(--subtle); }
+ul { padding-left: 20px; }
+a { color: var(--brand); }
+.updated { margin: 0 0 20px; font-size: 13px; }
+@media (max-width: 760px) { main { margin: 16px; padding: 20px; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Privacy policy</h1>
+<p class="updated">TVF Lead Engine · last updated 14 October 2026</p>
+
+<p>TVF Lead Engine is an internal tool that The Viral Fever (TVF) and its LCX team use to find companies, write
+business emails to them and send the emails a team member has approved. Only people TVF has given a login can use
+it. This page explains what the tool does with a team member's Google account when they connect their Gmail.</p>
+
+<h2>What connecting your Gmail allows</h2>
+<p>When you connect your Gmail (account menu, Your Gmail), Google asks you to allow the tool to read, compose and
+send email for that one address. The tool uses that permission only to:</p>
+<ul>
+  <li>send, from your address, the emails you have approved in the tool;</li>
+  <li>read the replies in the threads of those emails, so the team can see who answered;</li>
+  <li>read your Gmail address, so the emails you approve go out from the right account.</li>
+</ul>
+<p>It does not read, keep or use any other email in your mailbox.</p>
+
+<h2>What is stored</h2>
+<ul>
+  <li>Google's sign-in for your address, kept encrypted, so the tool can send without asking you to sign in each
+      time. Your Google password is never seen or kept.</li>
+  <li>The emails sent through the tool and the replies to them (addresses, subject, text and dates), as the team's
+      record of who was contacted and what they said.</li>
+</ul>
+
+<h2>Who else handles it</h2>
+<ul>
+  <li>The tool runs on Render and keeps its records in a Supabase database.</li>
+  <li>The text of a reply may be passed to Anthropic's Claude API only to sort it as interested, not interested or
+      an automatic reply.</li>
+</ul>
+<p>Gmail data is not sold, not shared for advertising and not used to train AI models. The tool's use of
+information received from Google APIs follows the
+<a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+including its Limited Use requirements.</p>
+
+<h2>Disconnecting</h2>
+<p>You can disconnect at any time from the tool (account menu, Your Gmail, Disconnect), which deletes the stored
+sign-in and withdraws Google's permission, or from your Google account's security settings. Emails already sent stay
+in the team's records.</p>
+
+<h2>Questions</h2>
+<p>Ask the TVF team member who gave you your login, or write to the support address shown on Google's sign-in
+screen for this app.</p>
+</main>
+</body>
+</html>
