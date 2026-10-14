@@ -69,6 +69,15 @@ sent once approved. Nothing between them needs a button.
 3. A draft you do not want sent: reject the lead. Its draft (or approved
    email) is withdrawn at once; there is no Cancel draft (2026-09-19).
 
+Since 2026-10-13 (the owner): no footer has an opt-out line, every subject is
+at most five words (Universal's written subjects aside), and approval refuses a
+stored subject over that. LCX Services, LCX Clipping, US Production Houses and
+Universal emails are signed with the approver's own name and title, so set yours under *Your name
+and title* in the account menu before approving. LCX Services drafts pitch one
+service each (the Leads and Board tabs); drafts written before 2026-10-13 in
+the old style (LCX Services v2, LCX Clipping with `SET_ME`, US Production
+Houses "From TVF in India") are refused at approval until they are re-drafted.
+
 ### LCX clipping differs in two ways
 
 - **Batch approval.** In Drafts, tick the drafts (the header box takes the

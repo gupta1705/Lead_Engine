@@ -163,9 +163,10 @@ def main_():
         check("  an email from us already: skipped", reasons.get(f), "it already has an email from us (approved)")
         check("  a second company of the same name: skipped", reasons.get(g2), "a company of the same name already has a first email from us")
         check("  another project's lead: skipped", reasons.get(x), "not a lead of this project")
-        check("  the footer is the writer's own sign-off without a postal address",
+        # 2026-10-13, the owner: the opt-out line left every project's footer
+        check("  the footer is the writer's own sign-off, no postal address, no opt-out line",
               (j["footer"].startswith("Warm regards,\nAsha Rao\nPartnerships"), "Contagious Online Media" in j["footer"],
-               "no thanks" in j["footer"]), (True, False, True))
+               "no thanks" in j["footer"]), (True, False, False))
         check("  and what approving will do: no Gmail linked to them yet", (j["can_send"], j["mailboxes"]), (False, []))
         check("  asking changed nothing: the To review lead is still in To review", status_of(a), "ready_for_review")
         check("  and nothing was written", (openers(a), openers(b)), ([], []))
@@ -220,9 +221,9 @@ def main_():
         cur.execute("select name from entities where id = %s", (a,))
         aname = cur.fetchone()[0]
         check("  its subject, filled in", subj, "Hello from TVF, %s" % aname)
-        check("  its body greets Elena and ends with Asha's sign-off and opt-out",
+        check("  its body greets Elena and ends with Asha's sign-off, no opt-out line",
               (body.startswith("Hi Elena,\n\nWe make shows in India, and %s's work caught our eye." % aname),
-               body.endswith("you won't hear from me again."), "\nAsha Rao\nPartnerships\n" in body), (True, True, True))
+               body.rstrip().endswith("\nAsha Rao\nPartnerships"), "hear from me again" in body), (True, True, False))
         ob = openers(b)
         check("  the shared inbox reads 'Hi there,'", ob[0][4].startswith("Hi there,"), True)
         r = call("GET", "/api/outreach?folder=outbox", cookies=as_writer)

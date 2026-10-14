@@ -2805,8 +2805,9 @@ values (
     "sender": {
       "name": "LCX",
       "title": "Business Development",
+      "company": "LCX",
       "postal_address": "Contagious Online Media Network Pvt Ltd. 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
-      "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
+      "guidance": "Sender name, title and company for the shared sign-off. The company is the project''s own (LCX), so one personal profile title works in every project and the company is never written into a person''s title (the owner''s review, 2026-10-13, point 10: no short-form titles in the sign-off). Whoever approves an email signs it with their own name and title (send_from approver); name LCX and title Business Development are the canonical form a draft is stored in. The address is retained as an optional footer field and omitted from the email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
     },
     "send_window": {
       "enabled": true,
@@ -2820,9 +2821,18 @@ values (
       "min_lead_seconds": 120,
       "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". A lead that names no place at all goes at New York''s 10:00 (fallback_timezone): LCX Services pitches American and British companies first."
     },
+    "subject_max_words": 5,
+    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted.",
     "footer": {
-      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
+      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}, {{sender_company}}",
+      "guidance": "The owner''s review, 2026-10-13, point 10: the title line reads \"<title>, LCX\" with the company from sender.company. The owner, 2026-10-13: the opt-out line is removed from every project''s footer (\"remove the last line from every single service\"); any reply that is not neutral still stops all mail to that address. No postal address (owner, 2026-10-09). Edited in Outreach -> Footer; templates end with {{footer}}."
+    },
+    "greeting": {
+      "named": "Hello {{first_name}},\n\nI trust you are well.",
+      "unnamed": "Hello,",
+      "follow_up_named": "Hello {{first_name}},",
+      "follow_up_unnamed": "Hello,",
+      "guidance": "The owner''s review, 2026-10-13, point 8: never \"Hi there\". {{greeting_line}} (an opener) is \"Hello <first name>,\" and \"I trust you are well.\" when a person is named (tools/draft_render.greeting_person: the contact''s own first name, never a show or company name), else \"Hello,\". {{greeting}} (a follow-up) is the first line alone. {{first_name}} is the only field these lines take. greeting_fallback stays for the drafts written with v1 and v2."
     },
     "greeting_fallback": "there",
     "hook_style": "lcx_services",
@@ -2830,13 +2840,13 @@ values (
       "enabled": true,
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
-      "opener_words": [
-        10,
-        40
+      "problem_words": [
+        14,
+        30
       ],
-      "pitch_words": [
-        15,
-        55
+      "solution_words": [
+        18,
+        40
       ],
       "max_calls_per_run": 200,
       "requests_per_minute": 3,
@@ -2885,9 +2895,150 @@ values (
         "AI Fashion Stylist": "An AI mirror near changing rooms that completes the look from store stock.",
         "AI Onboarding Employee": "A digital trainer that teaches, tests and scores new hires across 10 to 15 parameters."
       },
-      "guidance": "The owner, 2026-10-08: \"make a email structure for me that groq will follow\". The model (Groq, no retention, as for US Production Houses) writes v2''s opener and pitch from tools/draft_render.lcxs_facts(): the company''s audience, its own site''s title, description and about page (only when tools/lcx_judge.py found the site readable and theirs), a reason to buy now (an Apollo hiring or funding signal still counted in buying_trigger), the content accounts its site links to, and the services its audience is pitched first with service_lines (the deck''s own words). Every capitalised word and number it writes must be in those facts; it names only services it was given, exactly; it never names the company (the owner''s line does) nor the person; no claims about LCX beyond service_lines, no links, no sales or praise words; opener_words and pitch_words are the ranges. A rejected answer gets one retry, told why; then the opener is left out and the pitch is the plain one. default_pitch: for a lead saved by hand with no audience. Three requests a minute keeps inside Groq''s free plan. enabled false: every draft is the plain v2, with no model call."
+      "service_copy": {
+        "Reel Forge": {
+          "subject": "One video, many reels",
+          "problem": "Most long-form videos get their attention in the week they are released, and then sit in the archive.",
+          "solution": "Reel Forge cuts long form videos into reels and distributes them across 5 to 10 Instagram pages, turning work you already own into a new format that reaches more people."
+        },
+        "Airbnb / Property Content": {
+          "subject": "Your property photos, in motion",
+          "problem": "Most rooms and homes are still chosen from photos, which show the space but not what it feels like to be there.",
+          "solution": "Airbnb / Property Content turns the property photos you already have into cinematic reels, carousels and home tours."
+        },
+        "AI VFX + Animation": {
+          "subject": "Bigger scenes, same footage",
+          "problem": "Ambitious scenes are often cut at the budget stage, because the location, the set or the effects cost more than the production can carry.",
+          "solution": "AI VFX + Animation makes the footage you have already shot cinematic, with AI environments and effects added afterwards."
+        },
+        "Audiobooks and Audio Web Shows": {
+          "subject": "Your backlist, as audio shows",
+          "problem": "Many titles on a publisher''s list never get an audio edition, because a full production is hard to justify one book at a time.",
+          "solution": "With Audiobooks and Audio Web Shows, we adapt books into audio shows, and the writers keep the rights and the revenue."
+        },
+        "AI Video for Brands": {
+          "subject": "Campaign videos without the shoot",
+          "problem": "Every launch and campaign needs new video, and each one usually means booking another shoot.",
+          "solution": "AI Video for Brands produces product, ad and campaign videos without separate shoots.",
+          "by_audience": {
+            "studios_agencies": {
+              "problem": "Every client campaign needs new video, and each one usually means booking another shoot."
+            }
+          }
+        },
+        "AI Real Estate Visualisation": {
+          "subject": "Walkthroughs before the first brick",
+          "problem": "Selling before construction means asking buyers to commit to a home they can only picture from drawings and floor plans.",
+          "solution": "AI Real Estate Visualisation turns your blueprints into realistic visuals and walkthroughs, so buyers can see the home before construction starts."
+        },
+        "Explainer Videos": {
+          "subject": "One video, fewer questions",
+          "problem": "When a product or service takes a conversation to explain, every new customer, recruit and partner needs that same conversation.",
+          "solution": "With Explainer Videos, complex products, services and concepts are explained visually, so the explanation is made once and can be shared wherever it is needed.",
+          "by_audience": {
+            "financial_services": {
+              "problem": "Insurance and financial products usually take a conversation to explain, and every new customer needs that same conversation."
+            }
+          }
+        },
+        "Shop Display Videos": {
+          "subject": "What''s on your store screens?",
+          "problem": "In-store screens often play the same loop for months, while the products and offers around them keep changing.",
+          "solution": "With Shop Display Videos, your store screens show content made for your current collections, offers and promotions."
+        },
+        "AI UGC Product Videos": {
+          "subject": "Your brand''s own AI creator",
+          "problem": "Keeping a brand page supplied with regular product content usually depends on creators being available.",
+          "solution": "With AI UGC Product Videos, AI influencers create recurring product content on your brand''s own page."
+        },
+        "AI Podcasts / Audio Content": {
+          "subject": "Your products, as a conversation",
+          "problem": "Many products need more explaining than an advert or a brochure has room for.",
+          "solution": "AI Podcasts / Audio Content creates conversations between AI characters about your products and your brand, in a format customers can listen to.",
+          "by_audience": {
+            "financial_services": {
+              "problem": "Financial products usually need more explaining than an advert or a brochure has room for.",
+              "solution": "AI Podcasts / Audio Content creates conversations between AI characters about your products and financial services, in a format customers can listen to."
+            }
+          }
+        },
+        "Virtual Tours for Schools": {
+          "subject": "Field trips without the bus",
+          "problem": "The places a syllabus covers, from space and the ocean to ancient civilisations, are ones a school trip can rarely reach.",
+          "solution": "With Virtual Tours for Schools, your students go on virtual field trips to space, the ocean, ancient civilisations and landmarks, from the classroom."
+        },
+        "AI Reality Experiences": {
+          "subject": "A new reason to visit",
+          "problem": "Giving visitors a reason to come back, or to bring friends next time, usually means adding something new to experience.",
+          "solution": "With AI Reality Experiences, we build immersive VR experiences and games for your visitors, without the cost of a new physical build."
+        },
+        "Creator × Brand Marketplace": {
+          "subject": "Finding the right micro influencers",
+          "problem": "Finding nano and micro influencers who suit a brand often takes longer than running the campaign itself.",
+          "solution": "Creator × Brand Marketplace is a platform where you can discover nano and micro influencers and run campaigns with them."
+        },
+        "Local Business Tech and Automation": {
+          "subject": "Less admin behind the counter",
+          "problem": "In many cafes, salons and gyms, bookings, billing and follow ups sit in different places, and some get missed.",
+          "solution": "Local Business Tech and Automation sets up billing, bookings, WhatsApp follow ups and dashboards for your business."
+        },
+        "AI Business Assistant": {
+          "subject": "Ask your business a question",
+          "problem": "Getting a straight answer on today''s sales, open tasks or stock usually means waiting for a report or asking someone to pull the numbers.",
+          "solution": "AI Business Assistant gives you on demand answers on sales, tasks and inventory."
+        },
+        "AI Simulations for Training": {
+          "subject": "Rehearse before the real customer",
+          "problem": "New sales and service staff usually learn the difficult conversations on real customers, because there is nowhere safe to practise first.",
+          "solution": "With AI Simulations for Training, your sales and customer facing teams work through real world scenarios that test and score them before they meet a customer."
+        },
+        "AI Fashion Stylist": {
+          "subject": "A mirror that completes outfits",
+          "problem": "In the changing room a shopper is usually deciding on one piece, while the rest of the outfit stays on the shop floor.",
+          "solution": "AI Fashion Stylist is an AI mirror near your changing rooms that completes the look from your own store stock."
+        },
+        "AI Onboarding Employee": {
+          "subject": "The same training, every hire",
+          "problem": "Every new hire needs the same induction, and how well each one is trained often depends on who had the time to train them.",
+          "solution": "AI Onboarding Employee is a digital trainer that teaches, tests and scores your new hires across 10 to 15 parameters, so every new joiner gets the same induction."
+        }
+      },
+      "signal_problems": {
+        "hiring for training and onboarding now": {
+          "AI Onboarding Employee": "Adding to a training team usually means more new joiners to induct, with the same material taught again to each one."
+        },
+        "hiring sales and service staff now": {
+          "AI Simulations for Training": "As a sales and service team grows, new people usually learn the difficult conversations on real customers, because there is nowhere safe to practise first."
+        },
+        "hiring store staff now": {
+          "AI Onboarding Employee": "Taking on store staff usually means the same induction delivered again in every shop, by whoever has time that week."
+        },
+        "hiring for content and video now": {
+          "AI Video for Brands": "Adding people to a content and social team usually means the plan calls for more video than one team can shoot.",
+          "Reel Forge": "Adding people to a content and social team usually means the plan calls for more video than one team can shoot.",
+          "Explainer Videos": "Adding people to a content and social team usually means the plan calls for more video than one team can shoot."
+        }
+      },
+      "reason_phrases": {
+        "hiring for training and onboarding now": "is adding trainers and onboarding staff",
+        "hiring sales and service staff now": "is taking on new sales and customer service people",
+        "hiring store staff now": "is taking on new store staff",
+        "hiring for content and video now": "is adding people to its content and social team"
+      },
+      "about_page_junk": "opening (hours|times)|hours of operation|open (daily|today)|terms (and|&) conditions|cookies?|privacy policy|(select|choose) (your|a) (region|country|location)|discount|promo(tion(al)?)? codes?|coupons?|vouchers?|free (delivery|shipping)|disclaimer|gift guides?",
+      "guidance": "The owner''s review of the LCX Services emails, 2026-10-13 (template lcx_services_problem_v3): problem first, then the solution, then who we are, then one small ask; ONE service per email, the lead''s lead service (lead_service below, tagged by tools/lcx_judge.py). service_copy holds, for each of the 18 services in the deck''s order, its subject (at most five words, with a hook, never the company''s name, never \"18 things\"), the fixed problem line and the fixed solution line, with by_audience variants where the buyer reads differently (banks, studios). A signal_problems line replaces a service''s problem only while its Apollo hiring signal is fresh (scoring_inputs.buying_trigger above 0 and the judge''s trigger evidence is the signal itself); raising money is a reason to write, never a problem, and the email never mentions it. The model (Groq, no retention) writes {{problem}} (problem_words) and {{solution}} (solution_words) for the one service from tools/draft_render.lcxs_facts v3: the audience label, the company''s own site words when tools/lcx_judge.py found the site readable and theirs (an about page that is opening hours, terms, cookies, region pickers, codes, delivery offers, disclaimers or gift guides is left out: about_page_junk), the fresh signal as a reason_phrases phrase (never Apollo''s wording), the accounts it posts on, and the service with its deck line (service_lines) and its problem hint. It is called only when there is something of theirs to write from (own words or a fresh signal); otherwise, and when it fails twice, both lines come from service_copy word for word. Its leash is tools/llm.py LCXS_SYSTEM v3 and check_lcxs: no metrics about them, no names, no dash of any kind, the service named exactly once, no other service, no number that is not in the deck line. An answer of no_fit holds the draft as Check service. default_pitch is kept for the v2 drafts'' plain pitch. Three requests a minute keeps inside Groq''s free plan. enabled false: every draft takes the fixed lines."
     },
     "templates": [
+      {
+        "key": "lcx_services_problem_v3",
+        "subject": "{{service_subject}}",
+        "body": "{{greeting_line}}\n\n{{problem}}\n\n{{solution}}\n\nI''m writing from LCX, where we repurpose what a business already owns, create new content and experiences with AI, and build the tools teams use every day. Our services deck is attached.\n\nWould it be useful if I sent you a few examples, along with a short note on how this could work for {{company}}?\n\n{{footer}}",
+        "attachments": [
+          "docs/decks/LCX Services - pitch deck.pdf"
+        ],
+        "guidance": "The owner''s review of the LCX Services emails, 2026-10-13 (points 1, 4, 6 to 12). Problem first: the subject is the lead service''s own (service_copy, at most five words with a hook); the greeting is \"Hello <first name>,\" with \"I trust you are well.\" or \"Hello,\" (outreach.greeting); {{problem}} and {{solution}} are the two lines for the ONE lead service, written by the model (generated_pitch) or, when it is not called or fails twice, service_copy''s fixed lines word for word; then who we are, in the deck''s own words, with the deck attached; then one small ask; then the footer. {{company}} is the company as a person writes it, with any tagline cut off, or \"your team\" when that is still over 40 characters or six words. Nothing recites their metrics, no dash of any kind is sent (tools/draft_render cleans every inserted value and the whole email), and \"We work in three areas\", \"If one fits, reply with its name\", \"I''d start with\" and \"18 things LCX can do\" are gone. A lead the rules call not a buyer is never drafted; one held (Check service: a studio that sells what we would pitch, an answer of no_fit, a service picked only from its audience with nothing to confirm it) or found by Apollo with no site read (Read site first) is skipped and named in the draft log. The outreach row records the service it pitched (outreach.service, sql/35).",
+        "subject_fallback": "An idea for your business"
+      },
       {
         "key": "lcx_services_deck_v2",
         "subject": "18 things LCX can do for {{company}}",
@@ -2895,7 +3046,8 @@ values (
         "attachments": [
           "docs/decks/LCX Services - pitch deck.pdf"
         ],
-        "guidance": "The owner, 2026-10-08: \"make a email structure for me that groq will follow\". Five parts, top to bottom: (1) the greeting, as v1; (2) {{opener_block}}: ONE sentence the model writes about the company from what its own site says, a reason to buy now and the content accounts it runs, left out when there is nothing of theirs on record or the answer fails a check; (3) the owner''s own lines from v1, word for word, with the deck attached; (4) {{pitch}}: one or two sentences the model writes naming two (at most three) of the services this lead''s audience is pitched first, exactly as the deck names them, with what each would do for them -- or, when no model writes it, \"I''d start with <first> and <second>.\"; (5) the owner''s close and the footer, as v1. The subject is v1''s. The model''s leash is generated_pitch''s (tools/llm.py LCXS_SYSTEM). A draft with model-written text is approved one at a time unless batch_approval.allow_generated says otherwise."
+        "guidance": "The owner, 2026-10-08: \"make a email structure for me that groq will follow\". Five parts, top to bottom: (1) the greeting, as v1; (2) {{opener_block}}: ONE sentence the model writes about the company from what its own site says, a reason to buy now and the content accounts it runs, left out when there is nothing of theirs on record or the answer fails a check; (3) the owner''s own lines from v1, word for word, with the deck attached; (4) {{pitch}}: one or two sentences the model writes naming two (at most three) of the services this lead''s audience is pitched first, exactly as the deck names them, with what each would do for them -- or, when no model writes it, \"I''d start with <first> and <second>.\"; (5) the owner''s close and the footer, as v1. The subject is v1''s. The model''s leash is generated_pitch''s (tools/llm.py LCXS_SYSTEM). A draft with model-written text is approved one at a time unless batch_approval.allow_generated says otherwise. Kept for the drafts written with it from 2026-10-08 to 2026-10-13; new drafts use v3, which the draft step picks first (the owner''s review, 2026-10-13).",
+        "subject_fallback": "An idea for your business"
       },
       {
         "key": "lcx_services_deck_v1",
@@ -2904,7 +3056,8 @@ values (
         "attachments": [
           "docs/decks/LCX Services - pitch deck.pdf"
         ],
-        "guidance": "The owner''s choice, 2026-10-06: a short email with the services deck attached as a PDF, in the wording the owner approved. {{greeting_name}} is the person''s first name when one is known, else ''there''. The deck in attachments goes with every email from this template; the sender checks it is the same file that was drafted and approved, and holds the email back if it changed. Kept for the drafts written with it before 2026-10-08; new drafts use v2, which the draft step picks first."
+        "guidance": "The owner''s choice, 2026-10-06: a short email with the services deck attached as a PDF, in the wording the owner approved. {{greeting_name}} is the person''s first name when one is known, else ''there''. The deck in attachments goes with every email from this template; the sender checks it is the same file that was drafted and approved, and holds the email back if it changed. Kept for the drafts written with it before 2026-10-08; new drafts use v3, which the draft step picks first (v2 is kept for the drafts of 2026-10-08 to 2026-10-13).",
+        "subject_fallback": "An idea for your business"
       }
     ],
     "batch_approval": {
@@ -2914,9 +3067,9 @@ values (
       "max_batch": 100,
       "allow_generated": false,
       "generated_sample_fraction": 0.25,
-      "guidance": "Every draft here comes from one template with no model-written sentence, so they may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company, the deck present). Since 2026-10-08 v2''s opener and pitch are written by a model, so those drafts are approved one at a time (allow_generated false); a draft the model did not write (the plain pitch) can still go in a batch."
+      "guidance": "Drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company, the deck present). A v3 draft whose problem and solution lines a model wrote is approved one at a time (allow_generated false); one that uses service_copy''s fixed lines (no model) can still go in a batch, since a sample of them stands for the rest."
     },
-    "guidance": "The owner, 2026-10-06: one email offering every LCX service, with the services deck attached, to the businesses the weekly harvest finds. Like US Production Houses: a shortlisted lead with an address is drafted by itself from the one template, a person approves it (one at a time, or a spot-checked batch), and it goes from that person''s own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address''s daily limit, which it shares with every other project. One first email per company and per inbox; no follow-ups. Not paused: the owner chose ''send once approved''. Replies land in Outreach -> Replies."
+    "guidance": "The owner, 2026-10-06: one email with the services deck attached, to the businesses the weekly harvest finds; since the owner''s review of 2026-10-13, that email pitches ONE service, the lead''s lead service, problem first (template lcx_services_problem_v3). Like US Production Houses: a shortlisted lead with an address is drafted by itself, a person approves it (one at a time, or a spot-checked batch), and it goes from that person''s own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address''s daily limit, which it shares with every other project. One first email per company and per inbox; no follow-ups. Not paused: the owner chose ''send once approved''. Replies land in Outreach -> Replies. The service an email pitched is recorded on its outreach row (outreach.service), a record of what was sold to whom."
   },
   "apollo": {
     "per_page": 25,
@@ -3405,6 +3558,660 @@ values (
     "assets_min_thousands": 1000000,
     "assets_max_thousands": 20000000,
     "guidance": "Every insured US bank, from the FDIC''s public BankFind API (public domain, no key; 4,223 active on 2026-10-07, nearly all with their own website). Banks of $1 to 20 billion in assets are the right size: a marketing team of their own, no procurement maze; about 940 of them. Up to discovery.fdic.max_new_per_run a week, largest first, until they are all in."
+  },
+  "lead_service": {
+    "patterns": {
+      "fashion": "\\b(fashion|apparel|cloth(ing|es)|womenswear|menswear|kidswear|denim|dress(es)?|lingerie|sarees?|ethnic wear|bridal|footwear|shoes|sneakers)\\b",
+      "stores": "\\bstores?\\b|boutiques?|showrooms?|visit us|in[- ]store|find a store|store locator|outlets?|branches"
+    },
+    "not_a_buyer": {
+      "wrong_buyer_at_least": 1.0,
+      "names": [
+        {
+          "kind": "retailers",
+          "label": "a racing team, not a retailer",
+          "name": "\\bF1\\b|Formula ?1|\\bRacing\\b|Motorsport"
+        },
+        {
+          "kind": "real_estate",
+          "label": "a law or investment firm, not a property company",
+          "name": "\\bLLP\\b|solicitors|law firm|asset managers?|alternate asset|wealth management"
+        }
+      ]
+    },
+    "online_only": {
+      "classes": "online shop|online retailer|e-?commerce|mail order",
+      "text": "\\bonline (retail )?(store|shop|retailer)\\b",
+      "physical_text": "our stores|visit (us|our)|store locator|find a store|showrooms?|branches|in[- ]store"
+    },
+    "rules": [
+      {
+        "id": "signal_training",
+        "service": "AI Onboarding Employee",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring for training and onboarding now"
+          ]
+        },
+        "reason": "Hiring trainers and onboarding staff"
+      },
+      {
+        "id": "signal_frontline",
+        "service": "AI Simulations for Training",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring sales and service staff now"
+          ]
+        },
+        "reason": "Hiring sales and service staff"
+      },
+      {
+        "id": "signal_store_fashion",
+        "service": "AI Fashion Stylist",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring store staff now"
+          ],
+          "text": "@fashion"
+        },
+        "reason": "A fashion retailer hiring store staff"
+      },
+      {
+        "id": "signal_store",
+        "service": "AI Onboarding Employee",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring store staff now"
+          ]
+        },
+        "reason": "Hiring store staff: many new hires to train"
+      },
+      {
+        "id": "signal_content_brand",
+        "service": "AI Video for Brands",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring for content and video now"
+          ],
+          "kind": [
+            "consumer_brands",
+            "retailers",
+            "local_retail"
+          ]
+        },
+        "reason": "A brand hiring content and video people"
+      },
+      {
+        "id": "signal_content_studio",
+        "service": "Reel Forge",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring for content and video now"
+          ],
+          "kind": [
+            "studios_agencies"
+          ]
+        },
+        "reason": "A studio or agency hiring content and video people"
+      },
+      {
+        "id": "signal_content_other",
+        "service": "Explainer Videos",
+        "basis": "signal",
+        "when": {
+          "signal": [
+            "hiring for content and video now"
+          ]
+        },
+        "reason": "Hiring content and video people"
+      },
+      {
+        "id": "book_publisher",
+        "service": "Audiobooks and Audio Web Shows",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "classes": "book publisher|small press|university press"
+            },
+            {
+              "classes": "publishing house",
+              "text": "\\bbooks?\\b|novels?|authors?|imprints?|manga|comics?"
+            },
+            {
+              "kind": [
+                "publishers"
+              ],
+              "text": "\\bbooks?\\b|novels?|\\btitles\\b|authors?|imprints?|manga|comics?"
+            }
+          ],
+          "not_classes": "open-access publisher|academic publisher",
+          "not_text": "\\bjournals?\\b|peer[- ]review|\\bsoftware\\b|chat ?bots?|\\bsaas\\b|board ?games?"
+        },
+        "reason": "Publishes books",
+        "guidance": "2026-10-13 review: the bare Wikidata class \"publishing house\" also sits on Tidio (chat software) and Czech Games Edition (board games), which were sold Audiobooks; it now needs book words on the site, and software or board games rule it out."
+      },
+      {
+        "id": "developer_offplan",
+        "service": "AI Real Estate Visualisation",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "real_estate"
+          ],
+          "text": "off[- ]?plan|under construction|pre[- ]?launch|new launch|upcoming (projects?|launch|developments?)|coming soon|master[- ]?planned|townships?|possession|\\brera\\b|sales gallery|show ?(home|flat|apartment)s?|floor ?plans?"
+        },
+        "reason": "Sells homes before they are built"
+      },
+      {
+        "id": "listings",
+        "service": "Airbnb / Property Content",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "osm": [
+                "office=estate_agent"
+              ]
+            },
+            {
+              "kind": [
+                "real_estate"
+              ],
+              "text": "vacation rentals?|holiday (homes|lets|rentals)|short[- ]?(stay|let)s?|serviced apartments|airbnb|to let\\b|lettings|for rent|rentals?\\b|listings?|estate agen(t|ts|cy)|realtors?|brokerage|property management|homes for sale"
+            },
+            {
+              "kind": [
+                "real_estate"
+              ],
+              "name": "realty|realtors?|brokers?|brokerage|estate agents?|lettings|rentals?"
+            },
+            {
+              "kind": [
+                "hospitality"
+              ],
+              "text": "vacation rentals?|holiday (homes|lets|rentals)|short[- ]?(stay|let)s?|serviced apartments|airbnb|villas?|cottages?|cabins?|guest ?house|bed (and|&) breakfast"
+            }
+          ]
+        },
+        "reason": "Markets rooms or property listings"
+      },
+      {
+        "id": "fashion_stores",
+        "service": "AI Fashion Stylist",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "osm": [
+                "shop=clothes",
+                "shop=boutique"
+              ]
+            },
+            {
+              "classes": "clothing store chain|department store chain|fashion house"
+            },
+            {
+              "kind": [
+                "retailers",
+                "local_retail",
+                "consumer_brands"
+              ],
+              "text": "@fashion",
+              "text2": "@stores"
+            }
+          ]
+        },
+        "reason": "Sells clothes in its own stores"
+      },
+      {
+        "id": "vfx_house",
+        "service": null,
+        "basis": "hold",
+        "when": {
+          "kind": [
+            "studios_agencies"
+          ],
+          "any": [
+            {
+              "classes": "visual effects|post-production"
+            },
+            {
+              "text": "vfx|visual effects|post[- ]?production|cgi"
+            }
+          ]
+        },
+        "reason": "Sells visual effects itself: pick a service by hand"
+      },
+      {
+        "id": "longform_channel",
+        "service": "Reel Forge",
+        "basis": "fact",
+        "when": {
+          "socials": [
+            "youtube"
+          ],
+          "any": [
+            {
+              "kind": [
+                "studios_agencies"
+              ],
+              "not_classes": "advertising agency"
+            },
+            {
+              "classes": "film production|television production|media company|production company|film studio|podcast"
+            },
+            {
+              "text": "\\b(episodes?|podcasts?|web ?series|documentar(y|ies)|our shows?|full episodes?)\\b"
+            }
+          ]
+        },
+        "reason": "Runs a YouTube channel of long-form work"
+      },
+      {
+        "id": "animation_house",
+        "service": null,
+        "basis": "hold",
+        "when": {
+          "any": [
+            {
+              "classes": "animation studio|visual effects|post-production"
+            },
+            {
+              "kind": [
+                "studios_agencies"
+              ],
+              "text": "\\banimat(ion|ed)|\\bvfx\\b|visual effects|post[- ]?production|\\bcgi\\b|motion graphics"
+            }
+          ]
+        },
+        "reason": "Makes animation itself: pick a service by hand"
+      },
+      {
+        "id": "live_action_producer",
+        "service": "AI VFX + Animation",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "studios_agencies"
+          ],
+          "classes": "film production|television production|production company|film studio|television channel|broadcast"
+        },
+        "reason": "A film or TV producer whose footage AI effects can make bigger"
+      },
+      {
+        "id": "agency_ads",
+        "service": "AI Video for Brands",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "classes": "advertising agency"
+            },
+            {
+              "kind": [
+                "studios_agencies"
+              ],
+              "text": "advertising|ad agency|campaigns?|commercials?|branded content|creative agency"
+            }
+          ]
+        },
+        "reason": "Makes ads and campaigns for brands"
+      },
+      {
+        "id": "creator_program",
+        "service": "Creator × Brand Marketplace",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "consumer_brands",
+            "retailers",
+            "studios_agencies",
+            "local_retail"
+          ],
+          "text": "influencer marketing|influencers?|brand ambassadors?|ambassador program|creator (program|community|network)|affiliate program|ugc creators|micro[- ]influencers?"
+        },
+        "reason": "Already works with creators"
+      },
+      {
+        "id": "schools",
+        "service": "Virtual Tours for Schools",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "kind": [
+                "schools"
+              ]
+            },
+            {
+              "osm": [
+                "amenity=school"
+              ]
+            }
+          ]
+        },
+        "reason": "A school"
+      },
+      {
+        "id": "attraction",
+        "service": "AI Reality Experiences",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "kind": [
+                "attractions"
+              ]
+            },
+            {
+              "osm": [
+                "tourism=theme_park",
+                "tourism=museum"
+              ]
+            },
+            {
+              "classes": "amusement park|theme park|water park|museum|\\bzoo\\b|aquarium"
+            },
+            {
+              "kind": [
+                "hospitality"
+              ],
+              "text": "theme park|water ?park|adventure park|immersive|virtual reality|\\bvr\\b|escape rooms?|arcade"
+            }
+          ]
+        },
+        "reason": "Sells a day out or an experience"
+      },
+      {
+        "id": "local_tech",
+        "service": "Local Business Tech and Automation",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "kind": [
+                "local_business"
+              ]
+            },
+            {
+              "osm": [
+                "amenity=cafe",
+                "shop=hairdresser",
+                "shop=beauty",
+                "leisure=fitness_centre"
+              ]
+            }
+          ]
+        },
+        "reason": "An independent cafe, salon or gym"
+      },
+      {
+        "id": "shop_screens",
+        "service": "Shop Display Videos",
+        "basis": "fact",
+        "when": {
+          "any": [
+            {
+              "osm": [
+                "shop=jewelry",
+                "shop=shoes"
+              ]
+            },
+            {
+              "classes": "supermarket chain|hardware store chain|furniture store chain|retail chain|electronics store chain|gas station chain|chain store|department store|brick and mortar|grocery store|\\bshop\\b"
+            },
+            {
+              "kind": [
+                "retailers",
+                "local_retail"
+              ],
+              "text": "\\bstores?\\b|showrooms?|supermarkets?|outlets?|in[- ]store|visit (us|our)|branches|locations"
+            }
+          ]
+        },
+        "reason": "Sells from stores with screens to fill",
+        "skip_if": "online_only"
+      },
+      {
+        "id": "inventory_owner",
+        "service": "AI Business Assistant",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "consumer_brands",
+            "retailers",
+            "local_retail",
+            "hospitality",
+            "corporate_teams"
+          ],
+          "any": [
+            {
+              "industries": "wholesale|distribution"
+            },
+            {
+              "text": "\\bwholesal(e|er|ers)\\b|\\bdistribut(or|ors)\\b|cash and carry|stockists?|trade (customers|accounts)"
+            }
+          ]
+        },
+        "reason": "Runs on stock and orders"
+      },
+      {
+        "id": "insurer_fintech",
+        "service": "Explainer Videos",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "financial_services"
+          ],
+          "any": [
+            {
+              "classes": "insurance company|neobank"
+            },
+            {
+              "industries": "fintech|insurance"
+            },
+            {
+              "name": "insurance|assurance|insurer|\\blife\\b|annuit|fintech"
+            },
+            {
+              "text": "insurance company|insurer|annuit(y|ies)|policyholders|fintech|neobank"
+            }
+          ]
+        },
+        "reason": "An insurer or fintech: a product that needs explaining"
+      },
+      {
+        "id": "frontline_team",
+        "service": "AI Simulations for Training",
+        "basis": "fact",
+        "when": {
+          "text": "contact cent(er|re)s?|call cent(er|re)s?|customer (service|support|care) (team|centre|center)s?|field (sales|service) (team|engineers?)|sales (team|reps|representatives)|dealerships?|insurance agents?|financial advis(e|o)rs? (network|across)|branch network"
+        },
+        "reason": "Runs customer-facing teams"
+      },
+      {
+        "id": "big_workforce",
+        "service": "AI Onboarding Employee",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "corporate_teams",
+            "hospitality",
+            "retailers"
+          ],
+          "any": [
+            {
+              "text": "franchis(e|es|ees)|\\brestaurants\\b|\\bclinics\\b|\\bhospitals\\b|technicians|\\bdrivers\\b|frontline|workforce|team members|associates|colleagues|careers|join our team|we''?re hiring"
+            },
+            {
+              "kind": [
+                "corporate_teams",
+                "hospitality"
+              ],
+              "employees_min": 500
+            }
+          ]
+        },
+        "reason": "A large frontline workforce"
+      },
+      {
+        "id": "complex_product",
+        "service": "Explainer Videos",
+        "basis": "fact",
+        "when": {
+          "not_kind": [
+            "schools",
+            "local_business",
+            "local_retail",
+            "financial_services"
+          ],
+          "any": [
+            {
+              "not_kind": [
+                "consumer_brands",
+                "retailers"
+              ],
+              "industries": "software|information technology|fintech|pharmaceutical|health care|telecommunications|artificial intelligence|biotech|medical"
+            },
+            {
+              "classes": "software company|technology company|neobank"
+            },
+            {
+              "text": "\\bsoftware\\b|\\bsaas\\b|\\bapi\\b|fintech|how it works|medical devices?|diagnostics|\\bb2b\\b"
+            }
+          ]
+        },
+        "reason": "Sells something that needs explaining"
+      },
+      {
+        "id": "brand_social",
+        "service": "AI UGC Product Videos",
+        "basis": "fact",
+        "when": {
+          "kind": [
+            "consumer_brands"
+          ],
+          "any": [
+            {
+              "socials": [
+                "tiktok"
+              ]
+            },
+            {
+              "socials": [
+                "instagram"
+              ],
+              "text": "skin ?care|make-?up|cosmetics?|beauty|serums?|snacks?|supplements?|protein|candles?|pet (food|treats)|hair ?care|fragrances?|shop now|free shipping"
+            }
+          ]
+        },
+        "reason": "A product brand that already posts on Instagram or TikTok"
+      },
+      {
+        "id": "developer",
+        "service": "AI Real Estate Visualisation",
+        "basis": "type",
+        "when": {
+          "kind": [
+            "real_estate"
+          ],
+          "any": [
+            {
+              "apollo_key": [
+                "developers"
+              ]
+            },
+            {
+              "classes": "real estate developer|real estate company"
+            },
+            {
+              "industries": "real estate development|construction"
+            },
+            {
+              "name": "developers?|builders?|\\bhomes\\b|infra|promoters|constructions?|\\bland\\b|developments?"
+            }
+          ]
+        },
+        "reason": "A property developer"
+      },
+      {
+        "id": "hotel",
+        "service": "Airbnb / Property Content",
+        "basis": "type",
+        "when": {
+          "kind": [
+            "hospitality"
+          ],
+          "any": [
+            {
+              "apollo_key": [
+                "hotels"
+              ]
+            },
+            {
+              "classes": "hotel|resort|hostel"
+            },
+            {
+              "osm": [
+                "tourism=hotel",
+                "tourism=guest_house"
+              ]
+            },
+            {
+              "name": "hotels?|resorts?|\\binns?\\b|suites|hostels?|lodges?|\\bstays?\\b"
+            }
+          ]
+        },
+        "reason": "A hotel or short-stay operator with rooms to show"
+      },
+      {
+        "id": "brand",
+        "service": "AI Video for Brands",
+        "basis": "type",
+        "when": {
+          "kind": [
+            "consumer_brands"
+          ],
+          "any": [
+            {
+              "apollo_key": [
+                "brands"
+              ]
+            },
+            {
+              "classes": "\\bbrand\\b|food manufacturer|brewery|winery|distillery|cosmetics|clothing"
+            },
+            {
+              "industries": "food|beverage|cosmetics|clothing|brewing|fashion|consumer"
+            }
+          ]
+        },
+        "reason": "A product brand"
+      },
+      {
+        "id": "bank_audio",
+        "service": "AI Podcasts / Audio Content",
+        "basis": "type",
+        "when": {
+          "kind": [
+            "financial_services"
+          ]
+        },
+        "reason": "A bank or investment firm"
+      }
+    ],
+    "fallback": {
+      "basis": "audience",
+      "reason": "The first service its audience is pitched ({audience})"
+    },
+    "guidance": "The owner''s review of the LCX Services emails, 2026-10-13, point 12: each lead is tagged with ONE lead service, the email pitches it, and the outreach row records it (outreach.service, sql/35). tools/lcx_judge.py tags every open lead on every chain run, after the scoring inputs, and stores metadata.lead_service = {service (one of the 18, or null), name (the same), rule, basis (signal, fact, type, audience, hold, not_a_buyer), reason, evidence, set_by, decided_at}. A person''s choice (set_by is their email) is never overwritten by the rules. metadata.services stays, shown as Also fits. Order: not a buyer first (the judge''s wrong_buyer at or over wrong_buyer_at_least, or a name in not_a_buyer.names for its audience: the Apollo searches'' noise), then the rules, first match wins, then the fallback, the first service its audience is pitched; a lead with no audience is held. A rule with service null holds the lead for a person to pick (Check service): VFX and animation houses sell what we would pitch. Evidence first: a fresh or stored Apollo signal (signals pick the service whatever their age, because they record a need; funded picks none, a raise is a reason to write and not a problem), then a specific fact from the company''s own site words or a register, then the register''s type, then the audience. Condition keys, all ANDed inside one when, with any: [alternatives] for OR: signal, kind, not_kind, osm (category), classes and industries (regex over Wikidata''s), not_classes, text and text2 (regex over the company''s own site words with its name in front, only when the site was read and is theirs; the name alone otherwise), not_text, socials (youtube, instagram or tiktok, from its site or a directory), employees_min, name (regex), apollo_key (the Apollo search that found it). A value \"@fashion\" is patterns.fashion. skip_if online_only: an online-only seller (online_only.classes, or online_only.text) with no physical-store words never gets Shop Display Videos (SparkFun). Simulated on the 3,686 open leads of 2026-10-12: every one of the 18 services is reachable. Edit here, run tools/gen_segment_sql.py lcx-services, apply sql/03f; the next chain run re-tags every lead whose tag the rules set."
   }
 }'::jsonb
 )

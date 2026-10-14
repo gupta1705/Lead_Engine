@@ -6,6 +6,14 @@
 -- ever drifts from the .json file, which is what makes three copies safe.
 --
 -- Revision history:
+--   v7 (2026-10-14) the owner's template for US Production Houses ("This is the template for us prod
+--       house outreach going forwards"): v3 templates in each approver's own voice (signed_intro),
+--       the hook line by Groq (generated_paragraph shape line), subject "Stories built to travel",
+--       footer "Regards, <name>. The Viral Fever"; the v2 pair kept for older drafts.
+--   v6 (2026-10-13) the owner: the opt-out line is removed from the footer ("prod houses also loses last line"),
+--       and every subject is at most five words: both templates' subject is "On {{theme}}",
+--       the theme at most four words (theme_max_words), subject_max_words 5 with a
+--       subject_fallback on each template.
 --   v5 (2026-10-12) outreach.send_window (owner: "send mails to the sender's time region between
 --       10 to 10:30AM ... randmized"): each approved email at its own random second, 10:00-10:30 on
 --       its recipient's clock, US companies with no known state at Los Angeles' 10:00. The
@@ -377,38 +385,52 @@ set config = '{
       "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". The AICP''s houses are American (assumed_country), and most of them are in Los Angeles: a US company whose state is not known goes at Los Angeles'' 10:00, not New York''s (country_zones); its state, city or phone decides when one is known."
     },
     "daily_send_cap": 35,
+    "subject_max_words": 5,
+    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted.",
+    "theme_max_words": 4,
+    "theme_max_words_guidance": "The owner, 2026-10-13: the subject is \"On {{theme}}\", so the theme is at most four words. A longer theme from the model gives way to the lane''s own theme (angles.<lane>.theme), and one of those still longer to \"Stories Built to Travel\" (tools/draft_render.pick_theme).",
     "send_from": "approver",
     "send_from_guidance": "Owner decision 2026-09-26: one login per person (suhasc@, kartikeyap@, upangyay@theviralfever.com), each linked by the owner to one or more Gmail addresses (python tools/users.py gmail <login>, on the owner''s machine: Google''s sign-in, sealed for the server; the person connects nothing). An email goes out from the Gmail of the person who approved it, from the address of theirs with the most room today, up to that address''s own limit (daily_cap on its user_mailboxes row, 35 by default; daily_send_cap here is not used in this mode). It is signed with their own name and title (account menu -> Your name and title), and the page shows each draft as the person looking at it would send it (tools/draft_render.personalize). An approval by someone with no Gmail connected waits in Approved. The project''s own mailbox (GMAIL_SENDER_ADDRESS, vedanshg@) sends nothing new; it still reads replies to the two emails it sent. Set to \"pool\" (or remove) to go back to sending from the project''s own mailbox.",
-    "voices": {
-      "guidance": "Owner decision 2026-09-26. The openers speak about Kartikeya (\"I''m writing on behalf of Kartikeya\", the owner''s choice of 2026-09-21), which cannot be right in an email from Kartikeya''s own address. For the person named here, each pair''s first text is replaced by the second, in the draft he sees and approves: his first-person line from the owner''s original samples of 2026-09-18 (\"I am {{sender_name}}, and I lead {{sender_title}} at The Viral Fever (TVF)\" with Kartikeya, Business Development and IP Strategy). Everyone else sends the openers as written, signed with their own name.",
-      "kartikeyap@theviralfever.com": [
-        [
-          "I''m writing on behalf of Kartikeya, who leads Business Development and IP Strategy at",
-          "I am Kartikeya, and I lead Business Development and IP Strategy at"
-        ],
-        [
-          "I''m writing on behalf of Kartikeya, who handles Business Development and IP Strategy at",
-          "I am Kartikeya, and I handle Business Development and IP Strategy at"
-        ]
-      ]
-    },
     "greeting_fallback": "{{company}} team",
     "hook_style": "tvf_partnership",
     "templates": [
       {
-        "key": "tvf_partner_named_v2",
+        "key": "tvf_partner_named_v3",
         "when": {
           "contact_named": true
         },
-        "subject": "From TVF in India — On {{theme}}",
+        "subject": "Stories built to travel",
+        "subject_fallback": "Stories built to travel",
+        "body": "Hello {{greeting_name}},\n\nI trust you are well.\n\n{{sender_intro}}, one of India''s leading digital-native content studios. We are best known for series such as Panchayat, Sapne vs. Everyone and Aspirants, and six of our titles rank among India''s ten highest-rated shows on IMDb. {{angle_line}}\n\n{{hook}}\n\nWould you have time for a short call in the coming weeks to explore whether there is a fit? I am based in Mumbai and would gladly work around your schedule.\n\n{{footer}}",
+        "guidance": "The owner''s template of 2026-10-14, word for word (\"This is the template for us prod house outreach going forwards fix it should be like this only\"): who we are in the approver''s own voice ({{sender_intro}}: \"I''m Kartikeya, who handles Business Development and IP Strategy at The Viral Fever (TVF)\" for Kartikeya, each other approver with their own name and title, outreach.signed_intro), TVF''s shows, the lane''s own intro line ({{angle_line}}, outreach.angles); then one paragraph: \"Which is why <company> caught my attention.\", the hook line Groq writes from the company''s own facts (generated_paragraph, shape \"line\"; the plain line in tools/draft_render.ph_line_fallback when no model writes one) and the lane''s partnership lines ({{partnership}}); the call, with no city; the sign-off \"Regards, <name>. The Viral Fever\". Subject \"Stories built to travel\" (the owner''s choice that day; at most 5 words). This one when the email greets a named person: \"Hello <first name>, I trust you are well.\""
+      },
+      {
+        "key": "tvf_partner_v3",
+        "subject": "Stories built to travel",
+        "subject_fallback": "Stories built to travel",
+        "body": "Hello,\n\n{{sender_intro}}, one of India''s leading digital-native content studios. We are best known for series such as Panchayat, Sapne vs. Everyone and Aspirants, and six of our titles rank among India''s ten highest-rated shows on IMDb. {{angle_line}}\n\n{{hook}}\n\nWould you have time for a short call in the coming weeks to explore whether there is a fit? I am based in Mumbai and would gladly work around your schedule.\n\n{{footer}}",
+        "guidance": "The owner''s template of 2026-10-14, word for word (\"This is the template for us prod house outreach going forwards fix it should be like this only\"): who we are in the approver''s own voice ({{sender_intro}}: \"I''m Kartikeya, who handles Business Development and IP Strategy at The Viral Fever (TVF)\" for Kartikeya, each other approver with their own name and title, outreach.signed_intro), TVF''s shows, the lane''s own intro line ({{angle_line}}, outreach.angles); then one paragraph: \"Which is why <company> caught my attention.\", the hook line Groq writes from the company''s own facts (generated_paragraph, shape \"line\"; the plain line in tools/draft_render.ph_line_fallback when no model writes one) and the lane''s partnership lines ({{partnership}}); the call, with no city; the sign-off \"Regards, <name>. The Viral Fever\". Subject \"Stories built to travel\" (the owner''s choice that day; at most 5 words). This one when no person is named: \"Hello,\" and the same email."
+      },
+      {
+        "key": "tvf_partner_named_v2",
+        "when": {
+          "contact_named": true,
+          "metadata.retired_template": true
+        },
+        "subject": "On {{theme}}",
         "body": "Hello {{greeting_name}},\n\nI trust you are well.\n\nI''m writing on behalf of Kartikeya, who leads Business Development and IP Strategy at The Viral Fever (TVF), one of India''s leading digital-native content studios. We are best known for series such as Panchayat, Sapne vs. Everyone and Aspirants, and six of our titles rank among India''s ten highest-rated shows on IMDb. {{angle_line}}\n\n{{hook}}\n\n{{partnership}}\n\nWould you have time for a short call in the coming weeks to explore whether there is a fit? I am based in Mumbai and would gladly work around your schedule{{their_city}}.\n\n{{footer}}",
-        "guidance": "The owner''s outreach template (samples of 2026-09-18). Four paragraphs: who we are and what we make; which is why this company caught our attention; the partnership and why it fits; a short call. {{angle_line}} and {{partnership}} are the owner''s sentences for the company''s lane, from outreach.angles. {{hook}} is \"Which is why <company> caught my attention.\" and a paragraph about the company written from what it says about itself (generated_paragraph; the plain paragraph in tools/draft_render.py when no model writes one). {{theme}} is the subject''s theme. A human reads every draft before approval. This one when the email greets a named person (samples 5 and 6). 2026-09-21, the owner: the email comes from Vedansh (the footer''s sender) and is written on Kartikeya''s behalf, so the opening names Kartikeya and his role while the sign-off is the footer''s."
+        "guidance": "The owner''s outreach template (samples of 2026-09-18). Four paragraphs: who we are and what we make; which is why this company caught our attention; the partnership and why it fits; a short call. {{angle_line}} and {{partnership}} are the owner''s sentences for the company''s lane, from outreach.angles. {{hook}} is \"Which is why <company> caught my attention.\" and a paragraph about the company written from what it says about itself (generated_paragraph; the plain paragraph in tools/draft_render.py when no model writes one). {{theme}} is the subject''s theme. A human reads every draft before approval. This one when the email greets a named person (samples 5 and 6). 2026-09-21, the owner: the email comes from Vedansh (the footer''s sender) and is written on Kartikeya''s behalf, so the opening names Kartikeya and his role while the sign-off is the footer''s. Subject (owner, 2026-10-13, at most five words): \"On {{theme}}\" for both templates, the theme at most theme_max_words. Kept for the drafts written with it before 2026-10-14; new drafts use the v3 templates, which come first.",
+        "subject_fallback": "On Stories Built to Travel"
       },
       {
         "key": "tvf_partner_v2",
         "subject": "On {{theme}}",
         "body": "Hello,\n\nI''m writing on behalf of Kartikeya, who handles Business Development and IP Strategy at The Viral Fever (TVF, India), one of India''s largest digital-native studios. Of the 11 Indian shows on the IMDb Global 250 list, 7 are ours. {{angle_line}}\n\n{{hook}}\n\n{{partnership}}\n\nWould you have time for a short call in the coming weeks? Either way, I would love to hear from you.\n\n{{footer}}",
-        "guidance": "The owner''s outreach template (samples of 2026-09-18). Four paragraphs: who we are and what we make; which is why this company caught our attention; the partnership and why it fits; a short call. {{angle_line}} and {{partnership}} are the owner''s sentences for the company''s lane, from outreach.angles. {{hook}} is \"Which is why <company> caught my attention.\" and a paragraph about the company written from what it says about itself (generated_paragraph; the plain paragraph in tools/draft_render.py when no model writes one). {{theme}} is the subject''s theme. A human reads every draft before approval. This one when no person is named (samples 1 to 4). 2026-09-21, the owner: written on Kartikeya''s behalf by the footer''s sender, as in the named template."
+        "guidance": "The owner''s outreach template (samples of 2026-09-18). Four paragraphs: who we are and what we make; which is why this company caught our attention; the partnership and why it fits; a short call. {{angle_line}} and {{partnership}} are the owner''s sentences for the company''s lane, from outreach.angles. {{hook}} is \"Which is why <company> caught my attention.\" and a paragraph about the company written from what it says about itself (generated_paragraph; the plain paragraph in tools/draft_render.py when no model writes one). {{theme}} is the subject''s theme. A human reads every draft before approval. This one when no person is named (samples 1 to 4). 2026-09-21, the owner: written on Kartikeya''s behalf by the footer''s sender, as in the named template. Subject (owner, 2026-10-13, at most five words): \"On {{theme}}\" for both templates, the theme at most theme_max_words. Kept for the drafts written with it before 2026-10-14; new drafts use the v3 templates, which come first.",
+        "subject_fallback": "On Stories Built to Travel",
+        "when": {
+          "metadata.retired_template": true
+        }
       }
     ],
     "angles": {
@@ -443,17 +465,20 @@ set config = '{
       "enabled": true,
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
-      "min_words": 15,
-      "max_words": 75,
+      "min_words": 10,
+      "max_words": 30,
       "max_calls_per_run": 200,
       "requests_per_minute": 3,
-      "guidance": "The one paragraph of the owner''s template no fixed text can write: what makes this company worth writing to, and why that matches how TVF thinks. Written by a model from tools/draft_render.tvf_facts(): what the company says about itself on its own site (title, description, about page), its named work, its founders, a dated headline about it, and its lane; nothing else, and nothing about TVF, which the model otherwise borrowed to describe the company. Every name, title, place and number it writes must be in those facts, and so must every quoted phrase; no TVF claims, links, sales or flattery words, nothing about co-production or financing (the next paragraph says that); no relative dates (\"this December\", \"recently\"); the company named at most once; 15 to 75 words, short rather than padded when the facts say little; genre words found on the site are left out of what the model sees (one \"humorous\" became a documentary studio that weaves in comedy); the subject theme may not name anyone. A rejected answer gets one retry, told why. Anything still failing, a lead with nothing of its own on record (a page title alone is not enough), or no GROQ_API_KEY: the plain paragraph (draft_render.tvf_fit_fallback). Three requests a minute keeps inside the free plan''s 8,000 tokens a minute. The paragraph is stored on the outreach row, so what a person approved is what is sent. See tools/llm.py."
+      "guidance": "The one line of the owner''s 2026-10-14 template no fixed text can write: after \"Which is why <company> caught my attention.\", one sentence on what at the heart of their work is the same ground TVF''s own series stand on (the owner''s sample: \"The comedy at the heart of your work is the same ground our own series stand on.\"). Written by Groq from tools/draft_render.tvf_facts(): their own site''s words, their named work, their genres; never the company''s or a person''s name, no TVF claims, no praise, no numbers, no dashes; 10 to 30 words. A rejected answer gets one retry, told why; then the plain line (draft_render.ph_line_fallback). The owner, 2026-10-14: \"Groq writes it\".",
+      "shape": "line"
     },
-    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
+    "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order, no exceptions. daily_send_cap is a hard ceiling per send run. One outbound touch per company is enforced by the database (uq_outreach_one_touch), not by this config. The footer -- the sign-off -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
-      "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}\n\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
-    }
+      "text": "Regards,\n{{sender_name}}.\nThe Viral Fever",
+      "guidance": "The owner''s sign-off of 2026-10-14: \"Regards,\", the approver''s own name with a full stop, \"The Viral Fever\". No title, no postal address, no opt-out line (the owner, 2026-10-13)."
+    },
+    "signed_intro": "I''m {{sender_first}}, who handles {{sender_title}} at The Viral Fever (TVF)",
+    "tvf_hook": "line"
   }
 }'::jsonb
 where slug = 'us-production-houses';

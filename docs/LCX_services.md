@@ -28,7 +28,9 @@ The services are the 18 on `docs/LCX Services.pdf`, in three clusters: Repurposi
 ## Who it finds
 
 Every service has buyers; an **audience** is one kind of buyer, the services it is pitched first,
-and where it is found (`config/segment.lcx-services.json`, `audiences`).
+and where it is found (`config/segment.lcx-services.json`, `audiences`). Since 2026-10-13 the email
+pitches ONE lead service per lead (see *The lead service*); the audience's first service is only the
+fallback when no rule matches, and the rest show on the lead as *Also fits*.
 
 | Audience | Pitch first | Found on | Written to (Apollo, best first) |
 |---|---|---|---|
@@ -256,31 +258,98 @@ no longer qualify is the owner's call.
 
 ## The email and the deck
 
-- Subject: `18 things LCX can do for {{company}}`.
-- Body (template `lcx_services_deck_v2`, 2026-10-08, the owner: "make a email structure for me that
-  groq will follow"), top to bottom:
-  1. `Hi {{greeting_name}},`
-  2. **The opener**, written by Groq: one sentence about the company, from what its own site says, a
-     reason to buy now (hiring trainers, just funded) and the video or Instagram accounts it runs.
-     Left out when nothing of theirs is on record.
-  3. The owner's lines, word for word: "I'm writing from LCX. We work in three areas, and at least
-     one of them should be useful to {{company}}. Our services deck is attached."
-  4. **The pitch**, written by Groq: one or two sentences naming two of the services its kind of
-     buyer is pitched first, exactly as the deck names them, with what each would do for them.
-     Without the model: "I'd start with <first> and <second>."
-  5. The owner's close: "If one fits, reply with its name and I'll send examples.", then the
-     approver's sign-off over TVF's Mumbai address and the opt-out.
-- **What Groq may write** (`outreach.generated_pitch`, `tools/llm.py` `LCXS_SYSTEM`,
-  `check_lcxs`): only facts from `tools/draft_render.lcxs_facts()`, which holds no address or
-  link. Every capitalised name and every number must come from those facts. It may name only
-  the services it was given, exactly as given. It never names the company or the person. It
-  makes no claims about LCX beyond the deck's own service lines: no clients, results or prices.
-  No sales words, no repeating a company's praise of itself, no links, nothing outside the word
-  ranges. A rejected answer gets one retry; after that the opener is left out and the pitch is
-  the plain one.
+The owner's review of the v2 emails (2026-10-13) changed the email to **problem first, one service**
+(template `lcx_services_problem_v3`). v2 (`lcx_services_deck_v2`, "18 things LCX can do", two services)
+and v1 are kept only for the drafts already written with them; they cannot be approved once
+`sql/03f` is live, because their sign-off still reads LCX. They are re-drafted separately.
+
+- **Subject:** the lead service's own, at most five words, no dash and no colon
+  (`generated_pitch.service_copy[<service>].subject`). `outreach.subject_max_words` is 5: a rendered
+  subject over the cap falls back to the template's `subject_fallback` ("An idea for your business"),
+  and approval refuses any stored subject over the cap.
+
+  | Lead service | Subject |
+  |---|---|
+  | Reel Forge | One video, many reels |
+  | Airbnb / Property Content | Your property photos, in motion |
+  | AI VFX + Animation | Bigger scenes, same footage |
+  | Audiobooks and Audio Web Shows | Your backlist, as audio shows |
+  | AI Video for Brands | Campaign videos without the shoot |
+  | AI Real Estate Visualisation | Walkthroughs before the first brick |
+  | Explainer Videos | One video, fewer questions |
+  | Shop Display Videos | What's on your store screens? |
+  | AI UGC Product Videos | Your brand's own AI creator |
+  | AI Podcasts / Audio Content | Your products, as a conversation |
+  | Virtual Tours for Schools | Field trips without the bus |
+  | AI Reality Experiences | A new reason to visit |
+  | Creator × Brand Marketplace | Finding the right micro influencers |
+  | Local Business Tech and Automation | Less admin behind the counter |
+  | AI Business Assistant | Ask your business a question |
+  | AI Simulations for Training | Rehearse before the real customer |
+  | AI Fashion Stylist | A mirror that completes outfits |
+  | AI Onboarding Employee | The same training, every hire |
+
+- **Body**, top to bottom:
+  1. The greeting (`outreach.greeting`): "Hello <first name>," and "I trust you are well." when a
+     person is named, else "Hello,". Never "Hi there".
+  2. **The problem**: one sentence about a problem a business like this usually has. Never their
+     metrics, awards or achievements, never a question, no number.
+  3. **The solution**: how the ONE lead service solves it, naming that service once, exactly as
+     the deck names it.
+  4. Who we are, in the deck's words: "I'm writing from LCX, where we repurpose what a business
+     already owns, create new content and experiences with AI, and build the tools teams use every
+     day. Our services deck is attached."
+  5. One small ask: "Would it be useful if I sent you a few examples, along with a short note on how
+     this could work for {{company}}?" `{{company}}` is the name as a person writes it (a tagline,
+     ® or ™, "Official", a foreign legal form cut off), or "your team" when it is still long.
+  6. The footer: "Warm regards," the approver's name, and "<title>, LCX". No postal address, no
+     opt-out line (the owner, 2026-10-13: "remove the last line from every single service"). Any
+     reply that is not neutral still stops all mail to that address.
+- **Lines 2 and 3** are written by Groq (`outreach.generated_pitch`, `tools/llm.py` `LCXS_SYSTEM` v3,
+  `check_lcxs`) when the lead has words of its own on record or a fresh buying signal; otherwise, or
+  when the model's answer fails its checks twice, they are the service's fixed lines in
+  `service_copy` (with `by_audience` variants for banks and studios). The model is handed only
+  `tools/draft_render.lcxs_facts()`: its kind, its own words, the accounts it posts on and the one
+  lead service. It never sees or names the company or the person. The checks refuse a dash of any
+  kind, a number in the problem, a number in the solution that is not in the deck's line, another
+  service or an invented one, the company, a place, praise ("award-winning"), a diagnosis ("you
+  are losing"), quotes, links and emoji. The model may answer `no_fit` instead; that lead is held.
+- **No dash anywhere:** every inserted value and the whole email above the footer are cleaned
+  (`draft_render.dash_clean`), and a draft that still has an em dash, en dash, figure dash,
+  horizontal bar or minus used as punctuation is refused.
+- **The draft gate:** a lead the rules call **Not a buyer** is never drafted. **Check service** (a
+  hold rule matched, the model said `no_fit`, or the service came only from the audience with nothing
+  to confirm it) and **Read site first** (found by Apollo, site not read, and no person picked the
+  service) are skipped and named in the draft log.
 - **Approval:** a draft with model-written text is approved one at a time
-  (`batch_approval.allow_generated` false). Drafts made before 2026-10-08 use v1, the plain email.
-  Tests: `tools/test_lcxs_pitch.py`.
+  (`batch_approval.allow_generated` false). Every approver needs a name and a title in their
+  profile; the email goes out signed with them. The outreach row records the service it pitched
+  (`outreach.service`, `sql/35`), and that field cannot change once the email is sent.
+  Tests: `tools/test_lcxs_v3.py` (the copy, the greeting, the footer, every rule, the checks, the
+  gate) and `tools/test_lcxs_pitch.py` (the facts, the checks, the writer).
+
+## The lead service
+
+Each lead is tagged with ONE lead service (`lead_service` in the config; `tools/lcx_judge.py`
+`choose_service`, every chain run, after the scoring inputs). It is stored on the lead as
+`metadata.lead_service` = {service, rule, basis, reason, evidence, set_by, decided_at}.
+
+1. **Not a buyer** first: `wrong_buyer` of 1, or a name that is not a buyer in its audience (a
+   racing team among retailers, a law or investment firm among property companies).
+2. Then the rules in order; the first that matches wins. **Signal** rules (a live Apollo hiring
+   signal), then **fact** rules (what the lead's own site, Wikidata or OpenStreetMap says: publishes
+   books, sells off-plan, lists rentals, a school, an attraction, a cafe, stores with screens, a
+   contact centre, a large workforce, a product that needs explaining, a brand on TikTok), then
+   **type** rules (a developer, a hotel, a brand, a bank). Two **hold** rules (a studio that sells
+   visual effects or animation itself) leave the service for a person to pick.
+3. Nothing matched: the first service its audience is pitched (`basis` audience). No audience on
+   record: held.
+4. A person's pick (`set_by` is their email, from **Change service** on the lead sheet) is never
+   undone by the rules. An unchanged tag keeps the day it was decided.
+
+The **Leads** and **Board** pages have a tab per service with its count, plus **Check service** and
+**Not a buyer**; a tab with no leads is hidden. The lead sheet shows the service, why, and what else
+fits. `python tools/lcx_judge.py --explain "<company>"` prints the tag the rules would give.
 - The deck is `docs/decks/LCX Services - pitch deck.pdf`: five 16:9 pages, built from
   `docs/decks/lcx-services-deck.html` by `python tools/build_deck.py`. The pages are a cover, one
   page per cluster in the sheet's colours and words, and the next step.
@@ -320,7 +389,10 @@ Attachments (`sql/32`, `outreach.attachments`) are files under `docs/decks/` onl
   `posted_within_days` or `funded_within_days`.
 - **A slice used up:** clear its `exhausted_at` (and set `next_page` back to 1) in `apollo_cursors`
   to search it again.
-- **Tests:** `tools/test_lcx_services.py` (166 checks, the score's line worked out from the
+- **The email's copy** (a subject, a problem or solution line, a rule): edit `generated_pitch.service_copy`
+  or `lead_service.rules`, then regenerate and apply `sql/03f` as above, and run `tools/test_lcxs_v3.py`.
+- **Tests:** `tools/test_lcxs_v3.py` and `tools/test_lcxs_pitch.py` (offline: the v3 email, the lead
+  service, the model's checks), `tools/test_lcx_services.py` (the score's line worked out from the
   config, and a cafe, a brand, a mid-size company and an unread site taken from the harvest to a
   draft), `tools/test_lcx_judge.py` (144 checks, offline: every misfire the simulation found and
   each input's full, half, none and unknown), the LCX cases in `tools/test_enrich_apollo.py` and

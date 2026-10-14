@@ -910,12 +910,17 @@
   "sending_paused": true,
   "sending_paused_reason": "Owner, 2026-09-21: temporarily only US Production Houses sends. Drafting and approval carry on; approved emails wait in Approved until this is removed.",
   "sender": {
-   "name": "SET_ME e.g. the LCX clipping lead",
-   "title": "Clipping desk, LCX",
+   "name": "LCX",
+   "title": "Clipping desk",
+   "company": "LCX",
    "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
    "email_env": "GMAIL_SENDER_ADDRESS_LCX_CLIPPING",
-   "guidance": "Sender name and title for the shared sign-off. The address is retained as an optional footer field and omitted from the default email footer (owner, 2026-10-09). The sending address comes from the connected Gmail account."
+   "guidance": "The canonical sign-off a draft is stored in (name LCX, title Clipping desk, company LCX: it reads \"LCX / Clipping desk, LCX\", the same text as before 2026-10-13), never what goes out: since the owner's update of 2026-10-13 (\"sign with the approver's name\", sign_as approver) whoever opens a draft sees it signed with their own name and title, approving stores exactly that, and approval is refused while the approver's profile has no name or title. The name was SET_ME until then; it may not be, because SET_ME must never appear in a draft. The address is retained as an optional footer field and omitted from the email footer (owner, 2026-10-09); it stays SET_ME until the owner confirms one (2026-10-13: it is not in the footer, so it never reaches a draft, and `outreach.py send` refuses this project while it is SET_ME). The sending address is the project's own pool mailbox (mailboxes)."
   },
+  "sign_as": "approver",
+  "sign_as_guidance": "The owner, 2026-10-13: \"sign with the approver's name\". LCX Clipping keeps sending from its own pool mailboxes (mailboxes, not send_from approver), but each email is signed with the approving person's own name and title, as LCX Services' emails are (tools/draft_render.signs_as_approver, personalize; app/main.py approval).",
+  "subject_max_words": 5,
+  "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template's subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted. A follow-up repeats its opener's subject to stay in its Gmail thread, so it has no fallback of its own: one whose opener's subject is over the cap is not drafted.",
   "send_window": {
    "enabled": true,
    "start": "10:00",
@@ -934,7 +939,8 @@
   "templates": [
    {
     "key": "clipping_intro_v1",
-    "subject": "{{company}}: three shorts from your latest episode?",
+    "subject": "Your episodes, as shorts",
+    "subject_fallback": "Short clips from your episodes",
     "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long episodes into short vertical clips -- the hook, the captions, the reframing -- and deliver within 48 hours of each new episode, so every release also gets ten shorts working for it on YouTube, Instagram and TikTok. Our editors cut; you approve.\n\nRather than describe it: reply \"yes\" and we'll cut three shorts out of {{latest_work}}, free, so you can judge the quality before anything else is discussed.\n\n{{footer}}",
     "guidance": "First touch for creators and podcasters. {{hook}} is one sentence of THEIR numbers -- episodes, cadence, length, shorts count -- built by the draft command from the feed and channel evidence, so it is true by construction. Greeting: a person's first name when the engine found one (metadata.host at high or medium confidence); otherwise 'there'. Never the show's name."
    },
@@ -943,7 +949,8 @@
     "when": {
      "metadata.kind": "production_house"
     },
-    "subject": "{{company}}: shorts from your archive, three on us",
+    "subject": "Shorts from your archive",
+    "subject_fallback": "Short clips from your archive",
     "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form -- episodes, trailers, behind-the-scenes, interviews -- into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\nRather than describe it: reply \"yes\" and we'll cut three shorts out of {{latest_work}}, free, so you can judge the quality first.\n\n{{footer}}",
     "guidance": "Production houses and studios (metadata.kind = production_house, set by the Wikidata connector and the TVF pool import). Same evidence hook, studio wording: 'your archive', 'your team approves'. Picked automatically by the draft command through the `when` condition."
    },
@@ -962,7 +969,7 @@
     "guidance": "Follow-up 2, the last one: seven days after follow-up 1. After this the thread is closed for good."
    }
   ],
-  "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. Approval may be one draft at a time or a spot-checked batch (batch_approval). daily_send_cap is a hard daily ceiling per mailbox and counts follow-ups. One thread per company, enforced by the database: an opener, then at most the follow_ups steps, stopped by any reply. Templates carry an optional `when` condition on metadata; follow-up templates are marked kind=follow_up and are never used as openers. greeting_fallback is what 'Hi ...' says when no person is known. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
+  "guidance": "Everything outbound is drafted -> human-approved -> sent, in that order. Approval may be one draft at a time or a spot-checked batch (batch_approval). daily_send_cap is a hard daily ceiling per mailbox and counts follow-ups. One thread per company, enforced by the database: an opener, then at most the follow_ups steps, stopped by any reply. Templates carry an optional `when` condition on metadata; follow-up templates are marked kind=follow_up and are never used as openers. greeting_fallback is what 'Hi ...' says when no person is known. Subjects (owner, 2026-10-13): at most subject_max_words, with no company name. The footer -- the sign-off -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
   "greeting_fallback": "there",
   "follow_ups": {
    "enabled": true,
@@ -1022,10 +1029,10 @@
     }
    }
   ],
-  "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. The signature name is shared, so the mailboxes should belong to the same person or desk. daily_send_cap is the ceiling across all of them.",
+  "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. Each email is signed by the person who approved it (sign_as approver, owner 2026-10-13), whichever mailbox it leaves from. daily_send_cap is the ceiling across all of them.",
   "footer": {
-   "text": "{{sender_name}}\n{{sender_title}}\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
-   "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
+   "text": "{{sender_name}}\n{{sender_title}}, {{sender_company}}",
+   "guidance": "Owner decision 2026-10-09: the sign-off, with the postal address omitted. The owner, 2026-10-13: the opt-out line is removed from every project's footer (\"remove the last line from every single service\"); any reply that is not neutral still stops all mail to that address. The name and title are the approver's own (sign_as approver); since 2026-10-13 the title line reads \"<title>, LCX\" with the company from sender.company, as LCX Services' does, so a person's own title never reads as if the clipping desk were theirs. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
   },
   "generated_hook": {
    "model": "openai/gpt-oss-120b",

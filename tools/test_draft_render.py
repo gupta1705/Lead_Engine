@@ -34,7 +34,9 @@ FOOTER_CASES = [
      {"name": "SET_ME", "title": "x", "postal_address": "SET_ME street"}, "SET_ME"),
     ("postal address is optional", '{{sender_name}}\nreply "no thanks" to stop',
      {"name": "Ravi", "postal_address": ""}, None),
-    ("address but no way out", "{{sender_name}}\n" + ADDR, GOOD_SENDER, "No way out"),
+    # 2026-10-13, the owner: "remove the last line from every single service" -- no footer carries an opt-out line
+    # now, so a footer without one is accepted (a reply that is not neutral still stops all mail to that address)
+    ("no opt-out line is needed any more", "{{sender_name}}\n" + ADDR, GOOD_SENDER, None),
     ("unknown field", "{{sender_name}}\n{{fit_score}}\n" + ADDR + '\nreply "no thanks"',
      GOOD_SENDER, "not a field"),
     ("a literal address, no placeholder", "Ravi Menon\n" + ADDR + "\nUnsubscribe: reply STOP",
@@ -219,31 +221,36 @@ def main():
         raise RuntimeError("model down")
     s5, b5 = email("Taste In Motion, Inc.", taste, "Becky Donahue", "becky@tasteinmotion.com", gen=boom)
     checks = [
-        # 2026-09-21, the owner: Vedansh sends, on Kartikeya's behalf -- the opening names Kartikeya, the sign-off is
-        # whoever the footer says
-        ("a named person: the samples' greeting, on Kartikeya's behalf",
-         b1.startswith("Hello Becky,\n\nI trust you are well.\n\nI'm writing on behalf of Kartikeya, who leads Business "
-                       "Development and IP Strategy at The Viral Fever (TVF), one of India's leading"), True),
-        ("a named person: the samples' subject", s1.startswith("From TVF in India — On "), True),
-        ("four paragraphs, then the sign-off", b1.split("\n\nWarm regards,")[0].count("\n\n"), 5),
+        # 2026-10-14, the owner's template: the approver's own voice ("I'm <first name>, who handles <title> at The
+        # Viral Fever (TVF)"); the stored draft speaks as the project's sender, whoever opens it sees their own
+        ("a named person: the owner's greeting, in the sender's own voice",
+         b1.startswith("Hello Becky,\n\nI trust you are well.\n\nI'm %s, who handles %s at The Viral Fever (TVF), one "
+                       "of India's leading" % (real["sender"]["name"].split()[0], real["sender"]["title"])), True),
+        # the owner's subject that day, at most 5 words
+        ("a named person: the subject is 'Stories built to travel'", (s1, len(s1.split()) <= 5),
+         ("Stories built to travel", True)),
+        ("greeting, how are you, who we are, why them, the call, then the sign-off",
+         b1.split("\n\nRegards,")[0].count("\n\n"), 4),
         ("paragraph two is about them", "\n\nWhich is why Taste In Motion caught my attention." in b1
          or "\n\nWhich is why Taste In Motion drew me in." in b1, True),
-        ("the footer's sign-off and opt-out, without the address",
-         ("Warm regards,\n%s\n%s" % (real["sender"]["name"], real["sender"]["title"]) in b1
-          and ADDR not in b1 and "no thanks" in b1), True),
-        ("their city in the ask", "work around your schedule in LA." in b1, True),
+        # 2026-10-13: the opt-out line left every footer ("prod houses also loses last line")
+        ("the owner's sign-off: Regards, the name, The Viral Fever; no address and no opt-out line",
+         (b1.endswith("Regards,\n%s.\nThe Viral Fever" % real["sender"]["name"])
+          and ADDR not in b1 and "no thanks" not in b1 and "hear from me" not in b1), True),
+        ("no city in the ask (the owner's template)", "I am based in Mumbai and would gladly work around your schedule.\n"
+         in b1, True),
         ("the research note never reaches the email", "INTERNAL" in b1 + b4 + b5, False),
-        ("nobody named: the samples' plain greeting, on Kartikeya's behalf",
-         b2.startswith("Hello,\n\nI'm writing on behalf of Kartikeya, who handles Business Development and IP Strategy "
-                       "at The Viral Fever (TVF, India)"), True),
+        ("nobody named: 'Hello,' and the same email",
+         b2.startswith("Hello,\n\nI'm %s, who handles %s at The Viral Fever (TVF), one of India's leading"
+                       % (real["sender"]["name"].split()[0], real["sender"]["title"])), True),
         ("the opening never runs the footer's title into a sentence ('I lead Outreach Consultant')",
          ("I lead " + real["sender"]["title"]) in b1 + b2 or ("I handle " + real["sender"]["title"]) in b1 + b2, False),
-        ("nobody named: the samples' subject and close", (s2.startswith("On "),
-                                                         "Either way, I would love to hear from you." in b2), (True, True)),
+        ("nobody named: the same subject and close", (s2, "would gladly work around your schedule." in b2),
+         ("Stories built to travel", True)),
         ("an animation studio gets the animation lane", ("extending it into animation" in b3, "kids and family" in b3),
          (True, True)),
-        ("a written paragraph and theme are used", ("A tabletop studio built around food" in b4,
-                                                    s4 == "From TVF in India — On Food Stories That Travel"), (True, True)),
+        ("a written line is used, the subject stays the owner's", ("A tabletop studio built around food" in b4,
+                                                                   s4 == "Stories built to travel"), (True, True)),
         ("a model that fails leaves the plain paragraph", "Which is why Taste In Motion" in b5 and "{{" not in b5, True),
         ("no placeholder left anywhere", "{{" in s1 + b1 + s2 + b2 + s3 + b3 + s4 + b4, False),
     ]

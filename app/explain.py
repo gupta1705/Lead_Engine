@@ -102,6 +102,51 @@ def src(label, url=None, date=None):
     return out
 
 
+# ------------------------------------------------------------ the lead service
+# LCX Services (the owner's review of its emails, 2026-10-13, point 12): each lead is tagged with ONE service from the
+# deck (tools/lcx_judge.py, config lead_service, metadata.lead_service) and its email pitches that one. What the
+# analysis says about a lead (its next step, the criterion that picked the service, a lead held for a person) comes
+# from the tag and from the drafter's own gate (tools/draft_render.lcxs_context), so the page never promises an email
+# the drafter will not write.
+SERVICE_BUCKET_LABEL = {"hold": "Check service", "none": "Not a buyer"}
+
+
+def lead_service(cfg, row):
+    """-> None for a project that pitches no single service (no config lead_service); else {service (or None),
+    key (the service, "hold" or "none"; None while untagged), basis, rule, reason, evidence, set_by, decided_at,
+    hold}, hold being None or {kind, why}: why the drafter writes no email for it yet, in its words, and kind,
+    one of untagged (no tag yet), not_a_buyer, check (the rules left the service to a person), audience (picked
+    from its audience alone, with nothing of theirs to confirm it) or read_site (only an Apollo search found it)."""
+    cfg = cfg or {}
+    if "lead_service" not in cfg:
+        return None
+    import draft_render as dr
+    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    ocfg = cfg.get("outreach") or {}
+    tag = dr.lcxs_lead_service(ocfg, meta)
+    svc = (tag or {}).get("service")
+    out = {k: (tag or {}).get(k) for k in ("basis", "rule", "reason", "evidence", "set_by", "decided_at")}
+    out.update(service=svc, key=svc or (None if not tag else "none" if tag.get("basis") == "not_a_buyer" else "hold"),
+               hold=None)
+    try:
+        # the drafter's own gate, with a model that is there and writes nothing: a lead it holds whatever the model says
+        why = dr.lcxs_context(ocfg, row.get("name") or "", meta, str(row.get("id") or ""),
+                              lambda facts, seed: None).get("draft_hold")
+    except (ValueError, KeyError, TypeError):
+        why = None                                # a service with no copy: the draft step says so itself
+    if why:
+        kind = ("untagged" if not tag else "not_a_buyer" if out["key"] == "none" else "check" if not svc
+                else "read_site" if why.startswith("Read site first") else "audience")
+        out["hold"] = {"kind": kind, "why": why}
+    return out
+
+
+def _sentence(text, more):
+    """`text` and one more sentence after it."""
+    text = (text or "").rstrip()
+    return (text + ("" if text.endswith((".", "!", "?")) else ".") + " " + more) if text else more
+
+
 class Lead:
     """The row, its contacts and its segment config, with the lookups every explainer needs."""
 
@@ -117,6 +162,8 @@ class Lead:
         self.domain = row.get("domain")
         # a project whose leads come from Apollo search (Universal, LCX Services): nobody reads their sites
         self.apollo = ((self.cfg.get("ui") or {}).get("search_page") == "apollo")
+        # LCX Services (2026-10-13): the one service this lead's email pitches, and whether its draft is held
+        self.service = lead_service(self.cfg, row)
 
     def v(self, key):
         return num(self.si.get(key))
@@ -766,10 +813,67 @@ def lcxs_criterion(key, lead):
         return None
     raw = lead.si.get(key)
     if raw is None:
-        return UNCHECKED, why[:1].upper() + why[1:] if why else "Not known yet.", []
+        return UNCHECKED, lcxs_service_note(key, lead, why[:1].upper() + why[1:] if why else "Not known yet."), []
     if (num(raw) or 0) > 0:
-        return FOUND, why[:1].upper() + why[1:] if why else "Credited.", []
-    return NONE, why[:1].upper() + why[1:] if why else "Assessed as 0.", []
+        return FOUND, lcxs_service_note(key, lead, why[:1].upper() + why[1:] if why else "Credited."), []
+    return NONE, lcxs_service_note(key, lead, why[:1].upper() + why[1:] if why else "Assessed as 0."), []
+
+
+def _rule_reason(s):
+    """The rule's reason, lower-case first and without the hold's own 'pick a service by hand'."""
+    r = re.sub(r"[:;,.]?\s*pick a service by hand\.?$", "", str((s or {}).get("reason") or ""), flags=re.I).strip()
+    return r[:1].lower() + r[1:]
+
+
+def lcxs_service_note(key, lead, text):
+    """The criterion whose evidence picked the lead service says so (2026-10-13): the buying signal, what it is (its
+    register type or a specific fact), its audience alone, or the wrong-buyer check that made it no buyer at all."""
+    s = lead.service
+    if not s or not s.get("key"):
+        return text
+    basis, svc = s.get("basis"), s.get("service")
+    if key == "buying_trigger" and basis == "signal" and svc:
+        return _sentence(text, "That signal picked the service its email pitches: %s." % svc)
+    if key == "buyer_confirmed" and basis in ("fact", "type") and svc:
+        return _sentence(text, "What it is picked the service its email pitches: %s%s." % (
+            svc, " (%s)" % _rule_reason(s) if _rule_reason(s) else ""))
+    if key == "audience_fit" and basis == "audience" and svc:
+        return _sentence(text, "Nothing more specific is known, so its email pitches its audience's first service: "
+                               "%s." % svc)
+    if key == "wrong_buyer" and s["key"] == "none" and s.get("rule") == "wrong_buyer":
+        return _sentence(text, "So it is not a buyer: no service is pitched to it and no email is drafted.")
+    return text
+
+
+def _not_a_buyer_why(s):
+    """'software vendor (saas)' from the tag's 'Not a buyer: software vendor (saas)'."""
+    r = re.sub(r"^not a buyer\s*:\s*", "", str((s or {}).get("reason") or ""), flags=re.I).strip()
+    return r or "the wrong-buyer check says so"
+
+
+def lcxs_draft_step(s, svc, hold):
+    """The next step of a shortlisted LCX Services lead with someone to write to and no email yet: drafted within
+    minutes, pitching its service, unless the drafter holds it (tools/draft_render.lcxs_context), in which case the
+    step says why and what lifts the hold. Picking (or confirming) the service under Lead service lifts every hold."""
+    kind = (hold or {}).get("kind")
+    if kind == "untagged":
+        return ("Its email is drafted once the next chain run picks the service it pitches; to draft it now, pick one "
+                "under Lead service.")
+    if kind == "not_a_buyer":
+        return ("No email is drafted: it is not a buyer (%s). If it is one after all, pick the service to pitch under "
+                "Lead service." % _not_a_buyer_why(s))
+    if kind == "check":
+        return ("Pick the service its email pitches under Lead service: the rules left it to a person (%s). It is "
+                "drafted within minutes of the pick." % (_rule_reason(s) or "they could not pick one"))
+    if kind == "audience":
+        return ("Confirm the service its email pitches under Lead service: %s was picked from its audience alone, and "
+                "nothing of theirs on record confirms it. It is drafted within minutes." % svc)
+    if kind == "read_site":
+        return ("Its email waits until its own site is read: only an Apollo search found it, so nothing of theirs says "
+                "%s fits. To draft it now, confirm or pick the service under Lead service." % svc)
+    if not svc:
+        return "Its email is being drafted; it appears in Outreach, under Drafts, within minutes."
+    return "Its email, pitching %s, is being drafted; it appears in Outreach, under Drafts, within minutes." % svc
 
 
 # ------------------------------------------------------------- assembly
@@ -862,6 +966,17 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
                           "; ".join(quote(e.get("headline") or e.get("site_platform_evidence") or "", 90)
                                     + (" (%s)" % re.sub(r"\s*\(tools/[^)]*\)", "", e["reason"]).strip() if e.get("reason") else "")
                                     for e in retracted[:2]))})
+    svc_tag = lead.service or {}
+    if svc_tag.get("key") == "hold":
+        # LCX Services: the rules left its service to a person, and its email is not drafted until one is picked
+        why_held = _rule_reason(svc_tag) or "the rules could not pick one"
+        risks.append({"level": "warning", "title": "Check service",
+                      "detail": _sentence(why_held[:1].upper() + why_held[1:],
+                                          "Pick the service its email pitches under Lead service.")})
+    elif svc_tag.get("key") == "none" and svc_tag.get("rule") != "wrong_buyer":
+        # not a buyer by its name (a racing team in the retailers search); the wrong-buyer check says its own
+        risks.append({"level": "warning", "title": "Not a buyer",
+                      "detail": _sentence(svc_tag.get("reason") or "Not a buyer.", "No email is drafted for it.")})
     if lead.meta.get("domain_conflict"):
         risks.append({"level": "warning", "title": "Website shared with another lead",
                       "detail": "Another lead already holds %s; one of the two may be the wrong company."
@@ -933,10 +1048,15 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
     # whose clock the window is on: the recipient's, or with timezone_of "sender" everyone's 10:00 on the
     # sender's (review, 2026-10-12: the words said "its recipient's" whatever the config said)
     on_sender = ((lead.cfg.get("outreach") or {}).get("send_window") or {}).get("timezone_of") == "sender"
+    # LCX Services (2026-10-13): the one service its email pitches, and the drafter's hold on it, if any
+    svc, svc_hold = svc_tag.get("service"), svc_tag.get("hold") or {}
+    pitched = (outreach or {}).get("service")
     if status == "shortlisted" and draft == "drafted":
-        step = "Read the email in Outreach and approve it. Approving sends it."
+        read = ("Read the email in Outreach (it pitches %s) and approve it." % pitched if pitched
+                else "Read the email in Outreach and approve it.")
+        step = read + " Approving sends it."
         if window.get("enabled") and window.get("window_label"):
-            step = ("Read the email in Outreach and approve it. Approving sends it in %s: %s."
+            step = (read + " Approving sends it in %s: %s."
                     % ("its next window, on the sender's clock" if on_sender else "its recipient's next window",
                        window["window_label"]))
     elif status == "shortlisted" and draft in ("approved", "sending") and paused and draft == "approved":
@@ -948,6 +1068,8 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
         step = "Approved: it goes out %s." % sched["send_label"]
     elif status == "shortlisted" and draft in ("approved", "sending"):
         step = "Approved: it goes out automatically, within the day's sending limit."
+    elif status == "shortlisted" and not draft and writes_email and lead.best() and lead.service is not None:
+        step = lcxs_draft_step(svc_tag, svc, svc_hold)
     elif status == "shortlisted" and not draft and writes_email and lead.best():
         step = "Its email is being drafted; it appears in Outreach, under Drafts, within minutes."
     elif status == "shortlisted" and not writes_email:
@@ -966,6 +1088,14 @@ def explain_lead(slug, cfg, row, contacts, outreach=None, now=None):
     elif big and big[0]["points"] >= 20:
         step = "Check %s by hand (%s points unchecked). %s" % (big[0]["key"].replace("_", " "), pts(big[0]["points"]),
                                                               big[0]["check"].get("manual"))
+    elif svc_tag.get("key") == "none":
+        step = ("Reject it: it is not a buyer (%s). If it is one after all, pick the service to pitch under Lead "
+                "service first." % _not_a_buyer_why(svc_tag))
+    elif svc_tag.get("key") == "hold":
+        step = ("Pick the service to pitch under Lead service (%s), then shortlist it or reject it with a reason."
+                % (_rule_reason(svc_tag) or "the rules could not pick one"))
+    elif svc:
+        step = "Decide: shortlist it to pitch %s, or reject it with a reason." % svc
     else:
         step = "Decide: shortlist it or reject it with a reason."
 

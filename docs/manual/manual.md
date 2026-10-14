@@ -244,7 +244,7 @@ their company. The **First name** and **Company** buttons put them in for you.
 Anything else in double braces is refused.
 
 Under it, the page shows the email exactly as each person will read it, your
-sign-off and TVF's postal address included; the arrows, or a click on a name in
+sign-off included; the arrows, or a click on a name in
 the list on the right, go from one person to the next. The list shows how each
 is greeted and says when no first name is known. Leave anyone out with the
 cross beside their name. Leads that cannot be written to are listed with the
@@ -314,14 +314,32 @@ email drafted within minutes, once its website has been read and it has someone
 to write to; for a bank or a mid-size company, that must be a named person, not
 an info@ inbox. Until then it waits in To review.
 
-**The email** is short and the same for every lead: *Hi* and the person's first
-name (or *there*), *I'm writing from LCX. We work in three areas, and at least
-one of them should be useful to* the company, *Our services deck is attached.
-If one fits, reply with its name and I'll send examples.* It is signed with your
-name and title, over TVF's Mumbai address. The deck goes with every email: five
-pages, a cover, one page for each of the three clusters with every service in
-the services sheet's own words, and the next step. Open it from **Attached** on
-the email before you approve.
+**One service per lead** (since 2026-10-13). Each lead is tagged with the ONE
+service its email pitches, from what is known about it: a hiring signal first,
+then what its own website or Wikidata says (it publishes books, sells homes
+before they are built, is a school, runs stores with screens), then the kind of
+business it is, and last the first service its audience is pitched. The **Leads**
+and **Board** pages have a tab for each service with its count, plus **Check
+service** (a person should pick one) and **Not a buyer**. Open a lead to see its
+service and why; **Change service** picks another, and the engine never undoes
+your pick. A draft waiting for approval that pitched something else is withdrawn
+and written again.
+
+**The email** puts their problem first: *Hello* and the person's first name with
+*I trust you are well.* (or just *Hello,*), one sentence on a problem a business
+like theirs usually has, how the one service solves it, who LCX is, with the deck
+attached, and one small ask: *Would it be useful if I sent you a few examples?*
+It never recites their numbers or achievements and never uses a dash. The
+subject is the service's own, five words at most, such as *Less admin behind the
+counter*. The two middle lines are written by Groq from the lead's own words,
+or are the service's fixed lines when there is nothing of theirs to write from.
+Each email records which service it pitched. It is signed with your name and
+your title, then *LCX*; there is no postal address and no opt-out line. You
+need a name and a title in your profile to approve. The deck goes with every
+email: five pages, a cover, one page for each of the three clusters with every
+service in the services sheet's own words, and the next step. Open it from
+**Attached** on the email before you approve. Drafts written before 2026-10-13
+in the old style are refused at approval until they are written again.
 
 **Approving** is as in the other projects: in **Outreach**, under Drafts, open
 an email and approve it, or tick several and approve them together after reading
@@ -537,18 +555,20 @@ opening sentence is their own numbers, and the offer names their actual most
 recent episode. None of that was invented; all of it came from the evidence on
 the lead. Internal research notes never go into an email.
 
-Production-house emails follow the owner's template, in four paragraphs: who we
-are and what TVF makes; which is why this company caught our attention; the
-partnership and why it fits; a short call. Since 21 September they are written
-by Vedansh on Kartikeya's behalf: the opening reads "I'm writing on behalf of
-Kartikeya, who leads Business Development and IP Strategy at The Viral Fever
-(TVF)…", and the sign-off is whoever the Footer names ("Warm regards, Vedansh
-Gupta, Outreach Consultant"). The wording for the company's
-lane (animation, documentary, digital-first, drama or general) is the owner's
-own. The second paragraph is written from what the company says about itself
-on its website, its work and its founders, and it never names anything that is
-not on record. With a named person the email opens "Hello Becky, I trust you
-are well."; with none, "Hello,".
+Production-house emails follow the owner's template of 14 October, under the
+subject "Stories built to travel": who we are and what TVF makes; "Which is why
+<company> caught my attention.", one line about their work and the partnership
+lines for the company's lane (animation, documentary, digital-first, drama or
+general, the owner's own wording); a short call, "I am based in Mumbai and would
+gladly work around your schedule." The approver speaks in their own name: "I'm
+Kartikeya, who handles Business Development and IP Strategy at The Viral Fever
+(TVF)…" for Kartikeya, and each other person's own first name and title for
+them. It is signed "Regards, <name>. The Viral Fever". The line about their work
+is written by a model (Groq) from what the company says about itself on its
+website and nothing else, and it ends "…is the same ground our own series stand
+on."; it never names the company, a person or anything that is not on record,
+and with nothing of theirs on record a plain line stands in. With a named person
+the email opens "Hello Kelly, I trust you are well."; with none, "Hello,".
 
 Some drafts say **Written by a model** in their details: a model wrote the
 opening sentence from that same evidence and nothing else, with every number in
@@ -580,10 +600,9 @@ out from whichever of yours has the most room left. Nobody's approval ever
 leaves from somebody else's address.
 
 **What you see is what goes out.** A draft is shown to you as you would send it:
-your name and title in the sign-off. Kartikeya sees his own emails in his own
-voice ("I am Kartikeya, and I lead Business Development and IP Strategy…", the
-line from the original samples) rather than "on behalf of Kartikeya". Approving
-stores exactly the text you read. Approving needs your name and title; if you
+your name in the sign-off, and in US Production Houses your own first name and
+title in the opening ("I'm Kartikeya, who handles Business Development and IP
+Strategy…" when Kartikeya opens it). Approving stores exactly the text you read. Approving needs your name and title; if you
 have not set them, it says so.
 
 **Sending today**, at the top of Outreach, lists everyone: each of their sending
@@ -676,8 +695,12 @@ approval per email.
 
 # The footer
 
-The sign-off, the postal address and the line that lets someone out are the same
-on every email. They are one setting, not four lines buried in each template.
+The sign-off is the same on every email of a project. It is one setting, not
+lines buried in each template. Since 2026-10-13 no project's footer has an
+opt-out line or a postal address (the owner: "remove the last line from every
+single service"); any reply that is not neutral still stops all mail to that
+address. In LCX Services, LCX Clipping, US Production Houses and Universal the
+email is signed with the name and title of whoever approves it.
 
 Press **Footer** at the top of the Outreach screen.
 
@@ -687,13 +710,12 @@ Fill in your name, your title and your postal address. In the footer text,
 `{{sender_name}}`, `{{sender_title}}` and `{{postal_address}}` stand for those
 three. The preview underneath shows exactly how the block will read.
 
-Two things it will not let you do:
+It will not let you save an empty footer, one that still says `SET_ME`, or one
+with a field it does not know.
 
-- **Save without a postal address.** Commercial email has to carry one, and a
-  missing address is the fastest way to get a sending domain blocked.
-- **Save without a way out.** Keep the line that tells the recipient how to stop
-  hearing from you. It is the law, and it is the difference between a reply and
-  a spam report.
+**Subjects** are five words at most in every project except Universal, where
+you write your own. A subject that would come out longer is replaced by the
+template's short fallback, and a stored one that is longer cannot be approved.
 
 When you save, the drafts already waiting for approval get the new footer too.
 Only the footer is replaced; anything you wrote by hand above it stays exactly
@@ -946,7 +968,8 @@ every other way in it found (a phone number, the contact page, social profiles)
 and what it already tried. The weekly refresh reads the website of every lead
 without a usable address once, shortlisted leads included.
 
-**"The greeting says 'Hi there' or just 'Hello,'."** That means no person could be
+**"The greeting says 'Hi there' or just 'Hello,'."** (LCX Services never says
+"Hi there": it is "Hello <first name>," or "Hello,".) That means no person could be
 named for the address the email goes to, and the engine will not guess. When the
 lead lists a person at their own address, or a person against a shared inbox
 like info@, the greeting uses their first name. "Hi there" is correct behaviour;

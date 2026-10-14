@@ -722,18 +722,21 @@ values (
       "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender''s time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT''s clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person''s own Apollo record, the company''s state or city, a phone''s area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient''s clock (weekdays_only): an approval after today''s window, or at a weekend, takes the next weekday''s. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender''s clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". Sending is paused for this project (sending_paused). Its startups are in Mumbai and elsewhere in India, so one that names no country is taken to be Indian (assumed_country)."
     },
     "daily_send_cap": 10,
+    "subject_max_words": 5,
+    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted.",
     "templates": [
       {
         "key": "strategic_intro_v1",
-        "subject": "{{company}} + The Viral Fever — a conversation worth having",
+        "subject": "A conversation worth having",
         "body": "Hi {{greeting_name}},\n\nI lead corporate development at The Viral Fever (TVF) - one of India''s largest independent studios, with a platform reaching tens of millions of viewers.\n\n{{hook}}\n\nWe''re looking at a small number of product companies whose technology would slot straight into how we make and distribute content, and {{company}} is one of them. I''d value 20 minutes to understand where you''re headed and whether there''s a fit - as a customer, a partner, or something more strategic.\n\nOpen to a call?\n\n{{footer}}",
-        "guidance": "First touch. Deliberately ambiguous about acquisition - founders hear ''strategic'' and choose how to read it. Human-approved per draft like every template."
+        "guidance": "First touch. Deliberately ambiguous about acquisition - founders hear ''strategic'' and choose how to read it. Human-approved per draft like every template. Subject (owner, 2026-10-13): \"A conversation worth having\", at most five words and no company name.",
+        "subject_fallback": "A short conversation"
       }
     ],
-    "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- sign-off, postal address, opt-out -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
+    "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- the sign-off -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
-      "text": "{{sender_name}}\n{{sender_title}}\nIf this isn''t relevant, reply \"no thanks\" and you won''t hear from me again.",
-      "guidance": "Owner decision 2026-10-09: the sign-off and opt-out, with the postal address omitted. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
+      "text": "{{sender_name}}\n{{sender_title}}",
+      "guidance": "Owner decision 2026-10-09: the sign-off, with the postal address omitted. The owner, 2026-10-13: the opt-out line is removed from every project''s footer (\"remove the last line from every single service\"); any reply that is not neutral still stops all mail to that address. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     }
   },
   "schedule": [

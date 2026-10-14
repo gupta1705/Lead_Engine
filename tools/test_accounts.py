@@ -160,7 +160,8 @@ def api():
         out["send_from"] = "approver"
         # Kartikeya's own lines, from the repo's config (the owner's wording), given to a test login
         repo = json.loads((ROOT / "config" / "segment.us-production-houses.json").read_text(encoding="utf-8"))
-        out["voices"] = {kart_email: repo["outreach"]["voices"]["kartikeyap@theviralfever.com"]}
+        # since 2026-10-14 every approver speaks in their own name (outreach.signed_intro), not through voices
+        out["signed_intro"] = repo["outreach"]["signed_intro"]
         # and its sending window (owner, 2026-10-12): each approval at its own second, 10:00-10:30 its recipient's clock
         out["send_window"] = repo["outreach"]["send_window"]
         cur.execute("insert into segments (slug, name, entity_type, config) values (%s, 'ZZ accounts', 'company', %s)"
@@ -224,7 +225,8 @@ def api():
                         " returning id", (eid, "kay.%s@zz-acct.example" % uuid.uuid4().hex[:6]))
             return str(eid), cur.fetchone()[0]
         canon_footer = dr.footer_for(out)
-        opener = "I'm writing on behalf of Kartikeya, who leads Business Development and IP Strategy at The Viral Fever (TVF)."
+        # the project's own "I'm <first name>, who handles <title> at The Viral Fever (TVF)" (owner, 2026-10-14)
+        opener = dr.signed_intro(out, out["sender"]["name"], out["sender"]["title"]) + "."
         body = "Hello Kay,\n\nI trust you are well.\n\n" + opener + "\n\nA call?\n\n" + canon_footer
         e1, c1 = company()
         cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status) values"
@@ -238,7 +240,8 @@ def api():
         check("Asha's view: her name and title sign it", a_view.endswith(dr.footer_for(out, "Asha Rao", "Business Development")), True)
         k_view = shown(k)
         check("Kartikeya's view: his first-person line, his sign-off",
-              ("I am Kartikeya, and I lead Business Development and IP Strategy at" in k_view, "on behalf of" in k_view,
+              ("I'm Kartikeya, who handles Business Development and IP Strategy at The Viral Fever (TVF)." in k_view,
+               opener in k_view,
                k_view.endswith(dr.footer_for(out, "Kartikeya", "Business Development and IP Strategy"))), (True, False, True))
         cur.execute("select body from outreach where id = %s", (d1,))
         check("  the stored draft is untouched by looking", cur.fetchone()[0], body)

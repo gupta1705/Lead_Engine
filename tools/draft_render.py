@@ -19,27 +19,29 @@ one sentence -- which reads as a blast both to a person and to a spam filter
 -- while the same lead always renders identically, so a redraft never quietly
 changes text somebody already read.
 
-THE FOOTER is one setting per segment: the sign-off and the way out. Templates
-end with {{footer}}; the text lives in config outreach.footer.text and is
-edited in the app. Postal addresses are optional and omitted by default
-(owner, 2026-10-09). The opt-out and supported fields are still validated.
+THE FOOTER is one setting per segment: the sign-off. Templates end with
+{{footer}}; the text lives in config outreach.footer.text and is edited in the
+app. Postal addresses are optional and omitted by default (owner, 2026-10-09).
+The opt-out line is gone from every project's footer (owner, 2026-10-13:
+"remove the last line from every single service"); any reply that is not
+neutral still stops all mail to that address (outreach_policy.ANSWERED_SQL).
+The supported fields are still validated.
 """
 import datetime as dt
 import hashlib
 import re
 
 # ------------------------------------------------------------------- footer
-DEFAULT_FOOTER = (
-    "{{sender_name}}\n{{sender_title}}\n"
-    "If this isn't relevant, reply \"no thanks\" and you won't hear from me again.")
+# 2026-10-13, the owner: no opt-out line ("If this isn't relevant, reply "no thanks"...") in any footer
+DEFAULT_FOOTER = "{{sender_name}}\n{{sender_title}}"
 
 # What the footer is allowed to interpolate. Deliberately small: the footer is
 # the same on every email, so a field that varies per lead does not belong.
-FOOTER_FIELDS = ("sender_name", "sender_title", "postal_address")
-
-OPT_OUT_MARKERS = ("unsubscribe", "opt out", "opt-out", "no thanks",
-                   "hear from me again", "hear from us again", "hear from me",
-                   "remove you", "stop hearing", "reply stop", "leave you be")
+# sender_company (2026-10-13, LCX Services' review, point 10): the project's
+# company on the title line ("Business Development, LCX"), from config
+# outreach.sender.company, so a person's one profile title works in every
+# project. A footer that does not use it renders exactly as before.
+FOOTER_FIELDS = ("sender_name", "sender_title", "postal_address", "sender_company")
 
 PLACEHOLDER = re.compile(r"{{(\w+)}}")
 
@@ -53,7 +55,8 @@ def resolve_footer(text, sender):
     sender = sender or {}
     vals = {"sender_name": sender.get("name") or "",
             "sender_title": sender.get("title") or "",
-            "postal_address": sender.get("postal_address") or ""}
+            "postal_address": sender.get("postal_address") or "",
+            "sender_company": sender.get("company") or ""}
     out = text or ""
     for k, v in vals.items():
         out = out.replace("{{%s}}" % k, v)
@@ -77,7 +80,7 @@ def validate_footer(text, sender):
     problems = []
     text = (text or "").strip()
     if not text:
-        return ["The footer is empty. Every email needs a sign-off and a way out of the list."]
+        return ["The footer is empty. Every email needs a sign-off."]
     unknown = sorted({p for p in PLACEHOLDER.findall(text) if p not in FOOTER_FIELDS})
     if unknown:
         problems.append("%s is not a field the footer can use. It can use: %s."
@@ -87,11 +90,7 @@ def validate_footer(text, sender):
     if "SET_ME" in resolved:
         problems.append("The footer still says SET_ME. Fill in the name and the "
                         "sender details.")
-    low = resolved.lower()
-    if not any(m in low for m in OPT_OUT_MARKERS):
-        problems.append("No way out. Keep a line telling the recipient how to stop "
-                        "hearing from you -- it is both the law and the difference "
-                        "between a reply and a spam report.")
+    # no opt-out line is required any more (owner, 2026-10-13: the last line is removed from every footer)
     return problems
 
 
@@ -637,6 +636,44 @@ def _their_city(meta):
     return ""
 
 
+DEFAULT_THEME = "Stories Built to Travel"
+
+
+def pick_theme(cfg, written, lane):
+    """The subject's theme: the one the model wrote, else the lane's own (outreach.angles), else DEFAULT_THEME.
+    The owner, 2026-10-13 ("subject for all emails ... less than 5 or equal to 5 words"): with
+    outreach.theme_max_words set (US Production Houses: 4, so "On <theme>" is at most 5 words), a theme longer than
+    that is passed over for the next one. Without it, the first one given, as before."""
+    cap = (cfg or {}).get("theme_max_words")
+    for theme in (written, lane, DEFAULT_THEME):
+        if theme and (not cap or subject_words(theme) <= int(cap)):
+            return theme
+    return DEFAULT_THEME
+
+
+def ph_line_fallback(facts):
+    """The hook line of the owner's 2026-10-14 template when no model writes one, in the shape of the owner's own
+    sample ("The comedy at the heart of your work is the same ground our own series stand on."). Not from the genre
+    words found on a site: the first try (2026-10-14) wrote "the comedy at the heart of your work" to 87North (action)
+    and Severin Films (cult horror) from one "comedy" each, the same trap the paragraph fell into on 2026-09-18. Their
+    stories, which is true of every company written to."""
+    return "The stories at the heart of your work are the same ground our own series stand on."
+
+
+def sender_first(name):
+    """The name a person goes by in "I'm <name>, who handles ...": the first word of their profile name."""
+    return (str(name or "").split() or [""])[0].rstrip(".,")
+
+
+def signed_intro(cfg, name, title):
+    """outreach.signed_intro ("I'm {{sender_first}}, who handles {{sender_title}} at The Viral Fever (TVF)") for this
+    name and title, or None when the project has none."""
+    t = (cfg or {}).get("signed_intro")
+    if not t:
+        return None
+    return t.replace("{{sender_first}}", sender_first(name)).replace("{{sender_title}}", str(title or ""))
+
+
 def tvf_partnership_context(cfg, company, meta, seed, now, generator, person=None, person_name=None):
     """The fields the partnership templates use, and the paragraph a model wrote, if any."""
     angle = tvf_angle(meta, company)
@@ -649,13 +686,27 @@ def tvf_partnership_context(cfg, company, meta, seed, now, generator, person=Non
             wrote = generator(facts, seed)
         except Exception:                        # a model must never fail a draft run
             wrote = None
+    partnership = (copy.get("partnership") or "").replace("{{company}}", company)
+    if cfg.get("tvf_hook") == "line":
+        # The owner's template of 2026-10-14: one paragraph, "Which is why <company> caught my attention.", the one
+        # line Groq writes (or the plain one), then the lane's partnership lines; the subject is the template's own.
+        line = (wrote or {}).get("paragraph") or ph_line_fallback(facts)
+        return {
+            "angle": angle,
+            "angle_line": copy.get("intro_line") or "",
+            "partnership": partnership,
+            "theme": copy.get("theme") or DEFAULT_THEME,
+            "hook": "Which is why %s caught my attention. %s %s" % (company, line, partnership),
+            "generated_hook": (wrote or {}).get("paragraph") or "",
+            "their_city": "",
+        }
     paragraph = (wrote or {}).get("paragraph") or tvf_fit_fallback(facts)
     opener = variant("%s|which" % (seed or company), ["caught my attention.", "drew me in."])
     return {
         "angle": angle,
         "angle_line": copy.get("intro_line") or "",
         "partnership": (copy.get("partnership") or "").replace("{{company}}", company),
-        "theme": (wrote or {}).get("theme") or copy.get("theme") or "Stories Built to Travel",
+        "theme": pick_theme(cfg, (wrote or {}).get("theme"), copy.get("theme")),
         "hook": "Which is why %s %s %s" % (company, opener, paragraph),
         "generated_hook": (wrote or {}).get("paragraph") or "",
         "their_city": _their_city(meta),
@@ -694,56 +745,252 @@ def lcxs_services(cfg, meta, n=3):
     return [{"name": s, "what_it_does": lines[s]} for s in names[:n]]
 
 
-def lcxs_facts(cfg, company, meta, writing_to=None):
-    meta = meta or {}
-    facts = {"company": company, "they_are": meta.get("audience") or "a business"}
-    if writing_to:
-        facts["writing_to"] = writing_to
-    ev = meta.get("lcx_judgement") if isinstance(meta.get("lcx_judgement"), dict) else {}
-    about = meta.get("site_about") if isinstance(meta.get("site_about"), dict) else {}
-    if ev.get("site_read") is True and ev.get("site_theirs") is not False:
-        own = {"site_title": clean_title(_plain(about.get("title"), 160), 120),
-               "site_description": _plain(about.get("description"), 300),
-               "about_page": _plain(about.get("about"), 500)}
-        own = {k: v for k, v in own.items() if v}
-        if own:
-            facts["in_their_own_words"] = own
-    si = meta.get("scoring_inputs") if isinstance(meta.get("scoring_inputs"), dict) else {}
-    try:
-        trigger = float(si.get("buying_trigger") or 0)
-    except (TypeError, ValueError):
-        trigger = 0.0
-    if trigger > 0 and isinstance(meta.get("buying_signal"), str) and meta["buying_signal"].strip():
-        facts["reason_to_buy_now"] = meta["buying_signal"].strip()
-    routes = meta.get("site_contact_routes") if isinstance(meta.get("site_contact_routes"), dict) else {}
-    socials = routes.get("socials") if isinstance(routes.get("socials"), dict) else {}
-    posts = [label for key, label in CONTENT_ACCOUNTS.items() if key in {str(k).lower() for k in socials}]
-    if posts:
-        facts["already_posts_on"] = posts
-    facts["services_to_pitch"] = lcxs_services(cfg, meta)
-    return facts
-
-
 def lcxs_pitch_fallback(facts):
-    """The pitch when no model writes one: the two services this kind of buyer is pitched first, by name."""
+    """v2's pitch when no model wrote one: the two services this kind of buyer is pitched first, by name. Kept so a
+    v2 draft still renders (its footer is rebuilt in the app); new drafts are v3."""
     names = [s["name"] for s in facts.get("services_to_pitch") or []][:2]
     if len(names) == 1:
         return "I'd start with %s." % names[0]
     return "I'd start with %s and %s." % (names[0], names[1])
 
 
+# -------------------------------------------------------- LCX Services v3: ONE service, problem first (2026-10-13)
+# The owner's review of the LCX Services emails, 2026-10-13 (only this project; "The new changes are for lcx
+# services btw and not us prod houses"). Template lcx_services_problem_v3: subject from the lead service, a greeting
+# that never says "Hi there", their problem, our solution, who we are in the deck's words, one small ask, the footer.
+# The ONE service is the lead's metadata.lead_service (tools/lcx_judge.py, config lead_service); {{problem}} and
+# {{solution}} are the model's (tools/llm.py LCXS_SYSTEM v3) or, when it is not called or fails twice, config
+# generated_pitch.service_copy word for word. Nothing recites their metrics, and no dash of any kind leaves: every
+# inserted value is cleaned and the whole email is cleaned again (render_message, dash_guard).
+DASH_CHARS = "".join(map(chr, (0x2012, 0x2013, 0x2014, 0x2015, 0x2212)))   # figure, en and em dash, horizontal bar, minus
+_DASH = "[" + DASH_CHARS + "]"
+_EN_LIKE = "[" + "".join(map(chr, (0x2012, 0x2013, 0x2212))) + "]"   # built from code points: no tool can turn them into something else
+# 10-15 written with an en dash (or a spaced hyphen) between numbers: a range, "10 to 15"
+_RANGE_DASH = re.compile(r"(?<=\d)(?:[ \t]*" + _EN_LIKE + r"[ \t]*|[ \t]+-[ \t]+)(?=\d)")
+# an en dash, figure dash or minus inside a word (Coca-Cola typed with an en dash) is a hyphen
+_IN_WORD_DASH = re.compile(r"(?<=\w)" + _EN_LIKE + r"(?=\w)")
+# a dash opening or closing a line (a bullet, a dangling tagline) goes
+_EDGE_DASH = re.compile(r"^[ \t]*(?:-+|" + _DASH + r"+)[ \t]+|[ \t]+(?:-+|" + _DASH + r"+)[ \t]*$", re.M)
+# any other: an em dash or bar anywhere, a spaced en dash, a double hyphen, a spaced hyphen -> a comma
+_MID_DASH = re.compile(r"[ \t]*(?:--+|" + _DASH + r"+)[ \t]*|[ \t]+-[ \t]+")
+_COMMA_JUNK = re.compile(r",[ \t]*(?=[.,;:!?])")             # "word, ." left by a dash before a full stop
+# where a tagline starts in a company's name: a spaced hyphen or dash, a pipe, a colon and a space (spec, section 12)
+_TAGLINE = re.compile(r"[ \t]+(?:-{1,2}|" + _DASH + r"+)[ \t]+|[ \t]*\|[ \t]*|:[ \t]+")
+_OFFICIAL = re.compile(r"[ \t,]+official(?:[ \t]+(?:site|store|website|page))?[ \t.]*$", re.I)
+# legal forms newsmatch.display_name (English ones only, shared with US Production Houses) leaves on: matched with
+# their own capitals, as the last word, so "Studio Sa" or "Kodansha" is never cut
+_FOREIGN_FORM = re.compile(r"[ \t,]+(?:AB|AS|ASA|A/S|AG|SA|S\.A\.?|SpA|S\.p\.A\.?|NV|N\.V\.?|BV|B\.V\.?|Oy|Oyj|KK|"
+                           r"K\.K\.|SE|SAS|SARL|SL|S\.L\.?|Srl|S\.r\.l\.?|Ltda\.?|Pty\.?[ \t]+Ltd\.?|Pte\.?[ \t]+Ltd\.?|"
+                           r"Sdn\.?[ \t]+Bhd\.?|Bhd\.?|PLC|Plc|plc|LLP|LP|GmbH|S\.L\.U\.?|SLU|a\.s\.|s\.r\.o\.|Sp\. z o\.o\.)$")
+_MARKS = re.compile("[" + "".join(map(chr, (0xAE, 0x2120, 0x2122, 0xFE0F))) + "]")   # (R), SM, TM, the emoji form
+# 2026-10-13: US bank charter forms on FDIC names ("Bank First, N.A.", "TBK BANK, SSB"), LCX Services only, so
+# the ask line never reads "work for TBK BANK, SSB?"
+_US_BANK_FORM = re.compile(r"[ \t,]+(?:N\.A\.?|NA|SSB|S\.S\.B\.?|FSB|F\.S\.B\.?)$")
+
+
+def has_dash(text):
+    """A dash used as punctuation: an em, en or figure dash, a horizontal bar, a minus, a double hyphen, or a
+    hyphen with a space on either side. A hyphen inside a word ("long-form", "in-store") is fine."""
+    t = text or ""
+    return bool(re.search(_DASH, t) or "--" in t or re.search(r"(?:^|[ \t])-[ \t]|[ \t]-(?:$|[ \t])", t, re.M))
+
+
+def no_dash(text):
+    """`text` with every dash used as punctuation turned into a comma (or "to" in a range of numbers, or a plain
+    hyphen inside a word), line breaks and every other comma kept. The last guard: the copy and the model's lines
+    carry none already."""
+    t = text or ""
+    t = _RANGE_DASH.sub(" to ", t)
+    t = _IN_WORD_DASH.sub("-", t)
+    t = _EDGE_DASH.sub("", t)
+    t = _MID_DASH.sub(", ", t)
+    return _COMMA_JUNK.sub("", t)
+
+
+def lcxs_company(company):
+    """The company as a person writes it in the ask line, with any tagline cut off: "Rockfish" for "Rockfish -
+    restaurants, online seafood market and tinned seafood", "Dock & Bay" for "Dock & Bay - Certified B Corp",
+    "Whistles" for "WHISTLES", "EGO" for "EGO OFFICIAL". "your team" when what is left is still over 40
+    characters or six words (the spec, section 3). newsmatch.display_name is shared with US Production Houses and is
+    left as it is; this is LCX Services' own."""
+    import newsmatch
+    base = _MARKS.sub("", newsmatch.display_name(company or "")).strip()
+    s = _TAGLINE.split(base, 1)[0].strip() or base
+    s = re.sub(_DASH, "-", s)
+    s = _OFFICIAL.sub("", s).strip() or s
+    for _ in range(2):                           # "Björn Borg AB", "Gjensidige Forsikring ASA" (dry run, 2026-10-13)
+        s = _FOREIGN_FORM.sub("", s).strip() or s
+        s = _US_BANK_FORM.sub("", s).strip() or s
+    # 2026-10-13: a name written all in capitals ("TBK BANK", "NATIONAL COOPERATIVE BANK") loses them on every word
+    # over three letters, so "TBK Bank"; a mixed name keeps its short capitals ("EGO", "HBO") as before
+    cut = 3 if s.upper() == s else 4
+    s = " ".join(w[0] + w[1:].lower() if (len(w) > cut and w.isalpha() and w.isupper()) else w for w in s.split())
+    # 2026-10-13: punctuation that ends the name ("Which?") would double the ask line's "?" ("for Which??")
+    s = s.strip(" ,;:|-").rstrip("?!.,;:").strip(" ,;:|-")
+    if not s or len(s) > 40 or len(s.split()) > 6:
+        return "your team"
+    return s
+
+
+def lcxs_lead_service(cfg, meta):
+    """The lead's metadata.lead_service, or None when it has none yet. `service` is None for a lead the rules hold
+    or call not a buyer, and for a service that is not one of the 18 (a stale or mistyped pick)."""
+    t = (meta or {}).get("lead_service")
+    if not isinstance(t, dict):
+        return None
+    svc = t.get("service") if "service" in t else t.get("name")
+    gp = cfg.get("generated_pitch") or {}
+    known = gp.get("all_services") or list((gp.get("service_lines") or {}))
+    out = dict(t, service=svc)
+    if svc is not None and svc not in known:
+        out.update(service=None, basis="hold", reason="%r is not one of the 18 services" % svc)
+    return out
+
+
+def lcxs_signal(meta):
+    """-> (the Apollo signal, fresh): fresh while scoring_inputs.buying_trigger is above 0 AND the judge's trigger
+    evidence is the signal itself (not words on their site). A signal still picks the lead service when it is old;
+    only a fresh one is said out loud."""
+    meta = meta or {}
+    sig = meta.get("buying_signal")
+    if not (isinstance(sig, str) and sig.strip()):
+        sig = (((meta.get("discovery_raw") or {}).get("lcx_apollo") or {}).get("apollo_search") or {}).get("signal")
+    sig = str(sig or "").strip()
+    si = meta.get("scoring_inputs") if isinstance(meta.get("scoring_inputs"), dict) else {}
+    try:
+        trigger = float(si.get("buying_trigger") or 0)
+    except (TypeError, ValueError):
+        trigger = 0.0
+    why = str(((meta.get("lcx_judgement") or {}) if isinstance(meta.get("lcx_judgement"), dict) else {})
+              .get("buying_trigger") or "")
+    return sig, bool(sig) and trigger > 0 and why.lower().startswith(sig.lower())
+
+
+def lcxs_copy(cfg, service, meta):
+    """{subject, problem, solution, what_it_does, signal_line} for the lead service: config service_copy (with its
+    audience's variant), the problem replaced by the signal's line only while the signal is fresh."""
+    gp = cfg.get("generated_pitch") or {}
+    c = (gp.get("service_copy") or {}).get(service)
+    if not c:
+        raise ValueError("outreach.generated_pitch.service_copy has no %s" % service)
+    var = (c.get("by_audience") or {}).get((meta or {}).get("kind")) or {}
+    sig, fresh = lcxs_signal(meta)
+    line = ((gp.get("signal_problems") or {}).get(sig) or {}).get(service) if fresh else None
+    return {"subject": c["subject"], "problem": line or var.get("problem") or c["problem"],
+            "solution": var.get("solution") or c["solution"],
+            "what_it_does": (gp.get("service_lines") or {}).get(service) or "", "signal_line": bool(line)}
+
+
+def lcxs_facts(cfg, company, meta, writing_to=None, tag=None):
+    """Exactly what the model is shown (v3, the spec's section 5), plus "_check" for the checker only: the
+    company's name and the person's, which the model is never sent (tools/llm.py strips every "_" key)."""
+    meta = meta or {}
+    tag = tag or lcxs_lead_service(cfg, meta) or {}
+    gp = cfg.get("generated_pitch") or {}
+    facts = {"they_are": meta.get("audience") or "a business"}
+    ev = meta.get("lcx_judgement") if isinstance(meta.get("lcx_judgement"), dict) else {}
+    about = meta.get("site_about") if isinstance(meta.get("site_about"), dict) else {}
+    if ev.get("site_read") is True and ev.get("site_theirs") is not False:
+        own = {"site_title": clean_title(_plain(about.get("title"), 160), 120),
+               "site_description": _plain(about.get("description"), 300),
+               "about_page": _plain(about.get("about"), 500)}
+        junk = gp.get("about_page_junk")
+        if own["about_page"] and junk and re.search(junk, own["about_page"], re.I):
+            own["about_page"] = ""               # opening hours, terms, a cookie notice: not what they do
+        own = {k: v for k, v in own.items() if v}
+        if own:
+            facts["in_their_own_words"] = own
+    sig, fresh = lcxs_signal(meta)
+    phrase = (gp.get("reason_phrases") or {}).get(sig) if fresh else None
+    if phrase:
+        facts["reason_to_buy_now"] = phrase      # our plain words; Apollo's string is never sent
+    routes = meta.get("site_contact_routes") if isinstance(meta.get("site_contact_routes"), dict) else {}
+    socials = routes.get("socials") if isinstance(routes.get("socials"), dict) else {}
+    posts = [label for key, label in CONTENT_ACCOUNTS.items() if key in {str(k).lower() for k in socials}]
+    if posts:
+        facts["already_posts_on"] = posts
+    svc = tag.get("service")
+    if svc:
+        copy = lcxs_copy(cfg, svc, meta)
+        facts["lead_service"] = {"name": svc, "what_it_does": copy["what_it_does"], "problem_hint": copy["problem"]}
+    facts["_check"] = {"company": company, "writing_to": writing_to or None,
+                       "all_services": list(gp.get("all_services") or (gp.get("service_lines") or {}))}
+    return facts
+
+
+def lcxs_model_would_write(facts):
+    """The model is called only with something of theirs to write from: their own words or a fresh signal."""
+    return bool(facts.get("in_their_own_words") or facts.get("reason_to_buy_now"))
+
+
+REGISTERS = ("lcx_fdic", "lcx_wikidata", "lcx_osm")
+
+
+def lcxs_hold(tag, meta):
+    """-> why this lead gets no draft yet (the spec's section 7), or None. Not a buyer: never drafted. Check
+    service: held for a person to pick (a studio that sells what we would pitch, a service that is not one of the
+    18). Read site first: a lead only an Apollo search found, with nothing of its own read, unless a person picked
+    its service."""
+    if not tag:
+        return "No lead service yet: the next chain run tags it (tools/lcx_judge.py)"
+    if not tag.get("service"):
+        if tag.get("basis") == "not_a_buyer":
+            return tag.get("reason") or "Not a buyer"
+        return "Check service: %s" % (tag.get("reason") or "pick a service by hand")
+    meta = meta or {}
+    dr = meta.get("discovery_raw") if isinstance(meta.get("discovery_raw"), dict) else {}
+    ev = meta.get("lcx_judgement") if isinstance(meta.get("lcx_judgement"), dict) else {}
+    site = ev.get("site_read") is True and ev.get("site_theirs") is not False
+    if tag.get("set_by") in (None, "", "rules") and not site and not any(isinstance(dr.get(k), dict) for k in REGISTERS):
+        return "Read site first: only an Apollo search found it, and its own site has not been read"
+    return None
+
+
 def lcxs_context(cfg, company, meta, seed, generator, person=None):
-    facts = lcxs_facts(cfg, company, meta, writing_to=person)
+    """The v3 fields for one lead, or a draft_hold that stops a v3 draft (render() raises it). v2's fields are kept
+    (no opener, the plain pitch) so the drafts written with v2 still render."""
+    meta = meta or {}
+    name = lcxs_company(company)
+    g = cfg.get("greeting") or {}
+    if person:
+        line = (g.get("named") or "Hello {{first_name}},\n\nI trust you are well.").replace("{{first_name}}", person)
+        short = (g.get("follow_up_named") or "Hello {{first_name}},").replace("{{first_name}}", person)
+    else:
+        line, short = g.get("unnamed") or "Hello,", g.get("follow_up_unnamed") or "Hello,"
+    ctx = {"company": name, "greeting_line": no_dash(line), "greeting": no_dash(short), "dash_guard": True,
+           "lead_service": None, "generated_hook": "", "opener_block": "",
+           "pitch": lcxs_pitch_fallback({"services_to_pitch": lcxs_services(cfg, meta)})}
+    tag = lcxs_lead_service(cfg, meta)
+    hold = lcxs_hold(tag, meta)
+    if hold:
+        ctx["draft_hold"] = hold
+        return ctx
+    svc = tag["service"]
+    copy = lcxs_copy(cfg, svc, meta)
+    facts = lcxs_facts(cfg, name, meta, writing_to=person, tag=tag)
     wrote = None
     if generator is not None:
         try:
             wrote = generator(facts, seed)
         except Exception:                        # a model must never fail a draft run
             wrote = None
-    opener = (wrote or {}).get("opener") or ""
-    pitch = (wrote or {}).get("pitch") or lcxs_pitch_fallback(facts)
-    return {"opener_block": (opener + "\n\n") if opener else "", "pitch": pitch,
-            "generated_hook": (opener + " " + pitch).strip() if wrote else ""}
+    wrote = wrote if isinstance(wrote, dict) else None
+    if wrote and wrote.get("no_fit"):
+        ctx["draft_hold"] = "Check service: the model says %s does not fit them (%s)" % (svc, wrote["no_fit"])
+        return ctx
+    if wrote and wrote.get("problem") and wrote.get("solution"):
+        problem, solution = no_dash(wrote["problem"]), no_dash(wrote["solution"])
+        ctx["generated_hook"] = problem + " " + solution
+    else:
+        if tag.get("basis") == "audience" and not (generator is not None and lcxs_model_would_write(facts)):
+            # picked only from its audience, and nothing of theirs was read to confirm the service fits
+            ctx["draft_hold"] = ("Check service: %s was picked only from its audience, with nothing of theirs on "
+                                 "record to confirm it" % svc)
+            return ctx
+        problem, solution = copy["problem"], copy["solution"]
+    ctx.update({"service_subject": no_dash(copy["subject"]), "problem": problem, "solution": solution,
+                "lead_service": svc})
+    return ctx
 
 
 # -------------------------------------------------------- greeting, template
@@ -824,6 +1071,10 @@ def render(template, ctx):
         out = out.replace("{{%s}}" % k, v if isinstance(v, str) else str(v))
     leftover = PLACEHOLDER.findall(out)
     if leftover:
+        if ctx.get("draft_hold"):
+            # LCX Services (2026-10-13): a lead held from drafting (not a buyer, Check service, Read site first)
+            # leaves v3's {{problem}} unfilled on purpose; the draft step names the reason, not the placeholders
+            raise ValueError(ctx["draft_hold"])
         raise ValueError("unfilled placeholders: %s" % sorted(set(leftover)))
     return out
 
@@ -864,8 +1115,16 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "sender_name": sender.get("name", "") or "",
         "sender_title": sender.get("title", "") or "",
         "postal_address": sender.get("postal_address", "") or "",
+        "sender_company": sender.get("company", "") or "",
         "opener_subject": (opener_subject or "").strip(),
     }
+    intro = signed_intro(cfg, sender.get("name"), sender.get("title"))
+    if intro is not None:
+        # the canonical form; whoever opens the draft sees their own (personalize)
+        ctx["sender_intro"] = intro
+    if cfg.get("subject_max_words"):
+        # the owner, 2026-10-13: no subject over this many words ships (render_message)
+        ctx["subject_max_words"] = int(cfg["subject_max_words"])
     if lcxs:
         ctx.update(lcxs_context(cfg, company, meta, seed, generator, person))
     if partnership:
@@ -877,7 +1136,53 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
 
 
 def render_message(tpl, ctx):
-    return render(tpl["subject"], ctx), render(tpl["body"], ctx)
+    subject, body = render(tpl["subject"], ctx), render(tpl["body"], ctx)
+    if ctx.get("dash_guard"):
+        subject, body = dash_clean(subject, body, ctx.get("footer") or "")
+    return capped_subject(subject, tpl, ctx), body
+
+
+# The owner, 2026-10-13: "subject for all emails for all services should be less than 5 or equal to 5 words".
+# outreach.subject_max_words (5 in every project that drafts; Universal's subject is the writer's own) is checked
+# on every rendered subject. One over it is replaced by the template's subject_fallback; one that is still over it
+# (or a template with none) is not drafted at all, so a longer subject never ships. "Re:" in front of a follow-up
+# is not a word of the subject: a follow-up repeats its opener's subject to stay in that Gmail thread.
+_REPLY_MARK = re.compile(r"^(?:\s*(?:re|fwd?)\s*:\s*)+", re.I)
+
+
+def subject_words(subject):
+    """The words in a subject, as a person counts them: "Re:" left out, and a lone "/", "+" or "&" is no word."""
+    return sum(1 for w in _REPLY_MARK.sub("", subject or "").split() if re.search(r"\w", w))
+
+
+def capped_subject(subject, tpl, ctx):
+    cap = ctx.get("subject_max_words")
+    if not cap or subject_words(subject) <= cap:
+        return subject
+    fallback = (tpl or {}).get("subject_fallback")
+    if fallback:
+        short = render(fallback, ctx)
+        if ctx.get("dash_guard"):
+            short = no_dash(short)
+        if subject_words(short) <= cap and not (ctx.get("dash_guard") and has_dash(short)):
+            return short
+    raise ValueError("the subject is over %d words and the template has no shorter subject_fallback: %r"
+                     % (cap, subject[:80]))
+
+
+def dash_clean(subject, body, footer=""):
+    """LCX Services (the owner's review, 2026-10-13, point 7): no dash used as punctuation anywhere in what is
+    sent. The subject and the body above the footer are cleaned (no_dash); the footer is left byte for byte, because
+    approving swaps it for the approver's own by matching it exactly (personalize), so a footer that carries a dash
+    stops the draft instead, to be fixed in Outreach -> Footer."""
+    subject = no_dash(subject)
+    head, tail = (body[:-len(footer)], footer) if footer and body.endswith(footer) else (body, "")
+    head = no_dash(head)
+    if has_dash(subject) or has_dash(head):
+        raise ValueError("a dash is left in the email after cleaning")
+    if tail and has_dash(tail):
+        raise ValueError("the footer has a dash in it: change it in Outreach, Footer")
+    return subject, head + tail
 
 
 # ----------------------------------------------------------- whose email it is
@@ -890,7 +1195,15 @@ def render_message(tpl, ctx):
 # edit turns it back into the canonical form, so the next person to open it sees it as theirs.
 
 def sends_as_approver(cfg):
+    """It goes out from the approver's own Gmail (and so is signed by them)."""
     return (cfg or {}).get("send_from") == "approver"
+
+
+def signs_as_approver(cfg):
+    """It is signed by the person who approves it. The owner, 2026-10-13 ("sign with the approver's name"): LCX
+    Clipping keeps sending from its own pool mailboxes, but outreach.sign_as "approver" signs each email with the
+    approving person's own name and title, as the projects that send from the approver's Gmail are signed."""
+    return sends_as_approver(cfg) or (cfg or {}).get("sign_as") == "approver"
 
 
 def footer_for(cfg, name=None, title=None):
@@ -914,27 +1227,57 @@ def _signs(person):
     return bool(person and person.get("name") and person.get("title"))
 
 
+# The owner, 2026-10-13: the opt-out line is removed from every footer. A draft written before then still ends with
+# the project's sign-off and that line under it; it is recognised as the project's own sign-off, so whoever opens it
+# sees it as they would send it now (their sign-off, no opt-out line), and approving stores that, rather than it going
+# out from their Gmail still signed by the project's sender (US Production Houses: "Vedansh Gupta").
+LEGACY_OPT_OUTS = ("\n\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+                   "\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.",
+                   "\n\nIf you'd rather not hear from me again, just reply and let me know.")
+
+
+def _signoff_len(body, canon):
+    """How much of the end of `body` is the project's sign-off `canon` (with a legacy opt-out line under it), or 0."""
+    if not canon:
+        return 0
+    if body.endswith(canon):
+        return len(canon)
+    for line in LEGACY_OPT_OUTS:
+        if body.endswith(canon + line):
+            return len(canon) + len(line)
+    return 0
+
+
 def personalize(body, cfg, person):
     """The stored (canonical) body as `person` ({email, name, title}) would send it. Unchanged when the
-    project does not send from the approver's own Gmail, or the person has no name and title yet."""
-    if not body or not sends_as_approver(cfg) or not _signs(person):
+    project is not signed by its approver (signs_as_approver), or the person has no name and title yet."""
+    if not body or not signs_as_approver(cfg) or not _signs(person):
         return body
     out = body
     canon, mine = footer_for(cfg), footer_for(cfg, person["name"], person["title"])
-    if canon != mine and out.endswith(canon):
-        out = out[:-len(canon)] + mine
-    for theirs, own in voice_swaps(cfg, person.get("email")):
-        out = out.replace(theirs, own)
+    n = _signoff_len(out, canon)
+    if n and (canon != mine or n != len(canon)):
+        out = out[:-n] + mine
+    for theirs, own in voice_swaps(cfg, person.get("email")) + intro_swaps(cfg, person):
+        out = out.replace(theirs, own, 1)
     return out
+
+
+def intro_swaps(cfg, person):
+    """[(the project's own "I'm ..." line, this person's)] from outreach.signed_intro (the owner, 2026-10-14: "For
+    different accounts use their name. For Kartikeya's account use his name"), or []."""
+    canon = signed_intro(cfg, ((cfg or {}).get("sender") or {}).get("name"), ((cfg or {}).get("sender") or {}).get("title"))
+    mine = signed_intro(cfg, person.get("name"), person.get("title")) if person else None
+    return [(canon, mine)] if canon and mine and canon != mine else []
 
 
 def canonicalize(body, cfg, person):
     """The reverse of personalize: a body as `person` saw it, back in the form that is stored."""
-    if not body or not sends_as_approver(cfg) or not _signs(person):
+    if not body or not signs_as_approver(cfg) or not _signs(person):
         return body
     out = body
-    for theirs, own in voice_swaps(cfg, person.get("email")):
-        out = out.replace(own, theirs)
+    for theirs, own in voice_swaps(cfg, person.get("email")) + intro_swaps(cfg, person):
+        out = out.replace(own, theirs, 1)
     canon, mine = footer_for(cfg), footer_for(cfg, person["name"], person["title"])
     if canon != mine and out.endswith(mine):
         out = out[:-len(mine)] + canon

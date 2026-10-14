@@ -174,7 +174,7 @@ def cmd_draft(args):
 
     import llm
     gen = llm.make_generator(cfg, log=log)
-    part = ("the opener and the pitch" if llm.lcxs_policy(cfg) else
+    part = ("the problem and solution lines" if llm.lcxs_policy(cfg) else
             "the paragraph about each company" if llm.partner_policy(cfg) else "the opening sentence")
     if gen:
         log("  %s is written by %s from each lead's own facts;" % (part, gen.policy["model"]))
@@ -196,8 +196,10 @@ def cmd_draft(args):
         try:
             meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
             tpl = requested or pick_template(cfg, meta)
-            # only a template that actually uses {{hook}} is worth a model call
-            use_gen = gen if ("{{hook}}" in (tpl.get("body") or "") or "{{pitch}}" in (tpl.get("body") or "")) else None
+            # only a template that actually uses {{hook}} is worth a model call (LCX Services v3, 2026-10-13: its
+            # {{problem}} and {{solution}} lines)
+            use_gen = gen if any(p in (tpl.get("body") or "") for p in ("{{hook}}", "{{pitch}}", "{{problem}}")) \
+                else None
             ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen,
                                 contact_source=csource)
             # the production-house templates differ by whether the email greets a person by name
@@ -216,10 +218,13 @@ def cmd_draft(args):
                                            ("  + " + ", ".join(f["name"] for f in files)) if files else ""))
         if args.dry_run:
             continue
-        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body, _g=written, _f=files: cur.execute(
+        # outreach.service (sql/35, 2026-10-13): the one service an LCX Services email pitched, a record of what was
+        # sold to whom; NULL for every other project's email
+        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body, _g=written, _f=files, _v=ctx.get("lead_service"):
+               cur.execute(
             "insert into outreach (entity_id, contact_id, template_key, subject, body,"
-            " generated_hook, attachments) values (%s, %s, %s, %s, %s, %s, %s) on conflict do nothing",
-            (_e, _c, tpl["key"], _s, _b, _g, json.dumps(_f) if _f else None)))
+            " generated_hook, attachments, service) values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict do nothing",
+            (_e, _c, tpl["key"], _s, _b, _g, json.dumps(_f) if _f else None, _v)))
         made += 1
 
     db.close()
@@ -262,9 +267,16 @@ def cmd_followups(args):
         meta = row["metadata"] if isinstance(row["metadata"], dict) else json.loads(row["metadata"] or "{}")
         company = row["company"]
         tpl = tpls[step["template"]]
-        ctx = build_context(cfg, company, meta, row["full_name"], row["email"],
-                            seed=row["entity_id"], opener_subject=row["opener_subject"])
-        subject, body = render_message(tpl, ctx)
+        try:
+            ctx = build_context(cfg, company, meta, row["full_name"], row["email"],
+                                seed=row["entity_id"], opener_subject=row["opener_subject"])
+            subject, body = render_message(tpl, ctx)
+        except ValueError as e:
+            # 2026-10-13: a follow-up whose opener's subject is over outreach.subject_max_words cannot be shortened
+            # without leaving the opener's Gmail thread, and may not ship longer, so it is not drafted; named, and
+            # the run carries on with the rest
+            log("  %-32s step %d SKIPPED: could not draft it: %s" % (company[:32], step["step"], str(e)[:120]))
+            continue
         log("  %-32s step %d -> %-34s %s" % (company[:32], step["step"], row["email"], subject[:40]))
         if args.dry_run:
             continue

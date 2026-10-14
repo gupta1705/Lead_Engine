@@ -38,6 +38,11 @@ inputs must be fresh too):
   * metadata.lcx_judgement: for each input the phrase it matched or the reason, plus site_read, site_theirs
     and judged_at, shown on the lead so a reviewer can overrule it.
   * every key it set to a value is taken out of metadata.unverified_inputs, as set_scoring_input() does.
+  * metadata.lead_service (the owner's review of the LCX Services emails, 2026-10-13, point 12): the ONE service
+    the lead's email pitches, from config lead_service (choose_service: not a buyer first, then the rules, first
+    match wins, evidence before type before audience, then the audience's first service), as {service, name (the
+    same), rule, basis, reason, evidence, set_by "rules", decided_at}. A person's pick (set_by their email) is
+    never overwritten, and the UPDATE itself checks that, so a pick made mid-run survives too.
 
 UNKNOWN IS JSON NULL. A rubric input nobody can settle yet (no headcount anywhere, a site not read) is written
 as JSON null, which sql/04b keeps (its defaults || inputs merge lets the right side win) and sql/06 leaves out
@@ -432,6 +437,8 @@ class Lists:
                 (self.major_full if "." in d else self.major_domain)[d.lower()] = group
             if (spec or {}).get("names"):
                 self.major_names.append((group, rx(spec["names"])))
+        services = ((cfg.get("outreach") or {}).get("generated_pitch") or {}).get("all_services") or []
+        self.service_rules = ServiceRules(cfg.get("lead_service"), auds, services) if cfg.get("lead_service") else None
 
     def bands_for(self, kind):
         return self.bands.get(kind) or self.default_bands
@@ -447,6 +454,203 @@ class Lists:
             if m:
                 return group, "name '%s'" % m.group(0)
         return None
+
+
+# ------------------------------------------------------------------ the lead service's rules (config lead_service)
+# The owner's review of the LCX Services emails, 2026-10-13, point 12: each lead is tagged with ONE lead service, the
+# email pitches that service, and the outreach row records which one it pitched. The rules are config (lead_service),
+# compiled here once; how they read a lead is choose_service() below. Every regex is matched case-insensitively and
+# anywhere, exactly as the 2026-10-12 simulation on the 3,686 open leads ran them (scratchpad editor/sim4.py).
+COND_LISTS = ("signal", "kind", "not_kind", "osm", "socials", "apollo_key")
+COND_REGEX = ("classes", "industries", "not_classes", "text", "text2", "not_text", "name")
+BASES = ("signal", "fact", "type", "hold")
+
+
+class ServiceRules:
+    """config lead_service, compiled: not_a_buyer, online_only, rules (first match wins) and the fallback."""
+
+    def __init__(self, spec, audiences, services):
+        spec = spec or {}
+        self.patterns = dict(spec.get("patterns") or {})
+        self.services = list(services or [])
+        nab = spec.get("not_a_buyer") or {}
+        self.wrong_at = float(nab.get("wrong_buyer_at_least", 1.0))
+        self.noise = [(n.get("kind"), n.get("label") or "not a buyer", self.re(n["name"]))
+                      for n in nab.get("names") or [] if n.get("name")]
+        oo = spec.get("online_only") or {}
+        self.online_classes = self.re(oo.get("classes")) if oo.get("classes") else NEVER
+        self.online_text = self.re(oo.get("text")) if oo.get("text") else NEVER
+        self.physical_text = self.re(oo.get("physical_text")) if oo.get("physical_text") else NEVER
+        self.rules = []
+        for r in spec.get("rules") or []:
+            if r.get("basis") not in BASES:
+                raise ValueError("lead_service rule %s: basis must be one of %s" % (r.get("id"), ", ".join(BASES)))
+            if (r.get("service") is None) != (r.get("basis") == "hold"):
+                raise ValueError("lead_service rule %s: a hold has no service, and only a hold" % r.get("id"))
+            if r.get("service") is not None and self.services and r["service"] not in self.services:
+                raise ValueError("lead_service rule %s: %r is not one of generated_pitch.all_services"
+                                 % (r.get("id"), r["service"]))
+            if r.get("skip_if") not in (None, "online_only"):
+                raise ValueError("lead_service rule %s: skip_if can only be online_only" % r.get("id"))
+            self.rules.append({"id": r["id"], "service": r.get("service"), "basis": r["basis"],
+                               "reason": r.get("reason") or "", "skip_if": r.get("skip_if"),
+                               "when": self.compile(r.get("when") or {}, r["id"])})
+        fb = spec.get("fallback") or {}
+        self.fallback_reason = fb.get("reason") or "The first service its audience is pitched ({audience})"
+        self.first_service = {a["key"]: (a.get("services") or [None])[0] for a in audiences}
+        self.audience_label = {a["key"]: a.get("label") or a["key"] for a in audiences}
+
+    def re(self, v):
+        if isinstance(v, str) and v.startswith("@"):
+            v = self.patterns[v[1:]]
+        return re.compile(v, re.I)
+
+    def compile(self, cond, rid):
+        out = []
+        for k, v in cond.items():
+            if k == "any":
+                out.append((k, [self.compile(c, rid) for c in v]))
+            elif k in COND_LISTS:
+                out.append((k, [str(x) for x in v]))
+            elif k in COND_REGEX:
+                out.append((k, self.re(v)))
+            elif k == "employees_min":
+                out.append((k, float(v)))
+            else:
+                raise ValueError("lead_service rule %s: unknown condition %r" % (rid, k))
+        return out
+
+
+def _service_view(f, J):
+    """What the lead-service rules read about one lead, from its Facts."""
+    own_site = f.text if (f.read and f.theirs is not False) else ""
+    lst = lambda key: " | ".join(str(x) for x in f.wdf(key)) if isinstance(f.wdf(key), list) else ""  # noqa: E731
+    return {"name": f.name, "kind": f.kind, "own_site": bool(own_site),
+            "own": (f.name + " | " + own_site) if own_site else f.name,
+            "classes": lst("classes"), "industries": lst("industries"),
+            "osm": str(f.osm.get("category") or ""), "apollo_key": str(f.aps.get("key") or "").split("|")[0],
+            "signal": f.signal, "signal_seen": f.signal_seen, "employees": f.employees,
+            "socials": set(f.socials) | f.directory_accounts()}
+
+
+def _match(v, cond):
+    """-> the evidence a compiled condition matched on, or None when it does not match."""
+    ev = []
+    for k, want in cond:
+        if k == "any":
+            got = next((e for e in (_match(v, c) for c in want) if e is not None), None)
+            if got is None:
+                return None
+            ev.append(got)
+        elif k == "signal":
+            if v["signal"] not in want:
+                return None
+            ev.append("Apollo signal: %s" % v["signal"] +
+                      (" (seen %s)" % v["signal_seen"].date().isoformat() if v["signal_seen"] else ""))
+        elif k == "kind":
+            if v["kind"] not in want:
+                return None
+            ev.append("audience: %s" % v["kind"])
+        elif k == "not_kind":
+            if v["kind"] in want:
+                return None
+        elif k == "osm":
+            if v["osm"] not in want:
+                return None
+            ev.append("OpenStreetMap %s" % v["osm"])
+        elif k in ("classes", "industries"):
+            m = want.search(v[k])
+            if not m:
+                return None
+            ev.append("Wikidata %s: %s" % ("class" if k == "classes" else "industry", m.group(0)))
+        elif k == "not_classes":
+            if want.search(v["classes"]):
+                return None
+        elif k in ("text", "text2"):
+            m = want.search(v["own"])
+            if not m:
+                return None
+            ev.append('%s: "%s"' % ("own site" if v["own_site"] and m.start() > len(v["name"]) else "name",
+                                    m.group(0).lower()))
+        elif k == "not_text":
+            if want.search(v["own"]):
+                return None
+        elif k == "socials":
+            hit = [s for s in want if s in v["socials"]]
+            if not hit:
+                return None
+            ev.append("links " + "+".join(hit))
+        elif k == "employees_min":
+            if v["employees"] is None or v["employees"] < want:
+                return None
+            ev.append("%d people" % v["employees"])
+        elif k == "name":
+            m = want.search(v["name"])
+            if not m:
+                return None
+            ev.append('name: "%s"' % m.group(0))
+        elif k == "apollo_key":
+            if v["apollo_key"] not in want:
+                return None
+            ev.append("Apollo search: " + v["apollo_key"])
+    # the audience is how the rule is scoped, not evidence, unless it is all there is
+    return "; ".join(e for e in ev if e and not e.startswith("audience:")) or "; ".join(ev)
+
+
+def _online_only(v, S):
+    """An online-only seller (SparkFun): no store screens to fill, so never Shop Display Videos."""
+    if S.online_classes.search(v["classes"]):
+        return not S.physical_text.search(v["own"])
+    return bool(S.online_text.search(v["own"])) and not S.physical_text.search(v["own"])
+
+
+def choose_service(f, J, wrong, wrong_why, now, stored=None):
+    """-> metadata.lead_service for one lead: {service, name, rule, basis, reason, evidence, set_by, decided_at},
+    or None when the project has no lead_service rules. A person's choice (set_by is not "rules") is returned as it
+    is: the rules never undo it. decided_at is kept from the stored tag when the decision has not changed, so an
+    unchanged lead is not written again."""
+    S = J.service_rules
+    if S is None:
+        return None
+    if isinstance(stored, dict) and stored.get("set_by") not in (None, "", "rules"):
+        return stored
+    v = _service_view(f, J)
+    svc, rid, basis, reason, ev = None, None, None, "", ""
+    if wrong is not None and wrong >= S.wrong_at:
+        rid, basis, reason, ev = "wrong_buyer", "not_a_buyer", "Not a buyer: %s" % (wrong_why or "wrong buyer"), \
+            wrong_why or ""
+    else:
+        for kind, label, pat in S.noise:
+            m = pat.search(v["name"]) if v["kind"] == kind else None
+            if m:
+                rid, basis, reason, ev = "noise_name", "not_a_buyer", "Not a buyer: %s" % label, \
+                    'name: "%s"' % m.group(0)
+                break
+    if basis is None:
+        for r in S.rules:
+            e = _match(v, r["when"])
+            if e is None or (r["skip_if"] == "online_only" and _online_only(v, S)):
+                continue
+            svc, rid, basis, reason, ev = r["service"], r["id"], r["basis"], r["reason"], e
+            break
+    if basis is None:
+        first = S.first_service.get(v["kind"])
+        if first:
+            svc, rid, basis, ev = first, "audience_fallback", "audience", "audience: %s" % v["kind"]
+            reason = S.fallback_reason.replace("{audience}", S.audience_label.get(v["kind"], v["kind"]))
+        else:
+            rid, basis, reason = "no_audience", "hold", "No audience on record: pick a service by hand"
+    out = {"service": svc, "name": svc, "rule": rid, "basis": basis, "reason": reason, "evidence": ev,
+           "set_by": "rules", "decided_at": now.replace(microsecond=0).isoformat()}
+    if isinstance(stored, dict) and same_service(out, stored) and stored.get("decided_at"):
+        out["decided_at"] = stored["decided_at"]
+    return out
+
+
+def same_service(a, b):
+    """The same tag, whenever it was decided."""
+    strip = lambda d: {k: v for k, v in (d or {}).items() if k != "decided_at"}  # noqa: E731
+    return strip(a) == strip(b)
 
 
 _LISTS = {}
@@ -928,7 +1132,20 @@ def judge(lead, cfg, now=None):
     inputs: the five rubric and five modifier inputs, a value or None (unknown; for a modifier, absent).
     reachable_decision_maker is the stored value, 0 when there is none (main() writes it only then).
     gate_inputs: the four gate inputs, a value or None (unknown: the key is removed).
-    evidence: for each key the phrase matched or the reason, plus site_read, site_theirs, judged_at."""
+    evidence: for each key the phrase matched or the reason, plus site_read, site_theirs, judged_at.
+    The lead service (metadata.lead_service) is lead_service(lead, cfg)."""
+    return _judge(lead, cfg, now)[:3]
+
+
+def lead_service(lead, cfg, now=None):
+    """-> metadata.lead_service for one lead (choose_service), from the same facts and wrong_buyer judge() uses;
+    the stored tag is the lead's own metadata.lead_service. None when the config has no lead_service rules."""
+    inputs, _, evidence, f, J, now = _judge(lead, cfg, now)
+    return choose_service(f, J, inputs["wrong_buyer"], evidence.get("wrong_buyer"), now,
+                          f.meta.get("lead_service"))
+
+
+def _judge(lead, cfg, now=None):
     J = lists(cfg)
     now = now or dt.datetime.now(dt.timezone.utc)
     f = Facts(lead, J)
@@ -953,7 +1170,7 @@ def judge(lead, cfg, now=None):
                      "judged_at": now.replace(microsecond=0).isoformat()})
     if f.kind_inferred:
         evidence["kind"] = "%s (from its own words)" % f.kind
-    return inputs, gates, evidence
+    return inputs, gates, evidence, f, J, now
 
 
 def gates_fired(gates):
@@ -1052,7 +1269,12 @@ jsonb_set(
                    then e.metadata->'unverified_inputs' else '[]'::jsonb end) v
             where not (v = any(%(verified)s::text[]))), '[]'::jsonb))
 || jsonb_build_object('lcx_judgement', %(evidence)s::jsonb)
+|| case when %(lead_service)s::jsonb is not null
+             and coalesce(e.metadata#>>'{lead_service,set_by}', 'rules') = 'rules'
+        then jsonb_build_object('lead_service', %(lead_service)s::jsonb) else '{}'::jsonb end
 """
+# The lead service (2026-10-13) is merged with the rest, and only over a tag the rules set: a person who picked the
+# service in the app between this run's read and its write keeps their choice (the check is in the UPDATE itself).
 UPDATE = "update entities e set metadata = " + NEW_METADATA + ", updated_at = now() where e.id = %(id)s"
 
 
@@ -1123,9 +1345,15 @@ def run_judge(db, seg_id, cfg, args):
     line = (cfg.get("auto_shortlist") or {}).get("min_score")
     fill = {k: {} for k in RUBRIC_KEYS + (REACH,) + MODIFIER_KEYS}
     fired, todo, over = {}, [], 0
+    tags = {}                                       # lead service (or the reason there is none): leads
     for L in leads:
-        inputs, gates, ev = judge(L, cfg, now)
+        inputs, gates, ev, f, _, _ = _judge(L, cfg, now)
         meta = L["metadata"]
+        stored_tag = meta.get("lead_service") if isinstance(meta.get("lead_service"), dict) else None
+        tag = choose_service(f, J, inputs["wrong_buyer"], ev.get("wrong_buyer"), now, stored_tag)
+        if tag is not None:
+            label = tag.get("service") or {"not_a_buyer": "(not a buyer)"}.get(tag.get("basis"), "(check service)")
+            tags[label] = tags.get(label, 0) + 1
         new, setv, drop, verified, unverified = planned(meta, inputs, gates, J)
         for k in fill:
             v = inputs[k]
@@ -1145,15 +1373,23 @@ def run_judge(db, seg_id, cfg, args):
             for k in GATE_KEYS:
                 log("    %-25s %-5s %s" % (k, "-" if gates[k] is None else str(gates[k]).lower(), ev.get(k, "")))
             log("    site read %s, site theirs %s, pages %s" % (ev["site_read"], ev["site_theirs"], ev["pages_read"]))
+            if tag is not None:
+                log("    %-25s %s  [%s, %s] %s%s" % ("lead service", tag.get("service") or "-", tag.get("basis"),
+                                                   tag.get("rule"), tag.get("reason"),
+                                                   ("; " + tag["evidence"]) if tag.get("evidence") else ""))
         if new == (meta.get("scoring_inputs") or {}) and unverified == meta.get("unverified_inputs") \
-                and same_judgement(ev, meta.get("lcx_judgement")):
+                and same_judgement(ev, meta.get("lcx_judgement")) \
+                and (tag is None or (stored_tag is not None and same_service(tag, stored_tag))):
             continue
         todo.append({"id": L["id"], "drop": drop, "set": json.dumps(setv), "verified": verified,
-                     "evidence": json.dumps(ev, ensure_ascii=False)})
+                     "evidence": json.dumps(ev, ensure_ascii=False),
+                     "lead_service": json.dumps(tag, ensure_ascii=False) if tag is not None else None})
     log("inputs (value: leads):")
     for k, c in fill.items():
         log("  %-25s %s" % (k, fill_line(c)))
     log("gates the inputs fire: %s" % (fill_line(fired) or "none"))
+    if tags:
+        log("lead services (leads): %s" % ", ".join("%s %d" % kv for kv in sorted(tags.items(), key=lambda kv: -kv[1])))
     if line is not None:
         log("over the auto-shortlist line (%s) with content assessed and no gate: %d (the contact rule decides"
             " which are shortlisted)" % (line, over))

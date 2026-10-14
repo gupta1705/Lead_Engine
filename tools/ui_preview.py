@@ -331,13 +331,10 @@ MOCK_JS = r"""
       const sd = body.sender || {}, t = (body.text || "").trim();
       const resolved = t.split("{{sender_name}}").join(sd.name || "").split("{{sender_title}}").join(sd.title || "")
         .split("{{postal_address}}").join(sd.postal_address || "");
+      // as tools/draft_render.validate_footer: no postal address (2026-10-09) and no opt-out line (2026-10-13) required
       const probs = [];
-      if (!t) probs.push("The footer is empty. Every email needs a sign-off, a postal address and a way out of the list.");
-      if (resolved.includes("SET_ME")) probs.push("The footer still says SET_ME. Fill in the name and the postal address.");
-      if (!resolved.split(/\r?\n/).some((l) => l.trim().length >= 8 && /\d/.test(l)))
-        probs.push("No postal address in the footer. Commercial email has to carry a real postal address, and a missing one is what gets a sending domain blocked.");
-      if (!/unsubscribe|opt out|opt-out|no thanks|hear from me|remove you/i.test(resolved))
-        probs.push("No way out. Keep a line telling the recipient how to stop hearing from you -- it is both the law and the difference between a reply and a spam report.");
+      if (!t) probs.push("The footer is empty. Every email needs a sign-off.");
+      if (resolved.includes("SET_ME")) probs.push("The footer still says SET_ME. Fill in the name and the sender details.");
       if (probs.length) return json({ detail: probs.join("\n") }, 400);
       FX.footer.text = t; FX.footer.sender = sd; FX.footer.preview = resolved; FX.footer.problems = [];
       return json({ ok: true, preview: resolved, rebuilt: FX.footer.drafts_pending || 0,
@@ -393,8 +390,8 @@ MOCK_JS = r"""
       const bad = [...new Set([...text.matchAll(/{{\s*(\w+)\s*}}/g)].map((x) => x[1]).filter((k) => k !== "first_name" && k !== "company"))];
       if (bad.length) return json({ detail: bad.map((b) => "{{" + b + "}}").join(", ") + " is not a field an email can use. It can use {{first_name}} and {{company}}." }, 400);
       if (apply && (!String(body.subject || "").trim() || !String(body.body || "").trim())) return json({ detail: "Write a subject and the email." }, 400);
-      const postal = (FX.footer && FX.footer.sender && FX.footer.sender.postal_address) || "702, 7th Floor, Fortune Terraces, Mumbai 400053";
-      const footer = "Warm regards,\n" + me.name + "\n" + me.title + "\n\n" + postal + "\nIf this isn't relevant, reply \"no thanks\" and you won't hear from me again.";
+      // Universal's footer as the server renders it: no postal address (2026-10-09), no opt-out line (2026-10-13)
+      const footer = "Warm regards,\n" + me.name + "\n" + me.title;
       const ready = [], skipped = [];
       (body.ids || []).forEach((id) => {
         const r = FX.leads.find((x) => String(x.id) === String(id));

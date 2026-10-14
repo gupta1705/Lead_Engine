@@ -159,6 +159,8 @@
           <input id="boardSearch" type="search" class="compact" placeholder="Search this board" aria-label="Search this board">
         </div>
       </div>
+      <!-- the service each lead's email pitches (LCX Services), one tab each: the same selection as Leads' -->
+      <div class="tabs" id="boardServices" role="tablist" aria-label="Lead service" hidden></div>
       <div class="board-wrap"><div class="board" id="board" aria-live="polite"></div></div>
     </section>
 
@@ -170,7 +172,7 @@
           <div class="page-actions">
             <a class="btn" id="leadsExport" href="/api/export.xlsx?status=all">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
-              Export this view
+              <span id="leadsExportText">Export this view</span>
             </a>
           </div>
         </div>
@@ -197,6 +199,8 @@
         </select>
         <span class="result-count" id="leadsCount"></span>
       </div>
+      <!-- the service each lead's email pitches (LCX Services), one tab each: the same selection as the Board's -->
+      <div class="tabs" id="leadsServices" role="tablist" aria-label="Lead service" hidden></div>
       <!-- where a person writes to the leads they pick (Universal): the picked ones, and the one action -->
       <div class="toolbar batch-bar" id="leadsBatch" hidden></div>
       <div class="table-wrap">
@@ -223,7 +227,7 @@
           <h1 id="outreachTitle">Outreach</h1>
           <div class="page-actions">
             <span class="send-counter" id="sendCounter" role="status" aria-live="polite" hidden></span>
-            <button class="btn" id="footerBtn" title="The sign-off, postal address and opt-out at the end of every email this project sends">
+            <button class="btn" id="footerBtn" title="The sign-off at the end of every email this project sends">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18"/><path d="M6 18h7"/></svg>
               Footer
             </button>

@@ -248,10 +248,8 @@ def offline(cfg, uni):
     check("TVF's Mumbai address goes under it (the owner's choice)", o["sender"]["postal_address"],
           uni["outreach"]["sender"]["postal_address"])
     check("the template drafts use (v2, the structure Groq follows): the wording the owner approved, word for word",
-          (tpl["key"], tpl["subject"], tpl["body"].splitlines()[2]),
-          ("lcx_services_deck_v2", "18 things LCX can do for {{company}}", "{{opener_block}}I'm writing from LCX. We"
-           " work in three areas, and at least one of them should be useful to {{company}}. Our services deck is"
-           " attached."))
+          (tpl["key"], tpl["subject"], tpl["body"].splitlines()[0]),
+          ("lcx_services_problem_v3", "{{service_subject}}", "{{greeting_line}}"))
     check("  it attaches the deck", tpl["attachments"], ["docs/decks/LCX Services - pitch deck.pdf"])
     check("the deck is built: a PDF, five 16:9 pages, small enough to attach", build_deck.check(), [])
     docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -686,8 +684,8 @@ def main_():
         def stub_gen(cfg_, log=None):
             def write(facts, seed=None):
                 seen_facts.append(facts)
-                return {"opener": "You serve speciality coffee and brunch every day and post on Instagram.",
-                        "pitch": "I'd start with Local Business Tech and Automation and AI Business Assistant."}
+                return {"problem": "Running a cafe that serves brunch every day, bookings, billing and follow ups usually sit in different places.",
+                        "solution": "Local Business Tech and Automation sets up billing, bookings, WhatsApp follow ups and dashboards for your cafe."}
             write.stats = {"ok": 1, "rejected": 0, "failed": 0, "skipped": 0}
             write.policy = llm.lcxs_policy(cfg_)
             return write
@@ -699,19 +697,25 @@ def main_():
         cur.execute("select o.id, o.subject, o.body, o.attachments, o.template_key, o.generated_hook from outreach o"
                     " join entities e on e.id = o.entity_id where e.segment_id = %s", (lx_id,))
         drafts = cur.fetchall()
-        check("one draft, for the cafe", [d[1] for d in drafts], ["18 things LCX can do for ZZ Bean There %s" % tag])
+        check("one draft, for the cafe", [d[1] for d in drafts], ["Less admin behind the counter"])
         oid, subject, body, atts, tkey, hook = drafts[0]
-        check("  the structure Groq follows (v2): greeting, its opener, the owner's lines, its pitch, the owner's close",
-              (tkey, body.split("\n\n")[:5], bool(hook)),
-              ("lcx_services_deck_v2", ["Hi there,", "You serve speciality coffee and brunch every day and post on Instagram.",
-               "I'm writing from LCX. We work in three areas, and at least one of them should be useful to ZZ Bean There"
-               " %s. Our services deck is attached." % tag,
-               "I'd start with Local Business Tech and Automation and AI Business Assistant.",
-               "If one fits, reply with its name and I'll send examples."], True))
+        # 2026-10-13, the owner's review of v2: problem first, then the one service that solves it, who we are and
+        # one small ask; "Hello," when nobody is named (never "Hi there"); no "We work in three areas" line; no
+        # opt-out line; a subject of at most 5 words for the lead's service
+        check("  the structure Groq follows (v3): greeting, the problem, the service that solves it",
+              (tkey, body.split("\n\n")[:3], bool(hook)),
+              ("lcx_services_problem_v3", ["Hello,", "Running a cafe that serves brunch every day, bookings, billing and follow ups usually sit in different places.",
+               "Local Business Tech and Automation sets up billing, bookings, WhatsApp follow ups and dashboards for your cafe."], True))
+        check("  none of the v2 lines the owner struck, and no dash or opt-out anywhere",
+              (("Hi there" in body, "three areas" in body, "hear from me" in body, "no thanks" in body,
+                any(ch in subject + body for ch in (chr(0x2014), chr(0x2013), chr(0x2012), chr(0x2015))),
+                len(subject.split()) <= 5)), (False, False, False, False, False, True))
+        cur.execute("select service from outreach where id = %s", (drafts[0][0],))
+        check("  the row records the service it pitched", cur.fetchone()[0], "Local Business Tech and Automation")
         check("  the model was handed the cafe's own words and its services, no address",
-              (seen_facts[0]["they_are"], [s["name"] for s in seen_facts[0]["services_to_pitch"]][:2],
+              (seen_facts[0]["they_are"], [seen_facts[0]["lead_service"]["name"]],
                "@" in json.dumps(seen_facts[0])),
-              ("Cafe, salon or gym", ["Local Business Tech and Automation", "AI Business Assistant"], False))
+              ("Cafe, salon or gym", ["Local Business Tech and Automation"], False))
         check("  the deck is recorded on it, fingerprinted", [(a["name"], a["path"], a["bytes"] > 100000, len(a["sha256"]))
                                                              for a in atts],
               [("LCX Services - pitch deck.pdf", "docs/decks/LCX Services - pitch deck.pdf", True, 64)])
@@ -773,7 +777,7 @@ def main_():
         cur.execute("select c.email, o.body from outreach o join entities e on e.id = o.entity_id join contacts c"
                     " on c.id = o.contact_id where e.segment_id = %s and e.name = %s", (lx_id, corp_n))
         drafted = [(r[0], r[1].splitlines()[0]) for r in cur.fetchall()]
-        check("  and drafted to that person, not the info@ inbox", drafted, [("nina@zz-northwind-%s.example" % tag, "Hi Nina,")])
+        check("  and drafted to that person, not the info@ inbox", drafted, [("nina@zz-northwind-%s.example" % tag, "Hello Nina,")])
         cur.execute("select status from entities where segment_id = %s and name = any(%s) order by name",
                     (lx_id, [acme_n, toys_n]))
         check("  the brand with nobody and the unread one still wait in To review", [r[0] for r in cur.fetchall()],

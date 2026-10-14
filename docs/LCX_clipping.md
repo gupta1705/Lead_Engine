@@ -237,7 +237,31 @@ Use addresses on a sending domain that belongs to LCX alone, not the main
 company domain, so a bad week never touches everyday mail. The signature
 name is shared, so the mailboxes should belong to the same person or desk.
 
+## Subjects, the footer and the signature (2026-10-13)
+
+The owner, 2026-10-13, for every project:
+
+- **No opt-out line.** "remove the last line from every single service": the footer is
+  `{{sender_name}}\n{{sender_title}}`, with no postal address (2026-10-09) and no opt-out line. The footer
+  check no longer asks for one; it still refuses an empty footer, a `SET_ME` and an unknown field. Any reply
+  that is not neutral still stops all mail to that address.
+- **Subjects of at most five words** (`outreach.subject_max_words: 5`): "Your episodes, as shorts"
+  (`clipping_intro_v1`) and "Shorts from your archive" (`clipping_studio_v1`), no company name. A rendered
+  subject over the cap uses the template's `subject_fallback`; approval refuses a stored subject over it.
+  Follow-ups keep "Re: {{opener_subject}}" so they stay in the same thread; one whose opener's subject is
+  over the cap is not drafted.
+- **Signed with the approver's name** (`outreach.sign_as: "approver"`). The emails still go out from this
+  project's own pool mailboxes, but they are signed with the name and title of the person who approves
+  them, as LCX Services' are. Whoever opens a draft sees it as they would send it, and approving stores
+  exactly that. An approver with no name or title in their profile cannot approve, singly or in a batch.
+  The stored sign-off is "LCX / Clipping desk, LCX", never what goes out. Drafts written before this still
+  carry `SET_ME` and are refused until they are re-drafted.
+
+Tests: `tools/test_subjects.py` (every project's subjects, footers and the clipping signature).
+
 ## The footer, and what makes each email personal (2026-09-12)
+
+(Superseded in part on 2026-10-13: there is no opt-out line and no postal address now; see above.)
 
 **The footer is one setting for the whole segment.** Sign-off, postal address
 and the line that lets someone out used to be four lines copied into every

@@ -573,8 +573,12 @@ def main_():
                    json={"ids": [m2], "sample": [m2], "token": "forged"}).status_code, 409)
         # a batch with a sending window: each approved one draws its own second, and the answer says when, by day
         bslug = "zz-api-batch-" + uuid.uuid4().hex[:6]
+        # 2026-10-13: clipping now signs as the approver (outreach.sign_as), which needs a name and title this test
+        # user does not have; this block is about the sending window, so the copy drops sign_as (the signature has its
+        # own checks in test_subjects and test_lcxs_v3)
         cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'ZZ API batch', 'company',"
-                    " config #- '{outreach,sending_paused}' from segments where slug = 'lcx-clipping' returning id", (bslug,))
+                    " config #- '{outreach,sending_paused}' #- '{outreach,sign_as}' from segments"
+                    " where slug = 'lcx-clipping' returning id", (bslug,))
         bseg = cur.fetchone()[0]
         lcx_block = json.loads((ROOT / "config" / "segment.lcx-clipping.json").read_text(encoding="utf-8"))[
             "outreach"]["send_window"]
@@ -622,7 +626,14 @@ def main_():
         check("the footer reads back with no problems", (bool(f["text"]), f["problems"]), (True, []))
         r = call("POST", "/api/outreach/footer", cookies=mine, json={"text": "Thanks,\n{{sender_name}}",
                                                                    "sender": {"postal_address": ""}})
-        check("a footer without an opt-out is refused", r.status_code, 400)
+        # 2026-10-13, the owner: no footer carries an opt-out line now, so one without it saves; the empty and
+        # unknown-field checks still refuse
+        check("a footer without an opt-out line now saves", r.status_code, 200)
+        r = call("POST", "/api/outreach/footer", cookies=mine, json={"text": "   ", "sender": {"postal_address": ""}})
+        check("an empty footer is refused", r.status_code, 400)
+        r = call("POST", "/api/outreach/footer", cookies=mine, json={"text": "Thanks,\n{{fit_score}}",
+                                                                   "sender": {"postal_address": ""}})
+        check("a footer with an unknown field is refused", r.status_code, 400)
         r = call("POST", "/api/outreach/footer", cookies=mine, json={"text": f["text"], "sender": f["sender"]})
         check("saving the same footer: 200", (r.status_code, r.json().get("ok")), (200, True))
 

@@ -202,6 +202,7 @@ const post = (path, body) => api(path, { method: "POST",
 /* ============================================================== state */
 const state = {
   route: null, user: null, sources: [], segment: null, segments: [],
+  service: "",        // the lead-service tab (LCX Services), one selection for the Board and Leads both
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD }, cols: {}, token: 0 },
   leads: { filters: { q: "", status: "all", source: "", contact: "" }, selected: new Map(),
            page: 0, perPage: 50, total: 0, rows: [], token: 0 },
@@ -415,6 +416,9 @@ function fieldSummary(r) {
 }
 function uiDetails(d) {
   return (segUi().details || []).map((f) => {
+    // LCX Services (2026-10-13): the services it fits are in the Lead service box, as Also fits, beside the one it
+    // is pitched; listing them here too, as "Pitch first", would name a different first service
+    if (d.lead_service && f.path === "metadata.services") return "";
     const v = getPath(d, f.path);
     if (v == null || v === "" || (Array.isArray(v) && !v.length)) return "";
     return `<dt>${esc(f.label)}</dt><dd>${fmtFieldHtml(v, f.format)}</dd>`;
@@ -446,7 +450,77 @@ function applySegment(seg) {
   $$(".side-item[data-route]").forEach((b) => { b.hidden = !routeAllowed(b.dataset.route); });
   COLUMNS = outreachOn() ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.key !== "contacted" && c.key !== "in_conversation");
   $("#leadsTable").classList.toggle("unscored", unscoredProject());
+  state.service = serviceRestore();
   document.title = (TITLES[currentView()] || "") + " - " + ui.project_name;
+}
+
+/* ======================================================= lead service */
+/* LCX Services (the owner's review of its emails, 2026-10-13, point 12): each lead is pitched ONE service from the
+   deck (metadata.lead_service, tools/lcx_judge.py), and the email records which (outreach.service). The Board and
+   Leads get one row of tabs, All and a tab per service with its count for what is on screen, then Check service
+   (the rules left it to a person) and Not a buyer. A tab with nothing behind it is not shown, and the row is not
+   shown at all where it cannot change what is on screen. The tab is one selection for both pages, remembered per
+   viewer and per project (this browser only). A project that pitches no single service has none of it: its
+   /api/leads answers carry no service_counts. */
+const SERVICE_STORE = "tvf_service_v1";
+const SERVICE_BUCKET = { hold: "Check service", none: "Not a buyer" };
+function serviceLabel(key) { return SERVICE_BUCKET[key] || key || ""; }
+function serviceStoreKey() { return SERVICE_STORE + ":" + ((state.segment && state.segment.slug) || ""); }
+function serviceRestore() {
+  try { return localStorage.getItem(serviceStoreKey()) || ""; } catch (e) { return ""; }
+}
+function servicePersist() {
+  try {
+    if (state.service) localStorage.setItem(serviceStoreKey(), state.service);
+    else localStorage.removeItem(serviceStoreKey());
+  } catch (e) {}
+}
+/* The Board asks once per column: its tabs count every column's leads together. */
+function sumServiceCounts(answers) {
+  if (!answers.some((d) => Array.isArray(d.service_counts))) return null;
+  const by = new Map(); let all = 0;
+  answers.forEach((d) => {
+    all += +d.service_all || 0;
+    (d.service_counts || []).forEach((c) => by.set(c.key, (by.get(c.key) || 0) + (+c.n || 0)));
+  });
+  const named = [...by].filter(([k]) => !SERVICE_BUCKET[k]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return { all, counts: named.concat(Object.keys(SERVICE_BUCKET).filter((k) => by.has(k)).map((k) => [k, by.get(k)]))
+    .map(([key, n]) => ({ key, n })) };
+}
+function renderServiceTabs(el, sc) {
+  const cur = state.service;
+  if (!sc) { el.hidden = true; el.innerHTML = ""; return; }
+  const tabs = sc.counts.filter((c) => c.n > 0 || c.key === cur);
+  if (cur && !tabs.some((c) => c.key === cur)) tabs.push({ key: cur, n: 0 });   // on, with nothing in it now
+  // a row that cannot change what is on screen is not shown: one tab holding every lead, and no tab on
+  const useful = cur || tabs.some((c) => c.n < sc.all);
+  el.hidden = !tabs.length || !useful;
+  if (el.hidden) { el.innerHTML = ""; return; }
+  const tips = { hold: "The rules left its service to a person: pick one in its sheet", none: "Not a buyer: no email is drafted" };
+  const tab = (key, label, n) => `<button class="tab ${key === cur ? "active" : ""}" role="tab" aria-selected="${key === cur}"
+      data-svc="${esc(key)}"${tips[key] ? ` title="${esc(tips[key])}"` : ""}>${esc(label)}<span class="pts">${(+n || 0).toLocaleString()}</span></button>`;
+  el.innerHTML = tab("", "All", sc.all) + tabs.map((c) => tab(c.key, serviceLabel(c.key), c.n)).join("");
+  // a row wider than the page scrolls within itself: the tab that is on is kept in view
+  const a = $(".tab.active", el);
+  if (a) {
+    const r = a.getBoundingClientRect(), box = el.getBoundingClientRect();
+    if (r.left < box.left || r.right > box.right) el.scrollLeft += r.left - box.left - 24;
+  }
+}
+function bindServiceTabs(el, reload) {
+  el.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-svc]");
+    if (!b || b.dataset.svc === state.service) return;
+    state.service = b.dataset.svc;
+    servicePersist();
+    reload();
+  });
+}
+/* "Selling: AI Video for Brands" on a card or a row, when the All tab is on (a service tab already says it). */
+function serviceTag(r) {
+  if (!r.service || state.service) return "";
+  const label = serviceLabel(r.service), held = !!SERVICE_BUCKET[r.service];
+  return `<span class="tag" style="max-width:100%" title="${esc(held ? label : "Its email pitches " + label)}"><span>${esc(held ? label : "Selling: " + label)}</span></span>`;
 }
 
 /* ============================================================== board */
@@ -465,6 +539,7 @@ function boardQuery(col, offset) {
   p.set("status", col.status);
   if (f.q) p.set("q", f.q);
   if (col.key === "open" && f.min_score) p.set("min_score", f.min_score);   // the floor shapes the review band only
+  if (state.service) p.set("service", state.service);                      // the lead-service tab (LCX Services)
   p.set("limit", COL_LIMIT); p.set("offset", offset || 0);
   return p.toString();
 }
@@ -475,7 +550,7 @@ function boardQuery(col, offset) {
 function renderCard(r, col) {
   const score = +r.fit_score || 0;
   const t = leadTitle(r);
-  const tags = (state.sources.length > 1 ? sourceLozenge(r.source) : "") + kindLozenge(r) + placeTag(r);
+  const tags = serviceTag(r) + (state.sources.length > 1 ? sourceLozenge(r.source) : "") + kindLozenge(r) + placeTag(r);
   const fields = fieldSummary(r);
   const who = r.email
     ? `<span class="card-contact" title="The email goes to ${esc(r.contact_name ? r.contact_name + " <" + r.email + ">" : r.email)}">${avatar(r.contact_name, r.email, "xs")}<span class="truncate">${esc(r.contact_name || r.email)}</span></span>`
@@ -501,7 +576,9 @@ function renderColumn(col) {
   const c = state.board.cols[col.key] || { rows: [], total: 0 };
   const body = c.rows.length
     ? c.rows.map((r) => renderCard(r, col)).join("")
-    : `<div class="column-empty">${state.board.filters.q ? "Nothing matches this search." : col.key === "open" ? "Nothing to review." : "No leads here yet."}</div>`;
+    : `<div class="column-empty">${state.board.filters.q ? "Nothing matches this search."
+      : state.service && state.board.sells ? "None here for " + esc(serviceLabel(state.service)) + "."
+      : col.key === "open" ? "Nothing to review." : "No leads here yet."}</div>`;
   const more = c.rows.length < c.total
     ? `<button class="btn subtle compact column-more" data-more="${col.key}">Show more (${c.total - c.rows.length} left)</button>` : "";
   return `<section class="column" data-key="${col.key}" aria-label="${esc(col.title)}">
@@ -521,11 +598,15 @@ async function loadBoard() {
   const token = ++state.board.token;
   const board = $("#board");
   if (!Object.keys(state.board.cols).length) board.innerHTML = COLUMNS.map(skeletonColumn).join("");
+  let results;
   try {
-    const results = await Promise.all(COLUMNS.map((col) => api("/api/leads?" + boardQuery(col, 0))));
+    results = await Promise.all(COLUMNS.map((col) => api("/api/leads?" + boardQuery(col, 0))));
     if (token !== state.board.token) return;
     COLUMNS.forEach((col, i) => { state.board.cols[col.key] = { rows: results[i].rows, total: results[i].total }; });
   } catch (e) { return toast("Could not load the board: " + e.message, true); }
+  const sc = sumServiceCounts(results);
+  state.board.sells = !!sc;
+  renderServiceTabs($("#boardServices"), sc);
   board.innerHTML = COLUMNS.map(renderColumn).join("");
   bindBoard();
 }
@@ -578,6 +659,7 @@ function leadsQuery() {
   if (f.q) p.set("q", f.q);
   if (f.source) p.set("source", f.source);
   if (f.contact) p.set("contact", f.contact);
+  if (state.service) p.set("service", state.service);                      // the lead-service tab (LCX Services)
   p.set("limit", state.leads.perPage);
   p.set("offset", state.leads.page * state.leads.perPage);
   return p.toString();
@@ -591,6 +673,8 @@ async function loadLeads() {
   catch (e) { return toast("Could not load leads: " + e.message, true); }
   if (token !== state.leads.token) return;
   state.leads.rows = d.rows; state.leads.total = d.total;
+  state.leads.sells = Array.isArray(d.service_counts);
+  renderServiceTabs($("#leadsServices"), Array.isArray(d.service_counts) ? { all: +d.service_all || 0, counts: d.service_counts } : null);
   $("#leadsCount").textContent = d.total.toLocaleString() + " " + (d.total === 1 ? (segUi().entity_label || "company") : (segUi().entity_plural || "companies"));
   const picked = state.leads.selected;
   $("#leadsTable").classList.toggle("batch", composeOn());
@@ -598,7 +682,9 @@ async function loadLeads() {
     <tr class="row-link ${picked.has(String(r.id)) ? "selected" : ""}" data-id="${esc(r.id)}" tabindex="0">
       <td class="sel-col">${canWrite(r) ? `<input type="checkbox" data-pick="${esc(r.id)}" ${picked.has(String(r.id)) ? "checked" : ""} aria-label="Pick ${esc(leadTitle(r).title)}">` : ""}</td>
       <td>${(() => { const t = leadTitle(r);
-        const parts = [t.sub || (personFirst() ? (r.domain || "") : "no website yet"), r.kind ? String(r.kind).replace(/_/g, " ") : ""].filter(Boolean);
+        const parts = [t.sub || (personFirst() ? (r.domain || "") : "no website yet"), r.kind ? String(r.kind).replace(/_/g, " ") : "",
+          // the service its email pitches (LCX Services), when the All tab is on
+          r.service && !state.service ? (SERVICE_BUCKET[r.service] || "selling " + r.service) : ""].filter(Boolean);
         return `<div class="cell-company">${monoTile(t.title, r.domain || r.id, "sm")}<span><div class="primary-cell">${esc(t.title)}</div><div class="secondary">${esc(parts.join(" · "))}</div></span></div>`; })()}</td>
       <td class="col-status">${statusLozenge(r.status)}${r.reached_by_name ? `<div class="secondary" title="Reached out by ${esc(r.reached_by || "")}">by ${esc(r.reached_by_name)}</div>` : ""}</td>
       <td class="col-score">${scoreCell(r.fit_score)}</td>
@@ -606,7 +692,7 @@ async function loadLeads() {
       <td>${r.email ? `<span class="cell-person">${avatar(r.contact_name, r.email)}<span>${r.contact_name ? `<div>${esc(r.contact_name)}</div><div class="secondary">${esc(r.email)}</div>` : `<div>${esc(r.email)}</div>`}</span></span>` : '<span class="muted">No address</span>'}</td>
       <td class="secondary">${fieldSummary(r) || esc([r.city, r.state].filter(Boolean).join(", ") || "")}</td>
     </tr>`).join("")
-    : `<tr class="empty-row"><td colspan="7">No ${esc(segUi().entity_plural || "companies")} match these filters.</td></tr>`;
+    : `<tr class="empty-row"><td colspan="7">No ${esc(segUi().entity_plural || "companies")} match these filters${state.service && Array.isArray(d.service_counts) ? " for " + esc(serviceLabel(state.service)) : ""}.</td></tr>`;
   renderLeadsBatch();
   $("#leadsTable").classList.toggle("one-status", state.leads.filters.status !== "all");
   // The filter shows only where it can change what is on screen: a selection that is
@@ -633,6 +719,11 @@ function syncExportLinks() {
   if (l.source) q.set("source", l.source);
   if (l.contact) q.set("contact", l.contact);
   $("#leadsExport").href = "/api/export.xlsx?" + q.toString();
+  // the download is not split by lead service (tools/export_leads.py): with a service tab on, the button says so
+  const every = !!(state.service && state.leads.sells);
+  $("#leadsExportText").textContent = every ? "Export, every service" : "Export this view";
+  if (every) $("#leadsExport").title = "The download holds this view's other filters for every service: it is not split by lead service.";
+  else $("#leadsExport").removeAttribute("title");
 }
 
 /* ======================================================== lead modal */
@@ -725,6 +816,65 @@ function renderContacts(d) {
     ${routes ? `<ul class="evidence-list routes">${routes}</ul>` : ""}
     ${(cr.tried || []).length ? `<p class="tried small muted">${cr.tried.map(esc).join(" ")}</p>` : ""}`;
 }
+/* The lead sheet's Lead service box (LCX Services): the one service its email pitches and why, who chose it, the
+   other services it fits, and the 18 to pick from. A person's pick stands (the rules never undo it), and picking or
+   confirming one lifts the drafter's holds (Check service, Read site first, an audience-only pick). */
+function renderLeadService(d) {
+  const s = d.lead_service;
+  if (!s) return "";
+  const m = d.metadata || {}, was = ((m.lead_service || {}).rules_pick || {}).service;
+  const head = s.service ? `<strong>${esc(s.service)}</strong>`
+    : s.key ? `<span class="lozenge ${s.key === "none" ? "removed" : "moved"}">${esc(s.label || serviceLabel(s.key))}</span>`
+    : `<span class="muted">Not picked yet: the next chain run picks one</span>`;
+  const why = s.by_person
+    ? `Picked by ${esc(s.set_by_name || s.set_by)}${s.decided_at ? ", " + esc(fmtDate(s.decided_at).split(",")[0]) : ""}${was && was !== s.service ? `<div class="small muted">The rules had picked ${esc(was)}</div>` : ""}`
+    : s.reason ? `${esc(s.reason)}${s.evidence ? `<div class="small muted">${esc(s.evidence)}</div>` : ""}` : "";
+  const fits = (s.also_fits || []).length ? `<dt>Also fits</dt><dd><span class="pill-list">${s.also_fits.map((x) => `<span class="tag" title="${esc(x)}"><span>${esc(x)}</span></span>`).join("")}</span></dd>` : "";
+  const choices = s.choices || [];
+  const pick = choices.length ? `<div class="field" style="margin-top:12px"><label for="lsPick">${s.service ? "Change service" : "Pick the service"}</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="lsPick" class="filter" style="max-width:100%;flex:1 1 180px">${s.service ? "" : `<option value="" selected disabled>Pick a service</option>`}${choices.map((c) => `<option value="${esc(c)}" ${c === s.service ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+        <button type="button" class="btn compact" id="lsSave" disabled>Use this service</button></div>
+      <div class="help" id="lsHelp"></div></div>` : "";
+  return `<div class="side-group"><div class="group-head">${icon("sparkle", 16)} Lead service</div><div class="group-body">
+      <div style="margin-bottom:10px" title="The one service its email pitches">${head}</div>
+      ${why || fits ? `<dl class="details">${why ? `<dt>Why</dt><dd>${why}</dd>` : ""}${fits}</dl>` : ""}${pick}</div></div>`;
+}
+function bindLeadService(root, d, id) {
+  const pick = $("#lsPick", root), save = $("#lsSave", root), help = $("#lsHelp", root);
+  if (!pick || !save) return;
+  const s = d.lead_service, ob = d.outreach;
+  const sync = () => {
+    const v = pick.value, same = v === (s.service || "");
+    // the same service again: a person confirming the rules' pick, which stands from then on; theirs already does
+    save.disabled = !v || (same && s.by_person);
+    save.textContent = v && same && !s.by_person ? "Confirm" : "Use this service";
+    help.textContent = !v ? "" : same ? (s.by_person ? "" : "Confirming keeps it: the rules will not change it later.")
+      : ob && ob.status === "drafted" && ob.service === v ? `Its waiting email already pitches ${v}.`
+      : ob && ob.status === "drafted" ? `Its waiting email is withdrawn and drafted again, pitching ${v}.`
+      : ob && ob.sent_at ? "The email already sent keeps what it pitched."
+      : ob ? "The email already approved keeps what it pitched."
+      : d.status === "shortlisted" ? `Its email is drafted pitching ${v}, within minutes.` : `Its email will pitch ${v}.`;
+  };
+  pick.addEventListener("change", sync);
+  sync();
+  save.addEventListener("click", async () => {
+    const v = pick.value;
+    save.classList.add("loading"); save.disabled = true;
+    try {
+      const r = await post("/api/leads/" + id + "/service", { service: v });
+      const e = r.email;
+      flag("Lead service: " + v, { ms: 6000, desc: r.withdrawn
+          ? "Its waiting email pitched something else, so it was withdrawn" + (r.drafting ? "; the new one appears in Outreach within minutes." : ".")
+        : r.drafting ? "Its email is being drafted; it appears in Outreach within minutes."
+        : e && e.status !== "drafted" ? "Its email " + (e.status === "sent" ? "already sent" : "already approved") + " keeps what it pitched" + (e.service ? " (" + e.service + ")" : "") + "."
+        : "Its email pitches it." });
+      await openLead(id, { quiet: true });
+      refreshCurrentView();
+      refreshOutreachCount(true);
+    } catch (err) { toast(err.message, true); save.classList.remove("loading"); sync(); }
+  });
+}
 /* A closed lead sheet leaves #lead/<id>, so the same card opens again on the next click. */
 function leaveLeadRoute() { if (location.hash.startsWith("#lead/")) history.replaceState(null, "", "#" + currentView()); }
 async function openLead(id, opts) {
@@ -806,12 +956,14 @@ async function openLead(id, opts) {
           <div class="actions"><button class="btn subtle" id="reasonCancel">Cancel</button><button class="btn danger" id="reasonGo">Reject</button></div>
         </div>
 
+        ${renderLeadService(d)}
         <div class="side-group"><div class="group-head">${icon("users", 16)} Contacts</div><div class="group-body">${contacts}</div></div>
         ${(() => {   // who reached out, from which address, when (owner, 2026-09-26)
           const ob = d.outreach;
           if (!ob || !(ob.sent_at || ["approved", "sending", "send_unknown"].includes(ob.status))) return "";
           return `<div class="side-group"><div class="group-head">${icon("send", 16)} Outreach</div><div class="group-body"><dl class="details">
             <dt>${ob.sent_at ? "Reached out by" : "Approved by"}</dt><dd>${esc(ob.approved_by_name || ob.approved_by || "—")}${ob.sender_address ? `<div class="small muted">from ${esc(ob.sender_address)}</div>` : ""}</dd>
+            ${ob.service ? `<dt>${ob.sent_at ? "Pitched" : "Pitches"}</dt><dd>${esc(ob.service)}</dd>` : ""}
             ${!ob.sent_at && ob.schedule && ob.schedule.held ? `<dt>Goes out</dt><dd>Held back, not sent<div class="small muted">${esc(ob.schedule.held_why || "")}</div></dd>`
               : !ob.sent_at && ob.schedule ? `<dt>Goes out</dt><dd>${esc(whenText(ob.schedule))}${ob.schedule.send_tz_reason ? `<div class="small muted">${esc(ob.schedule.send_tz_reason)}</div>` : ""}</dd>`
               : `<dt>${ob.sent_at ? "Sent" : "Status"}</dt><dd>${ob.sent_at ? esc(fmtDate(ob.sent_at)) : "Approved, waiting to go out"}</dd>`}
@@ -840,6 +992,7 @@ async function openLead(id, opts) {
   $("#reasonGo", root).addEventListener("click", () => decide(id, "reject", $("#rejectReason", root).value));
   const w = $("[data-compose]", root);
   if (w) w.addEventListener("click", () => openCompose([{ id: String(d.id || id), name: d.name }]));
+  bindLeadService(root, d, id);
 }
 
 async function decide(id, decision, reason) {
@@ -959,7 +1112,7 @@ async function loadOutreach() {
       <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} aria-label="Select this draft"></td>
       <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div></span></div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
-      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
+      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.service ? `<div class="secondary" title="The one service this email ${r.sent_at ? "pitched" : "pitches"}">${r.sent_at ? "Pitched" : "Pitches"} ${esc(r.service)}</div>` : ""}${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
       <td class="by-col">${r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
       ${(() => {   // when it last moved: sent, approved, or written -- not the draft's age on every tab
         const s = r.schedule;
@@ -1034,7 +1187,7 @@ async function startBatch() {
       ${sample.map((r, i) => `<div class="sample-item">
         <div class="sample-head"><span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span>
           <div class="primary-cell">${stepLozenge(r)}${esc(r.subject || "(no subject)")}</div>
-          <div class="secondary">${esc(r.company)} · ${esc(r.contact_email || "")}</div></span></span>
+          <div class="secondary">${esc(r.company)} · ${esc(r.contact_email || "")}${r.service ? " · pitches " + esc(r.service) : ""}</div></span></span>
           <button class="btn subtle compact" data-read="${i}">Read</button></div>
         <div class="mail-body" data-body="${i}" hidden>${esc(r.body || "")}</div>${attachList(r)}
         <label class="check" style="margin-top:8px"><input type="checkbox" data-ok="${i}" disabled><span>I read this and it's right to send</span></label>
@@ -1239,7 +1392,7 @@ async function openCompose(leads) {
             <button type="button" class="btn compact" data-insert="company">Company</button></span></div>
           <textarea id="cBody" class="compose-body${preset ? " long" : ""}">${esc(start)}</textarea>
           <div class="help">${preset ? "This project's email is already in: send it as it is, or change anything first."
-            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off and opt-out go under it.</div>
+            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off goes under it.</div>
           <div class="field-error" id="cErr" role="alert" hidden></div></div>
         ${rewritePanel()}
         <div class="compose-preview" id="cPreviewBox">
@@ -1349,10 +1502,13 @@ async function openCompose(leads) {
 }
 
 /* ---------------------------------------------------------------- footer
-   The sign-off and opt-out are shared by the project. The postal address is
-   optional and omitted by default (owner, 2026-10-09). */
+   The sign-off is shared by the project. The postal address is optional and
+   omitted by default (owner, 2026-10-09); the opt-out line is gone from every
+   footer (owner, 2026-10-13). */
 function footerPreview(text, sender) {
-  const vals = { sender_name: sender.name, sender_title: sender.title, postal_address: sender.postal_address };
+  // sender_company (2026-10-13): the project's own company on the title line ("Business Development, LCX")
+  const vals = { sender_name: sender.name, sender_title: sender.title, postal_address: sender.postal_address,
+                 sender_company: sender.company };
   let out = text || "";
   Object.keys(vals).forEach((k) => { out = out.split("{{" + k + "}}").join(vals[k] || ""); });
   return out;
@@ -1389,8 +1545,9 @@ async function openFooter() {
     </div>`, { label: "Email footer", medium: true });
 
   const root = $("#modalRoot");
+  // the project's company is not edited here (it is the project's, outreach.sender.company): it is only shown
   const sender = () => ({ name: $("#fName", root).value.trim(), title: $("#fTitle", root).value.trim(),
-                          postal_address: $("#fPostal", root).value.trim() });
+                          postal_address: $("#fPostal", root).value.trim(), company: d.sender.company || "" });
   const paint = () => { $("#fPreview", root).textContent = footerPreview($("#fText", root).value, sender()); };
   ["fName", "fTitle", "fPostal", "fText"].forEach((id) =>
     $("#" + id, root).addEventListener("input", paint));
@@ -1456,6 +1613,7 @@ function openMessage(id) {
         <div class="side-group"><div class="group-head">Details</div><div class="group-body">
           <dl class="details">
             <dt>Company</dt><dd>${esc(r.company)}${r.domain ? `<div class="small muted">${esc(r.domain)}</div>` : ""}</dd>
+            ${r.service ? `<dt>${r.sent_at ? "Pitched" : "Pitches"}</dt><dd>${esc(r.service)}</dd>` : ""}
             ${files(r).length ? `<dt>Attached</dt><dd>${attachList(r)}</dd>` : ""}
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
@@ -2615,6 +2773,9 @@ function bindFilters() {
   $("#leadsContact").addEventListener("change", (e) => { l.contact = e.target.value; state.leads.page = 0; loadLeads(); });
   $("#leadsPrev").addEventListener("click", () => { state.leads.page--; loadLeads(); });
   $("#leadsNext").addEventListener("click", () => { state.leads.page++; loadLeads(); });
+  // the lead-service tabs (LCX Services): one selection, so a tab picked on one page is on for the other
+  bindServiceTabs($("#boardServices"), () => loadBoard());
+  bindServiceTabs($("#leadsServices"), () => { state.leads.page = 0; loadLeads(); });
 }
 
 /* ================================================================ init */

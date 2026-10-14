@@ -230,7 +230,9 @@ def segment_rows(force=False):
                             " coalesce(jsonb_array_length(case when jsonb_typeof(config->'outreach'->'templates') = 'array'"
                             "   then config->'outreach'->'templates' end), 0) > 0 as has_templates,"
                             " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
-                            " config->'auto_shortlist'->>'min_score' as auto_min"
+                            " config->'auto_shortlist'->>'min_score' as auto_min,"
+                            # LCX Services (2026-10-13): each lead pitched ONE service (config lead_service)
+                            " config ? 'lead_service' as lead_service"
                             " from segments where is_active order by slug")
                 rows = [dict(r) for r in cur.fetchall()]
             if SEGMENTS_ALLOWED:
@@ -410,11 +412,41 @@ def stats(segment: str = Depends(current_segment)):
 HAS_ADDRESS = ("exists (select 1 from contacts c where c.entity_id = e.id"
                " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
 
+# THE LEAD SERVICE (the owner's review of the LCX Services emails, 2026-10-13, point 12). Each LCX Services lead is
+# tagged with ONE service from the deck (tools/lcx_judge.py, config lead_service, stored as metadata.lead_service),
+# its email pitches that one, and the email records which one it pitched (outreach.service, sql/35): a record of
+# what was sold to whom. So the Leads page and the Board get one row of tabs, a service each with its count, the
+# lead sheet says which service and why (and a person may pick another), and Outreach says what each email pitches.
+# Only a project whose config has lead_service rules gets any of it: every other project's pages and answers are
+# exactly what they were. `service` is the tag's name ("name" is the brief's word for the same value, kept beside it).
+LS_SERVICE = "coalesce(e.metadata #>> '{lead_service,service}', e.metadata #>> '{lead_service,name}')"
+# a lead's tab: its service; "none" for not a buyer (never drafted); "hold" for one the rules left to a person
+# ("Check service"); NULL for a lead not tagged yet, which only All counts
+LS_KEY = ("(case when " + LS_SERVICE + " is not null then " + LS_SERVICE +
+          " when e.metadata #>> '{lead_service,basis}' = 'not_a_buyer' then 'none'"
+          " when jsonb_typeof(e.metadata -> 'lead_service') = 'object' then 'hold' end)")
+SERVICE_BUCKETS = ("hold", "none")          # Check service, Not a buyer: after the services, in this order
+
+
+def sells_services(segment):
+    """Does this project pitch one service per lead (config lead_service: LCX Services)?"""
+    row = next((r for r in segment_rows() if r["slug"] == segment), None)
+    return bool(row and row.get("lead_service"))
+
+
+def service_counts(rows):
+    """[{key, n}] from (key, n) rows: the services, most leads first, then Check service and Not a buyer. A tab
+    with no lead is left out: every tab shown has something behind it (owner, 2026-09-19)."""
+    got = {r["k"]: int(r["n"]) for r in rows if r["k"] is not None and int(r["n"]) > 0}
+    named = sorted(((k, n) for k, n in got.items() if k not in SERVICE_BUCKETS), key=lambda kv: (-kv[1], kv[0]))
+    return [{"key": k, "n": n} for k, n in named] + [{"key": k, "n": got[k]} for k in SERVICE_BUCKETS if k in got]
+
 
 @app.get("/api/leads")
 def leads(q: str = "", source: str = "", status: str = "open", contact: str = "",
-          min_score: float = 0, limit: int = 100, offset: int = 0,
+          min_score: float = 0, limit: int = 100, offset: int = 0, service: str = "",
           segment: str = Depends(current_segment)):
+    sells = sells_services(segment)
     where = ["e.segment_id = (select id from segments where slug = %s)"]
     params = [segment]
     limit, offset = max(0, min(limit, 500)), max(0, offset)      # a negative one was a 500
@@ -438,13 +470,16 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
     order = "e.fit_score desc nulls last, e.name"
     # The contact filter is kept out of `clause` so the counts below can say how
     # the CURRENT selection splits -- which is what decides whether the filter is
-    # worth showing at all.
+    # worth showing at all. The lead-service tab is kept out the same way, for the
+    # same reason: each tab's count is the current selection's, whichever tab is on.
     clause = " and ".join(where)
-    rows_clause = clause
-    if contact == "yes":
-        rows_clause += " and " + HAS_ADDRESS
-    elif contact == "no":
-        rows_clause += " and not " + HAS_ADDRESS
+    svc_clause, svc_params = "", []
+    if sells and service:
+        svc_clause = " and " + (LS_KEY if service in SERVICE_BUCKETS else LS_SERVICE) + " = %s"
+        svc_params = [service]
+    contact_clause = (" and " + HAS_ADDRESS if contact == "yes" else
+                      " and not " + HAS_ADDRESS if contact == "no" else "")
+    rows_clause = clause + svc_clause + contact_clause
 
     # Segment 3: the UI's card_fields are metadata paths the segment config
     # names; select them as columns so cards never need the whole metadata.
@@ -455,6 +490,8 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
         if _re.fullmatch(r"metadata(\.[A-Za-z0-9_]+)+", path):
             fields.append("{" + ",".join(path.split(".")[1:]) + "}")
     extra = "".join(" e.metadata #>> '%s' as f%d," % (p, i) for i, p in enumerate(fields))
+    if sells:
+        extra += " " + LS_KEY + " as service,"      # the card's "Selling" tag
 
     with cursor() as cur:
         cur.execute(
@@ -478,7 +515,7 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             "   and o.status = 'sent' and coalesce(o.sequence_step, 0) = 0 order by o.sent_at desc limit 1) as reached_by"
             " from entities e where " + rows_clause +
             " order by " + order + " limit %s offset %s",
-            params + [limit, offset])
+            params + svc_params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
         people = _people() if any(r["reached_by"] for r in rows) else {}
         for r in rows:
@@ -486,13 +523,22 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             r["reached_by_name"] = _display(r["reached_by"], people)
         cur.execute("select count(*) filter (where " + HAS_ADDRESS + ") as with_address,"
                     " count(*) filter (where not " + HAS_ADDRESS + ") as without_address"
-                    " from entities e where " + clause, params)
+                    " from entities e where " + clause + svc_clause, params + svc_params)
         split = cur.fetchone()
         total = (split["with_address"] if contact == "yes" else
                  split["without_address"] if contact == "no" else
                  split["with_address"] + split["without_address"])
-    return {"total": total, "rows": rows,
-            "with_address": split["with_address"], "without_address": split["without_address"]}
+        out = {"total": total, "rows": rows,
+               "with_address": split["with_address"], "without_address": split["without_address"]}
+        if sells:
+            # every tab's count for the current selection (its other filters, the address filter included), and
+            # All's: the Board adds its columns' up, so its tabs count what is on the board
+            cur.execute("select " + LS_KEY + " as k, count(*) as n from entities e where " + clause + contact_clause +
+                        " group by 1", params)
+            got = [dict(r) for r in cur.fetchall()]
+            out["service_counts"] = service_counts(got)
+            out["service_all"] = sum(int(r["n"]) for r in got)
+    return out
 
 
 # -------------------------------------------------------------------- detail
@@ -524,9 +570,11 @@ def lead(lead_id: str):
             seen.add(key)
             c["id"] = str(c["id"])
             contacts.append(c)
+        sells = isinstance(row.get("segment_config"), dict) and "lead_service" in row["segment_config"]
         cur.execute(
             "select id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at,"
-            " send_after, send_before, send_tz, send_tz_reason, send_plan, send_reschedules, send_wait_why, send_error"
+            " send_after, send_before, send_tz, send_tz_reason, send_plan, send_reschedules, send_wait_why, send_error,"
+            " service"                            # the one service it pitched (sql/35): what was sold to whom
             " from outreach"
             " where entity_id = %s and direction = 'outbound' and coalesce(sequence_step, 0) = 0"
             " and status not in ('cancelled', 'failed') order by created_at desc limit 1", (lead_id,))
@@ -558,10 +606,15 @@ def lead(lead_id: str):
         for k in ("send_after", "send_before", "send_tz", "send_tz_reason", "send_plan", "send_reschedules",
                   "send_wait_why", "send_error"):
             outreach.pop(k, None)                 # one shape for a time, everywhere: schedule (and window)
+        if not sells and outreach.get("service") is None:
+            outreach.pop("service", None)         # LCX Services' alone: every other project's answer is as before
         outreach.update(timing)
     row["outreach"] = outreach
     row["explain"] = explain.explain_lead(slug, cfg, row, ranked, outreach)
     row["criteria"] = [dict(c, assessed=c["state"] != explain.UNCHECKED) for c in row["explain"]["criteria"]]
+    if sells:
+        # the one service its email pitches, why, and the 18 a person may pick from instead (LCX Services)
+        row["lead_service"] = lead_service_view(cfg, row)
     meta = row.get("metadata") or {}
     h = meta.get("host") or {}
     row["host_name"] = h.get("name") if h.get("confidence") in ("high", "medium") else None
@@ -617,6 +670,86 @@ def decide(lead_id: str, body: dict = Body(...)):
     if row["drafting"]:
         _scheduler.kick_outreach(row["segment"], "manual")
     return row
+
+
+# ------------------------------------------------------------ lead service
+def lead_service_view(cfg, row, people=None):
+    """The lead sheet's Lead service box (LCX Services): the one service its email pitches and why (the rule, its
+    reason and evidence), who chose it (the rules, or a person, who the rules never overrule), why its email is held
+    if it is (app/explain.lead_service, from the drafter's own gate), the other services it fits (metadata.services,
+    what the sheet called "Pitch first" before one service was picked), and the 18 a person may pick from."""
+    import explain
+    s = explain.lead_service(cfg, row) or {}
+    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    gp = (cfg.get("outreach") or {}).get("generated_pitch") or {}
+    choices = [x for x in (gp.get("all_services") or list(gp.get("service_lines") or {})) if isinstance(x, str)]
+    by = s.get("set_by")
+    person = by not in (None, "", "rules")
+    if person and people is None:
+        people = _people()
+    return dict(s, label=s.get("service") or explain.SERVICE_BUCKET_LABEL.get(s.get("key")),
+                by_person=person, set_by_name=_display(by, people) if person else None,
+                also_fits=[x for x in (meta.get("services") or []) if isinstance(x, str) and x != s.get("service")],
+                choices=choices)
+
+
+@app.post("/api/leads/{lead_id}/service")
+def lead_service_pick(lead_id: str, request: Request, body: dict = Body(...)):
+    """A person picks the one service a lead's email pitches, or confirms the rules' pick (LCX Services; the owner's
+    review of its emails, 2026-10-13, point 12). Theirs stands: the rules never undo a person's choice
+    (tools/lcx_judge.py), and the drafter's holds (Check service, Read site first, an audience-only pick) give way to
+    it. A first email still waiting for approval that pitches something else is withdrawn, and the lead is drafted
+    again pitching this one; an email already approved or sent keeps what it pitched (sql/35)."""
+    import datetime as _dt
+    lead_id = _id(lead_id)
+    want = str((body or {}).get("service") or "").strip()
+    user = getattr(request.state, "user", None) or ""
+    with cursor() as cur:
+        cur.execute("select e.id, e.name, e.status, e.metadata, s.slug, s.config"
+                    " from entities e join segments s on s.id = e.segment_id where e.id = %s for update of e",
+                    (lead_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "no such lead")
+        row = dict(row)
+        cfg = row.pop("config") or {}
+        if "lead_service" not in cfg:
+            raise HTTPException(409, "This project does not pitch one service per lead.")
+        gp = (cfg.get("outreach") or {}).get("generated_pitch") or {}
+        choices = [x for x in (gp.get("all_services") or list(gp.get("service_lines") or {})) if isinstance(x, str)]
+        if want not in choices:
+            raise HTTPException(400, "Pick one of the %d services in the deck." % len(choices))
+        meta = row["metadata"] if isinstance(row["metadata"], dict) else {}
+        old = meta.get("lead_service") if isinstance(meta.get("lead_service"), dict) else None
+        people = _people()
+        name = _display(user, people)
+        tag = {"service": want, "name": want, "rule": "person", "basis": "person", "reason": "Picked by %s" % name,
+               "evidence": "", "set_by": user,
+               "decided_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()}
+        # what the rules had picked, kept beside it, so the sheet (and anyone reading the row) can still see it
+        prior = old.get("rules_pick") if old and old.get("set_by") not in (None, "", "rules") else old
+        if isinstance(prior, dict):
+            tag["rules_pick"] = {k: prior[k] for k in ("service", "rule", "basis", "reason", "evidence")
+                                 if prior.get(k) is not None}
+        cur.execute("update entities set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{lead_service}', %s),"
+                    " updated_at = now() where id = %s", (psycopg2.extras.Json(tag), lead_id))
+        cur.execute("update outreach set status = 'cancelled', stopped_reason = %s, updated_at = now()"
+                    " where entity_id = %s and direction = 'outbound' and status = 'drafted'"
+                    " and coalesce(sequence_step, 0) = 0 and service is distinct from %s",
+                    (("service changed to %s by %s" % (want, name))[:200], lead_id, want))
+        withdrawn = cur.rowcount
+        cur.execute("select status, service from outreach where entity_id = %s and direction = 'outbound'"
+                    " and coalesce(sequence_step, 0) = 0 and status not in ('cancelled', 'failed')"
+                    " order by created_at desc limit 1", (lead_id,))
+        live = cur.fetchone()
+        row["metadata"] = dict(meta, lead_service=tag)
+        view = lead_service_view(cfg, row, people)
+    # shortlisted with no email left: drafted now, pitching this service (app/scheduler.py), as a shortlist is
+    drafting = bool(row["status"] == "shortlisted" and not live and (cfg.get("outreach") or {}).get("templates"))
+    if drafting:
+        _scheduler.kick_outreach(row["slug"], "manual")
+    return {"ok": True, "lead_service": view, "withdrawn": withdrawn, "drafting": drafting,
+            "email": {"status": live["status"], "service": live["service"]} if live else None}
 
 
 # -------------------------------------------------------------------- export
@@ -684,8 +817,12 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
             " where f.folder = any(%s) and e.segment_id = (select id from segments where slug = %s)"
             " order by " + order + " limit 200", (folders, segment))
         rows = [dict(r) for r in cur.fetchall()]
+        sells = sells_services(segment)
         for r in rows:
             r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
+            if not sells and r.get("service") is None:
+                # the one service an email pitched (sql/35) is LCX Services' alone: everyone else's rows are as before
+                r.pop("service", None)
             # who reached out: the person who approved it, from their own Gmail (sender_address)
             r["approved_by_name"] = _display(r.get("approved_by"), people)
             if r["status"] == "drafted" and r["direction"] == "outbound":
@@ -824,17 +961,24 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
         if action == "approve":
             cfg = pol.outreach_config(cur, segment)
             dr = _render()
-            if dr.sends_as_approver(cfg):
-                # it goes out from the approver's own Gmail, signed by them: exactly the text they were shown
+            too_long = long_subjects(cur, [oid], cfg)
+            if too_long:
+                raise HTTPException(409, "cannot approve: " + too_long[0]["reason"])
+            signed = signs_by_person(segment, cfg)
+            if dr.signs_as_approver(cfg) or signed:
+                # signed by the approver (from their own Gmail, or LCX Clipping's pool): exactly the text they were shown
                 cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user,))
                 person = cur.fetchone()
                 if not person or not person["name"] or not person["title"]:
-                    raise HTTPException(409, "Add your name and title first (the account menu at the bottom of the sidebar): "
-                                             "the emails you approve are signed with them.")
+                    raise HTTPException(409, needs_signer(segment) if signed else
+                                        "Add your name and title first (the account menu at the bottom of the sidebar): "
+                                        "the emails you approve are signed with them.")
                 cur.execute("select body from outreach where id = %s and status = 'drafted'", (oid,))
                 row = cur.fetchone()
                 if row:
                     mine = dr.personalize(row["body"], cfg, dict(person))
+                    if signed and project_signoff(mine, cfg, dict(person)):
+                        raise HTTPException(409, "cannot approve: " + project_signoff(mine, cfg, dict(person)))
                     if mine != row["body"]:
                         cur.execute("update outreach set body = %s, updated_at = now()"
                                     " where id = %s and status = 'drafted'", (mine, oid))
@@ -936,14 +1080,33 @@ def outreach_batch_sample(request: Request, body: dict = Body(...),
     pol = _policy()
     ids = sorted({str(i) for i in ((body or {}).get("ids") or [])})
     with cursor() as cur:
-        policy = pol.batch_policy(pol.outreach_config(cur, segment))
+        cfg = pol.outreach_config(cur, segment)
+        policy = pol.batch_policy(cfg)
         if not policy:
             raise HTTPException(403, "batch approval is off for this segment")
         if not ids:
             raise HTTPException(400, "select at least one draft")
         if len(ids) > policy["max_batch"]:
             raise HTTPException(400, "a batch is at most %d drafts" % policy["max_batch"])
-        ok, skipped = pol.check_drafts(cur, ids, segment, policy)
+        unsigned = long_subjects(cur, ids, cfg)   # a subject over the cap is left out, saying why (2026-10-13)
+        if signs_by_person(segment, cfg):
+            # LCX Services (and LCX Clipping, signed by its approver since 2026-10-13): said before the sample is read,
+            # not after (step 2 refuses the same, the same way): no name or title, or a draft that would still go out
+            # signed by the project
+            cur.execute("select email, name, title from app_users where lower(email) = lower(%s)",
+                        (getattr(request.state, "user", None) or "",))
+            person = cur.fetchone()
+            if not person or not person["name"] or not person["title"]:
+                raise HTTPException(409, needs_signer(segment))
+            dr = _render()
+            cur.execute("select id, body from outreach where id = any(%s::uuid[]) and status = 'drafted'", (ids,))
+            for row in cur.fetchall():
+                why = project_signoff(dr.personalize(row["body"], cfg, dict(person)), cfg, dict(person))
+                if why and str(row["id"]) not in {u["id"] for u in unsigned}:
+                    unsigned.append({"id": str(row["id"]), "reason": why})
+        held = {u["id"] for u in unsigned}
+        ok, skipped = pol.check_drafts(cur, [i for i in ids if i not in held], segment, policy)
+        skipped += unsigned
         has_generated = bool(pol.generated_among(cur, ok))
     if not ok:
         raise HTTPException(400, "none of the selected drafts can be approved: "
@@ -977,19 +1140,33 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         if not policy:
             raise HTTPException(403, "batch approval is off for this segment")
         dr = _render()
-        if dr.sends_as_approver(cfg):
-            # each one goes out from the approver's Gmail, signed by them, as the sample they read was
+        signed = signs_by_person(segment, cfg)
+        # drafts that would still go out signed by the project (LCX Services, LCX Clipping), and, in every project with
+        # outreach.subject_max_words, one whose subject is over it (2026-10-13): left out, saying why, and left as they are
+        unsigned = long_subjects(cur, ids, cfg)
+        if dr.signs_as_approver(cfg) or signed:
+            # each one is signed by the approver (from their Gmail, or LCX Clipping's pool), as the sample they read was
             cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user or "",))
             person = cur.fetchone()
             if not person or not person["name"] or not person["title"]:
-                raise HTTPException(409, "Add your name and title first (the account menu at the bottom of the sidebar).")
+                raise HTTPException(409, needs_signer(segment) if signed else
+                                    "Add your name and title first (the account menu at the bottom of the sidebar).")
+            too_long = {u["id"] for u in unsigned}
             cur.execute("select id, body from outreach where id = any(%s::uuid[]) and status = 'drafted'", (ids,))
             for row in cur.fetchall():
+                if str(row["id"]) in too_long:
+                    continue
                 mine = dr.personalize(row["body"], cfg, dict(person))
+                why = project_signoff(mine, cfg, dict(person)) if signed else None
+                if why:
+                    unsigned.append({"id": str(row["id"]), "reason": why})
+                    continue
                 if mine != row["body"]:
                     cur.execute("update outreach set body = %s, updated_at = now() where id = %s and status = 'drafted'",
                                 (mine, row["id"]))
-        ok, skipped = pol.check_drafts(cur, ids, segment, policy)
+        held = {u["id"] for u in unsigned}
+        ok, skipped = pol.check_drafts(cur, [i for i in ids if i not in held], segment, policy)
+        skipped += unsigned
         # re-checked here, not trusted from step 1: the rule is about what is
         # being approved now, and a draft may have been redrafted since
         if len(sample) < pol.required_sample(len(ids), policy,
@@ -1121,6 +1298,66 @@ def _display(email, people):
     return (p and p.get("name")) or email.split("@")[0]
 
 
+# LCX Services (the owner's review of its emails, 2026-10-13, point 10): an email is signed by the person who approves
+# it, never by the project's own canonical sender ("LCX", the name a draft is stored under) or a SET_ME. So approving
+# one is refused while the approver's profile has no name or no title, whatever outreach.send_from says, and refused
+# when what would go out still ends with the project's sign-off (a footer edited by hand, so it could not be swapped
+# for the approver's). Keyed on the project pitching one service per lead (config lead_service): every other project
+# approves exactly as before.
+NEEDS_SIGNER = ("Set your name and title in your profile first (Your name and title, in the account menu at the bottom "
+                "of the sidebar): LCX Services emails are signed with them, never with the project's own name.")
+# The owner, 2026-10-13 ("sign with the approver's name"): LCX Clipping sends from its own pool mailboxes but signs
+# each email with the approver's name and title (outreach.sign_as "approver"), so the same guard holds there
+NEEDS_SIGNER_ANY = ("Set your name and title in your profile first (Your name and title, in the account menu at the "
+                    "bottom of the sidebar): this project's emails are signed with them, never with the project's own "
+                    "name.")
+
+
+def signs_by_person(segment, cfg=None):
+    """Is every email of this project signed by the person who approves it, never by the project's own sender?
+    LCX Services (it pitches one service per lead), and any project with outreach.sign_as "approver"."""
+    return sells_services(segment) or (cfg or {}).get("sign_as") == "approver"
+
+
+def needs_signer(segment):
+    return NEEDS_SIGNER if sells_services(segment) else NEEDS_SIGNER_ANY
+
+
+def long_subjects(cur, ids, cfg):
+    """[{id, reason}] for the drafts among `ids` whose subject is over outreach.subject_max_words. The owner,
+    2026-10-13: "subject for all emails for all services should be less than 5 or equal to 5 words". The draft step
+    keeps new drafts inside it (tools/draft_render.capped_subject); this keeps one drafted before then, or given a
+    longer subject by hand, from being approved, so a longer subject never ships. Universal (no cap): nothing."""
+    cap = (cfg or {}).get("subject_max_words")
+    if not cap or not ids:
+        return []
+    dr = _render()
+    cur.execute("select id, subject from outreach where id = any(%s::uuid[]) and status = 'drafted'", (list(ids),))
+    out = []
+    for r in cur.fetchall():
+        n = dr.subject_words(r["subject"] or "")
+        if n > int(cap):
+            out.append({"id": str(r["id"]),
+                        "reason": "its subject is %d words, and a subject is at most %d: shorten the subject, or wait "
+                                  "for the email to be drafted again" % (n, int(cap))})
+    return out
+
+
+def project_signoff(body, cfg, person):
+    """Why `body` would still go out signed by the project rather than by `person`, or None."""
+    dr = _render()
+    canon, mine = dr.footer_for(cfg), dr.footer_for(cfg, person.get("name"), person.get("title"))
+    if canon == mine:
+        return None                       # the person's name and title are the project's own
+    project = ((cfg.get("sender") or {}).get("name") or "").strip()
+    if (canon and canon in (body or "")) or (project and project != (person.get("name") or "").strip()
+                                             and any(ln.strip() == project for ln in (body or "").splitlines())):
+        return ("its sign-off still reads %s, the project's name, not your name and title, so it would not go out "
+                "signed by you. Put the footer back as it was drafted, or end the email with your own name and title."
+                % (project or "the project's sender"))
+    return None
+
+
 def _mailbox_store():
     import sys
     p = os.path.join(REPO, "tools")
@@ -1155,10 +1392,16 @@ def footer_get(segment: str = Depends(current_segment)):
         pending = cur.fetchone()["n"]
     sender = cfg.get("sender") or {}
     text = dr.footer_text(cfg)
-    return {"text": text, "fields": list(dr.FOOTER_FIELDS),
-            "sender": {"name": sender.get("name", "") or "",
-                       "title": sender.get("title", "") or "",
-                       "postal_address": sender.get("postal_address", "") or ""},
+    shown = {"name": sender.get("name", "") or "",
+             "title": sender.get("title", "") or "",
+             "postal_address": sender.get("postal_address", "") or ""}
+    if sender.get("company"):
+        # LCX Services (2026-10-13): the project's company on the title line, {{sender_company}}, for the preview
+        shown["company"] = sender["company"]
+    # a project with no company of its own is not offered {{sender_company}}: it would always read as nothing
+    fields = [f for f in dr.FOOTER_FIELDS if f != "sender_company" or sender.get("company")]
+    return {"text": text, "fields": fields,
+            "sender": shown,
             "problems": dr.validate_footer(text, sender),
             "drafts_pending": pending}
 
@@ -1167,8 +1410,9 @@ def footer_get(segment: str = Depends(current_segment)):
 def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
     """Save the footer and the sender it names.
 
-    The footer must keep a way off the list. A postal address is optional,
-    and the default footer omits it (owner, 2026-10-09).
+    A postal address is optional, and the default footer omits it (owner,
+    2026-10-09); no opt-out line is required (owner, 2026-10-13: removed from
+    every footer).
 
     Drafts waiting for approval get the new footer too: they cannot be approved
     with a footer that still says SET_ME. Only the footer is swapped, and a draft
