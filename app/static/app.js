@@ -1377,7 +1377,7 @@ async function openCompose(leads) {
         return `<div class="from-box"><div class="truncate"><strong>${esc(b.address)}</strong></div>
           <div class="from-meter"><span class="meter ${b.remaining > 0 ? "hi" : "full"}"><i style="width:${used}%"></i></span>
           <span class="small muted">${b.remaining} of ${b.daily_cap} left today</span></div></div>`; }).join("")
-    : `<p class="small">You have no sending address yet. What you approve waits in Approved until the owner links one to you.</p>`;
+    : `<p class="small">You have no Gmail connected yet. What you approve waits in Approved until you connect one (account menu, Your Gmail).</p>`;
 
   modal.open(`
     ${modalHead(`${typeIcon("mail")}<span class="key">New email</span>`)}
@@ -1489,11 +1489,11 @@ async function openCompose(leads) {
       flag(n ? `Approved ${n} email${n === 1 ? "" : "s"}` : "Nothing was approved", {
         kind: n ? (skipped.length ? "info" : "") : "err", ms: 8000,
         desc: (n ? (r.paused ? "They wait in Approved: sending is paused for this project."
-                  : first && !r.can_send ? `${n === 1 ? "It is set for" : "The first is set for"} ${whenText(first)}, but waits in Approved until the owner links a sending address to you.`
+                  : first && !r.can_send ? `${n === 1 ? "It is set for" : "The first is set for"} ${whenText(first)}, but waits in Approved until you connect your Gmail (account menu, Your Gmail).`
                   : first ? (n === 1 ? `It goes out ${whenText(first)}, from ${fromAddr}.`
                                      : `The first goes out ${whenText(first)}, from ${fromAddr}; each of the others at its own minute in ${itsWindow()}.`)
                   : r.can_send ? `They go out from ${fromAddr} within minutes, inside its daily limit.`
-                  : "They wait in Approved until the owner links a sending address to you.") : "")
+                  : "They wait in Approved until you connect your Gmail (account menu, Your Gmail).") : "")
           + (skipped.length ? ` ${skipped.length} skipped: ${[...new Set(skipped.map((s) => s.reason))].join("; ")}.` : "") });
       refreshCurrentView(); refreshOutreachCount(true);
     } catch (err) { toast(err.message, true); b.classList.remove("loading"); paint(); }
@@ -1702,10 +1702,10 @@ function openMessage(id) {
                        : res.paused ? ": it waits in Approved, because sending is paused for this project."
                        : res.schedule && res.can_send ? ": goes out " + whenText(res.schedule) + (from ? ", from " + from : "") + "."
                        : res.schedule ? ": set for " + whenText(res.schedule) + (perPerson
-                           ? ", but it waits in Approved until the owner links a sending address to you."
+                           ? ", but it waits in Approved until you connect your Gmail (account menu, Your Gmail)."
                            : ", once a mailbox is connected.")
                        : res.can_send ? (from ? ": it goes out from " + from + " within minutes." : ": it goes out within minutes.")
-                       : perPerson ? ": it waits in Approved until the owner links a sending address to you."
+                       : perPerson ? ": it waits in Approved until you connect your Gmail (account menu, Your Gmail)."
                        : ": it goes out as soon as a mailbox is connected.")
         : b.dataset.act === "stop_sequence"
         ? (res.cancelled ? res.cancelled + " pending follow-up" + (res.cancelled === 1 ? "" : "s") + " cancelled." : "No further follow-ups will be drafted.")
@@ -1873,11 +1873,11 @@ function renderMailboxStrip(m) {
   const people = (m.accounts || []).map((a) => {
     const boxes = a.mailboxes.length ? a.mailboxes.map((b) => {
       const tone = !b.usable ? "warn" : b.remaining <= 0 ? "full" : "";
-      const tip = !b.usable ? "Its sign-in stopped working: the owner connects it again (users.py gmail). " + (b.last_error || "")
+      const tip = !b.usable ? "Its sign-in stopped working: " + (a.me ? "connect it again (account menu, Your Gmail). " : a.name + " connects it again from Your Gmail. ") + (b.last_error || "")
         : `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left. The count starts again at ${resets}.`;
       const used = b.daily_cap ? Math.min(100, Math.round(100 * b.out_today / b.daily_cap)) : 0;
       return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">reconnect</span>`}</span>`;
-    }).join("") : `<span class="mbx none">no sending address yet</span>`;
+    }).join("") : `<span class="mbx none">${a.me ? "your Gmail is not connected (account menu, Your Gmail)" : "no Gmail connected yet"}</span>`;
     // with a sending window: their approvals by the day each goes (India's clock); otherwise how many wait
     const days = (a.scheduled || []).length && !m.paused ? scheduledText(a.scheduled) : "";
     const waiting = days ? `<span class="muted small" title="${esc(`Approved, each going out at its own minute in ${itsWindow()} (days on India's clock)`)}">approved: ${esc(days)}</span>`
@@ -1900,7 +1900,7 @@ function approverNote(r, isDraft, win) {
   if (isDraft) {
     const me = (m.accounts || []).find((a) => a.me) || { mailboxes: [] };
     const ok = me.mailboxes.filter((b) => b.usable).sort((a, b) => b.remaining - a.remaining);
-    if (!ok.length) return "You have no sending address yet: approving keeps it in Approved until the owner links one to you.";
+    if (!ok.length) return "You have no Gmail connected yet: approving keeps it in Approved until you connect one (account menu, Your Gmail).";
     if (win && win.enabled && win.window_label)
       return `Approving sends it from ${ok[0].address} in ${nextWindow()}, ${win.window_label}, at a random minute, signed by you.`;
     return `Approving sends it from ${ok[0].address} (${ok[0].remaining} of ${ok[0].daily_cap} left today), signed by you.`;
@@ -1908,7 +1908,7 @@ function approverNote(r, isDraft, win) {
   if (r.status === "approved") {
     const who = (m.accounts || []).find((a) => a.email.toLowerCase() === String(r.approved_by || "").toLowerCase());
     const name = who ? who.name : (r.approved_by_name || r.approved_by || "its approver");
-    if (!(who && who.mailboxes.some((b) => b.usable))) return `Approved by ${name}. It waits here until the owner links a sending address to ${name}.`;
+    if (!(who && who.mailboxes.some((b) => b.usable))) return `Approved by ${name}. It waits here until ${name} connects a Gmail.`;
     return goesOutNote(r, name) || `Approved by ${name}. It goes out from their address within minutes, inside its daily limit.`;
   }
   return null;
@@ -2585,7 +2585,7 @@ function renderProjectsMenu(menu) {
 function renderUserMenu(menu) {
   const email = state.user || "", me = state.me || {};
   menu.innerHTML = `${me.title ? `<div class="menu-note">Signs emails as <strong>${esc(me.name || email)}</strong>, ${esc(me.title)}</div><div class="menu-sep"></div>` : ""}
-    <button class="menu-item" id="myGmailBtn">${icon("mail", 18)}<span>Your sending address</span></button>
+    <button class="menu-item" id="myGmailBtn">${icon("mail", 18)}<span>Your Gmail</span></button>
     <button class="menu-item" id="myProfileBtn">${icon("user", 18)}<span>Your name and title</span></button>
     <button class="menu-item" id="myPasswordBtn">${icon("shield", 18)}<span>Change password</span></button>
     <div class="menu-sep"></div>
@@ -2670,8 +2670,8 @@ function openWelcome() {
         if (pw) await savePassword($("#pwCurrent", root).value, $("#pwNew", root).value, $("#pwAgain", root).value);
         await saveProfile($("#meName", root).value, $("#meTitle", root).value);
         modal.locked = false; modal.close(true);
-        flag("You're all set", { desc: "The emails you approve are signed with your name and go out from the address linked to your account." });
         resolve();
+        openSendingAddress({ welcome: true });   // then their Gmail, when it can be connected from here
       } catch (err) {
         fieldErr(root, "welcomeErr", err.message);
         b.classList.remove("loading"); b.disabled = false;
@@ -2710,25 +2710,54 @@ function openPassword() {
   });
 }
 
-/* Your sending address: where the emails you approve go out from, and today's use of each one's limit.
-   Read-only: the owner links the addresses (owner, 2026-09-26: "I will manually connect the email id
-   they will use to send"), with `python tools/users.py gmail <your login>` on their machine. */
-async function openSendingAddress() {
+function connectGmail() { location.href = "/api/mailboxes/connect"; }
+
+/* Your Gmail: the addresses the emails you approve go out from, today's use of each one's limit, connect one
+   (Google's own sign-in, app/mailbox_connect.py) and disconnect one. The owner, 2026-10-14: "a feature which
+   allows users to link a gmail account to send emails in their own without my intervention". The owner can
+   still link one for you from the laptop (`users.py gmail`); it shows here the same way. */
+async function openSendingAddress(opts) {
+  opts = opts || {};
   let d;
-  try { d = await api("/api/me/mailboxes"); } catch (e) { return toast("Could not load your sending address: " + e.message, true); }
+  try { d = await api("/api/me/mailboxes"); } catch (e) { return toast("Could not load your Gmail: " + e.message, true); }
   const rows = d.mailboxes || [];
+  if (opts.welcome && (rows.length || !d.web_connect)) {
+    flag("You're all set", { desc: rows.length ? "The emails you approve are signed with your name and go out from " + rows[0].address + "."
+                                               : "The emails you approve are signed with your name and title." });
+    return;
+  }
   const list = rows.length ? `<ul class="mbx-list">${rows.map((b) => `<li>
       <span class="cell-person">${avatar(null, b.address)}<span><div>${esc(b.address)}</div>
         <div class="secondary">${b.usable ? `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left`
-          : `<span style="color:var(--text-danger)">Its sign-in stopped working: ask the owner to connect it again</span>`}</div></span></span></li>`).join("")}</ul>`
-    : `<p class="muted">No sending address yet. The owner links the address your emails go out from; until then, the emails you approve wait in Approved.</p>`;
+          : `<span style="color:var(--text-danger)">Its sign-in stopped working: connect it again</span>`}</div></span></span>
+      <span class="grow"></span>
+      ${b.usable || !d.web_connect ? "" : `<button class="btn compact" data-reconnect>Connect again</button>`}
+      <button class="btn subtle compact danger-text" data-drop="${esc(b.id)}" data-addr="${esc(b.address)}">Disconnect</button></li>`).join("")}</ul>`
+    : `<p class="muted">No Gmail connected yet. Until you connect one, the emails you approve wait in Approved.</p>`;
+  const cap = String((rows[0] || {}).daily_cap || 35);
   modal.open(`
-    ${modalHead(`${typeIcon("mail")}<span class="key">Your sending address</span>`)}
+    ${modalHead(`${typeIcon("mail")}<span class="key">Your Gmail</span>`)}
     <div class="modal-body single"><div class="modal-main">
-      ${rows.length ? `<p class="sub" style="margin-bottom:16px">The emails you approve go out from ${rows.length > 1 ? "these addresses, the one with the most room first" : "this address"}, signed with your name and title, up to its daily limit. The owner sets them up.</p>` : ""}
+      ${opts.welcome ? `<h2 class="modal-title" style="font-size:20px;line-height:24px;margin-bottom:4px">One last step: your Gmail</h2>` : ""}
+      <p class="sub" style="margin-bottom:16px">The emails you approve go out from your own Gmail, signed with your name and title, up to ${esc(cap)} a day from each address${rows.length > 1 ? ", the one with the most room first" : ""}. Google shows you what is allowed (sending, and reading replies, for that address only), and you can take it back here or from your Google account at any time.</p>
       ${list}
+      ${d.web_connect ? "" : `<div class="footer-problems" style="margin-top:12px">${icon("info", 16)}<div>Connecting from the app is not switched on yet: the owner adds a Google "Web application" client to the server first. Until then the owner can link an address for you.</div></div>`}
     </div></div>
-    <div class="modal-foot"><button class="btn primary" data-close>Close</button></div>`, { label: "Your sending address", narrow: true });
+    <div class="modal-foot">
+      <button class="btn" data-close>${opts.welcome ? "Later" : "Close"}</button>
+      <button class="btn primary" id="gmailGo" ${d.web_connect ? "" : "disabled"}>${icon("mail", 16)} ${rows.length ? "Connect another address" : "Connect your Gmail"}</button>
+    </div>`, { label: "Your Gmail", narrow: true });
+  const root = $("#modalRoot");
+  $("#gmailGo", root).addEventListener("click", connectGmail);
+  $$("[data-reconnect]", root).forEach((b) => b.addEventListener("click", connectGmail));
+  $$("[data-drop]", root).forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Disconnect " + b.dataset.addr + "? The emails you approve stop going out from it.")) return;
+    try {
+      await api("/api/mailboxes/" + encodeURIComponent(b.dataset.drop), { method: "DELETE" });
+      flag("Disconnected", { desc: b.dataset.addr });
+      openSendingAddress();
+    } catch (e) { toast(e.message, true); }
+  }));
 }
 
 function bindShell() {
@@ -2789,6 +2818,15 @@ function bindFilters() {
     // a starting password, or no name to sign emails with yet: that first, before anything loads
     if (state.user && (state.me.must_change || !state.me.name || !state.me.title)) await openWelcome();
   } catch (e) {}
+  // back from Google's sign-in (app/mailbox_connect.py): say how it went, then drop it from the address bar
+  const back = new URLSearchParams(location.search);
+  if (back.get("gmail")) {
+    const ok = back.get("gmail") === "connected";
+    flag(ok ? "Gmail connected" : "Gmail not connected", ok
+      ? { desc: (back.get("msg") || "") + " now sends the emails you approve.", ms: 6000 }
+      : { desc: back.get("msg") || "", kind: "err", ms: 10000 });
+    history.replaceState(null, "", location.pathname + location.hash);
+  }
   try {
     const s = await api("/api/stats");
     state.sources = s.by_source.map((r) => r.source);

@@ -51,26 +51,31 @@ password is replaced, the app refuses to do anything else for that login. Adding
 `--remove old@theviralfever.com` to the same command takes someone's login away;
 their past approvals and sent emails stay in the history.
 
-**The owner links each person's sending address**, once per address, on their
-own machine:
+**Each person connects their own Gmail** in the app: account menu, **Your
+Gmail**, **Connect your Gmail**. Google's own sign-in opens; they choose the
+address they will send from and allow it (sending, and reading replies, for that
+address only). They come back to Outreach with "Gmail connected", and the emails
+they approve go out from it. Nobody's password is seen or kept. The same screen
+connects a second address, connects one again when its sign-in stops working,
+and disconnects one, which also withdraws Google's permission. An address already
+linked to someone else is refused: one address, one person.
+
+The owner can still link an address for someone from their own machine:
 
 ```
 python tools/users.py gmail suhasc@theviralfever.com
 ```
 
-A browser opens on Google's own sign-in; sign in to the address that person
-will send from (it can be their own or another one). That's all: the address is
-linked to them, and the emails they approve go out from it. Nobody else connects
-anything. Run it again to add a second address for the same person, or to
-refresh one whose sign-in stopped working; `--move` moves an address to another
-person; `gmail-remove <address>` unlinks one.
+A browser opens on Google's sign-in; sign in to the address that person will
+send from. `--move` moves an address to another person; `gmail-remove <address>`
+unlinks one.
 
 `users.py list` shows who has access, whether they have signed in yet and which
 addresses they send from; `add` and `passwd` (with `--starting` for a one-time
 password) do the same as `team` for one person.
 
 **Your account** is at the bottom of the sidebar, under your name. Click it for
-**Your sending address** (where your emails go out from, and today's count),
+**Your Gmail** (where your emails go out from, today's count, connect or disconnect),
 **Your name and title** and **Change password**. Changing your password keeps you
 signed in where you are and signs you out everywhere else.
 
@@ -593,9 +598,8 @@ for them.
 ## Approving sends
 
 Approving is the decision to send, and in US Production Houses **it goes out from
-your own sending address**, signed with your own name and title. The owner links
-that address to your login (see *Getting in*); you connect nothing. A person can
-have more than one. Each address sends **up to 35 a day**, and an approval goes
+your own Gmail**, signed with your own name and title. You connect it yourself
+(account menu, Your Gmail; see *Getting in*). A person can have more than one. Each address sends **up to 35 a day**, and an approval goes
 out from whichever of yours has the most room left. Nobody's approval ever
 leaves from somebody else's address.
 
@@ -610,7 +614,7 @@ addresses with today's count out of its limit (for example `3/35`), anyone who
 has none linked yet, and their approvals by the day each goes out ("approved: 3
 on Tue 14 Oct, 2 on Wed 15 Oct", days on India's clock). The counts start again
 at midnight UTC, which is 5:30 am in India. An approval by someone with no
-sending address waits in Approved until the owner links one.
+Gmail waits in Approved until they connect one.
 
 In the other projects the email goes out from the project's own mailbox, inside
 the day's sending limit and each mailbox's warm-up, and the counter at the top of

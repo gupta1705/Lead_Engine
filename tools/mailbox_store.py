@@ -211,6 +211,15 @@ def remove(cur, address):
     return got[0] if got else None
 
 
+def remove_own(cur, mailbox_id, user_email):
+    """A person disconnects one of their own addresses (app/mailbox_connect.py). -> the row removed, or None
+    when it is not theirs: nobody unlinks someone else's address from the app."""
+    cur.execute("delete from user_mailboxes where id = %s and lower(user_email) = lower(%s)"
+                " returning address, user_email, token_enc", (str(mailbox_id), user_email))
+    got = _rows(cur)
+    return got[0] if got else None
+
+
 def credentials(row):
     """The authorized-user dict for a row carrying token_enc, or None."""
     return decrypt(row.get("token_enc")) if row else None

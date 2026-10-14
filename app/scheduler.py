@@ -554,8 +554,9 @@ class Scheduler:
         for addr, why in sorted((summary.get("refused") or {}).items()):
             self._alert_once(("refused", slug, addr, day),
                              "TVF Lead Engine [%s]: %s. Its emails moved to their next window, saying why; the other"
-                             " addresses carry on. If it is the sign-in, the owner links it again (tools/users.py"
-                             " gmail <login>)." % (slug, why))
+                             " addresses carry on. If it is the sign-in, its person connects it again in the app"
+                             " (account menu, Your Gmail), or the owner links it (tools/users.py gmail <login>)."
+                             % (slug, why))
         left = list(summary.get("left_alone") or [])
         if due_ids and not any(int(summary.get(k) or 0) for k in ("sent", "deferred", "parked", "cancelled")):
             left += [str(i) for i in due_ids]

@@ -1708,7 +1708,7 @@ import universal as _universal_module          # the Apollo search page (Univers
 app.include_router(_universal_module.build_router(
     cursor, allowed=(lambda: SEGMENTS_ALLOWED) if SEGMENTS_ALLOWED else None))
 
-import mailbox_connect as _mailbox_connect_module   # each person's sending address, linked by the owner
+import mailbox_connect as _mailbox_connect_module   # each person's Gmail: connected in the app, or linked by the owner
 app.include_router(_mailbox_connect_module.build_router(cursor))
 
 # ---------------------------------------------------------------- scheduler

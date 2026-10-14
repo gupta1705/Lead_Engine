@@ -667,8 +667,9 @@ def cmd_send(args):
             # `python tools/outreach.py auth`, then update the mailbox's token variable on the server
             failed = list(dict.fromkeys(signin_failed))
             if approver_mode:
-                log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, the owner links it"
-                    " again: python tools/users.py gmail <login>." % ", ".join(failed))
+                log("Gmail refused %s (sign-in, permission or a limit). If it is the sign-in, its person connects it"
+                    " again in the app (account menu, Your Gmail), or the owner links it: python tools/users.py gmail"
+                    " <login>." % ", ".join(failed))
             else:
                 log("Gmail refused mailbox(es) %s (sign-in, permission or a limit). If it is the sign-in: run"
                     " `python tools/outreach.py auth`, then update %s on the server"

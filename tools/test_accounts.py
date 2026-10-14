@@ -12,9 +12,11 @@ leaves the machine, and the server's secret is a test one. Checked:
     ends the others; the rules on a new password; name and title
   * each person sees a draft as THEY would send it (their sign-off, Kartikeya his own first-person line),
     saving an edit stores the project's own form, approving stores theirs and needs a name and title
-  * the owner links each person's sending address (users.py gmail): sealed with the server's public key
-    so only the server reads it, one address one person (--move to change), refresh and --cap; people
-    have nothing to connect in the app
+  * the owner links a person's sending address (users.py gmail): sealed with the server's public key
+    so only the server reads it, one address one person (--move to change), refresh and --cap
+  * each person connects their own Gmail in the app (owner, 2026-10-14): off without a Web application
+    client, Google's sign-in with a state only they can finish, an address someone else holds refused and
+    its permission withdrawn, disconnecting only their own
   * the Sending today list, "reached out by" on leads, the lead dialog and the per-person report
   * with the repo's sending window (owner, 2026-10-12): an approval draws its own moment even before the
     approver has an address, and Sending today counts each person's approvals by the day they go
@@ -271,16 +273,12 @@ def api():
               (bool(sched.get("send_label")), sched.get("send_tz") is not None), (True, True))
 
         # ------------------------------------------------------------ sending addresses
-        # owner, 2026-09-26: "no need for them to connect their gmails. I will manually connect the email id
-        # they will use to send" -- the owner links each address on the laptop (tools/users.py gmail)
-        print("\n-- the owner links each person's sending address (tools/users.py gmail)")
+        # the owner can link an address for someone on the laptop (tools/users.py gmail); since 2026-10-14 each
+        # person can also connect their own in the app (below)
+        print("\n-- the owner links a person's sending address (tools/users.py gmail)")
         r = call("GET", "/api/mailboxes/server-key")
         check("the server's public key is public, and the one its secret gives", (r.status_code, r.json().get("x25519")),
               (200, store.server_public_key()))
-        check("people have nothing to connect: no connect, callback or disconnect in the app",
-              [call(m, u, cookies=a).status_code in (404, 405) for m, u in
-               (("GET", "/api/mailboxes/connect"), ("GET", "/api/mailboxes/callback?code=x"), ("DELETE", "/api/mailboxes/x"))],
-              [True, True, True])
 
         import users
         import googleapiclient.discovery as gdisc
@@ -384,6 +382,101 @@ def api():
               ([d["count"] for d in kart_row["scheduled"]], all(d["label"] and d["day"] for d in kart_row["scheduled"])),
               ([1], True))
         check("  and nothing secret in it", "token" in json.dumps(strip).replace("tokens", ""), False)
+
+        # ------------------------------------------------------------ connecting a Gmail in the app
+        # owner, 2026-10-14: "a feature which allows users to link a gmail account to send emails in their own
+        # without my intervention" -- Google's own sign-in, from the account menu (app/mailbox_connect.py)
+        print("\n-- each person connects their own Gmail in the app (app/mailbox_connect.py, Google a stand-in)")
+        import urllib.parse as up
+        import mailbox_connect as mc
+        web_vars = ("GOOGLE_OAUTH_WEB_CLIENT_ID", "GOOGLE_OAUTH_WEB_CLIENT_SECRET")
+        saved_env = {name: os.environ.pop(name, None) for name in web_vars}
+        real_mc = (mc._post_form, mc._get_json, mc._env)
+        google = {"token": (200, {}), "profile": (200, {}), "posts": []}
+
+        def fake_post(url, fields, timeout=20):
+            google["posts"].append((url, dict(fields)))
+            return google["token"] if url == mc.TOKEN_URL else (200, {})
+
+        def back(r):
+            qq = up.parse_qs(up.urlparse(r.headers.get("location", "")).query)
+            return (qq.get("gmail") or [None])[0], (qq.get("msg") or [""])[0]
+
+        def revoked():
+            return [f.get("token") for u, f in google["posts"] if u == mc.REVOKE_URL]
+        try:
+            mc._env = lambda name: os.environ.get(name)          # never the laptop's own .env
+            off = call("GET", "/api/me/mailboxes", cookies=a).json()
+            r = call("GET", "/api/mailboxes/connect", cookies=a)
+            check("no Web application client on the server: Connect says so, and goes nowhere else",
+                  (off["web_connect"], r.status_code, back(r)[0], r.headers.get("location", "").startswith("/?")),
+                  (False, 302, "error", True))
+            check("  signed out: refused", call("GET", "/api/mailboxes/connect").status_code, 401)
+            os.environ["GOOGLE_OAUTH_WEB_CLIENT_ID"] = "web-zz.apps.googleusercontent.com"
+            os.environ["GOOGLE_OAUTH_WEB_CLIENT_SECRET"] = "web-zz-secret"
+            mc._post_form, mc._get_json = fake_post, lambda url, token, timeout=20: google["profile"]
+            check("with one: switched on", call("GET", "/api/me/mailboxes", cookies=a).json()["web_connect"], True)
+            r = call("GET", "/api/mailboxes/connect", cookies=a)
+            loc = up.urlparse(r.headers.get("location", ""))
+            q = {name: v[0] for name, v in up.parse_qs(loc.query).items()}
+            check("Connect: Google's own sign-in, for Gmail, lasting, back to this server's callback",
+                  (r.status_code, loc.netloc, q.get("client_id"), q.get("scope"), q.get("access_type"),
+                   q.get("redirect_uri", "").endswith("/api/mailboxes/callback"), "web-zz-secret" in r.headers["location"]),
+                  (302, "accounts.google.com", "web-zz.apps.googleusercontent.com", store.GMAIL_SCOPE, "offline", True, False))
+            state = q.get("state", "")
+            check("  the state is Asha's alone", (mc.verify_state(state, a_email), mc.verify_state(state, kart_email)),
+                  (True, False))
+            check("  and expires in ten minutes", mc.verify_state(state, a_email, now=__import__("time").time() + 601), False)
+            a2 = "asha.two.%s@zz-mail.example" % tag
+            good = (200, {"access_token": "ya29.zz", "refresh_token": "1//zz-web-asha",
+                          "scope": "openid " + store.GMAIL_SCOPE})
+            google["token"], google["profile"] = good, (200, {"emailAddress": a2.upper()})
+            cb = "/api/mailboxes/callback?code=c&state="
+            check("Kartikeya cannot finish Asha's sign-in", back(call("GET", cb + up.quote(state), cookies=k))[0], "error")
+            check("  nor can a made-up state", back(call("GET", cb + "123.x.y", cookies=a))[0], "error")
+            check("  Google's own refusal: nothing changed",
+                  back(call("GET", "/api/mailboxes/callback?error=access_denied&state=" + up.quote(state), cookies=a))[0],
+                  "error")
+            google["token"], google["posts"] = (200, {"access_token": "ya29.zz", "refresh_token": "1//zz-noscope",
+                                                      "scope": "openid email"}), []
+            check("  Gmail left unticked on Google's screen: not kept, Google's permission withdrawn",
+                  (back(call("GET", cb + up.quote(state), cookies=a))[0], revoked()), ("error", ["1//zz-noscope"]))
+            google["token"] = good
+            r = call("GET", cb + up.quote(state), cookies=a)
+            cur.execute("select user_email, daily_cap, token_enc from user_mailboxes where lower(address) = %s", (a2,))
+            row = cur.fetchone()
+            creds = store.decrypt(row[2]) if row else {}
+            check("Asha connects a second Gmail herself: linked to her, at 35, the address as Google says it",
+                  (back(r), row[:2] if row else None), (("connected", a2), (a_email, 35)))
+            check("  stored encrypted, for the web client; nothing of it in the redirect",
+                  (creds.get("refresh_token"), creds.get("client_id"), "zz-web-asha" in row[2],
+                   "zz-web-asha" in r.headers["location"]),
+                  ("1//zz-web-asha", "web-zz.apps.googleusercontent.com", False, False))
+            mine = call("GET", "/api/me/mailboxes", cookies=a).json()["mailboxes"]
+            check("  Your Gmail lists both, with no secrets",
+                  (sorted(m["address"] for m in mine), "zz-web-asha" in json.dumps(mine), "token" in json.dumps(mine)),
+                  (sorted([a_gmail, a2]), False, False))
+            google["posts"] = []
+            r = call("GET", cb + up.quote(mc.sign_state(kart_email)), cookies=k)
+            cur.execute("select user_email from user_mailboxes where lower(address) = %s", (a2,))
+            check("Kartikeya signs in to Asha's address: refused, it stays hers, his sign-in withdrawn",
+                  (back(r)[0], cur.fetchone()[0], revoked()), ("error", a_email, ["1//zz-web-asha"]))
+            a2_id = next(m["id"] for m in mine if m["address"] == a2)
+            check("  nor can he disconnect it", call("DELETE", "/api/mailboxes/" + a2_id, cookies=k).status_code, 404)
+            google["posts"] = []
+            r = call("DELETE", "/api/mailboxes/" + a2_id, cookies=a)
+            cur.execute("select count(*) from user_mailboxes where lower(address) = %s", (a2,))
+            check("Asha disconnects it: gone, and Google's permission withdrawn",
+                  (r.status_code, cur.fetchone()[0], revoked()), (200, 0, ["1//zz-web-asha"]))
+            check("  a made-up id: 404", call("DELETE", "/api/mailboxes/not-an-id", cookies=a).status_code, 404)
+            cur.execute("select count(*) from user_mailboxes where lower(address) = %s", (a_gmail,))
+            check("  the address the owner linked for her is untouched", cur.fetchone()[0], 1)
+        finally:
+            mc._post_form, mc._get_json, mc._env = real_mc
+            for name, v in saved_env.items():
+                os.environ.pop(name, None)
+                if v is not None:
+                    os.environ[name] = v
 
         # ------------------------------------------------------------ reached out by
         print("\n-- who reached out")

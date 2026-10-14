@@ -341,18 +341,27 @@ python tools/users.py team a@theviralfever.com b@theviralfever.com [--remove old
 It asks once for a starting password that works for each person's first
 sign-in only: the app then refuses everything until they choose their own, and
 asks for their name and title (the sign-off on the emails they approve).
-`users.py gmail <login>` links the address a person sends from: Google's
-sign-in opens in a browser on your machine, you sign in to that address, and the
+Each person connects the Gmail they send from themselves, in the app (account
+menu, **Your Gmail**, since 2026-10-14). That needs a Google OAuth client of
+type **Web application** with the redirect URI
+`https://tvf-lead-engine.onrender.com/api/mailboxes/callback`, in
+`GOOGLE_OAUTH_WEB_CLIENT_ID` / `GOOGLE_OAUTH_WEB_CLIENT_SECRET` on the server.
+Set its OAuth consent screen to **Internal** (theviralfever.com accounts only):
+an External app left in testing mode stops every sign-in after 7 days. Until
+both values are set, Your Gmail says so and its Connect button stays off.
+`users.py gmail <login>` still links an address for someone from your machine:
+Google's sign-in opens in a browser there, you sign in to that address, and the
 sign-in is sealed with the live server's public key (fetched over HTTPS), so only
-the server can read it.
+the server can read it. Both ways end in the same place.
 `users.py list` shows everyone, whether they have signed in yet and their
 connected Gmail; `add` / `passwd` do one person (`--starting` for a one-time
 password), and reset sessions; `remove` deletes a member (never the owner;
 `team --remove` can, and hands ownership to the first person listed).
 
-**Sending addresses** are stored sealed for, then encrypted by, a key derived
-from `SESSION_SECRET`: rotating that secret means every address is linked again
-(`users.py gmail`), and everyone signs in again.
+**Sending addresses** are stored encrypted by a key derived from
+`SESSION_SECRET` (those linked from your machine are sealed for it first):
+rotating that secret means every address is connected again, and everyone signs
+in again.
 
 **How it holds up.** Passwords are bcrypt (cost 12). Sessions are signed
 cookies (HMAC-SHA256) that are httpOnly, SameSite=Lax, and automatically

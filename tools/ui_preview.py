@@ -253,7 +253,15 @@ MOCK_JS = r"""
       FX.auth.must_change_password = false;
       return json({ ok: true });
     }
-    if (p === "/api/me/mailboxes") return json(FX.me_mailboxes || { mailboxes: [] });
+    // Your Gmail (app/mailbox_connect.py): the preview shows it switched on; Connect would leave for Google
+    if (p === "/api/me/mailboxes") return json(Object.assign({ web_connect: true }, FX.me_mailboxes || { mailboxes: [] }));
+    const drop = method === "DELETE" && p.match(/^\/api\/mailboxes\/([^/]+)$/);
+    if (drop) {
+      const box = ((FX.me_mailboxes || {}).mailboxes || []).find((b) => b.id === drop[1]);
+      if (!box) return json({ detail: "not one of your sending addresses" }, 404);
+      FX.me_mailboxes.mailboxes = FX.me_mailboxes.mailboxes.filter((b) => b !== box);
+      return json({ ok: true, address: box.address });
+    }
     if (p === "/api/stats") return json(FX.stats);
     if (p === "/api/kpis") return json(FX.kpis);
     if (p === "/api/schedule") return json(FX.schedule);
