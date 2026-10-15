@@ -414,7 +414,10 @@ def api():
             check("  signed out: refused", call("GET", "/api/mailboxes/connect").status_code, 401)
             os.environ["GOOGLE_OAUTH_WEB_CLIENT_ID"] = "web-zz.apps.googleusercontent.com"
             os.environ["GOOGLE_OAUTH_WEB_CLIENT_SECRET"] = "web-zz-secret"
-            mc._post_form, mc._get_json = fake_post, lambda url, token, timeout=20: google["profile"]
+            # Gmail's profile, and its "Send mail as" list (sql/36): the LCX address lives in the TVF account
+            google["sendas"] = (200, {"sendAs": []})
+            mc._post_form, mc._get_json = fake_post, (lambda url, token, timeout=20: google["sendas"]
+                                                       if url == mc.SEND_AS_URL else google["profile"])
             check("with one: switched on", call("GET", "/api/me/mailboxes", cookies=a).json()["web_connect"], True)
             r = call("GET", "/api/mailboxes/connect", cookies=a)
             loc = up.urlparse(r.headers.get("location", ""))
@@ -442,12 +445,20 @@ def api():
             check("  Gmail left unticked on Google's screen: not kept, Google's permission withdrawn",
                   (back(call("GET", cb + up.quote(state), cookies=a))[0], revoked()), ("error", ["1//zz-noscope"]))
             google["token"] = good
+            lcx = "asha.%s@zz-lcx.example" % tag
+            google["sendas"] = (200, {"sendAs": [{"sendAsEmail": a2, "isPrimary": True},
+                                                 {"sendAsEmail": lcx, "displayName": "Asha at LCX",
+                                                  "verificationStatus": "accepted"}]})
             r = call("GET", cb + up.quote(state), cookies=a)
-            cur.execute("select user_email, daily_cap, token_enc from user_mailboxes where lower(address) = %s", (a2,))
+            cur.execute("select user_email, daily_cap, token_enc, send_as from user_mailboxes where lower(address) = %s",
+                        (a2,))
             row = cur.fetchone()
             creds = store.decrypt(row[2]) if row else {}
             check("Asha connects a second Gmail herself: linked to her, at 35, the address as Google says it",
-                  (back(r), row[:2] if row else None), (("connected", a2), (a_email, 35)))
+                  (back(r)[0], back(r)[1].startswith(a2), row[:2] if row else None), ("connected", True, (a_email, 35)))
+            check("  its LCX alias read at once (an LCX address cannot be signed in to: it lives in this account)",
+                  (row[3], ("also sends as " + lcx) in back(r)[1]),
+                  ([{"address": lcx, "name": "Asha at LCX"}], True))
             check("  stored encrypted, for the web client; nothing of it in the redirect",
                   (creds.get("refresh_token"), creds.get("client_id"), "zz-web-asha" in row[2],
                    "zz-web-asha" in r.headers["location"]),
@@ -456,6 +467,24 @@ def api():
             check("  Your Gmail lists both, with no secrets",
                   (sorted(m["address"] for m in mine), "zz-web-asha" in json.dumps(mine), "token" in json.dumps(mine)),
                   (sorted([a_gmail, a2]), False, False))
+            check("  and the alias it also sends as", [m["send_as"] for m in mine if m["address"] == a2],
+                  [[{"address": lcx, "name": "Asha at LCX"}]])
+            # a project that writes as LCX (outreach.send_as_domain, LCX Services): Sending today and the approve
+            # dialog name the From each account gives it
+            cur.execute("update segments set config = jsonb_set(config, '{outreach,send_as_domain}', '\"zz-lcx.example\"')"
+                        " where id = %s", (seg_id,))
+            def froms():
+                me_row = next(x for x in call("GET", "/api/mailboxes", cookies=a).json()["accounts"] if x["me"])
+                return {m["address"]: (m["sends_as"], m["usable"], m.get("no_alias")) for m in me_row["mailboxes"]}
+            got = froms()
+            check("a project that writes as LCX: her new Gmail goes as its LCX alias; the one whose aliases are not "
+                  "read yet goes as itself until the next send reads them",
+                  (got.get(a2), got.get(a_gmail)), ((lcx, True, None), (a_gmail, True, None)))
+            cur.execute("update user_mailboxes set send_as = '[]'::jsonb where lower(address) = %s", (a_gmail,))
+            check("  an account read and found with no LCX alias cannot send for it, and says why",
+                  froms().get(a_gmail), (None, False, "zz-lcx.example"))
+            cur.execute("update segments set config = config #- '{outreach,send_as_domain}' where id = %s", (seg_id,))
+            cur.execute("update user_mailboxes set send_as = null where lower(address) = %s", (a_gmail,))
             google["posts"] = []
             r = call("GET", cb + up.quote(mc.sign_state(kart_email)), cookies=k)
             cur.execute("select user_email from user_mailboxes where lower(address) = %s", (a2,))

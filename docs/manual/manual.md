@@ -60,6 +60,16 @@ connects a second address, connects one again when its sign-in stops working,
 and disconnects one, which also withdraws Google's permission. An address already
 linked to someone else is refused: one address, one person.
 
+**LCX addresses are aliases, not accounts.** An address like
+suhas@lightscameraexperiment.com is a "Send mail as" alias inside the person's
+TVF Gmail, so Google's sign-in cannot connect it on its own. Connect the TVF
+Gmail it lives in: Your Gmail then lists it under "Also sends as", and every
+LCX Services email that person approves goes out with the LCX address in the
+From line, through that account and inside its 35 a day. Someone whose Gmail has
+no LCX alias cannot send LCX Services emails; their approvals wait and say so
+(add the alias in Gmail under Settings, Accounts, Send mail as). An LCX email
+never goes out from a TVF address.
+
 The owner can still link an address for someone from their own machine:
 
 ```

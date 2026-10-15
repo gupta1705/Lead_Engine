@@ -171,6 +171,93 @@ def approver_mode(cur, gmail):
     check("  reconnected: it goes, from his own address", row(his)[:2], ["sent", bad])
 
 
+def alias_mode(cur, gmail):
+    """Sending as a Gmail alias (owner, 2026-10-15: "We can't login from LCX wala mail because it's an extension").
+    The LCX address is a "Send mail as" alias inside the approver's TVF Gmail: the approver connects that account,
+    and a project with outreach.send_as_domain sends through it with the alias in the From line -- read from Gmail,
+    never a TVF address for an LCX email, the account's own limit counted."""
+    import os
+    import mailbox_store as store
+    os.environ.setdefault("SESSION_SECRET", "zz-send-test-" + uuid.uuid4().hex)
+    args = argparse.Namespace(limit=500)
+    print("\n-- sending as the account's alias on the project's domain (sql/36)")
+    slug = "zz-send-alias-" + uuid.uuid4().hex[:6]
+    cur.execute("insert into segments (slug, name, entity_type, config)"
+                " select %s, 'send test (alias)', 'company', config from segments where slug = 'us-production-houses'"
+                " returning id", (slug,))
+    seg_id = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(jsonb_set(config #- '{outreach,sending_paused}'"
+                " #- '{outreach,send_window}', '{outreach,send_from}', '\"approver\"'),"
+                " '{outreach,send_as_domain}', '\"zz-lcx.example\"') where id = %s", (seg_id,))
+    outreach.SEGMENT = slug
+    tag = uuid.uuid4().hex[:6]
+    cara, dev = "zz-cara-%s@example.com" % tag, "zz-dev-%s@example.com" % tag
+    for who_, name in ((cara, "Cara Lee"), (dev, "Dev Rao")):
+        cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', %s, 'T')",
+                    (who_, name))
+    cara_acct, dev_acct = "cara.%s@zz-tvf.example" % tag, "dev.%s@zz-tvf.example" % tag
+    alias = "cara.%s@zz-lcx.example" % tag
+
+    def mailbox(owner, address, send_as):
+        cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap, send_as)"
+                    " values (%s, %s, %s, 35, %s::jsonb) returning id",
+                    (owner, address, store.encrypt({"refresh_token": "1//" + address}), send_as))
+        return str(cur.fetchone()[0])
+    cara_box = mailbox(cara, cara_acct, None)              # its aliases not read yet: the first send reads them
+    mailbox(dev, dev_acct, "[]")                           # read: none on the project's domain
+    outreach.user_gmail_service = lambda db, box: gmail
+    gmail.send_as = [{"sendAsEmail": cara_acct.upper(), "isPrimary": True, "verificationStatus": "accepted"},
+                     {"sendAsEmail": alias.upper(), "displayName": "Cara at LCX", "verificationStatus": "accepted"},
+                     {"sendAsEmail": "pending.%s@zz-lcx.example" % tag, "verificationStatus": "pending"}]
+    gmail.sendas_reads, gmail.rewrite_from = 0, None
+
+    def approved_by(who_, step=0, parent=None, eid=None, cid=None):
+        if eid is None:
+            cur.execute("insert into entities (segment_id, name, domain, source, status) values"
+                        " (%s, %s, %s, 'test', 'shortlisted') returning id",
+                        (seg_id, "ZZ alias " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example"))
+            eid = cur.fetchone()[0]
+            cur.execute("insert into contacts (entity_id, full_name, email, email_status) values (%s, 'Kay', %s,"
+                        " 'valid') returning id", (eid, "kay.%s@zz-alias.example" % uuid.uuid4().hex[:6]))
+            cid = cur.fetchone()[0]
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status, approved_at,"
+                    " approved_by, approval_mode, sequence_step, parent_id, created_at) values (%s, %s, 't', 'Hello',"
+                    " 'Hello Kay,\n\nBody', 'approved', now(), %s, 'single', %s, %s, clock_timestamp()) returning id",
+                    (eid, cid, who_, step, parent))
+        return cur.fetchone()[0], eid, cid
+
+    def row(oid):
+        cur.execute("select status, lower(sender_address), sent_as from outreach where id = %s", (oid,))
+        return list(cur.fetchone())
+
+    first, eid, cid = approved_by(cara)
+    waits = approved_by(dev)[0]
+    before = len(gmail.sent)
+    run_logged(args)
+    check("Cara's approval goes through her TVF account, as her LCX alias, named as Gmail names it",
+          (row(first), [header(m, "From") for m in gmail.sent[before:]]),
+          (["sent", cara_acct, alias], ["Cara at LCX <%s>" % alias]))
+    cur.execute("select send_as from user_mailboxes where id = %s", (cara_box,))
+    check("  her aliases read from Gmail once and kept: the verified one, not the primary, not a pending one",
+          (cur.fetchone()[0], gmail.sendas_reads), ([{"address": alias, "name": "Cara at LCX"}], 1))
+    check("  its Message-ID is on the alias's domain", gmail.sent[-1]["Message-ID"].endswith("@zz-lcx.example>"), True)
+    check("Dev's Gmail has no address on the project's domain: his approval waits, nothing goes from his TVF address",
+          (row(waits), dev_acct in [str(m["From"]).lower() for m in gmail.sent]), (["approved", None, None], False))
+    second = approved_by(cara)[0]
+    gmail.rewrite_from = cara_acct
+    run_logged(args)
+    check("Gmail does not accept the alias and sends as the account: what the recipient saw is recorded, not assumed",
+          (row(second), gmail.sendas_reads), (["sent", cara_acct, None], 1))
+    gmail.rewrite_from = None
+    follow = approved_by(cara, step=1, parent=first, eid=eid, cid=cid)[0]
+    run_logged(args)
+    check("a follow-up keeps its thread's From: the alias", (row(follow)[0], row(follow)[2],
+                                                            header(gmail.sent[-1], "From")),
+          ("sent", alias, "Cara at LCX <%s>" % alias))
+    cur.execute(store.OUT_TODAY_FOR_SQL, (cara_acct,))
+    check("  the alias shares the account's daily limit: every one counted on the account", cur.fetchone()[0], 3)
+
+
 def window_mode(cur, gmail):
     """The sending window (owner, 2026-10-12: "send mails to the sender's time region between 10 to 10:30AM and
     that must be randmized"): each approved email holds its own second inside its recipient's 10:00-10:30
@@ -737,8 +824,21 @@ class FakeGmail:
     def __init__(self):
         self.sent, self.fail, self.thread = [], None, None
         self._kind = self._op = None
+        # users.settings.sendAs (sql/36) and the From Gmail puts on a sent message (None: the one it was given)
+        self.send_as, self.rewrite_from, self.sendas_reads = [], None, 0
 
     def users(self):
+        return self
+
+    def settings(self):
+        self._kind = "settings"
+        return self
+
+    def sendAs(self):
+        return self
+
+    def list(self, userId):
+        self._op = "sendas"
         return self
 
     def messages(self):
@@ -757,9 +857,19 @@ class FakeGmail:
         if self._kind == "threads":
             self._op = "thread"
             return self
+        if self._kind == "messages" and kw.get("metadataHeaders") == ["From"]:
+            self._op = "readback"                     # the sender reads back an alias send's From line
+            return self
         raise RuntimeError("no previous message in the test")
 
     def execute(self):
+        if self._op == "sendas":
+            self._op = None
+            self.sendas_reads += 1
+            return {"sendAs": self.send_as}
+        if self._op == "readback":
+            self._op = None
+            return {"payload": {"headers": [{"name": "From", "value": self.rewrite_from or self.sent[-1]["From"]}]}}
         if self._op == "thread":
             self._op = None
             if self.thread is None:
@@ -1042,6 +1152,7 @@ def main():
                   state(late[0])[0], "approved")
 
             approver_mode(cur, gmail)
+            alias_mode(cur, gmail)
             window_mode(cur, gmail)
             pool_elsewhere(cur, gmail)
     finally:

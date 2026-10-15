@@ -49,6 +49,7 @@ import mailbox_store as store  # noqa: E402
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = store.TOKEN_URI
 PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+SEND_AS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs"   # its "Send mail as" aliases (sql/36)
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 STATE_SECONDS = 600
 CALLBACK_PATH = "/api/mailboxes/callback"
@@ -205,24 +206,29 @@ def build_router(cursor):
         if status != 200 or "@" not in address:
             _revoke(tok["refresh_token"])
             return _back("error", "Could not read which Gmail address this is. Try Connect again.")
+        # its "Send mail as" aliases (owner, 2026-10-15: the LCX address is one, inside the TVF account): read now,
+        # so Your Gmail shows them at once; one that cannot be read is read again at the next send
+        sa_status, sa = _get_json(SEND_AS_URL, tok["access_token"])
+        send_as = store.aliases_from(sa.get("sendAs")) if sa_status == 200 else None
         creds = {"refresh_token": tok["refresh_token"], "token_uri": TOKEN_URL, "client_id": client[0],
                  "client_secret": client[1], "scopes": [store.GMAIL_SCOPE],
                  "connected_at": dt.datetime.now(dt.timezone.utc).isoformat()}
         try:
             with cursor() as cur:
-                store.save(cur, user, address, creds)
+                store.save(cur, user, address, creds, send_as=send_as)
         except ValueError:
             _revoke(tok["refresh_token"])                  # not kept, so not left granted either
             return _back("error", "%s is already linked to someone else's login, so it was not connected. Ask the "
                                   "owner if it should move to you." % address)
-        return _back("connected", address)
+        also = [a["address"] for a in send_as or []]
+        return _back("connected", address + (" (it also sends as %s)" % ", ".join(also) if also else ""))
 
     @r.get("/api/me/mailboxes")
     def mine(request: Request):
         user = me(request)
         with cursor() as cur:
             rows = store.mailboxes(cur, user_email=user)
-        keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error")
+        keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error", "send_as")
         out = []
         for b in rows:
             row = {k: b.get(k) for k in keep}

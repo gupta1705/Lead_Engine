@@ -150,9 +150,10 @@ def usage(cur):
 def mailboxes(cur, user_email=None, with_token=False):
     """Every connected address (or one person's), with today's use:
     [{id, user_email, address, daily_cap, enabled, connected_at, last_error, last_error_at,
-      sent_today, out_today, remaining, last_sent, usable}] -- usable: enabled and no sign-in error.
+      sent_today, out_today, remaining, last_sent, usable, send_as}] -- usable: enabled and no sign-in error;
+    send_as: its verified Gmail aliases (sql/36), or None when not read yet.
     with_token adds token_enc, for the sender; nothing that reaches a page ever carries it."""
-    sql = ("select id, user_email, address, daily_cap, enabled, connected_at, last_error, last_error_at"
+    sql = ("select id, user_email, address, daily_cap, enabled, connected_at, last_error, last_error_at, send_as"
            + (", token_enc" if with_token else "") + " from user_mailboxes"
            + (" where lower(user_email) = lower(%s)" if user_email else "") + " order by lower(user_email), connected_at")
     cur.execute(sql, (user_email,) if user_email else None)
@@ -169,10 +170,12 @@ def mailboxes(cur, user_email=None, with_token=False):
     return rows
 
 
-def save(cur, user_email, address, creds=None, token_enc=None, daily_cap=None, move=False):
+def save(cur, user_email, address, creds=None, token_enc=None, daily_cap=None, move=False, send_as=None):
     """Keep the sign-in for an address, for this person: `creds` encrypted here, or `token_enc` already
     sealed for the server. An address linked to someone else is refused (ValueError) unless `move`:
-    one address, one person, or "reached out by" would say two things."""
+    one address, one person, or "reached out by" would say two things. `send_as`: its Gmail aliases as
+    read_send_as gives them, or None (not read: the next send reads them)."""
+    aliases = None if send_as is None else json.dumps(send_as)
     address = address.strip().lower()
     token = token_enc or encrypt(creds)
     cur.execute("select id, user_email from user_mailboxes where lower(address) = %s", (address,))
@@ -181,12 +184,13 @@ def save(cur, user_email, address, creds=None, token_enc=None, daily_cap=None, m
         raise ValueError("%s is already linked to %s" % (address, got[0]["user_email"]))
     if got:
         cur.execute("update user_mailboxes set user_email = %s, token_enc = %s, enabled = true, last_error = null,"
-                    " last_error_at = null, daily_cap = coalesce(%s, daily_cap), connected_at = now(), updated_at = now()"
-                    " where id = %s returning id", (user_email.lower(), token, daily_cap, got[0]["id"]))
+                    " last_error_at = null, daily_cap = coalesce(%s, daily_cap), connected_at = now(), updated_at = now(),"
+                    " send_as = %s::jsonb where id = %s returning id",
+                    (user_email.lower(), token, daily_cap, aliases, got[0]["id"]))
     else:
-        cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap)"
-                    " values (%s, %s, %s, coalesce(%s, %s)) returning id",
-                    (user_email.lower(), address, token, daily_cap, DEFAULT_CAP))
+        cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap, send_as)"
+                    " values (%s, %s, %s, coalesce(%s, %s), %s::jsonb) returning id",
+                    (user_email.lower(), address, token, daily_cap, DEFAULT_CAP, aliases))
     return str(_rows(cur)[0]["id"])
 
 
@@ -218,6 +222,50 @@ def remove_own(cur, mailbox_id, user_email):
                 " returning address, user_email, token_enc", (str(mailbox_id), user_email))
     got = _rows(cur)
     return got[0] if got else None
+
+
+# ------------------------------------------------------------ send-as aliases (sql/36)
+# The owner, 2026-10-15: "We can't login from LCX wala mail because it's an extension". An address like
+# suhas@lightscameraexperiment.com is a "Send mail as" alias inside a TVF Gmail account, not an account Google's
+# sign-in can connect. The person connects the account; a project with outreach.send_as_domain sends through it
+# with the alias on that domain in the From line. gmail.modify, which everyone already allows, may list them.
+UNREAD = "unread"            # alias_for: the account's aliases have not been read yet
+
+
+def aliases_from(send_as_list):
+    """Gmail's users.settings.sendAs list -> [{"address", "name"}]: the verified aliases (status accepted), the
+    account's own primary address left out."""
+    out = []
+    for a in send_as_list or []:
+        addr = str(a.get("sendAsEmail") or "").strip().lower()
+        if not addr or "@" not in addr or a.get("isPrimary") or a.get("verificationStatus") != "accepted":
+            continue
+        out.append({"address": addr, "name": str(a.get("displayName") or "").strip()})
+    return out
+
+
+def read_send_as(gmail):
+    """The verified aliases of the account a Gmail API service is signed in to."""
+    return aliases_from(gmail.users().settings().sendAs().list(userId="me").execute().get("sendAs"))
+
+
+def set_send_as(cur, mailbox_id, aliases):
+    cur.execute("update user_mailboxes set send_as = %s::jsonb, updated_at = now() where id = %s",
+                (json.dumps(aliases or []), str(mailbox_id)))
+
+
+def alias_for(box, domain):
+    """The alias of `box` on `domain` ({"address", "name"}), None when the account has none there, or UNREAD
+    when its aliases have not been read yet. No domain: None (the account's own address is the one)."""
+    if not domain:
+        return None
+    send_as = box.get("send_as")
+    if isinstance(send_as, str):
+        send_as = json.loads(send_as)
+    if send_as is None:
+        return UNREAD
+    want = "@" + str(domain).strip().lower().lstrip("@")
+    return next((a for a in send_as if str(a.get("address", "")).lower().endswith(want)), None)
 
 
 def credentials(row):

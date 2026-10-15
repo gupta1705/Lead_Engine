@@ -575,7 +575,7 @@ def lead(lead_id: str):
         cur.execute(
             "select id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at,"
             " send_after, send_before, send_tz, send_tz_reason, send_plan, send_reschedules, send_wait_why, send_error,"
-            " service"                            # the one service it pitched (sql/35): what was sold to whom
+            " service, sent_as"                   # the one service it pitched (sql/35); the alias it went as (sql/36)
             " from outreach"
             " where entity_id = %s and direction = 'outbound' and coalesce(sequence_step, 0) = 0"
             " and status not in ('cancelled', 'failed') order by created_at desc limit 1", (lead_id,))
@@ -602,6 +602,7 @@ def lead(lead_id: str):
     if outreach:
         # who reached out (owner, 2026-09-26): the person who approved it, from which address, when
         outreach["approved_by_name"] = _display(outreach.get("approved_by"), _people())
+        _shown_sender(outreach)
         for k in ("approved_at", "sent_at"):
             outreach[k] = outreach[k].isoformat() if outreach.get(k) else None
         for k in ("send_after", "send_before", "send_tz", "send_tz_reason", "send_plan", "send_reschedules",
@@ -826,6 +827,7 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
                 r.pop("service", None)
             # who reached out: the person who approved it, from their own Gmail (sender_address)
             r["approved_by_name"] = _display(r.get("approved_by"), people)
+            _shown_sender(r)
             if r["status"] == "drafted" and r["direction"] == "outbound":
                 r["body"] = dr.personalize(r["body"], cfg, me)
             if r["direction"] == "outbound" and r["status"] in ("approved", "sending", "sent"):
@@ -1267,9 +1269,35 @@ def _sends_from(segment, user):
             if cfg.get("send_from") != "approver":
                 return []
             boxes = [b for b in _mailbox_store().mailboxes(cur, user_email=user or "") if b["usable"]]
-        return [b["address"] for b in sorted(boxes, key=lambda b: -b["remaining"])]
+        out = []
+        for b in sorted(boxes, key=lambda b: -b["remaining"]):
+            shown = _sends_as(b, cfg)
+            if shown is not None:
+                out.append(shown)
+        return out
     except Exception:
         return []
+
+
+def _shown_sender(row):
+    """The From address the recipient saw (sql/36): an email sent as the account's alias shows the alias, and
+    the account it went through as sent_through. Every other row is as it was."""
+    alias = row.pop("sent_as", None)
+    if alias:
+        row["sent_through"] = row.get("sender_address")
+        row["sender_address"] = alias
+    return row
+
+
+def _sends_as(box, cfg):
+    """The From address an approval of this project goes out as through `box`: its alias on the project's
+    send_as_domain (sql/36; LCX Services writes as LCX), the account itself where the project has none, the
+    account while its aliases are not read yet (the next send reads them), or None when it has no alias there."""
+    store = _mailbox_store()
+    alias = store.alias_for(box, cfg.get("send_as_domain"))
+    if alias is None:
+        return None if cfg.get("send_as_domain") else box["address"]
+    return box["address"] if alias == store.UNREAD else alias["address"]
 
 
 def _send_paused(segment):
@@ -1590,7 +1618,19 @@ def _approver_mailboxes(cur, cfg, segment, me):
     keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error")
     accounts = []
     for p in people:
-        mine = [dict({k: b[k] for k in keep}) for b in boxes if b["user_email"].lower() == p["email"].lower()]
+        mine = []
+        for b in boxes:
+            if b["user_email"].lower() != p["email"].lower():
+                continue
+            row = {k: b[k] for k in keep}
+            # this project's From through it (sql/36): its LCX alias for LCX Services. An account with no alias
+            # on the project's domain cannot send for it, and says so (no_alias)
+            row["sends_as"] = _sends_as(b, cfg)
+            if row["sends_as"] is None:
+                row.update(usable=False, no_alias=cfg.get("send_as_domain"))
+            elif cfg.get("send_as_domain") and store.alias_for(b, cfg["send_as_domain"]) == store.UNREAD:
+                row["alias_unread"] = cfg["send_as_domain"]      # looked up in that Gmail at its first send
+            mine.append(row)
         accounts.append({"email": p["email"], "name": p["name"] or p["email"].split("@")[0],
                          "me": p["email"].lower() == me.lower(), "mailboxes": mine,
                          "approved_waiting": waiting.get(p["email"].lower(), 0),

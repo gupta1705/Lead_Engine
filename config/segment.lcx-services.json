@@ -2793,6 +2793,8 @@
   },
   "outreach": {
     "send_from": "approver",
+    "send_as_domain": "lightscameraexperiment.com",
+    "send_as_domain_guidance": "The owner, 2026-10-15: \"We can't login from LCX wala mail because it's an extension\". An LCX address (suhas@lightscameraexperiment.com) is a \"Send mail as\" alias inside the person's TVF Gmail, not a Google account, so Google's sign-in cannot connect it. The approver connects the Gmail it lives in (Your Gmail); this project's emails go out through that account with its verified alias on this domain in the From line (tools/outreach.py; the aliases are read from Gmail, sql/36), sharing the account's daily limit. An approver whose Gmail has no alias here waits, saying so: an LCX email never goes out from a TVF address. Remove the key to send from the account's own address.",
     "sender": {
       "name": "LCX",
       "title": "Business Development",

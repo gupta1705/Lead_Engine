@@ -453,7 +453,7 @@ select o.id, o.entity_id, o.subject, o.body,
        exists (select 1 from outreach r where r.entity_id = o.entity_id
                 and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
        p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver, o.attachments,
-       o.send_after, o.send_before, o.send_tz
+       o.send_after, o.send_before, o.send_tz, p.sent_as as parent_sent_as
 from outreach o
 join entities e on e.id = o.entity_id
 left join contacts c on c.id = o.contact_id
@@ -658,6 +658,11 @@ def cmd_send(args):
     signin_failed, refused, left_alone = [], {}, set()
     mbmap, sent = {}, 0
     approver_mode = cfg.get("send_from") == "approver"
+    # a project that writes as another brand (owner, 2026-10-15, LCX: "We can't login from LCX wala mail because
+    # it's an extension"): the approver's Gmail account sends, with its "Send mail as" alias on this domain in
+    # the From line (sql/36). An approver whose account has no such alias waits, saying so: an LCX email never
+    # goes out from a TVF address. The account's own daily limit and gap count, as Gmail counts them.
+    as_domain = (str(cfg.get("send_as_domain") or "").strip().lower().lstrip("@") or None) if approver_mode else None
 
     def finish(rc=0):
         """Every way out of a run after the settle: Gmail's refusals said once, and the summary line."""
@@ -820,9 +825,10 @@ def cmd_send(args):
         daily_cap = None
         sent_today = sum(b["sent_today"] for b in boxes)
         if not usable:
-            # not a failure: approved emails wait in Approved until the owner links their approver a Gmail
+            # not a failure: approved emails wait in Approved until their approver connects a Gmail
             relink = any(b["enabled"] and b["last_error"] for b in boxes)
-            log("no sending address can send: approved emails wait (the owner runs tools/users.py gmail <login>)")
+            log("no sending address can send: approved emails wait (each person connects their Gmail in the app,"
+                " or the owner runs tools/users.py gmail <login>)")
             if timed:
                 due = pick(args.limit)
                 hold([r["id"] for r in due], "every sending address needs connecting again" if relink
@@ -893,12 +899,18 @@ def cmd_send(args):
         if not own_cache:
             import mailbox_store as store_
             got = {a.strip().lower() for a in (env(mb["email_env"]) for mb in MAILBOXES) if a}
-            got |= {b["address"].lower() for b in db.run(lambda cur: store_.mailboxes(cur))}
+            for b in db.run(lambda cur: store_.mailboxes(cur)):
+                got.add(b["address"].lower())
+                got |= {a["address"] for a in (b.get("send_as") or []) if isinstance(a, dict)}   # its aliases (sql/36)
             own_cache.append(got)
         return own_cache[0]
 
     def who(addr):
         return names.get(addr or "") or ((addr or "").split("@")[0] or "nobody")
+
+    def no_alias_why(approver):
+        return ("%s's Gmail has no address on %s to send as: add it in Gmail (Settings, Accounts, Send mail as),"
+                " then it goes in its next window" % (who(approver), as_domain))
 
     def park(oid, why):
         """Take the row out of the sendable set, visibly, without burning cap."""
@@ -1041,6 +1053,14 @@ def cmd_send(args):
                     hold([oid], ("%s's sending address needs linking again" % who(approver))
                          if boxes_of.get(approver or "") else "%s has no sending address" % who(approver), company)
                     continue
+                if as_domain:
+                    # only an account that can write as the project's brand: its alias on the domain known, or its
+                    # aliases not read yet (read below, once the account's Gmail is open)
+                    branded = [k for k in mine if store.alias_for(mbmap[k], as_domain) is not None]
+                    if not branded:
+                        hold([oid], no_alias_why(approver), company)
+                        continue
+                    mine = branded
                 cands = sorted([k for k in mine if k in connected and remaining.get(k, 0) > 0],
                                key=lambda k: (-remaining[k], mine.index(k)))
                 if not cands:
@@ -1186,10 +1206,38 @@ def cmd_send(args):
                     continue
             svc = services[mb_key]
 
+            # who the From line says (sql/36): the account itself, or its alias on the project's domain. A
+            # follow-up keeps its thread's From; an opener reads the account's aliases the first time it needs them
+            from_addr, from_name = sender_addr, None
+            if approver_mode and step > 0 and r.get("parent_sent_as"):
+                from_addr = r["parent_sent_as"].lower()
+                from_name = next((a.get("name") for a in (mbmap[mb_key].get("send_as") or [])
+                                  if isinstance(a, dict) and a.get("address") == from_addr), None) or names.get(approver or "")
+            elif as_domain and step == 0:
+                box = mbmap[mb_key]
+                alias = store.alias_for(box, as_domain)
+                if alias == store.UNREAD:
+                    try:
+                        got_as = store.read_send_as(svc)
+                    except Exception as e:                  # noqa: BLE001 -- the email waits, saying why
+                        got_as = None
+                        log("  mailbox %s: could not read its Gmail aliases (%s)" % (mb_key, str(e)[:100]))
+                    if got_as is not None:
+                        db.run(lambda cur, _b=box, _a=got_as: store.set_send_as(cur, _b["id"], _a))
+                        box["send_as"] = got_as
+                        alias = store.alias_for(box, as_domain)
+                if not alias or alias == store.UNREAD:
+                    unclaim()
+                    hold([oid], no_alias_why(approver) if alias is None
+                         else "%s's Gmail aliases could not be read: it is tried again in its next window" % who(approver),
+                         company)
+                    continue
+                from_addr, from_name = alias["address"], alias.get("name") or names.get(approver or "")
+
             # a follow-up timed for its window looks at its thread first: a reply the hourly pull has not
             # read yet stops it (it goes back to Approved and moves to its next window)
             if timed and step > 0:
-                unread, err = thread_unread(db, svc, thread_id, own_addresses() | {sender_addr.lower()})
+                unread, err = thread_unread(db, svc, thread_id, own_addresses() | {sender_addr.lower(), from_addr})
                 if unread:
                     unclaim()
                     hold([oid], "a reply in the thread is not read yet", company)
@@ -1222,11 +1270,17 @@ def cmd_send(args):
             # 3. send
             try:
                 msg = _message(body, atts)
-                msg["to"], msg["from"], msg["subject"] = email.strip(), sender_addr, subject
+                if from_addr != sender_addr:
+                    # the account's alias (sql/36): Gmail sends it as the alias when the account has it verified
+                    from email.utils import formataddr
+                    msg_from = formataddr((from_name, from_addr)) if from_name else from_addr
+                else:
+                    msg_from = sender_addr
+                msg["to"], msg["from"], msg["subject"] = email.strip(), msg_from, subject
                 # our own Message-ID, one per row: an unknown outcome can be settled by searching Sent for
                 # rfc822msgid:<tvf-...>, and a transport-level resend of the same POST is recognisable.
                 # The row id without its dashes keeps the header on one line (folded at 78 characters)
-                msg["Message-ID"] = "<tvf-%s@%s>" % (str(oid).replace("-", ""), sender_addr.rsplit("@", 1)[-1])
+                msg["Message-ID"] = "<tvf-%s@%s>" % (str(oid).replace("-", ""), from_addr.rsplit("@", 1)[-1])
             except Exception as e:
                 unclaim("could not build the message: %s" % str(e)[:300])
                 log("  %-32s PARKED: could not build the message: %s" % (company[:32], str(e)[:70]))
@@ -1273,23 +1327,44 @@ def cmd_send(args):
                     " updated_at=clock_timestamp() where id=%s and status='sending'", (_err, _o)))
                 continue
             # 4. record
-            db.run(lambda cur, _o=oid, _e=eid, _m=resp: (
+            as_alias = from_addr if from_addr != sender_addr else None
+            db.run(lambda cur, _o=oid, _e=eid, _m=resp, _a=as_alias: (
                 cur.execute(
                     "update outreach set status='sent', sent_at=clock_timestamp(),"
-                    " gmail_message_id=%s, gmail_thread_id=%s, updated_at=clock_timestamp()"
+                    " gmail_message_id=%s, gmail_thread_id=%s, sent_as=%s, updated_at=clock_timestamp()"
                     " where id=%s and status='sending'",
-                    (_m.get("id"), _m.get("threadId"), _o)),
+                    (_m.get("id"), _m.get("threadId"), _a, _o)),
                 cur.execute(
                     "update entities set status='contacted', status_changed_at=now(),"
                     " updated_at=now() where id=%s and status='shortlisted'", (_e,))))
+            if as_alias:
+                # what the recipient saw, read back from the sent message rather than assumed: Gmail puts the
+                # account's own address in the From line of an alias it does not accept
+                saw = as_alias
+                try:
+                    got = svc.users().messages().get(userId="me", id=resp.get("id"), format="metadata",
+                                                      metadataHeaders=["From"]).execute()
+                    from email.utils import parseaddr
+                    hdr = next((h["value"] for h in got.get("payload", {}).get("headers", [])
+                                if h.get("name", "").lower() == "from"), "")
+                    saw = (parseaddr(hdr)[1] or as_alias).lower()
+                except Exception as e:                      # noqa: BLE001 -- it was sent; the From is recorded as asked
+                    log("  %-32s (could not read back its From line: %s)" % (company[:32], type(e).__name__))
+                if saw != as_alias:
+                    log("  %-32s NOTE: Gmail sent it as %s, not %s -- is the alias verified in that Gmail?"
+                        % (company[:32], saw, as_alias))
+                    db.run(lambda cur, _o=oid, _s=saw: cur.execute(
+                        "update outreach set sent_as=%s where id=%s",
+                        (None if _s == sender_addr.lower() else _s, _o)))
+                    as_alias = None if saw == sender_addr.lower() else saw
             sent += 1
             by_box[mb_key] = by_box.get(mb_key, 0) + 1
             due = ""
             if r["send_after"] is not None:
                 late = (dt.datetime.now(dt.timezone.utc) - sw._utc(r["send_after"])).total_seconds()
                 due = " (due %s, %+ds)" % (_due_text(r["send_after"], r["send_tz"]), round(late))
-            log("  %-32s SENT%s%s via %-8s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", due,
-                                                     mb_key, email))
+            log("  %-32s SENT%s%s via %-8s%s -> %s" % (company[:32], (" follow-up %d" % step) if step else "", due,
+                                                       mb_key, (" as " + as_alias) if as_alias else "", email))
         # Every due email of another machine's (foreign) is left alone and said so, including the ones past a
         # break above (no address left here, the project's day at its limit): the send loop starts a new run
         # only for due emails missing from the summary's left_alone, and one left out made it start a run every
@@ -1346,6 +1421,8 @@ def cmd_pull(args):
     import mailbox_store as store
     user_boxes = {b["address"].lower(): b for b in db.run(lambda cur: store.mailboxes(cur, with_token=True))}
     own += list(user_boxes)
+    # and the aliases they send as (sql/36): a message from one is ours too (it carries SENT anyway)
+    own += [a["address"] for b in user_boxes.values() for a in (b.get("send_as") or []) if isinstance(a, dict)]
     threads = db.run(lambda cur: (cur.execute("""
         select distinct o.gmail_thread_id, o.entity_id, o.contact_id, coalesce(o.sender_mailbox, %s)
         from outreach o join entities e on e.id = o.entity_id

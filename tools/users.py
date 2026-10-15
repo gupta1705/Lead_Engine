@@ -238,20 +238,26 @@ def main():
         key = _server_key()                                # before the browser: fail early, not after signing in
         creds = _google_signin()
         from googleapiclient.discovery import build
-        address = build("gmail", "v1", credentials=creds, cache_discovery=False).users() \
-            .getProfile(userId="me").execute()["emailAddress"].strip().lower()
+        gmail = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        address = gmail.users().getProfile(userId="me").execute()["emailAddress"].strip().lower()
+        try:
+            send_as = store.read_send_as(gmail)        # its "Send mail as" aliases (sql/36): the LCX address is one
+        except Exception:                              # noqa: BLE001 -- read again at the next send
+            send_as = None
         info = json.loads(creds.to_json())
         if not info.get("refresh_token"):
             sys.exit("Google did not give a lasting sign-in for %s; run it again" % address)
         try:
             db.run(lambda cur: store.save(cur, known[0], address, token_enc=store.seal(info, key),
-                                          daily_cap=cap, move=move))
+                                          daily_cap=cap, move=move, send_as=send_as))
         except ValueError as e:
             sys.exit("%s (add --move to move it to %s)" % (e, known[0]))
         per_day = db.run(lambda cur: (cur.execute("select daily_cap from user_mailboxes where lower(address) = %s",
                                                   (address,)), cur.fetchone())[1][0])
         print("%s now sends from %s (%d a day). Emails they approve go out from it; the Outreach page shows its count."
               % (known[0], address, per_day))
+        if send_as:
+            print("  it can also send as: %s" % ", ".join(a["address"] for a in send_as))
 
     elif cmd == "gmail-remove":
         import mailbox_store as store

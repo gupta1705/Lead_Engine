@@ -1873,10 +1873,13 @@ function renderMailboxStrip(m) {
   const people = (m.accounts || []).map((a) => {
     const boxes = a.mailboxes.length ? a.mailboxes.map((b) => {
       const tone = !b.usable ? "warn" : b.remaining <= 0 ? "full" : "";
-      const tip = !b.usable ? "Its sign-in stopped working: " + (a.me ? "connect it again (account menu, Your Gmail). " : a.name + " connects it again from Your Gmail. ") + (b.last_error || "")
-        : `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left. The count starts again at ${resets}.`;
+      // this project writes as another brand (sql/36): the account's alias on its domain is the From
+      const via = b.sends_as && b.sends_as !== b.address ? ` (through ${b.address}, sharing its daily limit)` : "";
+      const tip = b.no_alias ? `${b.address} has no address on ${b.no_alias} to send as: add it in that Gmail (Settings, Accounts, Send mail as).`
+        : !b.usable ? "Its sign-in stopped working: " + (a.me ? "connect it again (account menu, Your Gmail). " : a.name + " connects it again from Your Gmail. ") + (b.last_error || "")
+        : `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left${via}. The count starts again at ${resets}.`;
       const used = b.daily_cap ? Math.min(100, Math.round(100 * b.out_today / b.daily_cap)) : 0;
-      return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">reconnect</span>`}</span>`;
+      return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.sends_as || b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">${b.no_alias ? "no " + esc(b.no_alias) + " address" : "reconnect"}</span>`}</span>`;
     }).join("") : `<span class="mbx none">${a.me ? "your Gmail is not connected (account menu, Your Gmail)" : "no Gmail connected yet"}</span>`;
     // with a sending window: their approvals by the day each goes (India's clock); otherwise how many wait
     const days = (a.scheduled || []).length && !m.paused ? scheduledText(a.scheduled) : "";
@@ -1900,14 +1903,20 @@ function approverNote(r, isDraft, win) {
   if (isDraft) {
     const me = (m.accounts || []).find((a) => a.me) || { mailboxes: [] };
     const ok = me.mailboxes.filter((b) => b.usable).sort((a, b) => b.remaining - a.remaining);
+    const noAlias = me.mailboxes.find((b) => b.no_alias);
+    if (!ok.length && noAlias) return `Your Gmail has no address on ${noAlias.no_alias} to send as: approving keeps it in Approved until you add one in Gmail (Settings, Accounts, Send mail as).`;
     if (!ok.length) return "You have no Gmail connected yet: approving keeps it in Approved until you connect one (account menu, Your Gmail).";
+    const from = ok[0].alias_unread ? `your ${ok[0].alias_unread} address (looked up in your Gmail at the first send)`
+      : ok[0].sends_as || ok[0].address;
     if (win && win.enabled && win.window_label)
-      return `Approving sends it from ${ok[0].address} in ${nextWindow()}, ${win.window_label}, at a random minute, signed by you.`;
-    return `Approving sends it from ${ok[0].address} (${ok[0].remaining} of ${ok[0].daily_cap} left today), signed by you.`;
+      return `Approving sends it from ${from} in ${nextWindow()}, ${win.window_label}, at a random minute, signed by you.`;
+    return `Approving sends it from ${from} (${ok[0].remaining} of ${ok[0].daily_cap} left today), signed by you.`;
   }
   if (r.status === "approved") {
     const who = (m.accounts || []).find((a) => a.email.toLowerCase() === String(r.approved_by || "").toLowerCase());
     const name = who ? who.name : (r.approved_by_name || r.approved_by || "its approver");
+    if (who && who.mailboxes.some((b) => b.no_alias) && !who.mailboxes.some((b) => b.usable))
+      return `Approved by ${name}. It waits here until ${name}'s Gmail can send as an address on ${who.mailboxes.find((b) => b.no_alias).no_alias}.`;
     if (!(who && who.mailboxes.some((b) => b.usable))) return `Approved by ${name}. It waits here until ${name} connects a Gmail.`;
     return goesOutNote(r, name) || `Approved by ${name}. It goes out from their address within minutes, inside its daily limit.`;
   }
@@ -2729,7 +2738,8 @@ async function openSendingAddress(opts) {
   const list = rows.length ? `<ul class="mbx-list">${rows.map((b) => `<li>
       <span class="cell-person">${avatar(null, b.address)}<span><div>${esc(b.address)}</div>
         <div class="secondary">${b.usable ? `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left`
-          : `<span style="color:var(--text-danger)">Its sign-in stopped working: connect it again</span>`}</div></span></span>
+          : `<span style="color:var(--text-danger)">Its sign-in stopped working: connect it again</span>`}</div>
+        ${(b.send_as || []).length ? `<div class="secondary">Also sends as ${esc(b.send_as.map((x) => x.address).join(", "))}</div>` : ""}</span></span>
       <span class="grow"></span>
       ${b.usable || !d.web_connect ? "" : `<button class="btn compact" data-reconnect>Connect again</button>`}
       <button class="btn subtle compact danger-text" data-drop="${esc(b.id)}" data-addr="${esc(b.address)}">Disconnect</button></li>`).join("")}</ul>`
@@ -2740,6 +2750,7 @@ async function openSendingAddress(opts) {
     <div class="modal-body single"><div class="modal-main">
       ${opts.welcome ? `<h2 class="modal-title" style="font-size:20px;line-height:24px;margin-bottom:4px">One last step: your Gmail</h2>` : ""}
       <p class="sub" style="margin-bottom:16px">The emails you approve go out from your own Gmail, signed with your name and title, up to ${esc(cap)} a day from each address${rows.length > 1 ? ", the one with the most room first" : ""}. Google shows you what is allowed (sending, and reading replies, for that address only), and you can take it back here or from your Google account at any time.</p>
+      <p class="sub" style="margin-bottom:16px">An address that is a "Send mail as" alias in your Gmail (your LCX address, for example) cannot be signed in to: connect the Gmail it lives in, and LCX emails go out as the alias.</p>
       ${list}
       ${d.web_connect ? "" : `<div class="footer-problems" style="margin-top:12px">${icon("info", 16)}<div>Connecting from the app is not switched on yet: the owner adds a Google "Web application" client to the server first. Until then the owner can link an address for you.</div></div>`}
     </div></div>
