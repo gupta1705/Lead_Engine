@@ -2749,9 +2749,7 @@ async function openSendingAddress(opts) {
     ${modalHead(`${typeIcon("mail")}<span class="key">Your Gmail</span>`)}
     <div class="modal-body single"><div class="modal-main">
       ${opts.welcome ? `<h2 class="modal-title" style="font-size:20px;line-height:24px;margin-bottom:4px">One last step: your Gmail</h2>` : ""}
-      <p class="sub" style="margin-bottom:16px">The emails you approve go out from your own Gmail, signed with your name and title, up to ${esc(cap)} a day from each address${rows.length > 1 ? ", the one with the most room first" : ""}. Google shows you what is allowed (sending, and reading replies, for that address only), and you can take it back here or from your Google account at any time.</p>
-      <p class="sub" style="margin-bottom:16px">An address that is a "Send mail as" alias in your Gmail (your LCX address, for example) cannot be signed in to: connect the Gmail it lives in, and LCX emails go out as the alias.</p>
-      ${list}
+      <p class="sub" style="margin-bottom:16px">The emails you approve go out from your own Gmail, signed with your name and title, up to ${esc(cap)} a day from each address${rows.length > 1 ? ", the one with the most room first" : ""}. Google shows you what is allowed (sending, and reading replies, for that address only), and you can take it back here or from your Google account at any time.</p>      ${list}
       ${d.web_connect ? "" : `<div class="footer-problems" style="margin-top:12px">${icon("info", 16)}<div>Connecting from the app is not switched on yet: the owner adds a Google "Web application" client to the server first. Until then the owner can link an address for you.</div></div>`}
     </div></div>
     <div class="modal-foot">

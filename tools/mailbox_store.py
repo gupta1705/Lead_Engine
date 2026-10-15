@@ -255,16 +255,20 @@ def set_send_as(cur, mailbox_id, aliases):
 
 
 def alias_for(box, domain):
-    """The alias of `box` on `domain` ({"address", "name"}), None when the account has none there, or UNREAD
-    when its aliases have not been read yet. No domain: None (the account's own address is the one)."""
+    """The address `box` writes as on `domain` ({"address", "name"}): the account itself when its own address is
+    on the domain (an LCX Google account, owner 2026-10-15: "we will be connecting email ids with lcx domain"),
+    else its alias there; None when it has neither, or UNREAD when its aliases have not been read yet. No
+    domain: None (the account's own address is the one)."""
     if not domain:
         return None
+    want = "@" + str(domain).strip().lower().lstrip("@")
+    if str(box.get("address") or "").lower().endswith(want):
+        return {"address": str(box["address"]).lower(), "name": ""}
     send_as = box.get("send_as")
     if isinstance(send_as, str):
         send_as = json.loads(send_as)
     if send_as is None:
         return UNREAD
-    want = "@" + str(domain).strip().lower().lstrip("@")
     return next((a for a in send_as if str(a.get("address", "")).lower().endswith(want)), None)
 
 
