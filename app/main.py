@@ -907,8 +907,13 @@ def _rewrite_email(body, cfg, person=None, context=None):
     import llm
     b = body or {}
     try:
-        return email_rewrite.rewrite(b.get("subject", ""), b.get("body", ""),
-                                     b.get("instructions", ""), cfg, person, context)
+        result = email_rewrite.rewrite(b.get("subject", ""), b.get("body", ""),
+                                       b.get("instructions", ""), cfg, person, context)
+        from mail_copy import clean_text
+        for field in ("subject", "body"):
+            if result.get(field) is not None:
+                result[field] = clean_text(result[field], remove_offer=field == "body")
+        return result
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except llm.Unavailable:
@@ -962,6 +967,9 @@ def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
     if subject is not None and ("\n" in str(subject) or "\r" in str(subject)):
         # one line, always: the sender refuses a subject with a line break in it
         raise HTTPException(400, "the subject must be one line")
+    dr = _render()
+    if subject is not None:
+        subject = dr.clean_text(str(subject), remove_offer=False)
     if text is not None:
         me = _people().get((getattr(request.state, "user", None) or "").lower())
         with cursor() as cur:
@@ -969,7 +977,7 @@ def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
                         " join segments s on s.id = e.segment_id where o.id = %s", (oid,))
             seg = cur.fetchone()
             cfg = _policy().outreach_config(cur, seg["slug"]) if seg else {}
-        text = _render().canonicalize(text, cfg, me)
+        text = dr.canonicalize(text, cfg, me)
     with cursor() as cur:
         cur.execute(
             "update outreach set subject = coalesce(%s, subject),"
@@ -1508,14 +1516,14 @@ def footer_set(body: dict = Body(...), segment: str = Depends(current_segment)):
     rebuilding it would throw their words away."""
     dr, pol = _render(), _policy()
     b = body or {}
-    text = (b.get("text") or "").strip()
+    text = dr.clean_text((b.get("text") or "").strip(), remove_offer=False)
     given = b.get("sender") or {}
     with cursor() as cur:
         old = pol.outreach_config(cur, segment)
         sender = dict(old.get("sender") or {})
         for k in ("name", "title", "postal_address"):
             if k in given:
-                sender[k] = (given.get(k) or "").strip()
+                sender[k] = dr.clean_text((given.get(k) or "").strip(), remove_offer=False)
         problems = dr.validate_footer(text, sender)
         if problems:
             # one problem per line: each is a separate thing to fix, and the

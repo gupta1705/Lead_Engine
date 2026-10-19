@@ -31,6 +31,8 @@ import datetime as dt
 import hashlib
 import re
 
+from mail_copy import clean_text
+
 # ------------------------------------------------------------------- footer
 # 2026-10-13, the owner: no opt-out line ("If this isn't relevant, reply "no thanks"...") in any footer
 DEFAULT_FOOTER = "{{sender_name}}\n{{sender_title}}"
@@ -47,7 +49,7 @@ PLACEHOLDER = re.compile(r"{{(\w+)}}")
 
 
 def footer_text(cfg):
-    return ((cfg.get("footer") or {}).get("text") or DEFAULT_FOOTER)
+    return clean_text((cfg.get("footer") or {}).get("text") or DEFAULT_FOOTER, remove_offer=False)
 
 
 def resolve_footer(text, sender):
@@ -60,7 +62,7 @@ def resolve_footer(text, sender):
     out = text or ""
     for k, v in vals.items():
         out = out.replace("{{%s}}" % k, v)
-    return out
+    return clean_text(out, remove_offer=False)
 
 
 def _looks_like_address(resolved):
@@ -1131,7 +1133,7 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         import contacts
         ctx.update(tvf_partnership_context(cfg, company, meta, seed, now, generator, person,
                                            contacts.clean_name(contact_name, contact_email, company) if person else None))
-    ctx["footer"] = render(footer_text(cfg), ctx)
+    ctx["footer"] = clean_text(render(footer_text(cfg), ctx), remove_offer=False)
     return ctx
 
 
@@ -1139,7 +1141,8 @@ def render_message(tpl, ctx):
     subject, body = render(tpl["subject"], ctx), render(tpl["body"], ctx)
     if ctx.get("dash_guard"):
         subject, body = dash_clean(subject, body, ctx.get("footer") or "")
-    return capped_subject(subject, tpl, ctx), body
+    return (clean_text(capped_subject(subject, tpl, ctx), remove_offer=False),
+            clean_text(body, remove_offer=True))
 
 
 # The owner, 2026-10-13: "subject for all emails for all services should be less than 5 or equal to 5 words".
@@ -1156,12 +1159,13 @@ def subject_words(subject):
 
 
 def capped_subject(subject, tpl, ctx):
+    subject = clean_text(subject, remove_offer=False)
     cap = ctx.get("subject_max_words")
     if not cap or subject_words(subject) <= cap:
         return subject
     fallback = (tpl or {}).get("subject_fallback")
     if fallback:
-        short = render(fallback, ctx)
+        short = clean_text(render(fallback, ctx), remove_offer=False)
         if ctx.get("dash_guard"):
             short = no_dash(short)
         if subject_words(short) <= cap and not (ctx.get("dash_guard") and has_dash(short)):
@@ -1249,8 +1253,9 @@ def _signoff_len(body, canon):
 
 
 def personalize(body, cfg, person):
-    """The stored (canonical) body as `person` ({email, name, title}) would send it. Unchanged when the
-    project is not signed by its approver (signs_as_approver), or the person has no name and title yet."""
+    """The stored body as `person` would send it, with the shared copy cleanup in every project."""
+    if body is not None:
+        body = clean_text(body, remove_offer=True)
     if not body or not signs_as_approver(cfg) or not _signs(person):
         return body
     out = body
@@ -1259,8 +1264,10 @@ def personalize(body, cfg, person):
     if n and (canon != mine or n != len(canon)):
         out = out[:-n] + mine
     for theirs, own in voice_swaps(cfg, person.get("email")) + intro_swaps(cfg, person):
-        out = out.replace(theirs, own, 1)
-    return out
+        theirs, own = clean_text(theirs, remove_offer=True), clean_text(own, remove_offer=True)
+        if theirs:
+            out = out.replace(theirs, own, 1)
+    return clean_text(out, remove_offer=True)
 
 
 def intro_swaps(cfg, person):
@@ -1273,12 +1280,16 @@ def intro_swaps(cfg, person):
 
 def canonicalize(body, cfg, person):
     """The reverse of personalize: a body as `person` saw it, back in the form that is stored."""
+    if body is not None:
+        body = clean_text(body, remove_offer=True)
     if not body or not signs_as_approver(cfg) or not _signs(person):
         return body
     out = body
     for theirs, own in voice_swaps(cfg, person.get("email")) + intro_swaps(cfg, person):
-        out = out.replace(own, theirs, 1)
+        theirs, own = clean_text(theirs, remove_offer=True), clean_text(own, remove_offer=True)
+        if own:
+            out = out.replace(own, theirs, 1)
     canon, mine = footer_for(cfg), footer_for(cfg, person["name"], person["title"])
     if canon != mine and out.endswith(mine):
         out = out[:-len(mine)] + canon
-    return out
+    return clean_text(out, remove_offer=True)

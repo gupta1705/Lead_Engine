@@ -118,6 +118,7 @@ def mailbox_connected(mb):
 # tools/draft_render.py, because the app renders the same emails when the
 # footer changes. Importing the names keeps this file reading as it did.
 from draft_render import build_context, pick_template, render_message  # noqa: E402
+from mail_copy import has_forbidden_copy  # noqa: E402
 from outreach_policy import OUT_TODAY_SQL, TAKEN_AT_SEND  # noqa: E402
 from outreach_policy import DUPLICATE_SQL as _DUPLICATE_SQL  # noqa: E402
 
@@ -1003,6 +1004,8 @@ def cmd_send(args):
                 problem = "Apollo has not verified the recipient email"
             elif not r["service_matches"]:
                 problem = "the lead's service changed; create and review a fresh draft"
+            elif has_forbidden_copy(subject) or has_forbidden_copy(body):
+                problem = "the email contains dash punctuation or a free-sample reply offer; clean the draft first"
             elif re.search(r"{{\w+}}", (subject or "") + (body or "")):
                 problem = "unfilled {{placeholder}} in subject or body"
             elif re.search(r"[\r\n]", subject or ""):

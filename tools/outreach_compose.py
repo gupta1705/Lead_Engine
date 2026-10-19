@@ -21,6 +21,8 @@ be skipped and why before anyone approves.
 """
 import re
 
+from mail_copy import clean_text
+
 FIELDS = ("first_name", "company")
 MAX_RECIPIENTS = 100
 TEMPLATE_KEY = "compose"
@@ -109,7 +111,8 @@ def render(text, fields):
 
 def message(subject, body, fields, footer):
     """-> (subject, body) as this recipient receives it, the footer under it."""
-    return render(subject.strip(), fields), render(body.strip(), fields) + "\n\n" + footer
+    return (clean_text(render(subject.strip(), fields), remove_offer=False),
+            clean_text(render(body.strip(), fields) + "\n\n" + footer, remove_offer=True))
 
 
 def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
@@ -138,7 +141,8 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
     if not (person and person.get("name") and person.get("title")):
         raise NeedsProfile("Add your name and title first (the account menu at the bottom of the sidebar): "
                            "the emails you write are signed with them.")
-    subject, body = str(subject or ""), str(body or "")
+    subject = clean_text(str(subject or ""), remove_offer=False)
+    body = clean_text(str(body or ""), remove_offer=True)
     why = check_text(subject, body) if apply else (
         check_text("x", "%s %s" % (subject, body)) if unknown_fields(subject, body) else None)
     if why:

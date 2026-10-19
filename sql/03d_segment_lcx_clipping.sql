@@ -950,7 +950,7 @@ values (
         "key": "clipping_intro_v1",
         "subject": "Your episodes, as shorts",
         "subject_fallback": "Short clips from your episodes",
-        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long episodes into short vertical clips -- the hook, the captions, the reframing -- and deliver within 48 hours of each new episode, so every release also gets ten shorts working for it on YouTube, Instagram and TikTok. Our editors cut; you approve.\n\nRather than describe it: reply \"yes\" and we''ll cut three shorts out of {{latest_work}}, free, so you can judge the quality before anything else is discussed.\n\n{{footer}}",
+        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long episodes into short vertical clips, the hook, the captions, the reframing, and deliver within 48 hours of each new episode, so every release also gets ten shorts working for it on YouTube, Instagram and TikTok. Our editors cut; you approve.\n\n{{footer}}",
         "guidance": "First touch for creators and podcasters. {{hook}} is one sentence of THEIR numbers -- episodes, cadence, length, shorts count -- built by the draft command from the feed and channel evidence, so it is true by construction. Greeting: a person''s first name when the engine found one (metadata.host at high or medium confidence); otherwise ''there''. Never the show''s name."
       },
       {
@@ -960,21 +960,21 @@ values (
         },
         "subject": "Shorts from your archive",
         "subject_fallback": "Short clips from your archive",
-        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form -- episodes, trailers, behind-the-scenes, interviews -- into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\nRather than describe it: reply \"yes\" and we''ll cut three shorts out of {{latest_work}}, free, so you can judge the quality first.\n\n{{footer}}",
+        "body": "Hi {{greeting_name}},\n\n{{hook}}\n\nI run the clipping desk at LCX. We turn long-form, episodes, trailers, behind-the-scenes, interviews, into short vertical clips with the hook, the captions and the reframing done, delivered within 48 hours, so every release keeps working on YouTube, Instagram and TikTok long after the premiere. Our editors cut; your team approves.\n\n{{footer}}",
         "guidance": "Production houses and studios (metadata.kind = production_house, set by the Wikidata connector and the TVF pool import). Same evidence hook, studio wording: ''your archive'', ''your team approves''. Picked automatically by the draft command through the `when` condition."
       },
       {
         "key": "clipping_followup_1",
         "kind": "follow_up",
         "subject": "Re: {{opener_subject}}",
-        "body": "Hi {{greeting_name}},\n\nFloating this back up in case it got buried. To put a number on it: {{clip_math}}. The offer stands -- reply \"yes\" and we''ll cut three out of {{latest_work}}, free, so you can judge the quality before anything else is discussed.\n\n{{footer}}",
+        "body": "Hi {{greeting_name}},\n\nFloating this back up in case it got buried. To put a number on it: {{clip_math}}.\n\n{{footer}}",
         "guidance": "Follow-up 1, sent in the opener''s thread four days after it if nobody replied. Short on purpose."
       },
       {
         "key": "clipping_followup_2",
         "kind": "follow_up",
         "subject": "Re: {{opener_subject}}",
-        "body": "Hi {{greeting_name}},\n\nLast note from me on this. If short-form from your back catalogue is ever on the list, reply here and the three free shorts are yours. Otherwise I''ll leave you be.\n\n{{footer}}",
+        "body": "Hi {{greeting_name}},\n\nLast note from me on this. Otherwise I''ll leave you be.\n\n{{footer}}",
         "guidance": "Follow-up 2, the last one: seven days after follow-up 1. After this the thread is closed for good."
       }
     ],
