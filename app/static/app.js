@@ -1027,7 +1027,10 @@ function refreshCurrentView() {
 const FOLDERS = [["drafts", "Drafts"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"], ["attention", "Attention"]];
 function outreachPolicy() { return (state.segment && state.segment.outreach_policy) || {}; }
 function batchOn() { return !!outreachPolicy().batch_approval; }
-function draftsOn() { return outreachPolicy().drafts !== false; }     // false: nothing is ever drafted (Universal)
+function draftsOn() {
+  // A cached pause or a project with no templates must never hide existing drafts.
+  return outreachPolicy().drafts !== false || (state.outreach.counts.drafts || 0) > 0;
+}
 function followUpsOn() { return !!(outreachPolicy().follow_ups || {}).enabled; }
 function stepLozenge(r) {
   const n = +r.sequence_step || 0;
@@ -1083,7 +1086,6 @@ function windowsText(ws) {
 function scheduledText(days) { return (days || []).map((d) => `${d.count} on ${d.label}`).join(", "); }
 async function loadOutreach() {
   const o = state.outreach, token = ++o.token;
-  if (!draftsOn() && o.folder === "drafts") o.folder = "outbox";   // a project whose emails a person writes
   if (!$("#outreachBody").children.length) $("#outreachBody").innerHTML = skeletonRows(5, 8);
   let d;
   try { d = await api("/api/outreach?folder=" + encodeURIComponent(o.folder)); }
@@ -1097,6 +1099,12 @@ async function loadOutreach() {
   }).catch(() => { $("#sendCounter").hidden = true; $("#mailboxStrip").hidden = true; });
   if (token !== o.token) return;
   o.rows = d.rows; o.counts = d.counts || {};
+  // Decide only after reading the folder counts. The project's cached policy
+  // can say drafting is off while reviewed or externally written drafts exist.
+  if (o.folder === "drafts" && !draftsOn()) {
+    o.folder = "outbox";
+    return loadOutreach();
+  }
   const present = new Set(d.rows.map((r) => r.id));
   o.selected = new Set([...(o.selected || [])].filter((id) => present.has(id)));
   const batch = batchOn() && o.folder === "drafts" && d.rows.length > 0;
