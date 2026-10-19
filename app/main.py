@@ -792,6 +792,51 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = "", 
 
 
 # ------------------------------------------------------------------ outreach
+def _outreach_select():
+    """Shared row shape for a folder and a direct email lookup."""
+    import outreach_query as oq
+    return (
+        "select f.*,e.fit_score as lead_score," + oq.CATEGORY + " as category,"
+        + oq.SUBSCRIBERS + " as subscriber_count," + oq.VIEWS + " as view_count,"
+        " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
+        " (e.status in ('shortlisted','contacted') and exists(select 1 from contacts available"
+        " where available.entity_id=e.id and available.email is not null"
+        " and contact_allowed(e.id,available.source,available.verifier,available.email_status)"
+        " and contact_rank(available.full_name,available.email,available.role_title,available.email_status,e.domain)>-500)) as can_link_contact"
+        " from outreach_folders f join entities e on e.id = f.entity_id"
+        " join outreach stored on stored.id=f.id left join contacts c on c.id=stored.contact_id"
+    )
+
+
+def _present_outreach(rows, request, segment, cfg, people=None):
+    """Use the same sender preview and approval checks wherever an email opens."""
+    people = _people() if people is None else people
+    me = people.get((getattr(request.state, "user", None) or "").lower())
+    dr, pol = _render(), _policy()
+    wcfg, paused = _wcfg(cfg), pol.sending_paused(cfg)
+    sells = sells_services(segment)
+    for r in rows:
+        r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
+        if not sells and r.get("service") is None:
+            # the one service an email pitched (sql/35) is LCX Services' alone: everyone else's rows are as before
+            r.pop("service", None)
+        # who reached out: the person who approved it, from their own Gmail (sender_address)
+        r["approved_by_name"] = _display(r.get("approved_by"), people)
+        _shown_sender(r)
+        if r["status"] == "drafted" and r["direction"] == "outbound":
+            r["body"] = dr.personalize(r["body"], cfg, me)
+            r["approval_blocked"] = ("Needs a verified contact before approval." if not r.get("contact_email")
+                else "Recipient failed email verification." if r.get("email_status") == "invalid"
+                else "Recipient email is not eligible for sending." if not r.get("contact_verified")
+                else "Company qualification is still in review." if not r.get("sequence_step")
+                     and r["lead_status"] not in ("shortlisted", "contacted") else None)
+        if r["direction"] == "outbound" and r["status"] in ("approved", "sending", "sent"):
+            # when it goes (or went): its recipient's clock and India's, and why that zone -- or, held back
+            # (a send error, or sending paused), no time at all and why
+            r["schedule"] = pol.schedule_view(r, wcfg, paused=paused)
+    return rows
+
+
 @app.get("/api/outreach")
 def outreach_list(request: Request, folder: str = "drafts", category: str = "", service: str = "",
                   sort: str = "default", direction: str = "desc", limit: int = 200, offset: int = 0,
@@ -804,9 +849,6 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
     would send it: their sign-off, their voice (tools/draft_render.personalize). Approving stores
     exactly that; the stored draft stays in the project's own form until then."""
     folders = ["inbox", "positive", "negative"] if folder == "inbox" else [folder]
-    people = _people()
-    me = people.get((getattr(request.state, "user", None) or "").lower())
-    dr = _render()
     pol = _policy()
     import outreach_query as oq
     try:
@@ -823,43 +865,15 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
     if service:
         filters.append("f.service = %s"); params.append(service)
     clause = base + (" and " + " and ".join(filters) if filters else "")
+    people = _people()
     with cursor() as cur:
         cfg = pol.outreach_config(cur, segment)
-        wcfg = _wcfg(cfg)
-        paused = pol.sending_paused(cfg)
         cur.execute(
-            "select f.*,e.fit_score as lead_score," + oq.CATEGORY + " as category,"
-            + oq.SUBSCRIBERS + " as subscriber_count," + oq.VIEWS + " as view_count,"
-            " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
-            " (e.status in ('shortlisted','contacted') and exists(select 1 from contacts available"
-            " where available.entity_id=e.id and available.email is not null"
-            " and contact_allowed(e.id,available.source,available.verifier,available.email_status)"
-            " and contact_rank(available.full_name,available.email,available.role_title,available.email_status,e.domain)>-500)) as can_link_contact"
-            " from outreach_folders f join entities e on e.id = f.entity_id"
-            " join outreach stored on stored.id=f.id left join contacts c on c.id=stored.contact_id"
+            _outreach_select() +
             " where f.folder = any(%s) and " + clause +
             " order by " + order + " limit %s offset %s", [folders] + params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
-        sells = sells_services(segment)
-        for r in rows:
-            r["id"] = str(r["id"]); r["entity_id"] = str(r["entity_id"])
-            if not sells and r.get("service") is None:
-                # the one service an email pitched (sql/35) is LCX Services' alone: everyone else's rows are as before
-                r.pop("service", None)
-            # who reached out: the person who approved it, from their own Gmail (sender_address)
-            r["approved_by_name"] = _display(r.get("approved_by"), people)
-            _shown_sender(r)
-            if r["status"] == "drafted" and r["direction"] == "outbound":
-                r["body"] = dr.personalize(r["body"], cfg, me)
-                r["approval_blocked"] = ("Needs a verified contact before approval." if not r.get("contact_email")
-                    else "Recipient failed email verification." if r.get("email_status") == "invalid"
-                    else "Recipient email is not eligible for sending." if not r.get("contact_verified")
-                    else "Company qualification is still in review." if not r.get("sequence_step")
-                         and r["lead_status"] not in ("shortlisted", "contacted") else None)
-            if r["direction"] == "outbound" and r["status"] in ("approved", "sending", "sent"):
-                # when it goes (or went): its recipient's clock and India's, and why that zone -- or, held back
-                # (a send error, or sending paused), no time at all and why
-                r["schedule"] = pol.schedule_view(r, wcfg, paused=paused)
+        rows = _present_outreach(rows, request, segment, cfg, people)
         cur.execute("select f.folder, count(*) as n from outreach_folders f"
                     " join entities e on e.id = f.entity_id"
                     " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
@@ -1500,6 +1514,21 @@ def footer_get(segment: str = Depends(current_segment)):
             "sender": shown,
             "problems": dr.validate_footer(text, sender),
             "drafts_pending": pending}
+
+
+@app.get("/api/outreach/{oid}")
+def outreach_detail(oid: str, request: Request, segment: str = Depends(current_segment)):
+    """An exact email, independent of the folder's filters or current page."""
+    oid = _id(oid, "email")
+    with cursor() as cur:
+        cur.execute(_outreach_select() +
+                    " where f.id = %s and e.segment_id = (select id from segments where slug = %s)",
+                    (oid, segment))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "no such email")
+        cfg = _policy().outreach_config(cur, segment)
+    return _present_outreach([dict(row)], request, segment, cfg)[0]
 
 
 @app.post("/api/outreach/footer")

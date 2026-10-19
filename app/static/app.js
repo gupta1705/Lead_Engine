@@ -975,6 +975,7 @@ async function openLead(id, opts) {
     <div class="modal-foot">
       ${decided ? `<button class="btn subtle" data-decide="reset">Undo decision</button>` : ""}
       ${d.status !== "rejected" ? `<button class="btn subtle danger-text" data-decide="reject">Reject</button>` : ""}
+      ${d.outreach && d.outreach.id ? `<button class="btn primary" id="leadOpenEmail">${icon("mail", 16)} ${d.outreach.status === "drafted" ? "Open draft" : "View email"}</button>` : ""}
       ${canWriteLead(d) ? `<button class="btn ${d.status === "shortlisted" ? "primary" : ""}" data-compose>${icon("mail", 16)} Write email</button>` : ""}
       ${d.status !== "shortlisted" ? `<button class="btn primary" data-decide="shortlist">${icon("check", 16)} Shortlist</button>` : ""}
     </div>`, { label: d.name, sheet: true, onClose: leaveLeadRoute });
@@ -992,7 +993,37 @@ async function openLead(id, opts) {
   $("#reasonGo", root).addEventListener("click", () => decide(id, "reject", $("#rejectReason", root).value));
   const w = $("[data-compose]", root);
   if (w) w.addEventListener("click", () => openCompose([{ id: String(d.id || id), name: d.name }]));
+  const email = $("#leadOpenEmail", root);
+  if (email) email.addEventListener("click", () => openLeadEmail(id, d.outreach.id, email));
   bindLeadService(root, d, id);
+}
+
+async function openLeadEmail(leadId, emailId, button) {
+  if (button.disabled) return;
+  const sheet = modal.current, segment = state.segment, leadToken = state.leadToken;
+  const stillHere = () => modal.isOpen() && modal.current === sheet
+    && state.segment === segment && state.leadToken === leadToken
+    && sheet && sheet.kind === "lead" && sheet.id === leadId;
+  button.disabled = true; button.classList.add("loading");
+  try {
+    // Fetch the exact email: it may be on another page or hidden by an Outreach filter.
+    const [email, mailboxes] = await Promise.all([
+      api("/api/outreach/" + encodeURIComponent(emailId)),
+      api("/api/mailboxes").catch(() => null),
+    ]);
+    if (!stillHere()) return;
+    if (mailboxes) {
+      state.outreach.canSend = !!mailboxes.can_send;
+      state.outreach.paused = mailboxes.paused || null;
+      state.outreach.mbx = mailboxes;
+    }
+    leaveLeadRoute();
+    openMessage(emailId, email);
+  } catch (e) {
+    if (stillHere()) toast("Could not open email: " + e.message, true);
+  } finally {
+    if (button.isConnected) { button.disabled = false; button.classList.remove("loading"); }
+  }
 }
 
 async function decide(id, decision, reason) {
@@ -1643,8 +1674,8 @@ function attachList(r) {
       <span class="small muted num">${f.bytes ? Math.max(1, Math.round(f.bytes / 1024)) + " KB" : ""}</span></a>`).join("")}</div>`;
 }
 
-function openMessage(id) {
-  const o = state.outreach, r = o.rows.find((x) => x.id === id);
+function openMessage(id, message) {
+  const o = state.outreach, r = message || o.rows.find((x) => x.id === id);
   if (!r) return;
   const isDraft = r.status === "drafted", isReply = r.direction === "inbound";
   const step = +r.sequence_step || 0;
@@ -1768,7 +1799,8 @@ function openMessage(id) {
         : res.entity_promoted === false ? "Reply recorded; the company was not in a state that could be promoted." : r.company;
       flag(msg, { desc, ms: res.schedule ? 7000 : undefined });
       modal.close(true);
-      await loadOutreach();
+      if (currentView() === "outreach") await loadOutreach();
+      else { refreshCurrentView(); refreshOutreachCount(true); }
     } catch (e) { toast(e.message, true); controls.forEach(([x, disabled]) => { if (x.isConnected) x.disabled = disabled; }); b.classList.remove("loading"); }
     finally { o.busy = false; }
   }));
