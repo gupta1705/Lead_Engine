@@ -75,9 +75,10 @@ def approver_mode(cur, gmail):
     os.environ.setdefault("SESSION_SECRET", "zz-send-test-" + uuid.uuid4().hex)
     args = argparse.Namespace(limit=500)
     print("\n-- from the approver's own Gmail, each address with its own limit")
+    # Legacy sender fixtures; strict Apollo gates are tested in test_apollo_constraints.
     slug = "zz-send-appr-" + uuid.uuid4().hex[:6]
     cur.execute("insert into segments (slug, name, entity_type, config)"
-                " select %s, 'send test (approver)', 'company', config from segments where slug = 'us-production-houses'"
+                " select %s, 'send test (approver)', 'company', (config - 'sourcing') from segments where slug = 'us-production-houses'"
                 " returning id", (slug,))
     seg_id = cur.fetchone()[0]
     # no sending window here, whatever the live config says: the window has its own section (window_mode)
@@ -183,7 +184,7 @@ def alias_mode(cur, gmail):
     print("\n-- sending as the account's alias on the project's domain (sql/36)")
     slug = "zz-send-alias-" + uuid.uuid4().hex[:6]
     cur.execute("insert into segments (slug, name, entity_type, config)"
-                " select %s, 'send test (alias)', 'company', config from segments where slug = 'us-production-houses'"
+                " select %s, 'send test (alias)', 'company', (config - 'sourcing') from segments where slug = 'us-production-houses'"
                 " returning id", (slug,))
     seg_id = cur.fetchone()[0]
     cur.execute("update segments set config = jsonb_set(jsonb_set(config #- '{outreach,sending_paused}'"
@@ -274,7 +275,7 @@ def window_mode(cur, gmail):
     plan = sw.plan_key(sw.window_cfg({"send_window": block}))
     slug = "zz-send-win-" + uuid.uuid4().hex[:6]
     cur.execute("insert into segments (slug, name, entity_type, config)"
-                " select %s, 'send test (window)', 'company', config from segments where slug = 'us-production-houses'"
+                " select %s, 'send test (window)', 'company', (config - 'sourcing') from segments where slug = 'us-production-houses'"
                 " returning id", (slug,))
     seg_id = cur.fetchone()[0]
     cur.execute("update segments set config = jsonb_set(jsonb_set(config #- '{outreach,mailboxes}' #- '{outreach,send_from}'"
@@ -532,7 +533,7 @@ def window_mode(cur, gmail):
     # from the approver: a sign-in this machine cannot read is the server's -- untouched, never marked
     tag = uuid.uuid4().hex[:6]
     cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'send test (window, approver)',"
-                " 'company', config from segments where id = %s returning id", ("zz-send-wina-" + tag, seg_id))
+                " 'company', (config - 'sourcing') from segments where id = %s returning id", ("zz-send-wina-" + tag, seg_id))
     seg2 = cur.fetchone()[0]
     cur.execute("update segments set config = jsonb_set(jsonb_set(config, '{outreach,send_from}', '\"approver\"'),"
                 " '{outreach,daily_send_cap}', '35') where id = %s", (seg2,))
@@ -722,7 +723,7 @@ def pool_elsewhere(cur, gmail):
              {"key": "second", "email_env": "ZZ_SECOND_SENDER_ADDRESS", "daily_cap": 3}]
     slug = "zz-send-pool-" + uuid.uuid4().hex[:6]
     cur.execute("insert into segments (slug, name, entity_type, config)"
-                " select %s, 'send test (pool)', 'company', config from segments where slug = 'us-production-houses'"
+                " select %s, 'send test (pool)', 'company', (config - 'sourcing') from segments where slug = 'us-production-houses'"
                 " returning id", (slug,))
     seg_id = cur.fetchone()[0]
     cur.execute("update segments set config = jsonb_set(jsonb_set(jsonb_set(config #- '{outreach,send_from}'"
@@ -905,7 +906,7 @@ def main():
         with conn.cursor() as cur:
             slug = "zz-send-test-" + uuid.uuid4().hex[:6]
             cur.execute("insert into segments (slug, name, entity_type, config)"
-                        " select %s, 'send test', 'company', config from segments where slug = 'us-production-houses'"
+                        " select %s, 'send test', 'company', (config - 'sourcing') from segments where slug = 'us-production-houses'"
                         " returning id", (slug,))
             seg_id = cur.fetchone()[0]
             # the project's own mailbox (the pool), whatever the live config says: sending from each
@@ -999,7 +1000,7 @@ def main():
             # ------------------------------------- an answer from them, elsewhere, since approval
             print("\n-- an address that answered us in another project since it was approved")
             cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'send test other', 'company',"
-                        " config from segments where slug = 'us-production-houses' returning id",
+                        " (config - 'sourcing') from segments where slug = 'us-production-houses' returning id",
                         ("zz-send-other-" + uuid.uuid4().hex[:6],))
             other_seg = cur.fetchone()[0]
 

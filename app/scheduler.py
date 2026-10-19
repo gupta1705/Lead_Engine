@@ -65,7 +65,7 @@ where e.segment_id = (select id from segments where slug = %s)
   and not exists (select 1 from outreach o where o.entity_id = e.id and o.direction = 'outbound'
                     and o.status not in ('cancelled', 'failed'))
   and exists (select 1 from contacts c where c.entity_id = e.id and c.email is not null
-                and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)
+                and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))
 limit 1"""
 # An approved email is there to send when it has no time (a project without a sending window; or one the
 # send run itself will place first) or its own moment has come and its window is still open (sql/34).

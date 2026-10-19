@@ -161,7 +161,7 @@ def enrich_block(cfg):
         if auto.get("enabled") is True and isinstance(auto.get("named_contact_for"), list) else []
     return {"provider": b.get("provider"),
             "enabled": b.get("enabled") is True,
-            "verified_only": b.get("verified_only") is not False,
+            "verified_only": (cfg.get("sourcing") or {}).get("contacts") == "apollo" or b.get("verified_only") is not False,
             "credits_per_run": int(b.get("credits_per_run") or DEFAULT_BUDGET),
             "credits_per_week": b.get("credits_per_week"),
             "keep_in_reserve": b.get("keep_in_reserve"),
@@ -328,26 +328,26 @@ def headcount(domain):
 
 NO_EMAIL_SQL = """
   and not exists (select 1 from contacts c where c.entity_id = e.id
-                  and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)"""
+                  and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))"""
 
 UNNAMED_SQL = """
   and exists (select 1 from contacts c where c.entity_id = e.id
-              and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)
+              and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))
   and not exists (select 1 from contacts c where c.entity_id = e.id and c.full_name is not null
-                  and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)"""
+                  and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))"""
 
 # auto_shortlist.named_contact_for (LCX Services, 2026-10-07): nobody to write to, as NO_EMAIL_SQL says, OR -- for
 # these audiences -- nobody NAMED to write to, by sql/14's own test of a name, so an info@-only bank over the line
 # is looked for a person at in the default pass (sql/14 never shortlists it on that inbox alone)
 NO_NAMED_SQL = """
   and (not exists (select 1 from contacts c where c.entity_id = e.id
-                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)
+                   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))
        or (coalesce(e.metadata->>'kind', '') = any(%s)
            -- the contact the drafter would pick (sql/14's test) has nobody's name on it
            and not exists (select 1 from (
                              select c.full_name from contacts c
                               where c.entity_id = e.id and c.email is not null
-                                and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500
+                                and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)
                               order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
                                        c.created_at, c.id
                               limit 1) top
@@ -466,7 +466,7 @@ def stamp(db, eid, outcome, person=None, credits=0.0, via=None):
 
 
 def search(domain, roles, verified_only, org_id=None, senior=None):
-    """Free. Narrowest first: the target roles with an address on file, then the roles, then anyone senior.
+    """Free. Narrowest first: target roles, then senior candidates; every pass stays verified-only when required.
     A pass that finds people but nobody with an address does not end the search -- Imaginary Forces had
     two executive producers with no address and a senior person with one, and the first build stopped at
     the producers. Only when no pass has anyone with an address is the first set of people returned.
@@ -476,7 +476,8 @@ def search(domain, roles, verified_only, org_id=None, senior=None):
     if roles:
         if verified_only:
             passes.append(dict(base, person_titles=roles, contact_email_status=["verified"]))
-        passes.append(dict(base, person_titles=roles))
+        if not verified_only:
+            passes.append(dict(base, person_titles=roles))
     passes.append(dict(base, contact_email_status=["verified"]) if verified_only else dict(base))
     fallback = None
     for i, filters in enumerate(passes):
@@ -800,6 +801,13 @@ def main():
             stats["elsewhere"] += 1
             stamp(db, eid, "elsewhere", credits=rep.get("credits") or 0)
             continue
+        if block["verified_only"] and person.get("email"):
+            from apollo_policy import verified
+            if not verified(person):
+                stats["no_email"] += 1
+                stamp(db, eid, "unverified-email", credits=rep.get("credits") or 0)
+                log("  %-34s Apollo did not verify the revealed email; not saved" % name[:34])
+                continue
         if not person.get("email"):
             log("  %-34s %-16s %s revealed without an address" % (name[:34], status, person.get("name") or shown))
             stats["no_email"] += 1

@@ -159,6 +159,7 @@ where not ch.pending and not ch.wedged
                     and r.triage is distinct from 'neutral')
   and c.email is not null
   and c.email_status is distinct from 'invalid'
+  and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)
 """
 
 
@@ -434,6 +435,9 @@ where e.segment_id = (select id from segments where slug = %s)
 CHECK_SQL = """
 select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
        o.generated_hook, c.email, c.email_status,
+       contact_allowed(e.id,c.source,c.verifier,c.email_status) as verified_allowed,
+       (coalesce(s.config#>>'{sourcing,contacts}','') <> 'apollo' or not (s.config ? 'lead_service') or coalesce(o.sequence_step,0)>0 or
+        (o.service is not null and o.service=coalesce(e.metadata#>>'{lead_service,service}',e.metadata#>>'{lead_service,name}'))) as service_matches,
        e.status as entity_status, s.slug, e.name as entity_name, o.entity_id, o.attachments
 from outreach o
 join entities e on e.id = o.entity_id
@@ -482,6 +486,10 @@ def check_drafts(cur, ids, segment, policy=None):
             reason = "recipient address missing or malformed"
         elif r["email_status"] == "invalid":
             reason = "recipient failed verification"
+        elif not r["verified_allowed"]:
+            reason = "Apollo has not verified the recipient email"
+        elif not r["service_matches"]:
+            reason = "the lead's service changed; create and review a fresh draft"
         elif r["sequence_step"] == 0 and r["entity_status"] not in ("shortlisted", "contacted"):
             reason = "company is now '%s'" % r["entity_status"]
         elif r["sequence_step"] > 0 and r["entity_status"] != "contacted":

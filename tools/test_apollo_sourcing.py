@@ -155,7 +155,7 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(psycopg2.errors.CheckViolation):
             self.cur.execute("insert into contacts(entity_id,email,source) values(%s,'test@example.test','site_scrape')", (eid,))
         self.cur.execute("rollback to savepoint contact_refused")
-        self.cur.execute("insert into contacts(entity_id,email,source) values(%s,'test@example.test','apollo')", (eid,))
+        self.cur.execute("insert into contacts(entity_id,email,source,verifier,email_status) values(%s,'test@example.test','apollo','apollo','valid')", (eid,))
 
     def test_discovery_stages_the_page_and_resumes_without_rebuying(self):
         cfg = config("us-production-houses")

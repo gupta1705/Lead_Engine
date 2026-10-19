@@ -82,7 +82,7 @@ def obj(v):
 
 
 HAS_ADDRESS = ("exists (select 1 from contacts c where c.entity_id = e.id"
-               " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
+               " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))")
 
 
 def fetch(min_score, source, status=None, q=None, contact=None):

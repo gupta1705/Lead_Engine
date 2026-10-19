@@ -152,7 +152,7 @@ def cmd_draft(args):
         join lateral (
             select c.* from contacts c
             where c.entity_id = e.id and c.email is not null
-              and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500
+              and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)
             order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
                      c.created_at, c.id
             limit 1) c on true
@@ -444,6 +444,9 @@ def _message(body, attachments=None):
 PICK_SQL = """
 select o.id, o.entity_id, o.subject, o.body,
        c.email, c.email_status, e.name, e.status as ent_status,
+       contact_allowed(e.id,c.source,c.verifier,c.email_status) as verified_allowed,
+       (coalesce(s.config#>>'{sourcing,contacts}','') <> 'apollo' or not (s.config ? 'lead_service') or coalesce(o.sequence_step,0)>0 or
+        (o.service is not null and o.service=coalesce(e.metadata#>>'{lead_service,service}',e.metadata#>>'{lead_service,name}'))) as service_matches,
        o.sequence_step, p.gmail_thread_id, p.stopped_reason,
        (select s.gmail_message_id from outreach s
          where (s.id = o.parent_id or s.parent_id = o.parent_id)
@@ -456,6 +459,7 @@ select o.id, o.entity_id, o.subject, o.body,
        o.send_after, o.send_before, o.send_tz, p.sent_as as parent_sent_as
 from outreach o
 join entities e on e.id = o.entity_id
+join segments s on s.id=e.segment_id
 left join contacts c on c.id = o.contact_id
 left join outreach p on p.id = o.parent_id
 where o.status = 'approved' and o.direction = 'outbound'
@@ -470,6 +474,8 @@ order by (o.sequence_step > 0) desc, o.send_after nulls first, o.created_at limi
 CLAIM_SQL = """
 update outreach set status = 'sending', sender_mailbox = %s, sender_address = %s, updated_at = clock_timestamp()
 where id = %s and status = 'approved'
+  and exists (select 1 from contacts c where c.id=outreach.contact_id
+              and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))
   and (send_after is null or (send_after <= clock_timestamp() and clock_timestamp() < send_before))
 returning sender_mailbox
 """
@@ -993,6 +999,10 @@ def cmd_send(args):
                 problem = "recipient address missing or malformed: %r" % (email,)
             elif r["email_status"] == "invalid":
                 problem = "recipient failed verification"
+            elif not r["verified_allowed"]:
+                problem = "Apollo has not verified the recipient email"
+            elif not r["service_matches"]:
+                problem = "the lead's service changed; create and review a fresh draft"
             elif re.search(r"{{\w+}}", (subject or "") + (body or "")):
                 problem = "unfilled {{placeholder}} in subject or body"
             elif re.search(r"[\r\n]", subject or ""):

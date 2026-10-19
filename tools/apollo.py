@@ -801,6 +801,8 @@ def _person_row(p):
             "last_name_obfuscated": p.get("last_name_obfuscated") or "",
             "title": p.get("title") or "",
             "has_email": bool(p.get("has_email")),
+            "company_id": org.get("id"),
+            "company_domain": org.get("primary_domain"),
             "company": org.get("name") or ""}
 
 

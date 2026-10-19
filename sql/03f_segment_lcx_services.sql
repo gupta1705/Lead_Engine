@@ -12,7 +12,7 @@ values (
   "weekly_target": 1200,
   "score_threshold_review": 50,
   "score_threshold_priority": 85,
-  "brief": "LCX Services: businesses everywhere cold business email is allowed, offered every LCX service in one email with the services deck attached (docs/LCX Services.pdf; the deck is docs/decks/LCX Services - pitch deck.pdf). The owner, 2026-10-06: \"i wanna build outreach a single one offering all these services\" and \"it should generate the leads on its own\"; 2026-10-07: \"i want to reachout to buisnesses to normal corporates not just cafes and all think about whats the best places we can source our leads from and use it . Enriching from apollo is acceptable\". So it harvests by itself every Friday: mid-size corporates from Apollo''s company search (those hiring for content or training right now, recently funded ones, and each audience by size and country), listed companies and notable firms from Wikidata, US banks from the FDIC register, and a small stream of local businesses from OpenStreetMap. Then an address from the business itself or its own website, a named person from Apollo for a well-fitting lead that has none (inside a weekly credit cap), and a draft a person approves. docs/LCX_services.md.",
+  "brief": "LCX Services sources all new companies and contacts from Apollo. Saved audience, geography, size, buying-signal, credit and qualification constraints apply to automatic discovery and manual searches. Websites provide qualification evidence only. Each qualified buyer receives one evidence-based service route; every email requires human approval.",
   "target_contact_roles": [
     "Owner",
     "Founder",
@@ -3831,7 +3831,8 @@ values (
               "kind": [
                 "studios_agencies"
               ],
-              "not_classes": "advertising agency"
+              "not_classes": "advertising agency",
+              "text": "\\b(episodes?|podcasts?|web ?series|documentar(y|ies)|our shows?|full episodes?)\\b"
             },
             {
               "classes": "film production|television production|media company|production company|film studio|podcast"
@@ -3870,7 +3871,15 @@ values (
           "kind": [
             "studios_agencies"
           ],
-          "classes": "film production|television production|production company|film studio|television channel|broadcast"
+          "not_text": "advertising agency|creative agency|ad agency|branded content|commercial production",
+          "any": [
+            {
+              "classes": "film production|television production|production company|film studio|television channel|broadcast"
+            },
+            {
+              "text": "live[- ]action|film (and (television|tv) )?production|television production|tv production|production company|film studio|feature films?|scripted (television|tv|series)|motion pictures?"
+            }
+          ]
         },
         "reason": "A film or TV producer whose footage AI effects can make bigger"
       },
@@ -4237,10 +4246,15 @@ values (
       }
     ],
     "fallback": {
+      "require_evidence_for": [
+        "Shop Display Videos",
+        "Reel Forge",
+        "Audiobooks and Audio Web Shows"
+      ],
       "basis": "audience",
       "reason": "The first service its audience is pitched ({audience})"
     },
-    "guidance": "The owner''s review of the LCX Services emails, 2026-10-13, point 12: each lead is tagged with ONE lead service, the email pitches it, and the outreach row records it (outreach.service, sql/35). tools/lcx_judge.py tags every open lead on every chain run, after the scoring inputs, and stores metadata.lead_service = {service (one of the 18, or null), name (the same), rule, basis (signal, fact, type, audience, hold, not_a_buyer), reason, evidence, set_by, decided_at}. A person''s choice (set_by is their email) is never overwritten by the rules. metadata.services stays, shown as Also fits. Order: not a buyer first (the judge''s wrong_buyer at or over wrong_buyer_at_least, or a name in not_a_buyer.names for its audience: the Apollo searches'' noise), then the rules, first match wins, then the fallback, the first service its audience is pitched; a lead with no audience is held. A rule with service null holds the lead for a person to pick (Check service): VFX and animation houses sell what we would pitch. Evidence first: a fresh or stored Apollo signal (signals pick the service whatever their age, because they record a need; funded picks none, a raise is a reason to write and not a problem), then a specific fact from the company''s own site words or a register, then the register''s type, then the audience. Condition keys, all ANDed inside one when, with any: [alternatives] for OR: signal, kind, not_kind, osm (category), classes and industries (regex over Wikidata''s), not_classes, text and text2 (regex over the company''s own site words with its name in front, only when the site was read and is theirs; the name alone otherwise), not_text, socials (youtube, instagram or tiktok, from its site or a directory), employees_min, name (regex), apollo_key (the Apollo search that found it). A value \"@fashion\" is patterns.fashion. skip_if online_only: an online-only seller (online_only.classes, or online_only.text) with no physical-store words never gets Shop Display Videos (SparkFun). Simulated on the 3,686 open leads of 2026-10-12: every one of the 18 services is reachable. Edit here, run tools/gen_segment_sql.py lcx-services, apply sql/03f; the next chain run re-tags every lead whose tag the rules set."
+    "guidance": "One service per lead, using Apollo industry, keywords, description, company facts and buying signals, plus the company''s own website evidence. Apollo fields are retained for both automatic and manual saves. Existing human choices are preserved. Wrong buyers are excluded first; VFX and animation suppliers are held before hiring signals are considered. Other rules then match in configured order. Live-action film and TV producers can receive AI VFX + Animation without Wikidata classes. Shop Display Videos, Reel Forge and Audiobooks require specific evidence instead of an audience-only fallback. Unknown or ambiguous needs are held for review. Routing never changes the clipping project."
   },
   "sourcing": {
     "provider": "apollo",

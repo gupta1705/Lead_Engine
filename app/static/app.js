@@ -2067,8 +2067,12 @@ async function uniLoadStatus() {
   const u = state.uni;
   try {
     const d = await api(uniPath("/api/universal/status"));
-    u.status = d.apollo; u.schema = d.filters || [];
+    u.status = d.apollo; u.schema = d.filters || []; u.projectConstraints = !!d.project_constraints;
     u.maxReveal = d.max_reveal_per_save || 100; u.endpoints = d.endpoints || [];
+    const target = u.schema.find((f) => f.key === "_project_search");
+    if (target) ["people", "companies"].forEach((kind) => {
+      if (!u.filters[kind]._project_search) u.filters[kind]._project_search = target.options[0][0];
+    });
   } catch (e) {
     u.status = { key_set: false, connected: false, problems: [e.message] };
   }
@@ -2111,10 +2115,10 @@ function renderUniTabs() {
   $("#uniQuery").placeholder = u.kind === "people" ? "Job, company type and place: owners of restaurants in Dubai"
                                                    : "What they do and where: US arcades, animation studios in California";
   $("#uniCost").innerHTML = icon("info", 14) + (u.kind === "people"
-    ? `<span>Searching people is free; with no job typed it finds the decision makers (owners, founders, C-suite). Saving a person reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.</span>`
+    ? `<span>Searching people is free. Saving reveals their full name, work email and LinkedIn: <strong>1 Apollo credit each</strong>.${u.projectConstraints ? " Only Apollo-verified work emails are saved; project qualification and contact rules apply." : ""}</span>`
     : `<span>Each page of company results costs <strong>1 Apollo credit</strong>. Saving companies is free. To find one company by name, use Company name under Filters.</span>`)
     + (u.readAs && u.readAsKind === u.kind ? `<span class="uni-readas">Searched ${esc(u.readAs)}.${
-      u.kind === "people" && u.decisionMakers ? ` <a href="#" data-everyone>Search everyone instead</a>` : ""}</span>` : "");
+      u.kind === "people" && u.decisionMakers && !u.projectConstraints ? ` <a href="#" data-everyone>Search everyone instead</a>` : ""}</span>` : "");
   $("#uniGo").textContent = u.kind === "people" ? "Search" : "Search · 1 credit";
 }
 
@@ -2123,6 +2127,7 @@ function uniDefs() {
   // "include similar titles" only means something once there is a title to widen
   const u = state.uni, v = u.filters[u.kind] || {};
   return (u.schema || []).filter((f) => f.for.includes(u.kind) && f.group !== "Search"
+    && (!u.projectConstraints || f.key !== "contact_email_status")
     && (f.key !== "include_similar_titles" || (v.person_titles || []).length));
 }
 function uniActive(f, v) {
@@ -2145,7 +2150,7 @@ function uniControl(f, v) {
   if (f.type === "choice") return `<fieldset class="field"><legend>${esc(f.label)}</legend><div class="check-grid">${f.options.map(([val, label]) =>
     `<label class="check"><input type="checkbox" data-choice="${esc(f.key)}" value="${esc(val)}" ${(v || []).includes(val) ? "checked" : ""}><span>${esc(label)}</span></label>`).join("")}</div>${help}</fieldset>`;
   if (f.type === "bool") return `<label class="check uni-bool"><input type="checkbox" data-bool="${esc(f.key)}" ${v === false ? "" : "checked"}><span>${esc(f.label)}</span></label>`;
-  if (f.type === "window") return `<div class="field"><label for="${id}">${esc(f.label)}</label><select id="${id}" class="compact" data-f="${esc(f.key)}"><option value="">Choose a time frame</option>${f.options.map(([val, label]) =>
+  if (f.type === "window") return `<div class="field"><label for="${id}">${esc(f.label)}</label><select id="${id}" class="compact" data-f="${esc(f.key)}"><option value="">${f.key === "_project_search" ? "Choose a targeting group" : "Choose a time frame"}</option>${f.options.map(([val, label]) =>
     `<option value="${esc(val)}" ${String(v) === val ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>${help}</div>`;
   if (f.type === "range" || f.type === "daterange") {
     const t = f.type === "range" ? "number" : "date", o = v || {};
@@ -2159,6 +2164,8 @@ function uniControl(f, v) {
 }
 function renderUniFilters() {
   const u = state.uni, vals = u.filters[u.kind], defs = uniDefs(), groups = [];
+  const target = defs.find((f) => f.key === "_project_search");
+  if (target && !vals._project_search) vals._project_search = target.options[0][0];
   defs.forEach((f) => { let g = groups.find((x) => x.name === f.group); if (!g) groups.push(g = { name: f.group, items: [] }); g.items.push(f); });
   const n = defs.filter((f) => uniActive(f, vals[f.key])).length;
   $("#uniFilters").innerHTML = `<div class="uni-filters-head"><strong>Filters</strong><span class="pts ${n ? "mid" : ""}" id="uniFilterCount">${n}</span><span class="grow"></span>
@@ -2335,7 +2342,7 @@ function uniSavePeople() {
   $("#uniSaveGo").addEventListener("click", async (e) => {
     const b = e.currentTarget; b.classList.add("loading");
     try {
-      const r = await post(uniPath("/api/universal/save"), { kind: "people", ids: keep.map((x) => x.id), filters: u.lastFilters || {} });
+      const r = await post(uniPath("/api/universal/save"), { kind: "people", ids: keep.map((x) => x.id), receipts: keep.map((x) => x._receipt).filter(Boolean), filters: u.lastFilters || {} });
       modal.close(true);
       uniAfterSave(r, "people");
     } catch (err) { b.classList.remove("loading"); toast(err.message, true); }
@@ -2346,13 +2353,16 @@ async function uniSaveCompanies() {
   if (!rows.length) return;
   const b = $("#uniSaveCos"); if (b) b.classList.add("loading");
   try {
-    const r = await post(uniPath("/api/universal/save"), { kind: "companies", companies: rows, filters: u.lastFilters || {} });
+    const r = await post(uniPath("/api/universal/save"), { kind: "companies", companies: rows, receipts: rows.map((x) => x._receipt).filter(Boolean), filters: u.lastFilters || {} });
     uniAfterSave(r, "companies");
+    if (u.projectConstraints && u.schema.some((f) => f.key === "_project_search") && r.saved) {
+      flag("Companies saved for qualification", { desc: "Project scoring, website checks and contact rules apply before outreach.", kind: "info" });
+    }
   } catch (err) { toast(err.message, true); if (b) b.classList.remove("loading"); }
 }
 function uniAfterSave(r, kind) {
   const u = state.uni, ids = new Set((r.saved_ids || []).map(String));
-  u.rows.forEach((row) => { if (ids.has(String(row.id))) row.saved = kind === "people" ? true : "ready_for_review"; });
+  u.rows.forEach((row) => { if (ids.has(String(row.id))) row.saved = kind === "people" ? true : (r.saved_status || "ready_for_review"); });
   u.selected.clear();
   renderUniResults();
   uniLoadStatus();
@@ -2379,6 +2389,7 @@ function uniAfterSave(r, kind) {
 }
 function uniPeopleAt(pairs) {
   const u = state.uni;
+  if (u.filters.companies._project_search) u.filters.people._project_search = u.filters.companies._project_search;
   pairs.forEach(([id, name]) => { u.picked[id] = name; });
   u.filters.people = Object.assign({}, u.filters.people, { organization_ids: pairs.map((p) => p[0]).slice(0, 100) });
   u.kind = "people"; u.selected.clear();

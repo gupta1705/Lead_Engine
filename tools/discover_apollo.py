@@ -13,6 +13,7 @@ import time
 import apollo
 import apollo_budget
 import apollo_store
+import apollo_policy
 import discover_lcx_services as discovery
 from dbconn import Db
 
@@ -21,6 +22,9 @@ SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 
 def company_row(org, sl, aud, cfg, today=None):
     """Apollo facts only: partnership fit and distress still require qualification."""
+    why = apollo_policy.company_reason(org, cfg, sl["search"], discovery.apollo_filters(sl, today))
+    if why:
+        return None, why
     if cfg.get("judge", {}).get("enabled"):
         return discovery.apollo_row(org, sl, aud, cfg, today)
     name = str(org.get("name") or "").strip()

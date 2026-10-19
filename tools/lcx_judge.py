@@ -96,7 +96,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-services")
 # a lead's discovery records, in the order the one that names its source is picked when there are several
-SOURCES = ("lcx_wikidata", "lcx_apollo", "lcx_fdic", "lcx_osm")
+SOURCES = ("apollo", "lcx_apollo", "lcx_wikidata", "lcx_fdic", "lcx_osm")
 OPEN = ("discovered", "enriched", "scored", "ready_for_review", "shortlisted")
 RUBRIC_KEYS = ("buyer_confirmed", "buyer_size", "content_activity", "audience_fit")
 REACH = "reachable_decision_maker"
@@ -496,6 +496,7 @@ class ServiceRules:
                                "reason": r.get("reason") or "", "skip_if": r.get("skip_if"),
                                "when": self.compile(r.get("when") or {}, r["id"])})
         fb = spec.get("fallback") or {}
+        self.require_evidence_for = set(fb.get("require_evidence_for") or [])
         self.fallback_reason = fb.get("reason") or "The first service its audience is pitched ({audience})"
         self.first_service = {a["key"]: (a.get("services") or [None])[0] for a in audiences}
         self.audience_label = {a["key"]: a.get("label") or a["key"] for a in audiences}
@@ -527,6 +528,7 @@ def _service_view(f, J):
     lst = lambda key: " | ".join(str(x) for x in f.wdf(key)) if isinstance(f.wdf(key), list) else ""  # noqa: E731
     return {"name": f.name, "kind": f.kind, "own_site": bool(own_site),
             "own": (f.name + " | " + own_site) if own_site else f.name,
+            "apollo": getattr(f, "apollo_text", ""), "apollo_industries": getattr(f, "apollo_industries", ""),
             "classes": lst("classes"), "industries": lst("industries"),
             "osm": str(f.osm.get("category") or ""), "apollo_key": str(f.aps.get("key") or "").split("|")[0],
             "signal": f.signal, "signal_seen": f.signal_seen, "employees": f.employees,
@@ -560,20 +562,28 @@ def _match(v, cond):
             ev.append("OpenStreetMap %s" % v["osm"])
         elif k in ("classes", "industries"):
             m = want.search(v[k])
+            source = "Wikidata"
+            if not m and k == "industries":
+                m = want.search(v["apollo_industries"])
+                source = "Apollo"
             if not m:
                 return None
-            ev.append("Wikidata %s: %s" % ("class" if k == "classes" else "industry", m.group(0)))
+            ev.append("%s %s: %s" % (source, "class" if k == "classes" else "industry", m.group(0)))
         elif k == "not_classes":
             if want.search(v["classes"]):
                 return None
         elif k in ("text", "text2"):
             m = want.search(v["own"])
+            profile = False
+            if not m:
+                m = want.search(v["apollo"])
+                profile = True
             if not m:
                 return None
-            ev.append('%s: "%s"' % ("own site" if v["own_site"] and m.start() > len(v["name"]) else "name",
+            ev.append('%s: "%s"' % ("Apollo profile" if profile else "own site" if v["own_site"] and m.start() > len(v["name"]) else "name",
                                     m.group(0).lower()))
         elif k == "not_text":
-            if want.search(v["own"]):
+            if want.search(v["own"]) or want.search(v["apollo"]):
                 return None
         elif k == "socials":
             hit = [s for s in want if s in v["socials"]]
@@ -599,9 +609,10 @@ def _match(v, cond):
 
 def _online_only(v, S):
     """An online-only seller (SparkFun): no store screens to fill, so never Shop Display Videos."""
-    if S.online_classes.search(v["classes"]):
-        return not S.physical_text.search(v["own"])
-    return bool(S.online_text.search(v["own"])) and not S.physical_text.search(v["own"])
+    text = v["own"] + " | " + v["apollo"]
+    if S.online_classes.search(v["classes"]) or S.online_classes.search(v["apollo_industries"]):
+        return not S.physical_text.search(text)
+    return bool(S.online_text.search(text)) and not S.physical_text.search(text)
 
 
 def choose_service(f, J, wrong, wrong_why, now, stored=None):
@@ -627,7 +638,9 @@ def choose_service(f, J, wrong, wrong_why, now, stored=None):
                     'name: "%s"' % m.group(0)
                 break
     if basis is None:
-        for r in S.rules:
+        # Known suppliers/competitors remain on hold even when Apollo also
+        # reports a hiring signal or links their channel.
+        for r in sorted(S.rules, key=lambda r: r["basis"] != "hold"):
             e = _match(v, r["when"])
             if e is None or (r["skip_if"] == "online_only" and _online_only(v, S)):
                 continue
@@ -635,7 +648,9 @@ def choose_service(f, J, wrong, wrong_why, now, stored=None):
             break
     if basis is None:
         first = S.first_service.get(v["kind"])
-        if first:
+        if first in S.require_evidence_for:
+            rid, basis, reason, ev = "needs_service_evidence", "hold", "Confirm the company's service need before pitching", "audience alone: " + str(v["kind"])
+        elif first:
             svc, rid, basis, ev = first, "audience_fallback", "audience", "audience: %s" % v["kind"]
             reason = S.fallback_reason.replace("{audience}", S.audience_label.get(v["kind"], v["kind"]))
         else:
@@ -668,6 +683,10 @@ def lists(cfg):
 def _country_from_name(v):
     """A country as the Apollo search page saves it ('United States') -> its code, for the four Apollo
     reveals are paid in (tools/enrich_apollo.COUNTRY_NAMES)."""
+    from apollo_policy import iso
+    known = iso(v)
+    if known:
+        return known
     try:
         from enrich_apollo import COUNTRY_NAMES
     except Exception:                              # noqa: BLE001 -- only ever a missing optional lookup
@@ -700,8 +719,15 @@ class Facts:
             return {}
         self.wd, self.ap, self.aps = part("wikidata"), part("apollo"), part("apollo_search")
         self.fd, self.osm = part("fdic"), part("osm")
-        if not self.ap and self.source == "apollo" and isinstance(m.get("apollo"), dict):
-            self.ap = m["apollo"]                   # a company saved from the Apollo search page
+        if isinstance(m.get("apollo"), dict):
+            # A later manual save/enrichment may add facts missing from the
+            # original discovery response. Keep those on every source's history.
+            self.ap = {**self.ap, **{k: v for k, v in m["apollo"].items() if v not in (None, "", [], {})}}
+        if not self.aps and isinstance(m.get("apollo_search"), dict):
+            self.aps = m["apollo_search"]
+        self.apollo_industries = " | ".join(str(x) for x in [self.ap.get("industry"), *(self.ap.get("industries") or [])] if x)
+        self.apollo_text = " | ".join(str(x) for x in [self.apollo_industries, self.ap.get("short_description"),
+                                                      *(self.ap.get("keywords") or [])] if x)
         wd_rec = raw_all.get("lcx_wikidata") if isinstance(raw_all.get("lcx_wikidata"), dict) else {}
 
         def wdf(key):                       # a Wikidata field, on its record (wikidata.*) or beside it
@@ -715,13 +741,15 @@ class Facts:
         hq = m.get("hq_country")
         if not iso and hq:
             iso = str(hq).upper() if len(str(hq)) == 2 else _country_from_name(hq)
-        self.iso = iso
+        self.iso = iso or _country_from_name(self.ap.get("country"))
 
         self.employees = num(self.wd.get("employees"))
         if self.employees is None:
             self.employees = num(m.get("employees"))
+        if self.employees is None:
+            self.employees = num(self.ap.get("estimated_num_employees"))
         self.revenue_printed = self.ap.get("annual_revenue_printed")
-        self.revenue = revenue_usd(self.revenue_printed)
+        self.revenue = num(self.ap.get("annual_revenue")) or revenue_usd(self.revenue_printed)
         wrev = wdf("revenue") if isinstance(wdf("revenue"), dict) else {"usd": wdf("revenue_usd")}
         if self.revenue is None and num(wrev.get("usd")) is not None:
             self.revenue = num(wrev["usd"])

@@ -202,8 +202,8 @@ def the_rules():
         check("  the reason and its evidence are recorded", (t["reason"] == rules[rid]["reason"], bool(t["evidence"])),
               (True, True))
     t = LJ.choose_service(FakeFacts("retailers", text="We are an online store for spares."), J, 0.0, None, NOW)
-    check("an online-only seller never gets Shop Display Videos: the audience's first service instead",
-          (t["rule"], t["service"], t["basis"]), ("audience_fallback", first["retailers"], "audience"))
+    check("an online-only seller never gets Shop Display Videos through the audience fallback",
+          (t["rule"], t["service"], t["basis"]), ("needs_service_evidence", None, "hold"))
     t = LJ.choose_service(FakeFacts("hospitality", name="Zz The Grand"), J, 0.0, None, NOW)
     check("nothing matched: the audience's first service, said so", (t["rule"], t["service"], t["basis"]),
           ("audience_fallback", first["hospitality"], "audience"))

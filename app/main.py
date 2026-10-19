@@ -411,7 +411,7 @@ def stats(segment: str = Depends(current_segment)):
 # (contact_rank, sql/28), so "Has an address" here and "can be written to"
 # there are the same sentence.
 HAS_ADDRESS = ("exists (select 1 from contacts c where c.entity_id = e.id"
-               " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500)")
+               " and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))")
 
 # THE LEAD SERVICE (the owner's review of the LCX Services emails, 2026-10-13, point 12). Each LCX Services lead is
 # tagged with ONE service from the deck (tools/lcx_judge.py, config lead_service, stored as metadata.lead_service),
@@ -504,11 +504,11 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             " e.metadata->>'hq_city' as city, e.metadata->>'hq_state' as state,"
             # the address a draft would use, by the same ranking (sql/28)
             " (select c.email from contacts c where c.entity_id = e.id"
-            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
+            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
             "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
             "   c.created_at, c.id limit 1) as email,"
             " (select c.full_name from contacts c where c.entity_id = e.id"
-            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
+            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
             "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
             "   c.created_at, c.id limit 1) as contact_name,"
             # who reached out to it: the approver of its latest first email that went out (2026-09-26)
@@ -559,7 +559,8 @@ def lead(lead_id: str):
         cur.execute(
             "select c.id, c.full_name, c.role_title, c.email, c.email_status, c.is_primary, c.source, c.notes,"
             " c.linkedin_url,"
-            " contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) as rank"
+            " case when contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
+            " then contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) else -1000 end as rank"
             " from contacts c join entities e on e.id = c.entity_id"
             " where c.entity_id = %s order by rank desc, c.created_at, c.id", (lead_id,))
         contacts, seen = [], set()
@@ -1697,7 +1698,7 @@ def health():
         with cursor() as cur:
             cur.execute("select 1 as ok")
             cur.fetchone()
-        return {"ok": True, "release": os.environ.get("RENDER_GIT_COMMIT", "local"), "sourcing_version": 2}
+        return {"ok": True, "release": os.environ.get("RENDER_GIT_COMMIT", "local"), "sourcing_version": 3}
     except Exception as e:
         raise HTTPException(503, "database unreachable: " + type(e).__name__)
 

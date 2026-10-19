@@ -93,6 +93,9 @@ def main_():
     try:
         cur = conn.cursor()
         cfg = json.loads((ROOT / "config" / "segment.universal.json").read_text(encoding="utf-8"))
+        # These fixtures exercise legacy compose behavior. Strict Apollo intake
+        # and historical-contact exclusion are covered by test_apollo_constraints.
+        cfg.pop("sourcing", None)
         check("the repo's Universal config lets a person write emails", (cfg["outreach"]["compose"],
               cfg["outreach"]["send_from"], "outreach" in cfg["ui"]["hide_routes"]), (True, "approver", False))
         slug = "zz-compose-" + uuid.uuid4().hex[:6]

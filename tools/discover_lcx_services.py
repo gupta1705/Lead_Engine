@@ -427,7 +427,8 @@ def band_text(bands):
 
 APOLLO_KEEP = ("id", "name", "website_url", "primary_domain", "phone", "founded_year", "publicly_traded_symbol",
                "annual_revenue_printed", "owned_by_organization_id", "latest_funding_round_date", "twitter_url",
-               "facebook_url")
+               "facebook_url", "industry", "industries", "keywords", "short_description", "estimated_num_employees",
+               "city", "state", "country", "annual_revenue")
 
 
 def apollo_revenue(org):
@@ -448,7 +449,11 @@ def apollo_row(org, sl, aud, cfg, today=None):
     """One company from a company-search page -> a staging row, or None (and why). Apollo's answer has no
     industry, size or country, so they come from the slice that found it."""
     import apollo_store
+    import apollo_policy
     today = today or dt.date.today()
+    why = apollo_policy.company_reason(org, cfg, sl["search"], apollo_filters(sl, today))
+    if why:
+        return None, why
     name = (org.get("name") or "").strip()
     if not name:
         return None, "no name"

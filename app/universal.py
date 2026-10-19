@@ -21,6 +21,10 @@ ten API calls; holding a connection open across them would starve the pool.
 The Apollo client is tools/apollo.py; what a save writes is tools/apollo_store.py.
 """
 import os
+import base64
+import hashlib
+import hmac
+import json
 import sys
 import threading
 import time
@@ -34,6 +38,7 @@ if TOOLS not in sys.path:
 
 import apollo  # noqa: E402
 import apollo_store  # noqa: E402
+import apollo_policy as policy  # noqa: E402
 
 SLUG = "universal"                 # the project a call that names none falls back to
 _STATUS = {"at": 0.0, "value": None}
@@ -41,6 +46,57 @@ _LOCK = threading.Lock()
 # seconds: the status panel costs two Apollo calls (0 credits, but rate-limited, and ~3 s). The credits are
 # refreshed right after anything that spends one (a company page, a reveal), so 5 minutes loses nothing.
 STATUS_TTL = 300
+
+
+def _receipt(seg_id, cfg, kind, row, filters, user):
+    """Carry the server's Apollo answer to save, without trusting browser-supplied facts."""
+    from app.auth import _secret
+    payload = {"segment": str(seg_id), "config": _policy_hash(cfg), "kind": kind, "row": row,
+               "filters": filters, "user": user, "expires": int(time.time()) + 7200}
+    data = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).decode()
+    return data + "." + hmac.new(_secret(), data.encode(), hashlib.sha256).hexdigest()
+
+
+def _policy_hash(cfg):
+    return hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
+
+
+def _read_receipt(token, seg_id, cfg, kind, user):
+    from app.auth import _secret
+    try:
+        data, signature = str(token).rsplit(".", 1)
+        expected = hmac.new(_secret(), data.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError()
+        payload = json.loads(base64.urlsafe_b64decode(data))
+        if (payload["segment"] != str(seg_id) or payload["config"] != _policy_hash(cfg)
+                or payload["kind"] != kind or payload["user"] != user or payload["expires"] < time.time()):
+            raise ValueError()
+        return payload
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(409, "Search again before saving: the result is missing, expired, or the project constraints changed.")
+
+
+def _qualified(cur, seg_id, candidate, cfg):
+    """Use the same score, site and country eligibility as automatic contact enrichment."""
+    import enrich_apollo as ea
+    block = ea.enrich_block(cfg)
+    sql = "select e.id,e.name,e.domain,e.metadata from entities e where e.segment_id=%s and lower(e.name)=lower(%s) and e.status=any(%s)"
+    args = [seg_id, candidate.get("company") or "", ea.OPEN_STATUSES]
+    cutoff = (ea.dt.datetime.now(ea.dt.timezone.utc) - ea.dt.timedelta(days=block["stale_days"])).isoformat()
+    sql += " and coalesce(e.metadata->>'apollo_checked_at','') < %s"
+    args.append(cutoff)
+    if block["score_over"] is not None:
+        sql += " and coalesce(e.fit_score,0)>%s"
+        args.append(block["score_over"])
+    if block["site_read"]:
+        sql += ea.SITE_READ_SQL
+    if block["reveal_countries"]:
+        sql += " and upper(trim(coalesce(e.metadata->>'hq_country','')))=any(%s)"
+        args.append(ea.country_forms(block["reveal_countries"]))
+    cur.execute(sql, args)
+    rows = cur.fetchall()
+    return rows[0] if len(rows) == 1 else None
 
 
 def _apollo_http(e):
@@ -74,6 +130,8 @@ def _budget(cursor, seg_id, cfg, status, need):
     else what to tell the person. A project without one (Universal) is not checked, as before."""
     import apollo_budget
     block = (cfg or {}).get("enrichment") or {}
+    if policy.strict(cfg) and (block.get("enabled") is not True or block.get("provider") != "apollo"):
+        return "Apollo spending is disabled for this project."
     if not apollo_budget.capped(block):
         return None
     left = ((status() or {}).get("credits") or {}).get("lead_credits_left")
@@ -122,10 +180,18 @@ def build_router(cursor, allowed=None):
         with cursor() as cur:
             _, cfg = segment(cur, request)
         a = cfg.get("apollo") or {}
+        definitions = list(apollo.FILTERS)
+        if policy.strict(cfg) and policy.searches(cfg):
+            auds = {a["key"]: a.get("label", a["key"]) for a in cfg.get("audiences") or []}
+            definitions.insert(0, {"key": policy.TARGET, "label": "Project targeting group", "for": ["people", "companies"],
+                "type": "window", "group": "Project", "options": [[s["key"], auds.get(s.get("audience"), s["key"].replace("_", " ")) +
+                    (" · " + s["signal"] if s.get("signal") else "")] for s in policy.searches(cfg)],
+                "help": "Project geography, size, industry and contact rules apply to every search. Save companies first for qualification."})
         return {"apollo": status(),
-                "max_reveal_per_save": int(a.get("max_reveal_per_save") or 100),
+                "max_reveal_per_save": min(int(a.get("max_reveal_per_save") or 100),
+                    int((cfg.get("enrichment") or {}).get("credits_per_run") or 100)) if policy.strict(cfg) else int(a.get("max_reveal_per_save") or 100),
                 "endpoints": a.get("endpoints") or [],
-                "filters": apollo.FILTERS}
+                "project_constraints": policy.strict(cfg), "filters": definitions}
 
     @r.post("/api/universal/search")
     def universal_search(request: Request, body: dict = Body(...)):
@@ -135,6 +201,10 @@ def build_router(cursor, allowed=None):
         # people are free and come in the project's page size
         with cursor() as cur:
             seg_id, cfg = segment(cur, request)
+        try:
+            filters, selected = policy.constrained_filters(cfg, kind, b.get("filters") or {})
+        except (ValueError, TypeError) as e:
+            raise HTTPException(400, str(e))
         people_per = int((cfg.get("apollo") or {}).get("per_page") or 25)
         q_text = (b.get("filters") or {}).get("q_text")
         suggestion = apollo.did_you_mean(q_text) if kind in ("people", "companies") else None
@@ -149,9 +219,9 @@ def build_router(cursor, allowed=None):
                 raise HTTPException(409, over)
         try:
             if kind == "people":
-                out = apollo.search_people(b.get("filters") or {}, b.get("page") or 1, people_per)
+                out = apollo.search_people(filters, b.get("page") or 1, people_per)
             elif kind == "companies":
-                out = apollo.search_companies(b.get("filters") or {}, b.get("page") or 1, apollo.MAX_PER_PAGE)
+                out = apollo.search_companies(filters, b.get("page") or 1, apollo.MAX_PER_PAGE)
             else:
                 raise HTTPException(400, "search people or companies")
         except ValueError as e:
@@ -161,9 +231,19 @@ def build_router(cursor, allowed=None):
         if kind == "companies":
             # the page cost a credit: into the ledger first, where the project's weekly cap reads it (sql/33)
             _spend(cursor, seg_id, "company_page", 1, "search page, by hand")
+        if policy.strict(cfg):
+            user = getattr(request.state, "user", None) or "unknown"
+            results = out["people" if kind == "people" else "companies"]
+            if kind == "companies":
+                results[:] = [row for row in results if not policy.company_reason(row, cfg, selected, filters)]
+            for row in results:
+                signed_filters = dict(filters)
+                if selected:
+                    signed_filters[policy.TARGET] = selected["key"]
+                row["_receipt"] = _receipt(seg_id, cfg, kind, dict(row), signed_filters, user)
         with cursor() as cur:
             if kind == "people":
-                have = apollo_store.saved_person_ids(cur, seg_id, [p["id"] for p in out["people"]])
+                have = apollo_store.saved_person_ids(cur, seg_id, [p["id"] for p in out["people"]], verified_only=policy.strict(cfg))
                 for p in out["people"]:
                     p["saved"] = p["id"] in have
             else:
@@ -174,7 +254,8 @@ def build_router(cursor, allowed=None):
             status(force=True)                              # a page of companies cost a credit
         # how the search bar's words were read ("companies tagged "arcade" or "arcades", based in United
         # States"), so the page can say what was searched rather than leave the reading hidden
-        bar, out["read_as"] = apollo.read_search_text(kind, q_text, panel=b.get("filters") or {})
+        bar, _ = apollo.read_search_text(kind, q_text, panel=b.get("filters") or {})
+        out["read_as"] = apollo.describe(kind, filters)
         # no job typed: the decision makers were searched, and the page offers everyone instead (free)
         out["decision_makers"] = "person_seniorities" in bar
         out["did_you_mean"] = suggestion                    # shown beside an empty result: free to try
@@ -195,6 +276,14 @@ def build_router(cursor, allowed=None):
             seg_id, cfg = segment(cur, request)
         rule = cfg.get("self_exclusion") or {}
         cap = int((cfg.get("apollo") or {}).get("max_reveal_per_save") or 100)
+        strict = policy.strict(cfg)
+        if strict:
+            cap = min(cap, int((cfg.get("enrichment") or {}).get("credits_per_run") or cap))
+        receipts = {}
+        if strict:
+            for token in b.get("receipts") or []:
+                payload = _read_receipt(token, seg_id, cfg, kind, user)
+                receipts[str(payload["row"]["id"])] = payload
 
         if kind == "people":
             ids = [str(i) for i in dict.fromkeys(b.get("ids") or [])]
@@ -203,8 +292,29 @@ def build_router(cursor, allowed=None):
             if len(ids) > cap:
                 raise HTTPException(400, "up to %d people in one save (%d ticked)" % (cap, len(ids)))
             with cursor() as cur:
-                already = apollo_store.saved_person_ids(cur, seg_id, ids)
+                already = apollo_store.saved_person_ids(cur, seg_id, ids, verified_only=strict)
             todo = [i for i in ids if i not in already]
+            if strict and any(i not in receipts for i in todo):
+                raise HTTPException(409, "Search again before revealing these people.")
+            qualified = {}
+            if strict and policy.searches(cfg):
+                with cursor() as cur:
+                    for pid in todo:
+                        row = _qualified(cur, seg_id, receipts[pid]["row"], cfg)
+                        if not row:
+                            raise HTTPException(409, "Save the company first and let it pass this project's qualification before revealing a contact.")
+                        qualified[pid] = row
+                        import enrich_apollo as ea
+                        roles = ea.roles_for(cfg, (row["metadata"] or {}).get("kind"))
+                        block = ea.enrich_block(cfg)
+                        if block["strict_roles"] and not ea.pick([receipts[pid]["row"]], roles, strict=True, senior_re=block["senior"])[0]:
+                            raise HTTPException(409, "The search result is outside this project's contact roles.")
+                        if block["skip_known_elsewhere"]:
+                            cur.execute("select 1 from entities where segment_id<>%s and"
+                                " (metadata->'apollo_enrich'->>'person'=%s or coalesce(metadata->'apollo_people','{}'::jsonb) ? %s) limit 1",
+                                (seg_id, pid, pid))
+                            if cur.fetchone():
+                                raise HTTPException(409, "This person has already been revealed for another project; no credits spent.")
             revealed = {"people": [], "missing": [], "credits": 0.0, "error": None, "unrevealed": []}
             if todo:
                 over = _budget(cursor, seg_id, cfg, status, len(todo))
@@ -217,8 +327,47 @@ def build_router(cursor, allowed=None):
                 _spend(cursor, seg_id, "reveal", revealed.get("credits") or 0, "search page, by hand")
             # "at most N per company" is applied on the page, before this call: here it would come
             # after the reveal, and the people it dropped would already have cost a credit each
+            rejected, accepted = [], []
+            for person in revealed["people"]:
+                why = None
+                receipt = receipts.get(str(person.get("apollo_id")))
+                if strict:
+                    if not receipt:
+                        why = "Apollo returned a different person"
+                    elif not policy.verified(person):
+                        why = "Apollo did not verify the work email"
+                    else:
+                        selected = policy.target(cfg, receipt["filters"])
+                        why = policy.company_reason(person.get("organization") or {}, cfg, selected, receipt["filters"])
+                        import enrich_apollo as ea
+                        employer = qualified.get(str(person.get("apollo_id")))
+                        candidate = receipt["row"]
+                        org = person.get("organization") or {}
+                        if employer and not ea.same_company(person, employer["domain"]):
+                            why = "Current employer differs from the qualified company"
+                        elif candidate.get("company_id") and org.get("id") != candidate["company_id"]:
+                            why = "Current employer differs from the search result"
+                        elif candidate.get("company_domain") and not ea.same_company(person, candidate["company_domain"]):
+                            why = "Current employer differs from the search result"
+                        elif not ea.works_at({"company": org.get("name")}, candidate.get("company")):
+                            why = "Current employer differs from the search result"
+                        roles = ea.roles_for(cfg, (employer["metadata"] or {}).get("kind") if employer else policy.audience(cfg, selected).get("key"))
+                        if roles and not ea.pick([dict(person, has_email=True)], roles, strict=True,
+                                                 senior_re=ea.enrich_block(cfg)["senior"])[0]:
+                            why = "Current title is outside the project's contact roles"
+                if why:
+                    rejected.append({"name": person.get("name"), "why": why})
+                else:
+                    accepted.append(person)
             with cursor() as cur:
-                rep = apollo_store.save_people(cur, seg_id, revealed["people"], rule, saved_from)
+                rep = apollo_store.save_people(cur, seg_id, accepted, rule, saved_from)
+                if qualified:
+                    touched = [str(row["id"]) for pid, row in qualified.items()
+                               if pid not in (revealed.get("unrevealed") or [])]
+                    if touched:
+                        cur.execute("update entities set metadata=metadata || jsonb_build_object('apollo_checked_at',%s::text), updated_at=now() where id=any(%s::uuid[])",
+                                    (apollo_store.now_iso(), touched))
+            rep["skipped"].extend(rejected)
             rep.update(already_saved=len(already), not_found=len(revealed["missing"]),
                        credits=revealed["credits"], requested=len(ids),
                        error=revealed.get("error"), unrevealed=len(revealed.get("unrevealed") or []))
@@ -232,9 +381,28 @@ def build_router(cursor, allowed=None):
                 raise HTTPException(400, "tick at least one company")
             if len(rows) > 100:
                 raise HTTPException(400, "up to 100 companies in one save")
+            if strict:
+                if any(str(row["id"]) not in receipts for row in rows):
+                    raise HTTPException(409, "Search again before saving these companies.")
+                rows = [receipts[str(row["id"])]["row"] for row in rows]
             with cursor() as cur:
-                rep = apollo_store.save_companies(cur, seg_id, rows, rule, saved_from)
+                rep = {"saved": 0, "companies_created": 0, "companies_updated": 0, "skipped": [], "saved_ids": []}
+                for row in rows:
+                    origin = dict(saved_from)
+                    if strict and policy.searches(cfg):
+                        context = receipts[str(row["id"])]["filters"]
+                        selected = policy.target(cfg, context)
+                        aud = policy.audience(cfg, selected)
+                        origin["project_target"] = {"kind": aud.get("key") or cfg.get("entity_type"),
+                            "apollo_search": {"key": selected["key"], "signal": selected.get("signal"),
+                                "signal_seen_at": apollo_store.now_iso() if selected.get("signal") else None},
+                            "qualification_pending": True}
+                    result = apollo_store.save_companies(cur, seg_id, [row], rule, origin)
+                    for key in rep:
+                        rep[key] += result[key]
             rep.update(requested=len(rows), credits=0)
+            if strict and policy.searches(cfg):
+                rep["saved_status"] = "discovered"
             return rep
         raise HTTPException(400, "save people or companies")
 
@@ -262,14 +430,14 @@ def build_router(cursor, allowed=None):
             raise HTTPException(400, "give the search a name")
         if kind not in ("people", "companies"):
             raise HTTPException(400, "save a people or a company search")
-        try:
-            apollo.build_query(kind, filters)            # only a search Apollo would accept is kept
-        except ValueError as e:
-            raise HTTPException(400, str(e))
         import json
         user = getattr(request.state, "user", None) or "unknown"
         with cursor() as cur:
-            seg_id, _ = segment(cur, request)
+            seg_id, cfg = segment(cur, request)
+            try:
+                policy.constrained_filters(cfg, kind, filters)
+            except (ValueError, TypeError) as e:
+                raise HTTPException(400, str(e))
             cur.execute(
                 "insert into saved_searches (segment_id, name, kind, filters, created_by) values (%s, %s, %s, %s::jsonb, %s)"
                 " on conflict (segment_id, lower(name)) do update set kind = excluded.kind, filters = excluded.filters,"

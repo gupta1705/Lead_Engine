@@ -64,18 +64,17 @@ def offline():
     def stub(filters, page, per_page, answer=None):
         calls.append(filters)
         return {"total": len(answer or []), "people": answer or []}
-    apollo.search_people = lambda f, p, n: stub(f, p, n, [] if len(calls) < 2 else [hit("Head of Development")])
+    apollo.search_people = lambda f, p, n: stub(f, p, n, [] if len(calls) < 1 else [hit("Head of Development")])
     people, total = ea.search("firm.com", ROLES, True)
-    check("verified target roles, then the roles, then whoever is there",
+    check("verified target roles, then verified senior candidates; never relax email status",
           [sorted(c.keys()) for c in calls],
           [["contact_email_status", "person_titles", "q_organization_domains_list"],
-           ["person_titles", "q_organization_domains_list"],
            ["contact_email_status", "q_organization_domains_list"]][:len(calls)])
     check("the pass that answered is the one that is used", (len(people), total), (1, 1))
 
     calls[:] = []
     apollo.search_people = lambda f, p, n: stub(f, p, n, [hit("Marketing Intern"), hit("Office Coordinator")]
-                                                if len(calls) >= 2 else [])
+                                                if len(calls) >= 1 else [])
     people, _ = ea.search("firm.com", ROLES, True)
     check("the widest pass is anyone at the company, so juniors are not paid for", people, [])
 
@@ -86,13 +85,13 @@ def offline():
           [sorted(c.keys()) for c in calls], [["q_organization_domains_list"]])
 
     calls[:] = []
-    answers = [[], [hit("Executive Producer", email=False, i=7)], [hit("Managing Director", i=8)]]
+    answers = [[hit("Executive Producer", email=False, i=7)], [hit("Managing Director", i=8)]]
     apollo.search_people = lambda f, p, n: stub(f, p, n, answers[len(calls)])
     people, _ = ea.search("imaginaryforces.com", ROLES, True)
     check("the right role with no address does not end the search: a senior person with one is found",
           [p["id"] for p in people], [hit("", i=8)["id"]])
     calls[:] = []
-    answers = [[], [hit("Executive Producer", email=False, i=7)], []]
+    answers = [[hit("Executive Producer", email=False, i=7)], []]
     apollo.search_people = lambda f, p, n: stub(f, p, n, answers[len(calls)])
     people, _ = ea.search("imaginaryforces.com", ROLES, True)
     check("nobody anywhere has an address: the role match is still reported, so the lead says why",

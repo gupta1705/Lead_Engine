@@ -56,9 +56,10 @@ declare
   n integer;
 begin
   with ranked as (
-    select c.id, c.entity_id,
+    select c.id, c.entity_id, contact_allowed(c.entity_id,c.source,c.verifier,c.email_status) as allowed,
            row_number() over (partition by c.entity_id
-                              order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
+                              order by contact_allowed(c.entity_id,c.source,c.verifier,c.email_status) desc,
+                                       contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
                                        c.created_at, c.id) as pos
     from contacts c
     join entities e on e.id = c.entity_id
@@ -67,9 +68,9 @@ begin
   ),
   changed as (
     update contacts c
-       set is_primary = (r.pos = 1), updated_at = now()
+       set is_primary = (r.pos = 1 and r.allowed), updated_at = now()
       from ranked r
-     where r.id = c.id and c.is_primary is distinct from (r.pos = 1)
+     where r.id = c.id and c.is_primary is distinct from (r.pos = 1 and r.allowed)
     returning c.entity_id
   )
   select count(distinct entity_id) into n from changed;

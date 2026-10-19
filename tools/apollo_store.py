@@ -109,6 +109,10 @@ def upsert_company(cur, seg_id, org, saved_from=None):
     dom = norm_domain(org.get("primary_domain") or org.get("website_url"))
     row = find_company(cur, seg_id, org)
     fields = {k: v for k, v in company_fields(org).items() if v not in (None, "", [], {})}
+    policy = (saved_from or {}).get("project_target") or {}
+    # Do not reassign an existing human-reviewed audience on a later manual save.
+    if not row:
+        fields.update(policy)
     if row:
         eid, status = _row(row, "id"), _row(row, "status")
         if status in SHIELDED:
@@ -129,8 +133,9 @@ def upsert_company(cur, seg_id, org, saved_from=None):
         meta["saved_from"] = saved_from
     cur.execute(
         "insert into entities (segment_id, name, domain, source, source_url, metadata, status, status_changed_at)"
-        " values (%s, %s, %s, 'apollo', %s, %s::jsonb, 'ready_for_review', now()) returning id",
-        (seg_id, name, dom, org.get("linkedin_url") or org.get("website_url"), json.dumps(meta)))
+        " values (%s, %s, %s, 'apollo', %s, %s::jsonb, %s, now()) returning id",
+        (seg_id, name, dom, org.get("linkedin_url") or org.get("website_url"), json.dumps(meta),
+         "discovered" if policy else "ready_for_review"))
     got = cur.fetchone()
     return str(got["id"] if isinstance(got, dict) else got[0]), "created"
 
@@ -138,6 +143,12 @@ def upsert_company(cur, seg_id, org, saved_from=None):
 def upsert_person(cur, entity_id, person):
     """The person as a contact of the company, and on the entity's apollo_people.
     -> "added" | "updated" """
+    import apollo_policy
+    cur.execute("select s.config from entities e join segments s on s.id=e.segment_id where e.id=%s", (entity_id,))
+    row = cur.fetchone()
+    cfg = (row.get("config") if isinstance(row, dict) else row[0]) if row else {}
+    if apollo_policy.strict(cfg or {}) and person.get("email") and not apollo_policy.verified(person):
+        raise ValueError("Apollo has not verified this email; it cannot be saved to this project")
     pid = person.get("apollo_id")
     info = {k: person.get(k) for k in ("name", "title", "headline", "seniority", "departments", "linkedin_url",
                                        "city", "state", "country", "apollo_email_status") if person.get(k)}
@@ -160,8 +171,10 @@ def upsert_person(cur, entity_id, person):
                 "update contacts set full_name = coalesce(full_name, %s), role_title = coalesce(%s, role_title),"
                 " linkedin_url = coalesce(%s, linkedin_url),"
                 " email_status = case when email_status = 'invalid' then email_status else %s end,"
-                " verifier = 'apollo', updated_at = now() where id = %s",
+                " email_verified_at = case when %s = 'valid' and email_status <> 'invalid' then now() else email_verified_at end,"
+                " verifier = 'apollo', source = 'apollo', updated_at = now() where id = %s",
                 (name, title, person.get("linkedin_url"), person.get("email_status") or "unverified",
+                 person.get("email_status") or "unverified",
                  got["id"] if isinstance(got, dict) else got[0]))
             return "updated"
         cur.execute(
@@ -187,13 +200,16 @@ def upsert_person(cur, entity_id, person):
     return "added"
 
 
-def saved_person_ids(cur, seg_id, ids):
+def saved_person_ids(cur, seg_id, ids, verified_only=False):
     ids = [str(i) for i in ids or []]
     if not ids:
         return set()
     cur.execute("select k from entities e, jsonb_object_keys(case when jsonb_typeof(e.metadata->'apollo_people')"
                 " = 'object' then e.metadata->'apollo_people' else '{}'::jsonb end) k"
-                " where e.segment_id = %s and k = any(%s)", (seg_id, ids))
+                " where e.segment_id = %s and k = any(%s)" + (" and lower(e.metadata->'apollo_people'->k->>'apollo_email_status')='verified'"
+                " and exists(select 1 from contacts c where c.entity_id=e.id"
+                " and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
+                " and (c.notes='apollo:'||k or c.full_name=e.metadata->'apollo_people'->k->>'name'))" if verified_only else ""), (seg_id, ids))
     return {(r["k"] if isinstance(r, dict) else r[0]) for r in cur.fetchall()}
 
 
