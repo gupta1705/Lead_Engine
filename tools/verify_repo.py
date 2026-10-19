@@ -60,7 +60,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "config" / "segment.us-production-houses.json"
 SQL_DIR = ROOT / "sql"
-SEGMENT_SQL = ["03_segment_us_production_houses.sql", "03b_sync_segment_config_v3.sql"]
+SEGMENT_SQL = ["03_segment_us_production_houses.sql", "03b_sync_segment_config_v3.sql", "03g_segment_us_production_apollo.sql"]
 
 # The v3 shape, mirrored from sql/00_verify_state.sql. When an owner rubric
 # review changes these, both files change together -- that is the point.
@@ -394,6 +394,9 @@ def check_n8n_workflows(cfg):
             continue
         n_wf += 1
         nodes = wf.get("nodes", [])
+        retired = (wf.get("meta") or {}).get("retired_by_apollo_sourcing") is True
+        if retired and wf.get("active"):
+            fail("%s: a retired discovery connector must be inactive" % path.name)
         if not nodes:
             fail("%s has no nodes" % path.name)
             continue
@@ -406,7 +409,7 @@ def check_n8n_workflows(cfg):
             n_sql += 1
             # Config keys the workflow reads must actually exist in the config.
             for key in re.findall(r"config->'([a-z0-9_]+)'", query):
-                if key not in cfg:
+                if key not in cfg and not retired:
                     fail("%s node '%s' reads config->'%s', which the config "
                          "does not define" % (path.name, node.get("name"), key))
             if can_parse:

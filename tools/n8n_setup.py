@@ -42,7 +42,8 @@ WORKFLOW_DIR = ROOT / "n8n" / "discovery"
 # conn_* are the harvest connectors; error_alert.json is the shared error
 # workflow they all point at (P25). Import both so an unattended failure has
 # somewhere to fire.
-WORKFLOWS = (sorted(WORKFLOW_DIR.glob("conn_*.json"))
+WORKFLOWS = ([path for path in sorted(WORKFLOW_DIR.glob("conn_*.json"))
+              if not (json.loads(path.read_text(encoding="utf-8")).get("meta") or {}).get("retired_by_apollo_sourcing")]
              + sorted(WORKFLOW_DIR.glob("error_alert.json")))
 WORKFLOW = WORKFLOWS[0] if WORKFLOWS else WORKFLOW_DIR / "conn_youtube_api.json"
 

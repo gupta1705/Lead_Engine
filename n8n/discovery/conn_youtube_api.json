@@ -15,7 +15,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select config->'youtube_discovery_queries' as queries, id as segment_id\nfrom segments\nwhere slug = 'us-production-houses';"
+        "query": "select config->'youtube_discovery_queries' as queries, id as segment_id\nfrom segments\nwhere slug = 'us-production-houses' and coalesce(config->'sourcing'->>'provider','') <> 'apollo';"
       },
       "id": "n2",
       "name": "Load Config",
@@ -357,12 +357,15 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
     "errorWorkflow": "tvferroralert1"
   },
   "pinData": {},
   "id": "ytdiscovery00001",
-  "versionId": "ytdiscovery00001"
+  "versionId": "ytdiscovery00001",
+  "meta": {
+    "retired_by_apollo_sourcing": true
+  }
 }

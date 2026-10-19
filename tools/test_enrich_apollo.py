@@ -178,7 +178,8 @@ def offline():
     check("production houses is the segment the owner turned on", ea.enrich_block(live)["enabled"], True)
     for slug in ("lcx-clipping", "startup-acquisitions", "universal"):
         cfg = json.loads((HERE.parent / "config" / ("segment.%s.json" % slug)).read_text(encoding="utf-8"))
-        check("%s spends nothing" % slug, ea.enrich_block(cfg)["enabled"], False)
+        check("%s Apollo enrichment follows the sourcing policy" % slug,
+              ea.enrich_block(cfg)["enabled"], slug != "lcx-clipping")
     check("production houses keeps its own rules: no weekly cap, no country hold, the old pick, no cross-project skip",
           [ea.enrich_block(live)[k] for k in ("credits_per_week", "reveal_countries", "employer_check", "strict_roles",
                                               "skip_known_elsewhere")],

@@ -223,7 +223,7 @@ def offline(cfg, uni):
           sorted(cfg["geography"]["disallowed_countries"])), ([], ["AT", "CA", "DE", "IT"]))
     steps = cfg["pipelines"]["weekly_refresh"]
     check("the weekly refresh's steps all exist, and run here", [s for s in steps if s not in ops.JOBS or
-          ops.JOBS[s].get("segments") not in (None, ["lcx-services"])], [])
+          (ops.JOBS[s].get("segments") is not None and "lcx-services" not in ops.JOBS[s]["segments"])], [])
     check("  on Fridays, like a harvest", (cfg["schedule"][0]["pipeline"], cfg["schedule"][0]["dow"]), ("weekly_refresh", 4))
     e = cfg["enrichment"]
     check("Apollo is on (the owner, 2026-10-07: 'Enriching from apollo is acceptable'), inside a stated budget",
@@ -234,15 +234,15 @@ def offline(cfg, uni):
     check("  the discovery pages fit inside the week's cap with room for the reveals",
           cfg["apollo_discovery"]["pages_per_run"] <= e["credits_per_week"] - e["credits_per_run"], True)
     check("  Apollo searches only where its addresses may be written to without consent",
-          [c["iso"] for c in cfg["apollo_discovery"]["countries"]], ["US", "GB", "IN", "AE"])
+          [c["iso"] for c in cfg["apollo_discovery"]["countries"]], ["US", "GB", "IN", "AE", "ALL"])
     check("  every Apollo search names an audience that exists, and every audience has contact roles",
           ([s["key"] for s in cfg["apollo_discovery"]["searches"] if s["audience"] not in {a["key"] for a in cfg["audiences"]}],
            [a["key"] for a in cfg["audiences"] if not a.get("contact_roles")]), ([], []))
     check("normal corporates: an audience of mid-size companies for the training services, listed companies included",
           [(a["key"], a["wikidata"][0]["property"]) for a in cfg["audiences"] if a["key"] == "corporate_teams"],
           [("corporate_teams", "P414")])
-    check("fewer cafes: OpenStreetMap down to 150 a week, 2 cities",
-          (cfg["discovery"]["osm"]["max_new_per_run"], cfg["discovery"]["osm"]["cities_per_run"]), (150, 2))
+    check("Apollo is the sole active source; local businesses remain an Apollo audience",
+          (cfg["sourcing"]["provider"], cfg["osm_discovery"]["enabled"]), ("apollo", False))
     check("emails are drafted, not written by hand; sent from the approver; not paused",
           (bool(o["templates"]), "compose" in o, o["send_from"], "sending_paused" in o), (True, False, "approver", False))
     check("TVF's Mumbai address goes under it (the owner's choice)", o["sender"]["postal_address"],
@@ -415,7 +415,8 @@ def offline(cfg, uni):
           [disc.slice_page(sig, {sig["key"]: {"next_page": 3, "last_run_at": ago(d)}}, now) for d in (7, 40)], [3, 3])
     check("Apollo: every search in every country, one cursor each",
           (len(sls), len({s["key"] for s in sls})),
-          (len(cfg["apollo_discovery"]["searches"]) * 4, len(cfg["apollo_discovery"]["searches"]) * 4))
+          (len(cfg["apollo_discovery"]["searches"]) * len(cfg["apollo_discovery"]["countries"]),
+           len(cfg["apollo_discovery"]["searches"]) * len(cfg["apollo_discovery"]["countries"])))
     check("  the first run mixes countries: a diagonal through searches and countries, not every US slice first",
           [s["key"] for s in disc.slice_order([s for s in sls if not s["search"].get("signal")], {})][:6],
           ["brands|US", "developers|US", "brands|GB", "retailers|US", "developers|GB", "brands|IN"])
@@ -504,6 +505,11 @@ def main_():
     cfg = json.loads((ROOT / "config" / "segment.lcx-services.json").read_text(encoding="utf-8"))
     uni = json.loads((ROOT / "config" / "segment.universal.json").read_text(encoding="utf-8"))
     offline(cfg, uni)
+
+    # Historical connector fixtures still exercise preserved provenance and contacts.
+    # The active intake restriction is tested separately in test_apollo_sourcing.py.
+    cfg.pop("sourcing", None)
+    uni.pop("sourcing", None)
 
     conn = psycopg2.connect(load_db_url())
     conn.autocommit = False

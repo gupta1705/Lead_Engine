@@ -383,3 +383,30 @@ One job runs at a time (they share the database and crawl budgets); logs stream
 live. Harvests (P4–P8) need the n8n CLI, which lives on the host, not in the
 app container — those show as unavailable inside Docker until P25 moves n8n
 fully in. Everything else runs from the container.
+
+
+### Apollo-only sourcing (2026-10-19)
+
+Apply `sql/37_apollo_sourcing.sql` and sync the four non-clipping segment configs
+with `tools/gen_segment_sql.py` / `tools/run_sql.py`. Production Houses uses
+`sql/03g_segment_us_production_apollo.sql`; the original production-house SQL copies
+are synchronized by the same generator. Clipping's config is unchanged.
+
+Deploy the app code before activating these pipelines. `tools/discover_apollo.py`
+uses the project's saved company searches, persistent page cursors and credit ledger.
+Use `--dry-run` for free API checks; it never buys pages, reveals people or changes
+cursors. Startup Acquisitions is capped at 50 Apollo credits per week and keeps the
+700-credit reserve; LCX Services retains its 120-per-week cap and the same reserve.
+Production Houses retains its 150-credit reveal cap. Universal remains a manual
+search project, with Apollo replacing its website contact-finding action.
+
+The old production-house n8n connectors are inactive, refuse Apollo-only configs at
+their Load Config node and are skipped by `n8n_setup.py`. An older installed copy is
+also stopped at database intake. Existing pending non-Apollo staging is preserved but
+cannot be promoted. Existing historical leads and contacts are not deleted or relabelled.
+Sites and news are verification inputs only; the site reader automatically uses evidence
+mode for Apollo projects. Apollo-only projects reject new non-Apollo contacts in the DB.
+
+Validation: `python tools/test_apollo_sourcing.py` (DB fixtures roll back),
+`python tools/test_enrich_apollo.py`, `python tools/test_apollo.py`, and
+`python tools/verify_repo.py`.

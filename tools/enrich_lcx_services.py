@@ -33,8 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-services")
-SOURCES = ("lcx_osm", "lcx_wikidata", "lcx_apollo", "lcx_fdic")
-CONTACT_SOURCE = {"lcx_osm": "osm", "lcx_wikidata": "wikidata", "lcx_apollo": "apollo", "lcx_fdic": "fdic"}
+SOURCES = ("apollo", "lcx_apollo", "lcx_osm", "lcx_wikidata", "lcx_fdic")
+CONTACT_SOURCE = {"apollo": "apollo", "lcx_osm": "osm", "lcx_wikidata": "wikidata", "lcx_apollo": "apollo", "lcx_fdic": "fdic"}
 OPEN = ("discovered", "enriched", "scored", "ready_for_review", "shortlisted")
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -92,6 +92,8 @@ def main():
     args = ap.parse_args()
     from dbconn import Db
     db = Db()
+    cfg_row = db.run(lambda cur: (cur.execute("select config from segments where slug=%s", (SEGMENT,)), cur.fetchone())[1])
+    apollo_only = bool(cfg_row and (cfg_row[0].get("sourcing") or {}).get("contacts") == "apollo")
     rows = db.run(lambda cur: (cur.execute(
         "select e.id, e.name, e.metadata from entities e join segments s on s.id = e.segment_id"
         " where s.slug = %s and e.status = any(%s) and not (e.metadata ? 'lcx_enriched_at')"
@@ -103,6 +105,8 @@ def main():
     for eid, name, meta in rows:
         meta = meta if isinstance(meta, dict) else json.loads(meta or "{}")
         new, email, src = lift(meta)
+        if apollo_only:
+            email = None  # old directory records remain evidence, never new contacts
         if email:
             new = with_reachable(new)
         new["lcx_enriched_at"] = stamp

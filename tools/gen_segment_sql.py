@@ -10,18 +10,21 @@ and the record of what was applied. Never hand-edit the generated literal:
 edit the JSON, regenerate, run. Re-running the SQL updates the row in place.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 FILES = {                       # slug -> (sql file, name, entity_type)
+    "us-production-houses": "03g_segment_us_production_apollo.sql",
     "startup-acquisitions": "03c_segment_startup_acquisitions.sql",
     "lcx-clipping": "03d_segment_lcx_clipping.sql",
     "universal": "03e_segment_universal.sql",
     "lcx-services": "03f_segment_lcx_services.sql",
 }
 NAMES = {
+    "us-production-houses": "US Production Houses",
     "startup-acquisitions": "Startup Acquisition Targets -- struggling Mumbai startups",
     "lcx-clipping": "LCX Clipping -- creators and podcasters with a back catalogue",
     "universal": "Universal -- any company or person, found with Apollo search",
@@ -65,6 +68,15 @@ def main():
     cfg = json.loads((ROOT / "config" / ("segment.%s.json" % slug)).read_text(encoding="utf-8"))
     out = ROOT / "sql" / FILES[slug]
     out.write_text(render(slug, cfg), encoding="utf-8")
+    if slug == "us-production-houses":
+        literal = "'" + json.dumps(cfg, indent=2, ensure_ascii=False).replace("'", "''") + "'::jsonb"
+        for filename in ("03_segment_us_production_houses.sql", "03b_sync_segment_config_v3.sql"):
+            path = ROOT / "sql" / filename
+            text, changed = re.subn(r"'\{.*?\}'::jsonb", lambda match: literal,
+                                    path.read_text(encoding="utf-8"), count=1, flags=re.S)
+            if changed != 1:
+                raise ValueError("No embedded config in " + filename)
+            path.write_text(text, encoding="utf-8")
     print("wrote", out.relative_to(ROOT))
 
 

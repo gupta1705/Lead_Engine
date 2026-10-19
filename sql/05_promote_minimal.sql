@@ -76,6 +76,9 @@ with pending as (
     select s.*, normalize_domain(s.domain) as nd
     from staging_candidates s
     where s.imported = false
+      and not exists (select 1 from segments policy where policy.id = s.segment_id
+          and policy.config->'sourcing'->>'provider' = 'apollo'
+          and not (coalesce(policy.config->'sourcing'->'allowed_sources', '[]'::jsonb) ? s.source))
       and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 ),
 matched as (
@@ -148,6 +151,9 @@ select distinct on (coalesce(normalize_domain(s.domain), lower(s.name)))
     )
 from staging_candidates s
 where s.imported = false
+      and not exists (select 1 from segments policy where policy.id = s.segment_id
+          and policy.config->'sourcing'->>'provider' = 'apollo'
+          and not (coalesce(policy.config->'sourcing'->'allowed_sources', '[]'::jsonb) ? s.source))
   and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
   and not exists (
         select 1 from entities e
@@ -186,6 +192,9 @@ with pending as (
     select s.*, normalize_domain(s.domain) as nd
     from staging_candidates s
     where s.imported = false
+      and not exists (select 1 from segments policy where policy.id = s.segment_id
+          and policy.config->'sourcing'->>'provider' = 'apollo'
+          and not (coalesce(policy.config->'sourcing'->'allowed_sources', '[]'::jsonb) ? s.source))
       and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 ),
 pairs as (
@@ -240,6 +249,9 @@ with pending as (
            coalesce(normalize_domain(s.domain), lower(s.name)) as match_key
     from staging_candidates s
     where s.imported = false
+      and not exists (select 1 from segments policy where policy.id = s.segment_id
+          and policy.config->'sourcing'->>'provider' = 'apollo'
+          and not (coalesce(policy.config->'sourcing'->'allowed_sources', '[]'::jsonb) ? s.source))
       and s.segment_id = (select id from segments where slug = current_setting('tvf.segment', true))
 ),
 outcome as (

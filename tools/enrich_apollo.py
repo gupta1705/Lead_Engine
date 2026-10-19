@@ -575,7 +575,8 @@ def main():
         # Enrichment is optional, so a missing key is a skip and not a failure: failing here would
         # stop the whole weekly refresh (app/scheduler.py) before qualifying and the news sweep.
         log("APOLLO_API_KEY is not set (env, or Render's Environment tab) -- skipped, nothing spent.")
-        db.close(); return 0
+        db.close()
+        return 1 if (cfg.get("sourcing") or {}).get("provider") == "apollo" else 0
 
     roles = roles_for(cfg, None)
     budget = args.budget or block["credits_per_run"]

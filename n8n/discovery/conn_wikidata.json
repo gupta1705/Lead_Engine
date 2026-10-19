@@ -2,7 +2,7 @@
   "id": "wikidataseed01",
   "versionId": "wikidataseed01",
   "name": "P7 · Wikidata seed",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "parameters": {},
@@ -18,7 +18,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select config->'wikidata_discovery' as wikidata, id as segment_id from segments where slug = 'us-production-houses';",
+        "query": "select config->'wikidata_discovery' as wikidata, id as segment_id from segments where slug = 'us-production-houses' and coalesce(config->'sourcing'->>'provider','') <> 'apollo';",
         "options": {}
       },
       "id": "wd-config",
@@ -269,5 +269,8 @@
     "executionOrder": "v1",
     "errorWorkflow": "tvferroralert1"
   },
-  "pinData": {}
+  "pinData": {},
+  "meta": {
+    "retired_by_apollo_sourcing": true
+  }
 }

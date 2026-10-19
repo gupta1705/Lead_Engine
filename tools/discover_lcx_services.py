@@ -403,7 +403,11 @@ def apollo_filters(sl, today=None):
     today = today or dt.date.today()
     s = sl["search"]
     f = json.loads(json.dumps(s.get("filters") or {}))
-    f["organization_locations"] = [sl["country"]["name"]]
+    if sl["country"]["iso"] != "ALL":
+        f.setdefault("organization_locations", [sl["country"]["name"]])
+    if sl["country"].get("excluded_locations"):
+        f["organization_not_locations"] = sorted(set(f.get("organization_not_locations", [])
+                                                   + sl["country"]["excluded_locations"]))
     if s.get("posted_within_days"):
         f["organization_job_posted_at_range"] = {
             "min": (today - dt.timedelta(days=int(s["posted_within_days"]))).isoformat(), "max": today.isoformat()}
@@ -455,7 +459,8 @@ def apollo_row(org, sl, aud, cfg, today=None):
         return None, "no website of its own"
     if apollo_store.excluded({"name": name, "primary_domain": domain}, (cfg or {}).get("self_exclusion") or {}):
         return None, "TVF or an affiliate"
-    s, iso = sl["search"], sl["country"]["iso"].upper()
+    s = sl["search"]
+    iso = sl["country"]["iso"].upper() if sl["country"]["iso"] != "ALL" else None
     bands = (s.get("filters") or {}).get("organization_num_employees_ranges") or []
     si = inputs(aud, cfg, iso=iso, revenue=apollo_revenue(org))
     how = s.get("signal") or band_text(bands) or "industry search"
@@ -542,7 +547,7 @@ def slice_order(slices, cursors, now=None):
 
 
 def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadline=None, spend=None,
-               dry_run=False, today=None):
+               dry_run=False, today=None, row_builder=None, strict=False, page_sink=None):
     """Up to `pages` company pages (1 credit each), each the next page of the least-run slice. The ledger
     (spend(cur, credits, ref)) and the slice's cursor are written together, in one transaction, the moment
     Apollo answers and before anything is done with the companies: a page paid for is always on the ledger
@@ -578,7 +583,7 @@ def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadl
             log("  stopping: this run's time is up (--max-minutes); the rest wait for the next run")
             break
         aud = auds.get(sl["search"].get("audience"))
-        if not aud:
+        if not aud and row_builder is None:
             log("  %-34s skipped: no audience %r in the config" % (sl["key"], sl["search"].get("audience")))
             continue
         filters = apollo_filters(sl, today)
@@ -586,6 +591,8 @@ def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadl
         try:
             n = precheck(filters)
         except (apollo.ApolloError, ValueError) as e:
+            if strict:
+                raise
             log("  %-34s free check failed: %s" % (sl["key"], str(e)[:100]))
             if isinstance(e, apollo.ApolloError) and e.status in (401, 403):
                 break
@@ -604,6 +611,8 @@ def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadl
         try:
             out = apollo.search_companies(filters, page, per_page)
         except apollo.ApolloError as e:
+            if strict:
+                raise
             log("  %-34s company search failed: %s" % (sl["key"], str(e)[:100]))
             if e.status in (401, 403):
                 break
@@ -611,6 +620,8 @@ def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadl
                 time.sleep(min(int(e.retry_after or 60), 120))
             continue
         except ValueError as e:
+            if strict:
+                raise
             log("  %-34s skipped: %s" % (sl["key"], str(e)[:100]))
             continue
         bought += 1
@@ -618,16 +629,9 @@ def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadl
         total_pages = min(int(out.get("total_pages") or 0), 500) or None
         done = not out.get("companies") or (total_pages is not None and page >= total_pages) or page >= 500
         ref = "%s p%d" % (sl["key"], page)
-        try:
-            db.run(lambda cur: (spend(cur, 1, ref) if spend else None,
-                                cursor_sql(cur, seg_id, sl["key"], page + 1, total_pages, done)))
-        except Exception as e:                      # noqa: BLE001 -- the ledger must hold: stop buying
-            log("  %-34s page %d bought, but the ledger and cursor could not be written (%s): stopping, so"
-                " the week's cap is not overrun" % (sl["key"], page, str(e).splitlines()[0][:80]))
-            break
-        took = 0
+        page_rows = []
         for org in out.get("companies") or []:
-            row, why = apollo_row(org, sl, aud, cfg, today)
+            row, why = (row_builder or apollo_row)(org, sl, aud, cfg, today)
             if row and (row["source_url"] in skip_urls or row["domain"] in skip_domains):
                 row, why = None, "already a lead here or in another project"
             if not row:
@@ -635,10 +639,22 @@ def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadl
                 continue
             skip_domains.add(row["domain"])
             skip_urls.add(row["source_url"])
+            page_rows.append(row)
+        try:
+            db.run(lambda cur: (spend(cur, 1, ref) if spend else None,
+                                page_sink(cur, page_rows) if page_sink else None,
+                                cursor_sql(cur, seg_id, sl["key"], page + 1, total_pages, done)))
+        except Exception as e:                      # noqa: BLE001 -- the ledger must hold: stop buying
+            if strict:
+                raise
+            log("  %-34s page %d bought, but the ledger and cursor could not be written (%s): stopping, so"
+                " the week's cap is not overrun" % (sl["key"], page, str(e).splitlines()[0][:80]))
+            break
+        took = len(page_rows)
+        for row in page_rows:
             staged.append(row)
-            if emit:
+            if emit and not page_sink:
                 emit(row)
-            took += 1
         log("  %-34s page %d of %s: %3d companies, %3d new%s" % (
             sl["key"], page, total_pages or "?", len(out.get("companies") or []), took, "  (last page)" if done else ""))
         time.sleep(0.5)
@@ -968,6 +984,11 @@ def main():
     if not seg:
         sys.exit("no segments row for %s" % SEGMENT)
     seg_id, cfg = seg[0], seg[1] if isinstance(seg[1], dict) else json.loads(seg[1])
+    if ((cfg.get("sourcing") or {}).get("provider") == "apollo"
+            and args.source != "apollo"):
+        log("This project sources leads only from Apollo; %s discovery is disabled." % args.source)
+        db.close()
+        return 1
     if not audiences(cfg, args.source):
         log("segment %s has no audiences for %s (config audiences): nothing to do" % (SEGMENT, args.source))
         db.close(); return 0

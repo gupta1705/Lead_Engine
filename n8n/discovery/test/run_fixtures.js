@@ -42,7 +42,7 @@ const ctxOf = (store) => (name) => ({ all: () => store[name] || [] });
 const inputOf = (arr) => ({ all: () => arr, first: () => arr[0] });
 
 // ---------------------------------------------------------------- fixtures
-const cfg = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+const cfg = { ...JSON.parse(fs.readFileSync(CONFIG, "utf8")), ...require("./legacy_discovery_config.cjs") };
 const configQueries = cfg.youtube_discovery_queries;
 
 function searchHit(channelId) {

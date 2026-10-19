@@ -1697,7 +1697,7 @@ def health():
         with cursor() as cur:
             cur.execute("select 1 as ok")
             cur.fetchone()
-        return {"ok": True}
+        return {"ok": True, "release": os.environ.get("RENDER_GIT_COMMIT", "local"), "sourcing_version": 2}
     except Exception as e:
         raise HTTPException(503, "database unreachable: " + type(e).__name__)
 

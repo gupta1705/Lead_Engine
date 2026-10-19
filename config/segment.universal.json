@@ -156,7 +156,28 @@
   "schedule": [],
   "pipelines": {
     "enrich_contacts": [
-      "enrich_contacts"
+      "enrich_apollo_project"
     ]
+  },
+  "sourcing": {
+    "provider": "apollo",
+    "allowed_sources": [
+      "apollo"
+    ],
+    "contacts": "apollo",
+    "guidance": "Owner decision 2026-10-19: all new leads and contacts come from Apollo. Existing project constraints, gates and scoring remain. Company websites and news verify already-known leads; they do not discover new ones. Clipping is exempt."
+  },
+  "enrichment": {
+    "provider": "apollo",
+    "enabled": true,
+    "contact_method": "apollo_people_search",
+    "email_verifier": "apollo",
+    "fallback_enabled": false,
+    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence.",
+    "credits_per_run": 50,
+    "verified_only": true,
+    "recheck_after_days": 30,
+    "current_employer_check": true,
+    "find_website_by_name": false
   }
 }

@@ -1019,6 +1019,8 @@ def main():
                          "companies with no contact yet, which structurally "
                          "excluded the 243 AICP rows -- the best-contactable "
                          "part of the pool -- from ever being scored.")
+    ap.add_argument("--evidence-only", action="store_true",
+                    help="Keep qualification evidence without sourcing contacts from websites.")
     ap.add_argument("--about", action="store_true",
                     help="read only what each company says about itself (title, description, about page) "
                          "for leads with a website and none on record, shortlisted first; writes nothing else")
@@ -1026,6 +1028,8 @@ def main():
                     help="no network: withdraw distribution credit whose recorded platform claim is page "
                          "code (CSS, JSON) rather than a sentence, and re-score those rows")
     args = ap.parse_args()
+    if args.evidence_only:
+        args.qualify = True
 
     if args.about:
         from dbconn import Db
@@ -1048,6 +1052,10 @@ def main():
     from dbconn import Db
     db = Db()
     # LCX Services' scoring v4: the judge sets the scores, this pass the evidence (see the top)
+    policy_row = db.run(lambda cur: (cur.execute(
+        "select config->'sourcing'->>'contacts' from segments where slug=%s", (SEGMENT,)), cur.fetchone())[1])
+    if policy_row and policy_row[0] == "apollo":
+        args.evidence_only = args.qualify = True
     judge = judge_config(db)
     judged = bool(judge)
     days = dead_after_days(judge)
@@ -1128,7 +1136,7 @@ def main():
                     db.run(lambda cur, _e=eid, _f=found: write_routes(cur, _e, _f))
                 continue
 
-            emails = found["emails"]
+            emails = [] if args.evidence_only else found["emails"]
             if not emails:
                 log("      %d page(s) read, no address published%s" % (
                     found["pages"],

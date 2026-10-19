@@ -23,7 +23,7 @@ const ctxOf = (store) => (name) => ({ all: () => store[name] || [],
                                       first: () => (store[name] || [])[0] });
 const inputOf = (arr) => ({ all: () => arr, first: () => arr[0] });
 
-const cfg = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+const cfg = { ...JSON.parse(fs.readFileSync(CONFIG, "utf8")), ...require("./legacy_discovery_config.cjs") };
 let pass = 0, fail = 0;
 const check = (label, ok, detail) => {
   if (ok) { pass++; console.log("  PASS  " + label); }

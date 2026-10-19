@@ -139,14 +139,14 @@ SUMMARY_TAG = "SEND-SUMMARY "   # the last line of a send run's log (tools/outre
 # against the final scores.
 PIPELINES = {
     "weekly_refresh": [
-        "promote_chain",      # bring harvested staging into the pool, score, gate
-        "resolve_domains",    # fill missing websites
-        "enrich_aicp",        # directory detail: emails, named people
-        "enrich_contacts",    # site-scrape contacts for whoever still lacks one
-        "enrich_apollo",      # Apollo's address for whoever the site did not name (credits: config-gated)
-        "qualify_sites",      # team size, invitations, genre, platform credits
-        "news_sweep",         # per-company IP/distribution evidence
-        "promote_chain",      # re-score with the new evidence, re-apply gates
+        "discover_apollo",
+        "promote_chain",
+        "prepare_apollo",
+        "verify_sites",
+        "news_sweep",
+        "promote_chain",
+        "enrich_apollo_project",
+        "promote_chain",
     ],
 }
 

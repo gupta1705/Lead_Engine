@@ -1150,20 +1150,7 @@ values (
   "audiences_guidance": "Who buys which of the 18 services on docs/LCX Services.pdf, where they are found (tools/discover_lcx_services.py) and who to write to there (contact_roles, the titles Apollo is searched for, best first). Every email offers every service; the audience decides who is found, what the lead says it fits (why_fit, Pitch first) and audience_fit in the rubric: 1.0 where the sheet''s services fit directly, 0.5 where the sale is slower (banks and insurers, attractions). corporate_teams (2026-10-07) is the owner''s \"normal corporates\": any industry, 201-5,000 people, for the training, onboarding and explainer services. wikidata entries match a class (P31), an industry (P452) or a stock-exchange listing (P414); osm entries are OpenStreetMap tag pairs; the Apollo searches are in apollo_discovery. site_words (2026-10-07, scoring v4) are the words a business of that audience uses about itself on its own home page, which earn buyer_confirmed; size_bands are its sweet spot and the bands either side of it for buyer_size, in people, US dollars of revenue (assets for banks, pupils for schools).",
   "discovery": {
     "skip_known_elsewhere": true,
-    "wikidata": {
-      "max_new_per_run": 600,
-      "per_audience": 80,
-      "max_minutes": 40
-    },
-    "osm": {
-      "max_new_per_run": 150,
-      "cities_per_run": 2,
-      "max_minutes": 40
-    },
-    "guidance": "Each Friday''s refresh stages up to 600 new companies from Wikidata (an equal share for each audience, at most per_audience; 10 to 5,000 people first, and within that English-speaking markets first), the Apollo pages the week''s credits allow (apollo_discovery, about 900 companies), up to 200 US banks from the FDIC register, and up to 150 local businesses from OpenStreetMap (2 cities a week): the owner wants normal corporates, \"not just cafes\". The site pass after it reads up to 1,000 websites, best-scoring first. Each business is saved the moment it is found, and a run stops asking for more after max_minutes; what it did not reach waits for next week. skip_known_elsewhere: a business already a lead of another project is not staged here, so nobody is pitched by two projects from the same address.",
-    "fdic": {
-      "max_new_per_run": 200
-    }
+    "guidance": "Apollo-only discovery using audiences, country restrictions, size bands and buying signals. Historical source records remain evidence."
   },
   "osm_discovery": {
     "endpoints": [
@@ -1415,7 +1402,8 @@ values (
         "lon": 114.1694
       }
     ],
-    "guidance": "OpenStreetMap''s Overpass API, the endpoints tried in turn (the main one did not answer from the office on 2026-10-06; a mirror did). Each run takes discovery.osm.cities_per_run of these cities, a different few each ISO week, and asks each audience''s tags within radius_m of the centre, for places that publish a website or an email address. Coverage follows the map''s volunteers: on 2026-10-06 London had about 1,400 cafes with a website or address, Mumbai 26. Cities in English-speaking business markets only, since the email and the deck are in English; add a city here and it joins the rotation. Data (c) OpenStreetMap contributors, ODbL, recorded on each lead it found."
+    "guidance": "OpenStreetMap''s Overpass API, the endpoints tried in turn (the main one did not answer from the office on 2026-10-06; a mirror did). Each run takes discovery.osm.cities_per_run of these cities, a different few each ISO week, and asks each audience''s tags within radius_m of the centre, for places that publish a website or an email address. Coverage follows the map''s volunteers: on 2026-10-06 London had about 1,400 cafes with a website or address, Mumbai 26. Cities in English-speaking business markets only, since the email and the deck are in English; add a city here and it joins the rotation. Data (c) OpenStreetMap contributors, ODbL, recorded on each lead it found.",
+    "enabled": false
   },
   "hosting_providers": [
     "facebook.com",
@@ -2728,7 +2716,7 @@ values (
   "enrichment": {
     "enabled": true,
     "provider": "apollo",
-    "contact_method": "published_address_then_site_scrape_then_apollo",
+    "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
     "credits_per_run": 110,
     "credits_per_week": 120,
@@ -2746,9 +2734,10 @@ values (
     ],
     "current_employer_check": true,
     "senior_titles": "(founder|owner|ceo|chief executive|chief marketing|chief commercial|chief operating|chief people|(?<!vice )president|managing director|general manager|principal|head of school|head teacher|headmaster|headmistress)",
-    "guidance": "The owner, 2026-10-07: \"Enriching from apollo is acceptable\". Addresses come first from the business itself (what it publishes, then its own website: free); a lead that fits well (scoring over score_over) and still has nobody to write to gets one free Apollo people search for its audience''s contact_roles at its current employer, then 1 credit for the best person''s verified work address (tools/enrich_apollo.py, enrich_apollo_lcxs). The week''s cap, credits_per_week, covers this project''s Apollo spending together, the search page''s included: about 10 company pages and 110 people. The week runs from Friday 00:00 UTC, the refresh''s day. The ledger (apollo_spend, sql/33) counts every credit, so a refresh pressed by hand cannot spend the week twice, and nothing is spent once fewer than keep_in_reserve credits are left for the month (nor when Apollo cannot say what is left), so US Production Houses keeps its week. reveal_countries: only leads based in the US, the UK, India and the UAE. skip_revealed_elsewhere: nobody already revealed for another project is paid for again. Change the numbers here (then tools/gen_segment_sql.py lcx-services and sql/03f). A person is paid for only when their title is one of the audience''s contact_roles, shares a real word with one (marketing, brand, training, admissions...; not ''director'' or ''head''), or is senior (senior_titles: founder, chief executive, managing director, principal...): the only person Apollo lists is not a reason to spend. 2026-10-07 (scoring v4, the owner''s decision that day): a reveal is paid for only for a lead scoring over score_over, 60 (was 43), whose own site has been read (require_site_read: pages read, the site is the company''s own, wrong_buyer 0 and too_big under 1), so no credit goes on a competitor, a software firm or a lead nobody has looked at; a named person adds 10 points or more, so every paid reveal can carry a lead over the shortlist line at 70.",
+    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence.",
     "require_fitting_role": true,
-    "skip_revealed_elsewhere": true
+    "skip_revealed_elsewhere": true,
+    "fallback_enabled": false
   },
   "sources": [
     {
@@ -2757,27 +2746,6 @@ values (
       "kind": "api",
       "phase": 1,
       "detail": "tools/discover_lcx_services.py --source apollo: mid-size companies with their websites, by audience, size and country, the ones hiring for content, training or store staff now and the recently funded first. 1 credit a page of 100."
-    },
-    {
-      "slug": "lcx_wikidata",
-      "name": "Wikidata (listed companies, and companies by class and industry)",
-      "kind": "api",
-      "phase": 1,
-      "detail": "tools/discover_lcx_services.py --source wikidata: operating companies with an official website, listed on a stock exchange or in an audience''s classes and industries. CC0, free."
-    },
-    {
-      "slug": "lcx_fdic",
-      "name": "FDIC BankFind (US banks)",
-      "kind": "api",
-      "phase": 1,
-      "detail": "tools/discover_lcx_services.py --source fdic: US banks of $1-20 billion with their websites. Public domain, free."
-    },
-    {
-      "slug": "lcx_osm",
-      "name": "OpenStreetMap (local businesses around a city)",
-      "kind": "api",
-      "phase": 2,
-      "detail": "tools/discover_lcx_services.py --source osm: independent cafes, salons, gyms, shops, estate agents, guest houses, schools and attractions that publish a website or an address, 2 cities a week. ODbL."
     },
     {
       "slug": "apollo",
@@ -3176,19 +3144,16 @@ values (
   ],
   "pipelines": {
     "weekly_refresh": [
-      "discover_lcx_wikidata",
-      "discover_lcx_apollo",
-      "discover_lcx_fdic",
-      "discover_lcx_osm",
+      "discover_apollo",
       "promote_chain",
-      "enrich_lcx_services",
-      "enrich_contacts_lcxs",
+      "prepare_apollo",
+      "verify_sites",
       "promote_chain",
-      "enrich_apollo_lcxs",
+      "enrich_apollo_project",
       "promote_chain"
     ],
     "enrich_contacts": [
-      "enrich_contacts"
+      "enrich_apollo_project"
     ]
   },
   "apollo_discovery": {
@@ -3211,6 +3176,26 @@ values (
       {
         "name": "United Arab Emirates",
         "iso": "AE"
+      },
+      {
+        "name": "Worldwide outside the four priority markets",
+        "iso": "ALL",
+        "excluded_locations": [
+          "United States",
+          "United Kingdom",
+          "India",
+          "United Arab Emirates",
+          "Canada",
+          "Germany",
+          "Austria",
+          "Italy",
+          "Russia",
+          "Belarus",
+          "Iran",
+          "North Korea",
+          "Syria",
+          "Cuba"
+        ]
       }
     ],
     "searches": [
@@ -3490,7 +3475,8 @@ values (
           "q_organization_keyword_tags": [
             "insurance",
             "investment management",
-            "financial services"
+            "financial services",
+            "banking"
           ],
           "organization_num_employees_ranges": [
             "51,200",
@@ -3549,15 +3535,58 @@ values (
             "201,500"
           ]
         }
+      },
+      {
+        "key": "corporates",
+        "audience": "corporate_teams",
+        "filters": {
+          "organization_num_employees_ranges": [
+            "201,500",
+            "501,1000",
+            "1001,2000",
+            "2001,5000"
+          ]
+        }
+      },
+      {
+        "key": "local_businesses",
+        "audience": "local_business",
+        "filters": {
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,50"
+          ],
+          "q_organization_keyword_tags": [
+            "restaurants",
+            "cafes",
+            "fitness",
+            "beauty salons"
+          ]
+        }
+      },
+      {
+        "key": "independent_shops",
+        "audience": "local_retail",
+        "filters": {
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,50"
+          ],
+          "q_organization_keyword_tags": [
+            "retail"
+          ]
+        }
       }
     ],
-    "guidance": "Apollo''s company search: 1 credit a page of up to 100 companies, each with its website and Apollo''s own id for it (tools/discover_lcx_services.py --source apollo). A slice is one search in one country; each run buys pages_per_run pages, signal_pages_per_run of them from the signal searches (a company hiring for training, content or store staff right now, or recently funded, has the budget and the gap today), the rest from the plain audience searches, least-run slice first, and each slice''s next page the run after (apollo_cursors, sql/33). The ledger row and the cursor are written together the moment a page is bought, so a page paid for is never bought again. A signal search counts back from today, so it is a new set each time: once used up it rests for its window (30 or 90 days), then starts again at page 1; a plain search, once used up, waits until its cursor is reset. A free people search with the same filters goes first, and a page that would come back empty is never bought (the funding search has no free check: people search does not take it). Countries: the US, the UK, India and the UAE, where an Apollo address may be written to without prior consent; Australia, New Zealand and South Africa need consent the way Apollo finds an address, so they are left out. The answer has no industry, size or country, so they come from the slice. Tags are Apollo''s own, matched word for word (checked free on 2026-10-07: every one finds thousands); ''real estate development'', not ''real estate'', which pulls brokerages; no ''media production'' or ''film'', which US Production Houses already covers."
+    "guidance": "Sole automatic lead source. Each audience is searched in its target markets within the unchanged shared weekly Apollo credit cap. Scoring and gates verify fit before shortlisting.",
+    "source": "lcx_apollo"
   },
   "fdic_discovery": {
     "audience": "financial_services",
     "assets_min_thousands": 1000000,
     "assets_max_thousands": 20000000,
-    "guidance": "Every insured US bank, from the FDIC''s public BankFind API (public domain, no key; 4,223 active on 2026-10-07, nearly all with their own website). Banks of $1 to 20 billion in assets are the right size: a marketing team of their own, no procurement maze; about 940 of them. Up to discovery.fdic.max_new_per_run a week, largest first, until they are all in."
+    "guidance": "Every insured US bank, from the FDIC''s public BankFind API (public domain, no key; 4,223 active on 2026-10-07, nearly all with their own website). Banks of $1 to 20 billion in assets are the right size: a marketing team of their own, no procurement maze; about 940 of them. Up to discovery.fdic.max_new_per_run a week, largest first, until they are all in.",
+    "enabled": false
   },
   "lead_service": {
     "patterns": {
@@ -4212,6 +4241,15 @@ values (
       "reason": "The first service its audience is pitched ({audience})"
     },
     "guidance": "The owner''s review of the LCX Services emails, 2026-10-13, point 12: each lead is tagged with ONE lead service, the email pitches it, and the outreach row records it (outreach.service, sql/35). tools/lcx_judge.py tags every open lead on every chain run, after the scoring inputs, and stores metadata.lead_service = {service (one of the 18, or null), name (the same), rule, basis (signal, fact, type, audience, hold, not_a_buyer), reason, evidence, set_by, decided_at}. A person''s choice (set_by is their email) is never overwritten by the rules. metadata.services stays, shown as Also fits. Order: not a buyer first (the judge''s wrong_buyer at or over wrong_buyer_at_least, or a name in not_a_buyer.names for its audience: the Apollo searches'' noise), then the rules, first match wins, then the fallback, the first service its audience is pitched; a lead with no audience is held. A rule with service null holds the lead for a person to pick (Check service): VFX and animation houses sell what we would pitch. Evidence first: a fresh or stored Apollo signal (signals pick the service whatever their age, because they record a need; funded picks none, a raise is a reason to write and not a problem), then a specific fact from the company''s own site words or a register, then the register''s type, then the audience. Condition keys, all ANDed inside one when, with any: [alternatives] for OR: signal, kind, not_kind, osm (category), classes and industries (regex over Wikidata''s), not_classes, text and text2 (regex over the company''s own site words with its name in front, only when the site was read and is theirs; the name alone otherwise), not_text, socials (youtube, instagram or tiktok, from its site or a directory), employees_min, name (regex), apollo_key (the Apollo search that found it). A value \"@fashion\" is patterns.fashion. skip_if online_only: an online-only seller (online_only.classes, or online_only.text) with no physical-store words never gets Shop Display Videos (SparkFun). Simulated on the 3,686 open leads of 2026-10-12: every one of the 18 services is reachable. Edit here, run tools/gen_segment_sql.py lcx-services, apply sql/03f; the next chain run re-tags every lead whose tag the rules set."
+  },
+  "sourcing": {
+    "provider": "apollo",
+    "allowed_sources": [
+      "apollo",
+      "lcx_apollo"
+    ],
+    "contacts": "apollo",
+    "guidance": "Owner decision 2026-10-19: all new leads and contacts come from Apollo. Existing project constraints, gates and scoring remain. Company websites and news verify already-known leads; they do not discover new ones. Clipping is exempt."
   }
 }'::jsonb
 )

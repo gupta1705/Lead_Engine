@@ -121,7 +121,7 @@
     }
   ],
   "startup_discovery": {
-    "guidance": "tools/discover_startup_news.py. Google News RSS headlines only: the trade publications' terms forbid crawling their pages, so no article is ever fetched, and a row carries the headline, the publisher and the link for a person to read. Distress queries run India-wide (a headline rarely says where a company is; enrichment places it); funding queries find Mumbai startups that raised a small round in 2021-24, the cohort whose runway has since run out. Windows are quarters, because one search returns at most 100 items. Only publishers listed here count, which keeps foreign startup news out.",
+    "guidance": "Historical news-discovery configuration. New companies come only from Apollo; sector tiers, publishers and event windows remain inputs to named-company qualification.",
     "distress_months": 24,
     "incremental_days": 40,
     "funding_from": "2021-01-01",
@@ -618,25 +618,11 @@
   ],
   "sources": [
     {
-      "slug": "startup_news",
-      "name": "Google News RSS headlines (distress India-wide, funding Mumbai 2021-24)",
-      "kind": "rss",
-      "phase": 1,
-      "detail": "tools/discover_startup_news.py. Headlines only; the publishers' own pages are never fetched."
-    },
-    {
-      "slug": "company_site",
-      "name": "The startup's own website",
-      "kind": "first_party",
-      "phase": 1,
-      "detail": "tools/enrich_startups.py: address and PIN for the city, whether the site is up, a closing notice, App Store links. robots.txt honoured."
-    },
-    {
-      "slug": "apple_app_store",
-      "name": "Apple App Store lookup",
+      "slug": "apollo",
+      "name": "Apollo.io company and decision-maker search",
       "kind": "api",
       "phase": 1,
-      "detail": "Apple's public lookup API for an app the site links to: last update and ratings."
+      "detail": "tools/discover_apollo.py uses this project's saved constraints; contact roles and verified work addresses come from Apollo."
     }
   ],
   "self_exclusion": {
@@ -653,10 +639,20 @@
     "guidance": "Same affiliates as Segment 1 must never enter this pool either. In this segment 'tvf' is also a whole-word pattern: startup news calls TVF 'TVF', and the first dry run (2026-09-17) put it on its own acquisition list. Whole-word matching keeps names like TVFoods out of reach."
   },
   "enrichment": {
-    "provider": "news_and_site",
-    "contact_method": "team_page_then_about_page",
-    "email_verifier": "mx_check",
-    "guidance": "tools/enrich_startups.py places each startup, reads its site and its app, and asks the news about it by name (one RSS query); Find contacts on sites (tools/enrich_sitescrape.py) finds the founder. Nothing from LinkedIn, ever."
+    "provider": "apollo",
+    "contact_method": "apollo_people_search",
+    "email_verifier": "apollo",
+    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence.",
+    "enabled": true,
+    "fallback_enabled": false,
+    "credits_per_run": 50,
+    "verified_only": true,
+    "recheck_after_days": 30,
+    "current_employer_check": true,
+    "find_website_by_name": false,
+    "credits_per_week": 50,
+    "keep_in_reserve": 700,
+    "score_over": 15
   },
   "ui": {
     "key_prefix": "STA",
@@ -742,11 +738,81 @@
   ],
   "pipelines": {
     "weekly_refresh": [
-      "discover_startup_news",
+      "discover_apollo",
       "promote_chain",
+      "prepare_apollo",
       "enrich_startups",
-      "enrich_contacts",
+      "promote_chain",
+      "enrich_apollo_project",
       "promote_chain"
     ]
+  },
+  "sourcing": {
+    "provider": "apollo",
+    "allowed_sources": [
+      "apollo"
+    ],
+    "contacts": "apollo",
+    "guidance": "Owner decision 2026-10-19: all new leads and contacts come from Apollo. Existing project constraints, gates and scoring remain. Company websites and news verify already-known leads; they do not discover new ones. Clipping is exempt."
+  },
+  "apollo_discovery": {
+    "pages_per_run": 5,
+    "per_page": 100,
+    "countries": [
+      {
+        "name": "India",
+        "iso": "IN"
+      }
+    ],
+    "searches": [
+      {
+        "key": "mumbai_media",
+        "filters": {
+          "organization_locations": [
+            "Mumbai, India",
+            "Navi Mumbai, India",
+            "Thane, India"
+          ],
+          "q_organization_keyword_tags": [
+            "media",
+            "entertainment",
+            "gaming",
+            "digital media",
+            "education"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50",
+            "51,100",
+            "101,200"
+          ]
+        }
+      },
+      {
+        "key": "mumbai_consumer",
+        "filters": {
+          "organization_locations": [
+            "Mumbai, India",
+            "Navi Mumbai, India",
+            "Thane, India"
+          ],
+          "q_organization_keyword_tags": [
+            "consumer",
+            "consumer apps",
+            "e-commerce",
+            "consumer goods"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50",
+            "51,100",
+            "101,200"
+          ]
+        }
+      }
+    ],
+    "guidance": "Mumbai Metropolitan Region and TVF-relevant small businesses. Apollo results are candidates: existing named-company news/site checks must establish distress, recency, deal size and acquisition status."
   }
 }

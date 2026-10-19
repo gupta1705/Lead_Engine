@@ -40,6 +40,31 @@ LOGDIR = REPO / "logs" / "ops"
 PY = "python"
 
 JOBS = {
+    "discover_apollo": {
+        "label": "Find leads on Apollo",
+        "group": "Discover",
+        "desc": "Apollo company searches using this project's constraints, saved search cursors and credit budget.",
+        "cmd": [PY, "tools/discover_apollo.py"],
+        "segments": ["us-production-houses", "startup-acquisitions", "lcx-services"],
+    },
+    "prepare_apollo": {
+        "label": "Read Apollo company records",
+        "group": "Enrich",
+        "desc": "Carry Apollo's company ID, headquarters and audience into qualification and contact matching.",
+        "cmd": [PY, "tools/enrich_lcx_services.py", "--limit", "3000"],
+    },
+    "verify_sites": {
+        "label": "Check company fit",
+        "group": "Enrich",
+        "desc": "Read company sites to verify project constraints; contacts come from Apollo.",
+        "cmd": [PY, "tools/enrich_sitescrape.py", "--qualify", "--evidence-only", "--limit", "1000", "--workers", "8"],
+    },
+    "enrich_apollo_project": {
+        "label": "Find decision makers on Apollo",
+        "group": "Enrich",
+        "desc": "Find the project's target roles and verified work addresses within its existing Apollo budget.",
+        "cmd": [PY, "tools/enrich_apollo.py", "--limit", "200"],
+    },
     "discover_podcasts": {
         "label": "Harvest: podcasts (Apple search + feeds)",
         "group": "Discover",

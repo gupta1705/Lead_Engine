@@ -1,21 +1,16 @@
 # TVF Universal Lead Engine
 
 **The TVF Universal Lead Engine** is an internal business-development system that
-finds, qualifies, and reaches out to US production houses for co-production and
-format-licensing partnerships — the top-of-funnel work that used to consume a BD
-person's week, now run end to end by the machine. It discovers companies from
-multiple independent sources (industry directories, trade-press deal coverage,
-public knowledge bases), enriches each one with a real website and a named,
-reachable decision-maker, and scores it against a transparent partnership-fit
-rubric — so a human opens a browser to a ranked, evidence-backed shortlist
-instead of a blank search bar, approves or rejects in seconds, and lets the
-engine send personalized, one-touch-per-company outreach on their behalf. Where
-a person researching, verifying, and writing to prospects one at a time might
-manage a handful of quality contacts in a week, the engine sustains that
-pipeline across hundreds of vetted companies with a few hours of human review —
-**increasing TVF's outreach capacity by up to 100x** while raising quality,
-because every lead is web-verified and every email is grounded in that company's
-own evidence before it's ever sent.
+finds and qualifies leads from **Apollo only** for US Production Houses, Startup
+Acquisitions, LCX Services and Universal. Each project keeps its own targeting,
+scoring and exclusions. Apollo supplies company records and decision-maker work
+addresses; company websites and named-company news verify fit and evidence.
+**LCX Clipping retains its existing podcast, YouTube and production-pool sources.**
+
+Scheduled and manual refreshes use the same project pipelines. Persisted search
+cursors avoid buying the same Apollo page again, and credit budgets still apply.
+Historical leads and their provenance are retained; new non-Apollo intake is blocked
+for the four Apollo projects. Outreach still requires a person to approve each email.
 
 ---
 

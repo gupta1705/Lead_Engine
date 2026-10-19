@@ -132,125 +132,6 @@ values (
       "guidance": "Fires ONLY on confirmed dormancy (e.g. no upload or site activity in 12+ months, an explicit closed/discontinued notice). Blank/unknown always passes through. The connector makes a cheap best-effort read from upload recency at discovery time; Layer B enrichment gets a fuller look once it actually visits the site, and can override that initial guess."
     }
   ],
-  "youtube_discovery_queries": [
-    {
-      "query": "digital comedy studio",
-      "genre_hint": "comedy"
-    },
-    {
-      "query": "workplace comedy channel",
-      "genre_hint": "workplace"
-    },
-    {
-      "query": "young adult drama studio",
-      "genre_hint": "young-adult"
-    },
-    {
-      "query": "slice of life web series studio",
-      "genre_hint": "slice-of-life"
-    },
-    {
-      "query": "branded content studio",
-      "genre_hint": null
-    },
-    {
-      "query": "production company",
-      "genre_hint": null
-    }
-  ],
-  "news_rss_discovery_queries": [
-    {
-      "query": "\"local adaptation\" OR \"English-language remake\" production company",
-      "deal_kind": "adaptation"
-    },
-    {
-      "query": "\"US remake\" OR \"American remake\" series",
-      "deal_kind": "adaptation"
-    },
-    {
-      "query": "\"format rights\" OR \"remake rights\" producer",
-      "deal_kind": "format_deal"
-    },
-    {
-      "query": "\"international co-production\" series",
-      "deal_kind": "co_production"
-    },
-    {
-      "query": "\"acquires format\" OR \"format deal\" television",
-      "deal_kind": "format_deal"
-    },
-    {
-      "query": "\"first-look deal\" independent production company",
-      "deal_kind": "output_deal"
-    },
-    {
-      "query": "\"format\" adaptation \"US version\" series producer",
-      "deal_kind": "adaptation"
-    },
-    {
-      "query": "\"co-develop\" OR \"co-development\" series independent producer",
-      "deal_kind": "co_production"
-    },
-    {
-      "query": "\"scripted format\" OR \"unscripted format\" US remake producer",
-      "deal_kind": "format_deal"
-    },
-    {
-      "query": "\"greenlit\" comedy series independent production company",
-      "deal_kind": "output_deal"
-    }
-  ],
-  "x_intent_discovery_queries": [
-    {
-      "query": "\"open to co-productions\" production company",
-      "intent": "explicit_invitation"
-    },
-    {
-      "query": "indie production company \"looking for partners\"",
-      "intent": "explicit_invitation"
-    },
-    {
-      "query": "\"seeking a production partner\" series",
-      "intent": "explicit_invitation"
-    },
-    {
-      "query": "\"accepting submissions\" production company series",
-      "intent": "open_door"
-    },
-    {
-      "query": "\"co-production partner\" series OR film",
-      "intent": "explicit_invitation"
-    },
-    {
-      "query": "\"seeking co-producers\" OR \"seeking co-producer\"",
-      "intent": "explicit_invitation"
-    },
-    {
-      "query": "site:x.com \"co-production\" film series",
-      "intent": "social_post"
-    },
-    {
-      "query": "site:x.com production company \"looking for\" partner",
-      "intent": "social_post"
-    },
-    {
-      "query": "\"looking for co-production partners\" series",
-      "intent": "explicit_invitation"
-    },
-    {
-      "query": "\"format available\" OR \"formats available\" for adaptation",
-      "intent": "explicit_invitation"
-    }
-  ],
-  "wikidata_discovery": {
-    "entity_classes": [
-      "Q1762059",
-      "Q10689397"
-    ],
-    "country": "Q30",
-    "limit": 600,
-    "guidance": "Wikidata SPARQL seed. entity_classes: Q1762059 is film production company, Q10689397 is television production company. They are SIBLING classes, not parent/child - a live probe on 2026-08-28 showed the film tree alone misses 124 US TV production companies with websites, so both are queried via VALUES and each subclass tree is still walked. country Q30 is the United States, which is what makes geography_signal us a fact rather than a guess. A live probe on 2026-08-25 found 363 US production companies carrying an official website (P856) - and the website is the whole point: every other connector leaves domain null, and Apollo matches organisations by domain at P16. CC0, no key, no quota. Notable-only, so this is a seed re-run occasionally rather than a weekly stream, and it skews LARGE - the first page is Icon Productions, Relativity Media, Warner Independent. Expect a low hit rate against the 2-20 person target and lean on major_or_oversized_signal plus the P13 gate. Only 14 of 363 carry an employee count, so size stays an enrichment question. For Segment 2, change entity_class here rather than touching any code."
-  },
   "metadata_fields": [
     "subtype",
     "hq_city",
@@ -265,39 +146,11 @@ values (
   ],
   "sources": [
     {
-      "slug": "youtube_api",
-      "name": "YouTube Data API v3 (search+channels)",
+      "slug": "apollo",
+      "name": "Apollo.io company and decision-maker search",
       "kind": "api",
       "phase": 1,
-      "detail": "BUILD FIRST. PRIORITY: digital/YouTube/social studios. 10k units/day free. Filters creators-vs-studios by size/keyword/email-in-description; sets genre_fit from the genre_hint of the matched query, plus the 4 gate-input signals."
-    },
-    {
-      "slug": "google_news_rss",
-      "name": "Google News RSS (keyword + site: trades)",
-      "kind": "rss",
-      "phase": 2,
-      "detail": "SIGNAL: catches deal-announcement headlines such as a US shop adapting a foreign format. Company named leads to a high international_ip_experience score."
-    },
-    {
-      "slug": "x_intent_signals",
-      "name": "X/Twitter intent posts via Google News RSS",
-      "kind": "rss",
-      "phase": 2,
-      "detail": "SIGNAL: founder-collab posts via a site:x.com Google News RSS query. Not the X API (paid-only since Feb 2026). Noisy and partial, needs a filter step plus human review."
-    },
-    {
-      "slug": "wikidata",
-      "name": "Wikidata SPARQL",
-      "kind": "api",
-      "phase": 3,
-      "detail": "Film/TV/streaming producer seed: name plus official website plus industry. CC0, free forever. Notable-only, so a seed rather than a stream."
-    },
-    {
-      "slug": "aicp_directory",
-      "name": "AICP member directory (scrape)",
-      "kind": "scrape",
-      "phase": 4,
-      "detail": "Commercial/branded shops. Static HTML, names only, needs domain enrichment downstream. ToS is reference-only."
+      "detail": "tools/discover_apollo.py uses this project''s saved constraints; contact roles and verified work addresses come from Apollo."
     }
   ],
   "self_exclusion": {
@@ -325,11 +178,11 @@ values (
     "credits_per_run": 150,
     "verified_only": true,
     "recheck_after_days": 30,
-    "contact_method": "apollo_org_match_then_people_search",
+    "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
     "fallback": "site_scrape_then_human_confirm",
     "fallback_enabled": false,
-    "guidance": "Apollo is the enrichment and verification backbone (owner decision 2026-08-20): organization match by domain, then people search filtered to target_contact_roles, then Apollo verification status mapped onto contacts.email_status. Hunter (pattern oracle) and Reoon (verifier) were dropped from the critical path on the same date, and the pattern-guess hedge they required is deleted with them. The site-scrape path survives only as backlog item B1, disabled by default: it is pulled into the ladder only if Checkpoint 2 (P17) shows Apollo missing more than roughly 30 percent of 2-10-person shops. Live since 2026-09-20 (tools/enrich_apollo.py, the enrich_apollo step of the weekly refresh): open leads with a website and no address get one Apollo search on their domain, filtered to target_contact_roles, and the best person is revealed for 1 credit. enabled gates the spending and is true for this segment only -- the decision that day was production houses, not clipping or startups. credits_per_run caps a run, verified_only asks Apollo for addresses it has checked, recheck_after_days is how long a company Apollo did not know is left alone. score_over limits the spending to leads scoring above it: the owner set 30 on 2026-09-21 and lowered it to 22.5 the same day (any lead over 22.5 with no contacts: find and add them), because a company with nobody to write to is missing the 10 contact points. A written address earns the lead those points and re-scores it. find_website_by_name looks a lead without a website up in Apollo by its exact name (1 credit) and takes the website only when exactly one company carries that name and no other lead holds it."
+    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence."
   },
   "outreach": {
     "sender": {
@@ -449,6 +302,107 @@ values (
     },
     "signed_intro": "I''m {{sender_first}}, who handles {{sender_title}} at The Viral Fever (TVF)",
     "tvf_hook": "line"
+  },
+  "sourcing": {
+    "provider": "apollo",
+    "allowed_sources": [
+      "apollo"
+    ],
+    "contacts": "apollo",
+    "guidance": "Owner decision 2026-10-19: all new leads and contacts come from Apollo. Existing project constraints, gates and scoring remain. Company websites and news verify already-known leads; they do not discover new ones. Clipping is exempt."
+  },
+  "schedule": [
+    {
+      "name": "weekly refresh",
+      "pipeline": "weekly_refresh",
+      "dow": 1,
+      "hour": 2,
+      "minute": 0,
+      "enabled": true
+    }
+  ],
+  "pipelines": {
+    "weekly_refresh": [
+      "discover_apollo",
+      "promote_chain",
+      "prepare_apollo",
+      "verify_sites",
+      "news_sweep",
+      "promote_chain",
+      "enrich_apollo_project",
+      "promote_chain"
+    ]
+  },
+  "apollo_discovery": {
+    "pages_per_run": 5,
+    "per_page": 100,
+    "countries": [
+      {
+        "name": "United States",
+        "iso": "US"
+      }
+    ],
+    "searches": [
+      {
+        "key": "independent_film",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "film production",
+            "film & television production",
+            "motion pictures & film"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20"
+          ]
+        }
+      },
+      {
+        "key": "television",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "television production",
+            "tv production",
+            "scripted television"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20"
+          ]
+        }
+      },
+      {
+        "key": "formats",
+        "filters": {
+          "q_organization_keyword_tags": [
+            "independent production",
+            "unscripted television",
+            "film and television"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20"
+          ]
+        }
+      }
+    ],
+    "guidance": "US headquarters, lean independent film/TV production teams. Actual size, majors, activity, genres, distribution and IP partnerships are checked by the existing scoring and gates.",
+    "excluded_name_patterns": [
+      "disney",
+      "warner bros",
+      "nbcuniversal",
+      "paramount",
+      "sony pictures",
+      "viacomcbs",
+      "mgm",
+      "lionsgate",
+      "netflix",
+      "amazon studios",
+      "hbo",
+      "a24",
+      "universal pictures",
+      "20th century"
+    ]
   }
 }'::jsonb
 );

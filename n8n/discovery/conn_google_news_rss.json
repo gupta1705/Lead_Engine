@@ -2,7 +2,7 @@
   "id": "newsrssdiscov01",
   "versionId": "newsrssdiscov02",
   "name": "P5 · Google News RSS",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "parameters": {},
@@ -18,7 +18,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select config->'news_rss_discovery_queries' as queries, id as segment_id from segments where slug = 'us-production-houses';",
+        "query": "select config->'news_rss_discovery_queries' as queries, id as segment_id from segments where slug = 'us-production-houses' and coalesce(config->'sourcing'->>'provider','') <> 'apollo';",
         "options": {}
       },
       "id": "newsrss-config-02",
@@ -289,5 +289,8 @@
     "executionOrder": "v1",
     "errorWorkflow": "tvferroralert1"
   },
-  "pinData": {}
+  "pinData": {},
+  "meta": {
+    "retired_by_apollo_sourcing": true
+  }
 }

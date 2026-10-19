@@ -2,7 +2,7 @@
   "id": "aicpdirectory1",
   "versionId": "aicpdirectory1",
   "name": "P8 · AICP directory",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "parameters": {},
@@ -18,7 +18,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select id as segment_id from segments where slug = 'us-production-houses';",
+        "query": "select id as segment_id from segments where slug = 'us-production-houses' and coalesce(config->'sourcing'->>'provider','') <> 'apollo';",
         "options": {}
       },
       "id": "aicp-config",
@@ -244,5 +244,8 @@
     "executionOrder": "v1",
     "errorWorkflow": "tvferroralert1"
   },
-  "pinData": {}
+  "pinData": {},
+  "meta": {
+    "retired_by_apollo_sourcing": true
+  }
 }
