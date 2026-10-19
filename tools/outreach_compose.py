@@ -22,6 +22,7 @@ be skipped and why before anyone approves.
 import re
 
 from mail_copy import clean_text
+from recipient_selection import CONTACT_SELECTION_SQL, recipient_metadata
 
 FIELDS = ("first_name", "company")
 MAX_RECIPIENTS = 100
@@ -30,19 +31,16 @@ REVIEW_STATUSES = ("discovered", "enriched", "scored", "ready_for_review", "shor
 PLACEHOLDER = re.compile(r"{{\s*(\w+)\s*}}")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$", re.I)
 
-# the best-ranked usable address at each company (contact_rank, sql/28), as the drafting step picks it
+# The chosen eligible recipient, otherwise the best-ranked usable contact, as
+# the automatic drafting step picks it. A stale choice yields no recipient.
 RECIPIENTS_SQL = """
 select e.id, e.name, e.status, e.metadata, e.domain,
        c.id as contact_id, c.full_name, c.email, c.source, c.role_title
 from entities e
-left join lateral (
-    select c.* from contacts c
-    where c.entity_id = e.id and c.email is not null
-      and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)
-    order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
-             c.created_at, c.id
-    limit 1) c on true
+left join lateral (""" + CONTACT_SELECTION_SQL + """) c on true
 where e.id = any(%s::uuid[]) and e.segment_id = (select id from segments where slug = %s)
+order by e.id
+for update of e
 """
 OPENER_SQL = """
 select status from outreach
@@ -98,7 +96,8 @@ def fields_for(row):
     import draft_render as dr
     import newsmatch
     company = newsmatch.display_name(row["name"] or "")
-    first = dr.greeting_person(row["full_name"], row["email"], company, row["metadata"] or {}, row["source"])
+    first = dr.greeting_person(row["full_name"], row["email"], company,
+                               recipient_metadata(row["metadata"] or {}), row["source"])
     return {"first_name": first or "there", "company": company, "named": bool(first)}
 
 

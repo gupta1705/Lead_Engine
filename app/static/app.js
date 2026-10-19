@@ -791,19 +791,25 @@ function renderAnalysis(ex) {
     <div class="analysis-grid"><div><h4 class="sub-h">Strengths</h4>${list(a.strengths)}</div><div><h4 class="sub-h">Gaps</h4>${list(a.gaps)}</div></div>
     <h4 class="sub-h">Risks</h4>${risks}`;
 }
-/* Every way in: addresses best first (the first usable one is where drafts go),
- * junk shown struck through with the reason, then phone, people listed without
- * an address, website, channel and feed, and what was already tried. */
+/* Contacts include the actual email recipient and the eligible alternatives a reviewer can choose. */
 function renderContacts(d) {
   const cr = (d.explain || {}).contact_routes || { routes: [], tried: [] };
-  const people = (d.contacts || []).map((c) => `<div class="contact-row ${c.usable ? "" : "retired"}">
+  const locked = d.recipient_locked_reason;
+  const draft = d.outreach && d.outreach.status === "drafted";
+  const people = (d.contacts || []).map((c) => {
+    const chosen = d.outreach ? c.drafts_use : String(c.id) === String(d.selected_recipient_id || "");
+    const badge = chosen ? (d.outreach ? draft ? "Draft recipient" : "Email recipient" : "Selected recipient") : "";
+    return `<div class="contact-row ${c.usable ? "" : "retired"}">
       ${avatar(c.full_name, c.email)}
-      <div class="contact-main"><div class="who">${esc(c.full_name || "No name published")}${c.drafts_use ? ` <span class="lozenge success" title="Drafts go to this address">Drafts use this</span>` : ""}</div>
+      <div class="contact-main"><div class="who">${esc(c.full_name || "No name published")}${badge ? ` <span class="lozenge success">${badge}</span>` : ""}</div>
         ${c.role_title ? `<div class="role">${esc(c.role_title)}</div>` : ""}
         <div class="mail">${c.usable ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : c.email ? `<s>${esc(c.email)}</s>` : `<span class="muted">No email on record</span>`}${c.kind === "shared" ? " · shared inbox" : c.kind === "low_value" ? ` · <span class="warn-text">rarely read for partnerships</span>` : ""}</div>
         ${!c.usable && c.email ? `<div class="role warn-text">Not used: ${esc(c.unusable_reason)}</div>` : ""}
         ${safeUrl(c.linkedin_url) ? `<div class="role"><a href="${esc(safeUrl(c.linkedin_url))}" target="_blank" rel="noopener">LinkedIn ${icon("external", 12)}</a></div>` : ""}
-      </div></div>`).join("");
+        ${!locked && c.can_select_recipient && !chosen ? `<button type="button" class="btn compact contact-recipient" data-recipient="${esc(c.id)}">${draft ? "Use for draft" : "Use for future drafts"}</button>` : ""}
+        ${!locked && c.email && c.usable && c.can_select_recipient === false ? `<div class="role">${esc(c.recipient_unavailable_reason || "Not eligible for sending")}</div>` : ""}
+      </div></div>`;
+  }).join("");
   const glyphs = { phone: "user", people: "users", website: "globe", channel: "play", podcast: "play", app: "link", social: "link" };
   const routes = (cr.routes || []).map((r) => {
     // a route links out only by http(s) or tel: -- anything else is shown as text
@@ -813,8 +819,50 @@ function renderContacts(d) {
     return `<li>${icon(glyphs[r.kind] || "link", 14)}<span><span class="muted">${esc(r.label)}:</span> ${body}</span></li>`;
   }).join("");
   return `${people || `<p class="muted small" style="margin:0 0 8px">No email address on record.</p>`}
+    ${people ? `<p class="help recipient-help" id="recipientHelp" role="status">${esc(locked || (d.recipient_selection_stale ? "Your selected contact is no longer eligible. Choose another contact before drafting or approving." : "Choose a contact to set who receives this lead's email."))}</p>` : ""}
     ${routes ? `<ul class="evidence-list routes">${routes}</ul>` : ""}
     ${(cr.tried || []).length ? `<p class="tried small muted">${cr.tried.map(esc).join(" ")}</p>` : ""}`;
+}
+
+function bindRecipientSelection(root, d, leadId) {
+  const choices = $$("[data-recipient]", root), help = $("#recipientHelp", root);
+  const openEmail = $("#leadOpenEmail", root);
+  let busy = false;
+  choices.forEach((button) => button.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    const sheet = modal.current, segment = state.segment, token = state.leadToken;
+    const stillHere = () => modal.isOpen() && modal.current === sheet
+      && state.segment === segment && state.leadToken === token;
+    choices.forEach((b) => b.disabled = true);
+    if (openEmail) openEmail.disabled = true;
+    button.classList.add("loading");
+    if (help) help.textContent = "Saving recipient...";
+    try {
+      const r = await post("/api/leads/" + encodeURIComponent(leadId) + "/recipient", { contact_id: button.dataset.recipient });
+      if (!stillHere()) return;
+      const refreshToken = state.leadToken + 1;
+      await openLead(leadId, { quiet: true });
+      if (!modal.isOpen() || state.segment !== segment || state.leadToken !== refreshToken
+          || !modal.current || modal.current.kind !== "lead" || modal.current.id !== leadId) return;
+      flag(r.draft_updated ? "Draft recipient changed" : "Recipient selected", { desc: "Your choice is saved for this lead." });
+      refreshCurrentView();
+      refreshOutreachCount(true);
+    } catch (e) {
+      if (!stillHere()) return;
+      if (help) help.textContent = "Could not change recipient: " + e.message;
+      choices.forEach((b) => b.disabled = false);
+    } finally {
+      busy = false;
+      if (button.isConnected) {
+        button.classList.remove("loading");
+        choices.forEach((b) => b.disabled = false);
+        if (openEmail) openEmail.disabled = false;
+        if (help && help.textContent === "Saving recipient...")
+          help.textContent = "Recipient saved. Reopen this lead to refresh its contacts.";
+      }
+    }
+  }));
 }
 /* The lead sheet's Lead service box (LCX Services): the one service its email pitches and why, who chose it, the
    other services it fits, and the 18 to pick from. A person's pick stands (the rules never undo it), and picking or
@@ -995,6 +1043,7 @@ async function openLead(id, opts) {
   if (w) w.addEventListener("click", () => openCompose([{ id: String(d.id || id), name: d.name }]));
   const email = $("#leadOpenEmail", root);
   if (email) email.addEventListener("click", () => openLeadEmail(id, d.outreach.id, email));
+  bindRecipientSelection(root, d, id);
   bindLeadService(root, d, id);
 }
 
@@ -1254,10 +1303,11 @@ function renderBatchBar() {
 
 async function startBatch() {
   const o = state.outreach, ids = [...o.selected];
+  const expected = expectedRecipients(o.rows, ids);
   const btn = $("#batchGo");
   btn.classList.add("loading");
   let s;
-  try { s = await post("/api/outreach/batch/sample", { ids }); }
+  try { s = await post("/api/outreach/batch/sample", { ids, ...(expected ? { expected_recipients: expected } : {}) }); }
   catch (e) { btn.classList.remove("loading"); return toast(e.message, true); }
   btn.classList.remove("loading");
   const byId = Object.fromEntries(o.rows.map((r) => [r.id, r]));
@@ -1300,7 +1350,8 @@ async function startBatch() {
     const b = e.currentTarget;
     b.classList.add("loading"); b.disabled = true;
     try {
-      const r = await post("/api/outreach/batch/approve", { ids: s.approvable, sample: s.sample, token: s.token });
+      const guard = expected ? { expected_recipients: Object.fromEntries(s.approvable.map((id) => [id, expected[id]])) } : {};
+      const r = await post("/api/outreach/batch/approve", { ids: s.approvable, sample: s.sample, token: s.token, ...guard });
       modal.close(true);
       o.selected.clear();
       // with a sending window: when they go, by their recipients' own days (owner, 2026-10-12). A paused project's
@@ -1674,9 +1725,19 @@ function attachList(r) {
       <span class="small muted num">${f.bytes ? Math.max(1, Math.round(f.bytes / 1024)) + " KB" : ""}</span></a>`).join("")}</div>`;
 }
 
+function expectedRecipients(rows, ids) {
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  if (!ids.every((id) => byId[id] && "recipient_contact_id" in byId[id])) return null;
+  return Object.fromEntries(ids.map((id) => [id, {
+    contact_id: byId[id].recipient_contact_id, email: byId[id].contact_email || null,
+  }]));
+}
+
 function openMessage(id, message) {
   const o = state.outreach, r = message || o.rows.find((x) => x.id === id);
   if (!r) return;
+  const recipientGuard = "recipient_contact_id" in r
+    ? { expected_contact_id: r.recipient_contact_id, expected_contact_email: r.contact_email || null } : {};
   const isDraft = r.status === "drafted", isReply = r.direction === "inbound";
   const step = +r.sequence_step || 0;
   // ending a live thread by hand, or dismissing a follow-up draft; an unsent opener has no thread yet
@@ -1748,7 +1809,7 @@ function openMessage(id, message) {
       controls.forEach(([el]) => { el.disabled = true; }); btn.classList.add("loading");
       try {
         await api("/api/outreach/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subject: subj.value, body: body.value, ai_rewritten: body.dataset.aiRewritten === "true" }) });
+          body: JSON.stringify({ subject: subj.value, body: body.value, ai_rewritten: body.dataset.aiRewritten === "true", ...recipientGuard }) });
         was.s = r.subject = subj.value; was.b = r.body = body.value;
         flag("Draft saved", { desc: r.approval_blocked || "Ready to review and approve." });
       } catch (e) { toast(e.message, true); }
@@ -1773,9 +1834,9 @@ function openMessage(id, message) {
     try {
       if (["approve", "link_contact"].includes(b.dataset.act)) {
         await api("/api/outreach/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value, ai_rewritten: $("#draftBody", root).dataset.aiRewritten === "true" }) });
+          body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value, ai_rewritten: $("#draftBody", root).dataset.aiRewritten === "true", ...recipientGuard }) });
       }
-      const res = await post("/api/outreach/" + id + "/decision", { action: b.dataset.act });
+      const res = await post("/api/outreach/" + id + "/decision", { action: b.dataset.act, ...(b.dataset.act === "approve" ? recipientGuard : {}) });
       // held back (an old send error on it): no time to promise, and it does not go "within minutes" either
       const heldNow = res.schedule && res.schedule.held ? res.schedule : null;
       if (heldNow) res.schedule = null;

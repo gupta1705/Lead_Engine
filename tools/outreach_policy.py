@@ -64,6 +64,8 @@ import secrets
 import time
 import uuid
 
+from recipient_selection import ELIGIBLE_CONTACT_SQL, PREFERENCE_MATCH_SQL
+
 PLACEHOLDER_RE = re.compile(r"{{\w+}}")
 EMAIL_RE = re.compile(r"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$", re.I)
 PENDING = ("drafted", "approved", "sending")
@@ -432,10 +434,20 @@ where e.segment_id = (select id from segments where slug = %s)
   and coalesce(o.sent_at, o.updated_at)::date = current_date
 """
 
+# A saved choice is part of the exact email a person reviews. If its address or
+# eligibility changes, neither approval nor the sender may substitute someone
+# else. Projects/leads with no saved choice keep their existing checks.
+SELECTED_RECIPIENT_SQL = "(" + PREFERENCE_MATCH_SQL + """ and (
+    not (coalesce(e.metadata, '{}'::jsonb) ? 'outreach_recipient')
+    or (c.entity_id = e.id and """ + ELIGIBLE_CONTACT_SQL + ")) )"
+SELECTED_RECIPIENT_REASON = ("Selected recipient changed or is no longer eligible; "
+                             "choose and review the recipient again.")
+
 CHECK_SQL = """
 select o.id, o.status, o.direction, o.subject, o.body, o.sequence_step,
        o.generated_hook, c.email, c.email_status,
        contact_allowed(e.id,c.source,c.verifier,c.email_status) as verified_allowed,
+       """ + SELECTED_RECIPIENT_SQL + """ as selected_recipient_matches,
        (coalesce(s.config#>>'{sourcing,contacts}','') <> 'apollo' or not (s.config ? 'lead_service') or coalesce(o.sequence_step,0)>0 or
         (o.service is not null and o.service=coalesce(e.metadata#>>'{lead_service,service}',e.metadata#>>'{lead_service,name}'))) as service_matches,
        e.status as entity_status, s.slug, e.name as entity_name, o.entity_id, o.attachments
@@ -482,6 +494,8 @@ def check_drafts(cur, ids, segment, policy=None):
             reason = "unfilled {{placeholder}}"
         elif "SET_ME" in (r["subject"] or "") + (r["body"] or ""):
             reason = "sender details still say SET_ME"
+        elif not r.get("selected_recipient_matches", True):
+            reason = SELECTED_RECIPIENT_REASON
         elif not r["email"] or not EMAIL_RE.match(r["email"].strip()):
             reason = "recipient address missing or malformed"
         elif r["email_status"] == "invalid":

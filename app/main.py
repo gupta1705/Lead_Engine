@@ -494,6 +494,7 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
     if sells:
         extra += " " + LS_KEY + " as service,"      # the card's "Selling" tag
 
+    from recipient_selection import CONTACT_SELECTION_SQL
     with cursor() as cur:
         cur.execute(
             "select e.id, e.name, e.domain, e.source, e.status,"
@@ -502,15 +503,9 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             " case when e.metadata->'host'->>'confidence' in ('high','medium')"
             "      then e.metadata->'host'->>'name' end as host_name," + extra +
             " e.metadata->>'hq_city' as city, e.metadata->>'hq_state' as state,"
-            # the address a draft would use, by the same ranking (sql/28)
-            " (select c.email from contacts c where c.entity_id = e.id"
-            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
-            "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
-            "   c.created_at, c.id limit 1) as email,"
-            " (select c.full_name from contacts c where c.entity_id = e.id"
-            "   and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
-            "   order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,"
-            "   c.created_at, c.id limit 1) as contact_name,"
+            # The same saved recipient preference the drafter and composer use.
+            " (select picked.email from (" + CONTACT_SELECTION_SQL + ") picked) as email,"
+            " (select picked.full_name from (" + CONTACT_SELECTION_SQL + ") picked) as contact_name,"
             # who reached out to it: the approver of its latest first email that went out (2026-09-26)
             " (select o.approved_by from outreach o where o.entity_id = e.id and o.direction = 'outbound'"
             "   and o.status = 'sent' and coalesce(o.sequence_step, 0) = 0 order by o.sent_at desc limit 1) as reached_by"
@@ -543,14 +538,52 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
 
 
 # -------------------------------------------------------------------- detail
+def _recipient_locked_reason(messages):
+    """Changing a recipient never changes an approval or an existing conversation."""
+    if any(m["status"] in ("sending", "send_unknown") for m in messages):
+        return "This email is already sending. Its recipient cannot be changed."
+    if any(m["direction"] == "inbound" or m["status"] == "sent" for m in messages):
+        return "This lead already has an email thread. Its recipient cannot be changed."
+    if any(m["direction"] == "outbound" and m["status"] == "approved" for m in messages):
+        return "Withdraw approval before changing the recipient."
+    return None
+
+
+def _recipient_greeting(body, old_contact, contact, entity, ocfg, preference):
+    """Replace only the known initial greeting; leave all custom email copy intact."""
+    from recipient_selection import recipient_metadata
+    dr = _render()
+    meta = entity.get("metadata") or {}
+    old = old_contact or {}
+    before = dr.pick_greeting(old.get("full_name"), old.get("email"), entity["name"],
+                              recipient_metadata(meta), ocfg, old.get("source"))
+    after = dr.pick_greeting(contact.get("full_name"), contact.get("email"), entity["name"],
+                             recipient_metadata(dict(meta, outreach_recipient=preference)), ocfg,
+                             contact.get("source"))
+    if before != after:
+        for salutation in ("Hi", "Hello", "Dear"):
+            prefix = "%s %s," % (salutation, before)
+            if (body or "").startswith(prefix):
+                return "%s %s," % (salutation, after) + body[len(prefix):]
+    person = dr.greeting_person(contact.get("full_name"), contact.get("email"), entity["name"],
+                                recipient_metadata(dict(meta, outreach_recipient=preference)), contact.get("source"))
+    if person:
+        for salutation in ("Hi", "Hello", "Dear"):
+            prefix = salutation + ","
+            if (body or "").startswith(prefix):
+                return "%s %s," % (salutation, person) + body[len(prefix):]
+    return body
+
+
 @app.get("/api/leads/{lead_id}")
-def lead(lead_id: str):
+def lead(lead_id: str, segment: str = Depends(current_segment)):
+    from recipient_selection import select_contact
     lead_id = _id(lead_id)
     with cursor() as cur:
         cur.execute(
             "select e.*, s.slug as segment_slug, s.config as segment_config"
             " from entities e join segments s on s.id = e.segment_id"
-            " where e.id = %s", (lead_id,))
+            " where e.id = %s and s.slug = %s", (lead_id, segment))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "no such lead")
@@ -558,29 +591,51 @@ def lead(lead_id: str):
         # every address, best first: the order the draft step uses (contact_rank, sql/28)
         cur.execute(
             "select c.id, c.full_name, c.role_title, c.email, c.email_status, c.is_primary, c.source, c.notes,"
-            " c.linkedin_url,"
+            " c.linkedin_url, contact_allowed(c.entity_id,c.source,c.verifier,c.email_status) as contact_allowed,"
             " case when contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
             " then contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) else -1000 end as rank"
             " from contacts c join entities e on e.id = c.entity_id"
             " where c.entity_id = %s order by rank desc, c.created_at, c.id", (lead_id,))
-        contacts, seen = [], set()
-        for c in cur.fetchall():
-            c = dict(c)
-            key = (c.get("email") or "").lower() or str(c["id"])
-            if key in seen:
-                continue                          # the same address from two sources is one route
-            seen.add(key)
-            c["id"] = str(c["id"])
-            contacts.append(c)
+        all_contacts = [dict(c, id=str(c["id"])) for c in cur.fetchall()]
+        picked = select_contact(cur, lead_id)
         sells = isinstance(row.get("segment_config"), dict) and "lead_service" in row["segment_config"]
         cur.execute(
-            "select id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at,"
+            "select id, contact_id, status, subject, template_key, approved_by, approved_at, sender_address, sent_at,"
             " send_after, send_before, send_tz, send_tz_reason, send_plan, send_reschedules, send_wait_why, send_error,"
             " service, sent_as"                   # the one service it pitched (sql/35); the alias it went as (sql/36)
             " from outreach"
             " where entity_id = %s and direction = 'outbound' and coalesce(sequence_step, 0) = 0"
             " and status not in ('cancelled', 'failed') order by created_at desc limit 1", (lead_id,))
         draft = cur.fetchone()
+        actual_id = str(draft["contact_id"]) if draft and draft["contact_id"] else None
+        metadata = row.get("metadata") or {}
+        has_preference = "outreach_recipient" in metadata
+        selected_id = str(picked["id"]) if picked and has_preference else actual_id or (
+            str(picked["id"]) if picked else None)
+        # Keep one row per address, preserving the actual assigned contact's identity even
+        # when another source has since inserted the same email with a higher rank.
+        from contacts import junk_reason
+
+        def selectable_contact(contact):
+            return bool(contact.get("email") and contact.get("contact_allowed") and contact.get("rank", -1000) > -500
+                        and contact.get("email_status") != "invalid" and not junk_reason(contact["email"]))
+
+        contacts, by_email, representatives = [], {}, {}
+        for c in sorted(all_contacts, key=lambda c: (c["id"] != actual_id, c["id"] != selected_id)):
+            key = (c.get("email") or "").strip().lower() or c["id"]
+            representative = by_email.get(key)
+            if representative is None or (not selectable_contact(representative) and selectable_contact(c)):
+                # An obsolete assigned row must not hide the eligible replacement at
+                # the same normalized address. Keep its badge and expose the repair.
+                by_email[key] = c
+                contacts.append(c)
+                representative = c
+            representatives[c["id"]] = representative["id"]
+        selected_id = representatives.get(selected_id, selected_id)
+        cur.execute("select direction,status from outreach where entity_id=%s", (lead_id,))
+        row["recipient_locked_reason"] = _recipient_locked_reason(cur.fetchall())
+        row["selected_recipient_id"] = selected_id
+        row["recipient_selection_stale"] = has_preference and picked is None
         # when it goes (approved) or which window approving it aims at (a draft): the words explain.py and
         # the lead sheet show, from tools/send_window.py's labels (owner, 2026-10-12)
         timing = {}
@@ -598,9 +653,18 @@ def lead(lead_id: str):
     cfg = row.pop("segment_config") or {}
     slug = row.pop("segment_slug")
     ranked = explain.rank_contacts(contacts, row.get("domain"))
+    for c in ranked:
+        c["drafts_use"] = c["id"] == actual_id
+        c["selected_recipient"] = c["id"] == selected_id
+        allowed = c.pop("contact_allowed", False)
+        c["can_select_recipient"] = bool(c["usable"] and allowed
+                                         and c.get("rank", -1000) > -500)
+        c["recipient_unavailable_reason"] = None if c["can_select_recipient"] else (
+            c.get("unusable_reason") or "This address is not eligible for sending under this project's contact rules.")
     row["contacts"] = ranked
     outreach = dict(draft, id=str(draft["id"])) if draft else None
     if outreach:
+        outreach["contact_id"] = str(outreach["contact_id"]) if outreach.get("contact_id") else None
         # who reached out (owner, 2026-09-26): the person who approved it, from which address, when
         outreach["approved_by_name"] = _display(outreach.get("approved_by"), _people())
         _shown_sender(outreach)
@@ -625,6 +689,54 @@ def lead(lead_id: str):
     row["id"] = str(row["id"])
     row["segment_id"] = str(row["segment_id"])
     return row
+
+
+@app.post("/api/leads/{lead_id}/recipient")
+def lead_recipient_pick(lead_id: str, request: Request, body: dict = Body(...),
+                        segment: str = Depends(current_segment)):
+    """Choose an eligible contact, saving it for future drafts or retargeting an unapproved opener."""
+    import datetime as _dt
+    from recipient_selection import ELIGIBLE_CONTACT_SQL
+    lead_id = _id(lead_id)
+    contact_id = _id((body or {}).get("contact_id"), "contact")
+    user = getattr(request.state, "user", None) or "unknown"
+    with cursor() as cur:
+        # Entity first, outreach second: drafting and manual contact linking use this order too.
+        cur.execute("select e.id,e.name,e.metadata,s.config from entities e"
+                    " join segments s on s.id=e.segment_id where e.id=%s and s.slug=%s for update of e",
+                    (lead_id, segment))
+        entity = cur.fetchone()
+        if not entity:
+            raise HTTPException(404, "No such lead in this project.")
+        cur.execute("select id,direction,status,contact_id,body,coalesce(sequence_step,0) as sequence_step"
+                    " from outreach where entity_id=%s order by created_at,id for update", (lead_id,))
+        messages = cur.fetchall()
+        locked = _recipient_locked_reason(messages)
+        if locked:
+            raise HTTPException(409, locked)
+        cur.execute("select c.* from contacts c join entities e on e.id=c.entity_id"
+                    " where c.id=%s and c.entity_id=%s and " + ELIGIBLE_CONTACT_SQL + " for share of c",
+                    (contact_id, lead_id))
+        contact = cur.fetchone()
+        if not contact:
+            raise HTTPException(409, "Choose an eligible email belonging to this lead. Apollo projects require an Apollo-verified contact.")
+        preference = {"contact_id": contact_id, "email": contact["email"], "chosen_by": user,
+                      "chosen_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()}
+        draft = next((m for m in messages if m["direction"] == "outbound" and m["status"] == "drafted"
+                      and m["sequence_step"] == 0), None)
+        changed = False
+        if draft and str(draft.get("contact_id")) != contact_id:
+            cur.execute("select full_name,email,source from contacts where id=%s", (draft["contact_id"],))
+            old_contact = cur.fetchone()
+            text = _recipient_greeting(draft["body"], old_contact, contact, entity,
+                                       (entity["config"] or {}).get("outreach") or {}, preference)
+            cur.execute("update outreach set contact_id=%s,body=%s,updated_at=now() where id=%s and status='drafted'",
+                        (contact_id, text, draft["id"]))
+            changed = True
+        cur.execute("update entities set metadata=jsonb_set(coalesce(metadata,'{}'::jsonb),'{outreach_recipient}',%s),"
+                    " updated_at=now() where id=%s", (psycopg2.extras.Json(preference), lead_id))
+    return {"ok": True, "selected_recipient_id": contact_id, "draft_updated": changed,
+            "outreach_id": str(draft["id"]) if draft else None}
 
 
 # -------------------------------------------------------------------- decide
@@ -795,14 +907,14 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = "", 
 def _outreach_select():
     """Shared row shape for a folder and a direct email lookup."""
     import outreach_query as oq
+    from recipient_selection import CONTACT_SELECTION_SQL
     return (
         "select f.*,e.fit_score as lead_score," + oq.CATEGORY + " as category,"
         + oq.SUBSCRIBERS + " as subscriber_count," + oq.VIEWS + " as view_count,"
+        " stored.contact_id as recipient_contact_id,"
         " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
-        " (e.status in ('shortlisted','contacted') and exists(select 1 from contacts available"
-        " where available.entity_id=e.id and available.email is not null"
-        " and contact_allowed(e.id,available.source,available.verifier,available.email_status)"
-        " and contact_rank(available.full_name,available.email,available.role_title,available.email_status,e.domain)>-500)) as can_link_contact"
+        " (e.status in ('shortlisted','contacted') and exists(select 1 from (" + CONTACT_SELECTION_SQL
+        + ") available)) as can_link_contact"
         " from outreach_folders f join entities e on e.id = f.entity_id"
         " join outreach stored on stored.id=f.id left join contacts c on c.id=stored.contact_id"
     )
@@ -969,8 +1081,70 @@ def outreach_draft_rewrite(oid: str, request: Request, body: dict = Body(...),
     return _rewrite_email(body, cfg, dict(person) if person else None, {"company": row["company"]})
 
 
+def _locked_recipients(cur, ids, segment):
+    """Lock entities, their emails, then contacts in a stable order for a preview check."""
+    cur.execute("select e.id from entities e join segments s on s.id=e.segment_id"
+                " where s.slug=%s and e.id in (select entity_id from outreach where id=any(%s::uuid[]))"
+                " order by e.id for update of e", (segment, ids))
+    cur.fetchall()
+    cur.execute("select o.id,o.contact_id from outreach o join entities e on e.id=o.entity_id"
+                " join segments s on s.id=e.segment_id where o.id=any(%s::uuid[]) and s.slug=%s"
+                " order by e.id,o.created_at,o.id for update of o", (ids, segment))
+    rows = {str(r["id"]): dict(r) for r in cur.fetchall()}
+    if set(rows) != set(ids):
+        raise HTTPException(404, "No such email in this project.")
+    contact_ids = sorted({str(r["contact_id"]) for r in rows.values() if r["contact_id"]})
+    cur.execute("select id,email from contacts where id=any(%s::uuid[]) order by id for share", (contact_ids,))
+    emails = {str(r["id"]): r["email"] for r in cur.fetchall()}
+    return {oid: {"contact_id": str(row["contact_id"]) if row["contact_id"] else None,
+                  "email": emails.get(str(row["contact_id"]))} for oid, row in rows.items()}
+
+
+def _recipient_email(value):
+    return str(value).strip().lower() if value is not None else None
+
+
+def _check_expected_recipient(cur, oid, body, segment):
+    """A stale open preview must be reopened before its changed recipient is approved or edited."""
+    b = body or {}
+    if "expected_contact_id" not in b and "expected_contact_email" not in b:
+        return
+    actual = _locked_recipients(cur, [oid], segment)[oid]
+    if "expected_contact_id" in b:
+        expected = b["expected_contact_id"]
+        expected = _id(expected, "contact") if expected is not None else None
+        changed = actual["contact_id"] != expected
+    else:
+        changed = False
+    if "expected_contact_email" in b:
+        changed = changed or _recipient_email(actual["email"]) != _recipient_email(b["expected_contact_email"])
+    if changed:
+        raise HTTPException(409, "The recipient changed. Reopen this draft before editing or approving.")
+
+
+def _check_expected_recipients(cur, ids, body, segment):
+    """The recipient map must cover every selected email, including ones outside the random sample."""
+    if "expected_recipients" not in (body or {}):
+        return
+    expected = body["expected_recipients"]
+    if not isinstance(expected, dict):
+        raise HTTPException(400, "Recipient details are missing. Refresh the selected drafts and try again.")
+    ids = [_id(oid, "message") for oid in ids]
+    expected = {_id(oid, "message"): recipient for oid, recipient in expected.items()}
+    if any(not isinstance(expected.get(oid), dict)
+            or "contact_id" not in expected[oid] or "email" not in expected[oid] for oid in ids):
+        raise HTTPException(400, "Recipient details are missing. Refresh the selected drafts and try again.")
+    actual = _locked_recipients(cur, ids, segment)
+    for oid in ids:
+        contact_id = expected[oid]["contact_id"]
+        contact_id = _id(contact_id, "contact") if contact_id is not None else None
+        if actual[oid]["contact_id"] != contact_id or _recipient_email(actual[oid]["email"]) != _recipient_email(expected[oid]["email"]):
+            raise HTTPException(409, "A selected draft's recipient changed. Reopen the drafts and select them again before approving.")
+
+
 @app.patch("/api/outreach/{oid}")
-def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
+def outreach_edit(oid: str, request: Request, body: dict = Body(...),
+                  segment: str = Depends(current_segment)):
     """Edit a draft's subject/body. Approval means a human read THIS text, so
     editing is only legal while the row is still a draft. The body comes back as the editor saw it
     (their sign-off, their voice) and is stored in the project's own form, so the next person to
@@ -993,6 +1167,7 @@ def outreach_edit(oid: str, request: Request, body: dict = Body(...)):
             cfg = _policy().outreach_config(cur, seg["slug"]) if seg else {}
         text = dr.canonicalize(text, cfg, me)
     with cursor() as cur:
+        _check_expected_recipient(cur, oid, body, segment)
         cur.execute(
             "update outreach set subject = coalesce(%s, subject),"
             " body = coalesce(%s, body), generated_hook = case when %s then coalesce(%s, body)"
@@ -1024,25 +1199,31 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(404, "no such message")
         eid = msg["entity_id"]
         if action == "link_contact":
-            cur.execute("select o.status,o.direction,e.status as lead_status,s.slug from outreach o"
-                        " join entities e on e.id=o.entity_id join segments s on s.id=e.segment_id"
-                        " where o.id=%s for update of o,e", (oid,))
+            from recipient_selection import select_contact
+            if int(msg.get("sequence_step") or 0) > 0:
+                raise HTTPException(409, "An existing email thread keeps its original recipient.")
+            cur.execute("select e.id,e.name,e.metadata,e.status as lead_status,s.slug,s.config from entities e"
+                        " join segments s on s.id=e.segment_id where e.id=%s for update of e", (eid,))
             row = cur.fetchone()
             if row["slug"] != segment:
                 raise HTTPException(404, "No such draft in this project.")
-            if row["status"] != "drafted" or row["direction"] != "outbound" or row["lead_status"] not in ("shortlisted", "contacted"):
+            cur.execute("select status,direction,contact_id,body from outreach where id=%s for update", (oid,))
+            draft = cur.fetchone()
+            if draft["status"] != "drafted" or draft["direction"] != "outbound" or row["lead_status"] not in ("shortlisted", "contacted"):
                 raise HTTPException(409, "Qualify the company before linking its draft recipient.")
-            cur.execute("select c.id from contacts c join entities e on e.id=c.entity_id"
-                        " where e.id=%s and c.email is not null and contact_allowed(e.id,c.source,c.verifier,c.email_status)"
-                        " and contact_rank(c.full_name,c.email,c.role_title,c.email_status,e.domain)>-500"
-                        " order by contact_rank(c.full_name,c.email,c.role_title,c.email_status,e.domain) desc,c.created_at,c.id limit 1",
-                        (eid,))
-            contact = cur.fetchone()
+            contact = select_contact(cur, eid)
             if not contact:
-                raise HTTPException(409, "No eligible verified contact is available yet.")
-            cur.execute("update outreach set contact_id=%s,updated_at=now() where id=%s and status='drafted'", (contact["id"], oid))
+                raise HTTPException(409, "No eligible verified contact is available. Check the lead's selected recipient.")
+            cur.execute("select full_name,email,source from contacts where id=%s", (draft["contact_id"],))
+            old_contact = cur.fetchone()
+            preference = (row.get("metadata") or {}).get("outreach_recipient")
+            text = _recipient_greeting(draft["body"], old_contact, contact, row,
+                                       (row["config"] or {}).get("outreach") or {}, preference) if preference else draft["body"]
+            cur.execute("update outreach set contact_id=%s,body=%s,updated_at=now() where id=%s and status='drafted'",
+                        (contact["id"], text, oid))
             return {"ok": True}
         elif action == "approve":
+            _check_expected_recipient(cur, oid, body, segment)
             cfg = pol.outreach_config(cur, segment)
             dr = _render()
             too_long = long_subjects(cur, [oid], cfg)
@@ -1172,6 +1353,7 @@ def outreach_batch_sample(request: Request, body: dict = Body(...),
             raise HTTPException(400, "select at least one draft")
         if len(ids) > policy["max_batch"]:
             raise HTTPException(400, "a batch is at most %d drafts" % policy["max_batch"])
+        _check_expected_recipients(cur, ids, body, segment)
         unsigned = long_subjects(cur, ids, cfg)   # a subject over the cap is left out, saying why (2026-10-13)
         if signs_by_person(segment, cfg):
             # LCX Services (and LCX Clipping, signed by its approver since 2026-10-13): said before the sample is read,
@@ -1223,6 +1405,7 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         policy = pol.batch_policy(cfg)
         if not policy:
             raise HTTPException(403, "batch approval is off for this segment")
+        _check_expected_recipients(cur, ids, body, segment)
         dr = _render()
         signed = signs_by_person(segment, cfg)
         # drafts that would still go out signed by the project (LCX Services, LCX Clipping), and, in every project with

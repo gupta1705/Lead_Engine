@@ -121,6 +121,8 @@ from draft_render import build_context, pick_template, render_message  # noqa: E
 from mail_copy import has_forbidden_copy  # noqa: E402
 from outreach_policy import OUT_TODAY_SQL, TAKEN_AT_SEND  # noqa: E402
 from outreach_policy import DUPLICATE_SQL as _DUPLICATE_SQL  # noqa: E402
+from outreach_policy import SELECTED_RECIPIENT_SQL, SELECTED_RECIPIENT_REASON  # noqa: E402
+from recipient_selection import CONTACT_SELECTION_SQL, recipient_metadata  # noqa: E402
 
 
 def cmd_draft(args):
@@ -143,20 +145,13 @@ def cmd_draft(args):
         log("      is safe -- approval will catch them -- but fix the config")
         log("      before anyone approves.\n")
 
-    # The best-ranked address at each company (contact_rank, sql/28), not whichever row
-    # an enrichment pass happened to mark primary: drafts went to accounting@kfilms.us
-    # while the lead listed Warren Kushner, Owner/Director. A placeholder, a URL
-    # fragment or an address marked invalid is never written to (rank <= -500).
+    # Respect the recipient the reviewer chose; otherwise use the best-ranked
+    # eligible contact. A stale choice holds the lead instead of changing who
+    # receives it. The shared selector retains contact verification/rank checks.
     rows = db.run(lambda cur: (cur.execute("""
         select e.id, e.name, e.metadata, c.id, c.full_name, c.email, c.source
         from entities e
-        join lateral (
-            select c.* from contacts c
-            where c.entity_id = e.id and c.email is not null
-              and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500 and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)
-            order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) desc,
-                     c.created_at, c.id
-            limit 1) c on true
+        join lateral (""" + CONTACT_SELECTION_SQL + """) c on true
         where e.segment_id = (select id from segments where slug = %s)
           and e.status = 'shortlisted'
           and not exists (select 1 from outreach o
@@ -201,7 +196,7 @@ def cmd_draft(args):
             # {{problem}} and {{solution}} lines)
             use_gen = gen if any(p in (tpl.get("body") or "") for p in ("{{hook}}", "{{pitch}}", "{{problem}}")) \
                 else None
-            ctx = build_context(cfg, company, meta, cname, email, seed=eid, generator=use_gen,
+            ctx = build_context(cfg, company, recipient_metadata(meta), cname, email, seed=eid, generator=use_gen,
                                 contact_source=csource)
             # the production-house templates differ by whether the email greets a person by name
             tpl = requested or pick_template(cfg, meta, ctx)
@@ -221,11 +216,26 @@ def cmd_draft(args):
             continue
         # outreach.service (sql/35, 2026-10-13): the one service an LCX Services email pitched, a record of what was
         # sold to whom; NULL for every other project's email
-        db.run(lambda cur, _e=eid, _c=cid, _s=subject, _b=body, _g=written, _f=files, _v=ctx.get("lead_service"):
-               cur.execute(
-            "insert into outreach (entity_id, contact_id, template_key, subject, body,"
-            " generated_hook, attachments, service) values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict do nothing",
-            (_e, _c, tpl["key"], _s, _b, _g, json.dumps(_f) if _f else None, _v)))
+        def save_draft(cur):
+            # Rendering may take time. Serialize with a reviewer changing the
+            # recipient, then recheck their latest choice before saving it.
+            cur.execute("select id from entities where id = %s for update", (eid,))
+            cur.execute(
+                "insert into outreach (entity_id, contact_id, template_key, subject, body,"
+                " generated_hook, attachments, service)"
+                " select %s, %s, %s, %s, %s, %s, %s, %s"
+                " from entities e join lateral (" + CONTACT_SELECTION_SQL + ") c on true"
+                " where e.id = %s and e.status = 'shortlisted' and c.id = %s"
+                " and lower(btrim(c.email)) = lower(btrim(%s))"
+                " on conflict do nothing returning id",
+                (eid, cid, tpl["key"], subject, body, written, json.dumps(files) if files else None,
+                 ctx.get("lead_service"), eid, cid, email))
+            return cur.fetchone() is not None
+
+        if not db.run(save_draft):
+            skipped += 1
+            log("  %-32s SKIPPED: recipient/lead changed or an email already exists" % company[:32])
+            continue
         made += 1
 
     db.close()
@@ -446,6 +456,7 @@ PICK_SQL = """
 select o.id, o.entity_id, o.subject, o.body,
        c.email, c.email_status, e.name, e.status as ent_status,
        contact_allowed(e.id,c.source,c.verifier,c.email_status) as verified_allowed,
+       """ + SELECTED_RECIPIENT_SQL + """ as selected_recipient_matches,
        (coalesce(s.config#>>'{sourcing,contacts}','') <> 'apollo' or not (s.config ? 'lead_service') or coalesce(o.sequence_step,0)>0 or
         (o.service is not null and o.service=coalesce(e.metadata#>>'{lead_service,service}',e.metadata#>>'{lead_service,name}'))) as service_matches,
        o.sequence_step, p.gmail_thread_id, p.stopped_reason,
@@ -475,8 +486,10 @@ order by (o.sequence_step > 0) desc, o.send_after nulls first, o.created_at limi
 CLAIM_SQL = """
 update outreach set status = 'sending', sender_mailbox = %s, sender_address = %s, updated_at = clock_timestamp()
 where id = %s and status = 'approved'
-  and exists (select 1 from contacts c where c.id=outreach.contact_id
-              and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status))
+  and exists (select 1 from contacts c join entities e on e.id=outreach.entity_id
+              where c.id=outreach.contact_id
+                and contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)
+                and """ + SELECTED_RECIPIENT_SQL + """)
   and (send_after is null or (send_after <= clock_timestamp() and clock_timestamp() < send_before))
 returning sender_mailbox
 """
@@ -996,7 +1009,9 @@ def cmd_send(args):
                     cancel(oid, why)
                     continue
             problem = None
-            if not email or not email_re.match(email.strip()):
+            if not r.get("selected_recipient_matches", True):
+                problem = SELECTED_RECIPIENT_REASON
+            elif not email or not email_re.match(email.strip()):
                 problem = "recipient address missing or malformed: %r" % (email,)
             elif r["email_status"] == "invalid":
                 problem = "recipient failed verification"

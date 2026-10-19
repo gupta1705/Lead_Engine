@@ -926,6 +926,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .contact-row .role, .contact-row .mail { font-size: 12.5px; line-height: 17px; color: var(--text-subtlest); overflow-wrap: anywhere; }
 .contact-row.retired .who, .contact-row.retired .mail { color: var(--text-subtlest); }
 .contact-row .lozenge { margin-left: 4px; }
+.contact-row .contact-recipient { margin-top: 7px; }
+.recipient-help { margin-top: 10px; }
 .evidence-list.routes { margin-top: 10px; font-size: 13px; line-height: 19px; }
 .evidence-list.routes li span { min-width: 0; overflow-wrap: anywhere; }
 .tried { margin: 10px 0 0; line-height: 17px; }
