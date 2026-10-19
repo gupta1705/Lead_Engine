@@ -916,8 +916,6 @@ values (
     "entity_plural": "shows"
   },
   "outreach": {
-    "sending_paused": true,
-    "sending_paused_reason": "Owner, 2026-09-21: temporarily only US Production Houses sends. Drafting and approval carry on; approved emails wait in Approved until this is removed.",
     "sender": {
       "name": "LCX",
       "title": "Clipping desk",
