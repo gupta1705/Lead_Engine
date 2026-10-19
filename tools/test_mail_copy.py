@@ -88,6 +88,7 @@ class MailCopyTests(unittest.TestCase):
 
     def test_ordinary_reply_request_and_free_facts_are_preserved(self):
         for text in ("Would you be free for a call next week?",
+                     'Reply "yes" if you are free for a call on Tuesday.',
                      'Reply "yes" if Tuesday works for a conversation.',
                      "Your ad-free long-form series has 48 episodes.",
                      'We watched "Reply Yes", your latest film.'):

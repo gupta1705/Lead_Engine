@@ -6,6 +6,7 @@ import re
 _DASH = re.compile(r"[ \t]*(?:[\u2014\u2015\u2e3a\u2e3b]|&mdash;|&#0*8212;|&#x0*2014;|(?<!\S)--(?!\S))[ \t]*", re.I)
 _YES = re.compile(r"\b(?:reply|respond)\s+(?:with\s+)?[\"'\u201c\u201d\u2018\u2019]*yes\b", re.I)
 _FREE = re.compile(r"\bfree\b", re.I)
+_CLIP_OFFER = re.compile(r"\b(?:clips?|clipping|shorts?|samples?)\b|\bcut\s+three\b", re.I)
 _SAMPLE_REPLY = re.compile(r"\breply\s+here\b.*?\b(?:free\s+(?:clips?|shorts?|samples?)|(?:clips?|shorts?|samples?)\s+for\s+free)\b", re.I | re.S)
 
 
@@ -29,7 +30,7 @@ def remove_free_offer(text):
     for paragraph in paragraphs:
         yes=_YES.search(paragraph)
         sample=_SAMPLE_REPLY.search(paragraph)
-        if not ((yes and _FREE.search(paragraph,yes.start())) or sample):
+        if not ((yes and _FREE.search(paragraph,yes.start()) and _CLIP_OFFER.search(paragraph,yes.start())) or sample):
             out.append(paragraph);continue
         changed=True
         hit=yes or sample
