@@ -285,7 +285,7 @@ values (
       }
     },
     "generated_paragraph": {
-      "enabled": true,
+      "enabled": false,
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
       "min_words": 10,

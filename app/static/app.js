@@ -206,7 +206,7 @@ const state = {
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD }, cols: {}, token: 0 },
   leads: { filters: { q: "", status: "all", source: "", contact: "" }, selected: new Map(),
            page: 0, perPage: 50, total: 0, rows: [], token: 0 },
-  outreach: { folder: "drafts", rows: [], counts: {}, token: 0, busy: false, selected: new Set() },
+  outreach: { folder: "drafts", rows: [], counts: {}, category: "", service: "", sort: "default", direction: "desc", offset: 0, limit: 200, token: 0, busy: false, selected: new Set() },
   ops: { timer: null },
   notif: { counts: null, at: 0 },
 };
@@ -1088,7 +1088,9 @@ async function loadOutreach() {
   const o = state.outreach, token = ++o.token;
   if (!$("#outreachBody").children.length) $("#outreachBody").innerHTML = skeletonRows(5, 8);
   let d;
-  try { d = await api("/api/outreach?folder=" + encodeURIComponent(o.folder)); }
+  const query = new URLSearchParams({ folder: o.folder, category: o.category, service: o.service,
+    sort: o.sort, direction: o.direction, limit: o.limit, offset: o.offset });
+  try { d = await api("/api/outreach?" + query); }
   catch (e) { return toast("Could not load outreach: " + e.message, true); }
   // can an approval go out from here? (a connected mailbox) -- it words what "approve" does. Where each
   // person sends from their own Gmail, every person and address is listed with today's count instead.
@@ -1099,28 +1101,34 @@ async function loadOutreach() {
   }).catch(() => { $("#sendCounter").hidden = true; $("#mailboxStrip").hidden = true; });
   if (token !== o.token) return;
   o.rows = d.rows; o.counts = d.counts || {};
+  const total = d.total ?? d.rows.length;
+  if (o.offset && o.offset >= total) {
+    o.offset = total ? Math.floor((total - 1) / o.limit) * o.limit : 0;
+    return loadOutreach();
+  }
+  renderOutreachFilters(d);
   // Decide only after reading the folder counts. The project's cached policy
   // can say drafting is off while reviewed or externally written drafts exist.
   if (o.folder === "drafts" && !draftsOn()) {
     o.folder = "outbox";
     return loadOutreach();
   }
-  const present = new Set(d.rows.map((r) => r.id));
+  const present = new Set(d.rows.filter((r) => !r.approval_blocked).map((r) => r.id));
   o.selected = new Set([...(o.selected || [])].filter((id) => present.has(id)));
   const batch = batchOn() && o.folder === "drafts" && d.rows.length > 0;
   $("#outreachTable").classList.toggle("batch", batch);
   $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => (key !== "attention" || o.counts.attention || o.folder === "attention")
       && (key !== "drafts" || draftsOn())).map(([key, label]) =>
-    `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${o.counts[key] || 0}</span></button>`).join("");
+    `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${(d.filtered_counts || o.counts)[key] || 0}</span></button>`).join("");
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
-    o.folder = b.dataset.f; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
+    o.folder = b.dataset.f; o.offset = 0; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
   }));
   $("#outreachBody").innerHTML = d.rows.length ? d.rows.map((r) => `
     <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
-      <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} aria-label="Select this draft"></td>
-      <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div></span></div></td>
+      <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} ${r.approval_blocked ? `disabled title="${esc(r.approval_blocked)}"` : ""} aria-label="Select this draft"></td>
+      <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div>${outreachMetric(r)}</span></div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
-      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.service ? `<div class="secondary" title="The one service this email ${r.sent_at ? "pitched" : "pitches"}">${r.sent_at ? "Pitched" : "Pitches"} ${esc(r.service)}</div>` : ""}${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
+      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.service ? `<div class="secondary" title="The one service this email ${r.sent_at ? "pitched" : "pitches"}">${r.sent_at ? "Pitched" : "Pitches"} ${esc(r.service)}</div>` : ""}${r.approval_blocked ? `<div class="secondary outreach-hold">${esc(r.approval_blocked)}</div>` : ""}${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
       <td class="by-col">${r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
       ${(() => {   // when it last moved: sent, approved, or written -- not the draft's age on every tab
         const s = r.schedule;
@@ -1139,7 +1147,7 @@ async function loadOutreach() {
         const what = r.sent_at ? "Sent" : r.status === "approved" && r.approved_at ? "Approved" : r.direction === "inbound" ? "Received" : "Written";
         return `<td class="secondary nowrap" title="${esc(what + " " + fmtDate(at))}">${rel(at)}</td>`; })()}
     </tr>`).join("")
-    : `<tr class="empty-row"><td colspan="6">${o.folder === "drafts"
+    : `<tr class="empty-row"><td colspan="6">${o.category || o.service ? "No emails match these filters. Clear the filters to see all categories." : o.folder === "drafts"
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
         : o.folder === "outbox" && composeOn() ? "Nothing waiting to go out. To write to leads, pick them on the Leads page."
         : "Nothing in this folder yet."}</td></tr>`;
@@ -1153,7 +1161,44 @@ async function loadOutreach() {
     renderBatchBar();
   }));
   renderBatchBar();
+  const start = total ? o.offset + 1 : 0, end = Math.min(o.offset + o.rows.length, total);
+  $("#outreachPager").innerHTML = `<span class="info">${start}–${end} of ${total}</span>
+    <button class="btn compact" data-page="prev" ${o.offset ? "" : "disabled"}>Previous</button>
+    <button class="btn compact" data-page="next" ${end < total ? "" : "disabled"}>Next</button>`;
+  $$("#outreachPager [data-page]").forEach((b) => b.addEventListener("click", () => {
+    o.offset = Math.max(0, o.offset + (b.dataset.page === "next" ? o.limit : -o.limit));
+    o.selected.clear(); loadOutreach();
+  }));
   updateOutreachCount(o.counts);
+}
+
+function renderOutreachFilters(d) {
+  const o = state.outreach;
+  const options = (rows, all, value) => `<option value="">${all}</option>` + (rows || []).map((r) =>
+    `<option value="${esc(r.key)}" ${value === r.key ? "selected" : ""}>${esc(r.label || r.key)} (${r.n})</option>`).join("");
+  const sorts = [["default:desc", "Default order"], ["subscribers:desc", "Subscriber count: high to low"],
+    ["subscribers:asc", "Subscriber count: low to high"], ["views:desc", "Views: high to low"], ["views:asc", "Views: low to high"],
+    ["score:desc", "Lead score: high to low"], ["score:asc", "Lead score: low to high"],
+    ["date:desc", "Date: newest first"], ["date:asc", "Date: oldest first"]];
+  $("#outreachFilters").innerHTML = `<label>Category <select id="outreachCategory">${options(d.categories, "All categories", o.category)}</select></label>
+    ${(d.services || []).length ? `<label>Service <select id="outreachService">${options(d.services, "All services", o.service)}</select></label>` : ""}
+    <label>Sort by <select id="outreachSort">${sorts.map(([key, label]) => `<option value="${key}" ${key === o.sort + ":" + o.direction ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+    ${o.category || o.service || o.sort !== "default" ? '<button class="btn subtle compact" id="outreachReset">Reset</button>' : ""}
+    ${["subscribers", "views"].includes(o.sort) ? '<span class="small muted">Unknown metrics appear last.</span>' : ""}
+    <div class="pager" id="outreachPager" aria-label="Outreach pages"></div>`;
+  const change = () => { o.offset = 0; o.selected.clear(); loadOutreach(); };
+  $("#outreachCategory").addEventListener("change", (e) => { o.category = e.target.value; change(); });
+  $("#outreachService")?.addEventListener("change", (e) => { o.service = e.target.value; change(); });
+  $("#outreachSort").addEventListener("change", (e) => { [o.sort, o.direction] = e.target.value.split(":"); change(); });
+  $("#outreachReset")?.addEventListener("click", () => { o.category = o.service = ""; o.sort = "default"; o.direction = "desc"; change(); });
+}
+
+function outreachMetric(row) {
+  const key = state.outreach.sort;
+  const [label, value] = key === "subscribers" ? ["Subscribers", row.subscriber_count]
+    : key === "views" ? ["Views", row.view_count] : ["Lead score", row.lead_score];
+  if (value == null && !["subscribers", "views", "score"].includes(key)) return "";
+  return `<div class="secondary">${label}: ${value == null ? "Unknown" : esc(Number(value).toLocaleString())}</div>`;
 }
 
 function renderBatchBar() {
@@ -1167,7 +1212,9 @@ function renderBatchBar() {
     ${n ? `<span class="small muted">You'll read a random ${k} of them before they're approved.</span>` : ""}
     <span class="grow"></span>
     <button class="btn primary" id="batchGo" ${n ? "" : "disabled"}>${icon("check", 16)} Approve ${n || ""} selected</button>`;
-  const all = $("#outreachSelAll"), cap = Math.min(o.rows.length, pol.max_batch || o.rows.length);
+  const available = o.rows.filter((r) => !r.approval_blocked).length;
+  const all = $("#outreachSelAll"), cap = Math.min(available, pol.max_batch || available);
+  all.disabled = !cap;
   all.checked = n > 0 && n >= cap;
   all.indeterminate = n > 0 && n < cap;
   all.setAttribute("aria-label", "Select the first " + cap + " drafts"); all.title = "Select the first " + cap + " drafts";
@@ -1628,7 +1675,7 @@ function openMessage(id) {
             ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.schedule && r.schedule.held && !r.sent_at && r.status === "approved" ? `<dt>Goes out</dt><dd>Held back, not sent${r.send_error ? "" : `<div class="small muted">${esc(r.schedule.held_why || "")}</div>`}</dd>` : ""}
             ${r.schedule && !r.schedule.held && !r.sent_at && ["approved", "sending"].includes(r.status) ? `<dt>Goes out</dt><dd>${esc(whenText(r.schedule))}${r.schedule.send_tz_reason ? `<div class="small muted">${esc(r.schedule.send_tz_reason)}</div>` : ""}${r.schedule.reschedules && r.schedule.wait_why ? `<div class="small muted">Moved ${r.schedule.reschedules === 1 ? "once" : r.schedule.reschedules + " times"}: ${esc(r.schedule.wait_why)}</div>` : ""}</dd>` : ""}
-            ${isDraft && sendWindow() ? `<dt>Next window</dt><dd id="msgWindow"><span class="skel" style="width:70%;height:12px"></span></dd>` : ""}
+            ${isDraft && sendWindow() && !r.approval_blocked ? `<dt>Next window</dt><dd id="msgWindow"><span class="skel" style="width:70%;height:12px"></span></dd>` : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
             ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">This draft includes text written or rewritten by AI. Review its facts and wording before approving.</dd>` : ""}
@@ -1639,7 +1686,7 @@ function openMessage(id) {
     <div class="modal-foot">
       <span class="left" id="msgFootNote">${esc(footNote(r, isDraft))}</span>
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
-      ${isDraft ? `<button class="btn" id="draftSave">Save draft</button><button class="btn primary" data-act="approve">${icon("send", 16)} ${sendWindow() ? "Approve" : "Approve and send"}</button>` : ""}
+      ${isDraft ? `<button class="btn" id="draftSave">Save draft</button>${r.approval_blocked && r.can_link_contact ? '<button class="btn" data-act="link_contact">Use verified contact</button>' : ""}<button class="btn primary" data-act="approve" ${r.approval_blocked ? `disabled title="${esc(r.approval_blocked)}"` : ""}>${icon("send", 16)} ${sendWindow() ? "Approve" : "Approve and send"}</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
       ${isReply && r.status !== "cancelled" ? `<button class="btn" data-act="mark_negative">Mark negative</button><button class="btn primary" data-act="mark_positive">${icon("check", 16)} Mark positive</button>` : ""}
     </div>`, { label: r.subject || "Message", sheet: true });
@@ -1648,7 +1695,7 @@ function openMessage(id) {
   modal.current = { kind: "mail", id };
   bindNav(root);
   // a draft names the window approving it now aims at, never a minute: the minute is drawn on approval
-  if (isDraft && sendWindow()) {
+  if (isDraft && sendWindow() && !r.approval_blocked) {
     api("/api/outreach/" + encodeURIComponent(id) + "/window").then((w) => {
       if (!modal.isOpen() || !modal.current || modal.current.id !== id) return;
       const cell = $("#msgWindow", root), foot = $("#msgFootNote", root);
@@ -1672,7 +1719,7 @@ function openMessage(id) {
         await api("/api/outreach/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subject: subj.value, body: body.value, ai_rewritten: body.dataset.aiRewritten === "true" }) });
         was.s = r.subject = subj.value; was.b = r.body = body.value;
-        flag("Draft saved", { desc: "Ready to review and approve." });
+        flag("Draft saved", { desc: r.approval_blocked || "Ready to review and approve." });
       } catch (e) { toast(e.message, true); }
       finally { o.busy = false; btn.classList.remove("loading"); controls.forEach(([el, disabled]) => { if (el.isConnected) el.disabled = disabled; }); }
     });
@@ -1689,10 +1736,11 @@ function openMessage(id) {
   $$("[data-act]", root).forEach((b) => b.addEventListener("click", async () => {
     if (o.busy) return;                       // double-click guard (review finding)
     o.busy = true;
-    $$("#modalRoot .btn").forEach((x) => x.disabled = true);
+    const controls = $$("#modalRoot .btn").map((x) => [x, x.disabled]);
+    controls.forEach(([x]) => x.disabled = true);
     b.classList.add("loading");
     try {
-      if (b.dataset.act === "approve") {
+      if (["approve", "link_contact"].includes(b.dataset.act)) {
         await api("/api/outreach/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ subject: $("#draftSubject", root).value, body: $("#draftBody", root).value, ai_rewritten: $("#draftBody", root).dataset.aiRewritten === "true" }) });
       }
@@ -1701,7 +1749,7 @@ function openMessage(id) {
       const heldNow = res.schedule && res.schedule.held ? res.schedule : null;
       if (heldNow) res.schedule = null;
       const msg = { approve: heldNow ? "Approved, held back" : res.can_send && !res.schedule ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",
-        mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped" }[b.dataset.act];
+        mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped", link_contact: "Verified contact linked" }[b.dataset.act];
       const perPerson = o.mbx && o.mbx.mode === "approver";
       const from = res.sends_from && res.sends_from.length ? res.sends_from[0] : "";
       // with a sending window it goes at the second just drawn for it, on its recipient's clock
@@ -1721,7 +1769,7 @@ function openMessage(id) {
       flag(msg, { desc, ms: res.schedule ? 7000 : undefined });
       modal.close(true);
       await loadOutreach();
-    } catch (e) { toast(e.message, true); $$("#modalRoot .btn").forEach((x) => x.disabled = false); b.classList.remove("loading"); }
+    } catch (e) { toast(e.message, true); controls.forEach(([x, disabled]) => { if (x.isConnected) x.disabled = disabled; }); b.classList.remove("loading"); }
     finally { o.busy = false; }
   }));
 }
@@ -1933,6 +1981,7 @@ function approverNote(r, isDraft, win) {
 
 /* The sheet foot's one sentence: what approving this draft does, or what this approval will do. */
 function footNote(r, isDraft, win) {
+  if (isDraft && r.approval_blocked) return r.approval_blocked;
   const o = state.outreach;
   const per = approverNote(r, isDraft, win);
   if (per != null) return per;
@@ -2019,7 +2068,7 @@ function bindOps() {
   $("#footerBtn").addEventListener("click", openFooter);
   $("#outreachSelAll").addEventListener("change", (e) => {
     const o = state.outreach, max = (outreachPolicy().batch_approval || {}).max_batch || o.rows.length;
-    o.selected = new Set(e.target.checked ? o.rows.slice(0, max).map((r) => r.id) : []);   // a batch is at most max_batch
+    o.selected = new Set(e.target.checked ? o.rows.filter((r) => !r.approval_blocked).slice(0, max).map((r) => r.id) : []);
     $$("#outreachBody [data-sel]").forEach((c) => { c.checked = o.selected.has(c.dataset.sel); });
     renderBatchBar();
   });

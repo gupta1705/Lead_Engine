@@ -2805,7 +2805,7 @@ values (
     "greeting_fallback": "there",
     "hook_style": "lcx_services",
     "generated_pitch": {
-      "enabled": true,
+      "enabled": false,
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
       "problem_words": [

@@ -793,7 +793,9 @@ def export(status: str = "shortlisted", min_score: float = 0, source: str = "", 
 
 # ------------------------------------------------------------------ outreach
 @app.get("/api/outreach")
-def outreach_list(request: Request, folder: str = "drafts", segment: str = Depends(current_segment)):
+def outreach_list(request: Request, folder: str = "drafts", category: str = "", service: str = "",
+                  sort: str = "default", direction: str = "desc", limit: int = 200, offset: int = 0,
+                  segment: str = Depends(current_segment)):
     """One folder of the outreach_folders view, newest first, for this segment. Replies holds
     every reply, marked or not (the mark is on the row); 'untriaged' counts the ones nobody has
     marked yet, which is what the sidebar count shows.
@@ -806,19 +808,37 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
     me = people.get((getattr(request.state, "user", None) or "").lower())
     dr = _render()
     pol = _policy()
-    # Approved is the queue: the next to go first (each email's own moment, owner 2026-10-12), then the
-    # ones with no time, oldest first -- the order they are sent in. One held back with a send error goes on
-    # no day, so it comes after the queue, not at its head (review, 2026-10-12)
-    order = ("(f.send_error is not null), f.send_after asc nulls first, f.created_at" if folder == "outbox"
-             else "coalesce(f.sent_at, f.created_at) desc")
+    import outreach_query as oq
+    try:
+        order = oq.ordering(folder, sort, direction)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if len(category) > 200 or len(service) > 200:
+        raise HTTPException(400, "That outreach filter is too long.")
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    base = "e.segment_id = (select id from segments where slug = %s)"
+    filters, params = [], [segment]
+    if category:
+        filters.append(oq.CATEGORY + " = %s"); params.append(category)
+    if service:
+        filters.append("f.service = %s"); params.append(service)
+    clause = base + (" and " + " and ".join(filters) if filters else "")
     with cursor() as cur:
         cfg = pol.outreach_config(cur, segment)
         wcfg = _wcfg(cfg)
         paused = pol.sending_paused(cfg)
         cur.execute(
-            "select f.* from outreach_folders f join entities e on e.id = f.entity_id"
-            " where f.folder = any(%s) and e.segment_id = (select id from segments where slug = %s)"
-            " order by " + order + " limit 200", (folders, segment))
+            "select f.*,e.fit_score as lead_score," + oq.CATEGORY + " as category,"
+            + oq.SUBSCRIBERS + " as subscriber_count," + oq.VIEWS + " as view_count,"
+            " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
+            " (e.status in ('shortlisted','contacted') and exists(select 1 from contacts available"
+            " where available.entity_id=e.id and available.email is not null"
+            " and contact_allowed(e.id,available.source,available.verifier,available.email_status)"
+            " and contact_rank(available.full_name,available.email,available.role_title,available.email_status,e.domain)>-500)) as can_link_contact"
+            " from outreach_folders f join entities e on e.id = f.entity_id"
+            " join outreach stored on stored.id=f.id left join contacts c on c.id=stored.contact_id"
+            " where f.folder = any(%s) and " + clause +
+            " order by " + order + " limit %s offset %s", [folders] + params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
         sells = sells_services(segment)
         for r in rows:
@@ -831,6 +851,11 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
             _shown_sender(r)
             if r["status"] == "drafted" and r["direction"] == "outbound":
                 r["body"] = dr.personalize(r["body"], cfg, me)
+                r["approval_blocked"] = ("Needs a verified contact before approval." if not r.get("contact_email")
+                    else "Recipient failed email verification." if r.get("email_status") == "invalid"
+                    else "Recipient email is not eligible for sending." if not r.get("contact_verified")
+                    else "Company qualification is still in review." if not r.get("sequence_step")
+                         and r["lead_status"] not in ("shortlisted", "contacted") else None)
             if r["direction"] == "outbound" and r["status"] in ("approved", "sending", "sent"):
                 # when it goes (or went): its recipient's clock and India's, and why that zone -- or, held back
                 # (a send error, or sending paused), no time at all and why
@@ -839,10 +864,24 @@ def outreach_list(request: Request, folder: str = "drafts", segment: str = Depen
                     " join entities e on e.id = f.entity_id"
                     " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
                     (segment,))
-        counts = {r["folder"]: r["n"] for r in cur.fetchall()}
-    counts["untriaged"] = counts.get("inbox", 0)
-    counts["inbox"] = counts["untriaged"] + counts.pop("positive", 0) + counts.pop("negative", 0)
-    return {"rows": rows, "counts": counts}
+        counts = oq.folder_counts(cur.fetchall())
+        cur.execute("select f.folder,count(*) as n from outreach_folders f join entities e on e.id=f.entity_id"
+                    " where " + clause + " group by f.folder", params)
+        filtered_counts = oq.folder_counts(cur.fetchall())
+        cur.execute("select " + oq.CATEGORY + " as key,count(*) as n from outreach_folders f"
+                    " join entities e on e.id=f.entity_id where " + base + " group by 1 order by 1", (segment,))
+        categories = [dict(r) for r in cur.fetchall()]
+        cur.execute("select config->'audiences' as audiences from segments where slug=%s", (segment,))
+        audiences = (cur.fetchone() or {}).get("audiences") or []
+        labels = {a["key"]: a.get("label") or a["key"] for a in audiences if a.get("key")}
+        for item in categories:
+            item["label"] = labels.get(item["key"], item["key"].replace("_", " ").capitalize())
+        cur.execute("select f.service as key,count(*) as n from outreach_folders f join entities e on e.id=f.entity_id"
+                    " where " + base + " and nullif(f.service,'') is not null group by 1 order by 1", (segment,))
+        services = [dict(r) for r in cur.fetchall()]
+    return {"rows": rows, "counts": counts, "filtered_counts": filtered_counts,
+            "total": filtered_counts.get(folder, 0), "categories": categories, "services": services,
+            "limit": limit, "offset": offset}
 
 
 @app.get("/api/outreach/attachment")
@@ -962,7 +1001,26 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
         if not msg:
             raise HTTPException(404, "no such message")
         eid = msg["entity_id"]
-        if action == "approve":
+        if action == "link_contact":
+            cur.execute("select o.status,o.direction,e.status as lead_status,s.slug from outreach o"
+                        " join entities e on e.id=o.entity_id join segments s on s.id=e.segment_id"
+                        " where o.id=%s for update of o,e", (oid,))
+            row = cur.fetchone()
+            if row["slug"] != segment:
+                raise HTTPException(404, "No such draft in this project.")
+            if row["status"] != "drafted" or row["direction"] != "outbound" or row["lead_status"] not in ("shortlisted", "contacted"):
+                raise HTTPException(409, "Qualify the company before linking its draft recipient.")
+            cur.execute("select c.id from contacts c join entities e on e.id=c.entity_id"
+                        " where e.id=%s and c.email is not null and contact_allowed(e.id,c.source,c.verifier,c.email_status)"
+                        " and contact_rank(c.full_name,c.email,c.role_title,c.email_status,e.domain)>-500"
+                        " order by contact_rank(c.full_name,c.email,c.role_title,c.email_status,e.domain) desc,c.created_at,c.id limit 1",
+                        (eid,))
+            contact = cur.fetchone()
+            if not contact:
+                raise HTTPException(409, "No eligible verified contact is available yet.")
+            cur.execute("update outreach set contact_id=%s,updated_at=now() where id=%s and status='drafted'", (contact["id"], oid))
+            return {"ok": True}
+        elif action == "approve":
             cfg = pol.outreach_config(cur, segment)
             dr = _render()
             too_long = long_subjects(cur, [oid], cfg)

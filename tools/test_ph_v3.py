@@ -22,7 +22,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 RESULTS = []
 OUT = json.loads((ROOT / "config" / "segment.us-production-houses.json").read_text(encoding="utf-8"))["outreach"]
-POL = llm.partner_policy(OUT)
+# Validate the optional writer with a stub even when automatic generation is off.
+POL = llm.partner_policy(dict(OUT, generated_paragraph=dict(OUT["generated_paragraph"], enabled=True)))
 KART = {"email": "kartikeyap@theviralfever.com", "name": "Kartikeya", "title": "Business Development and IP Strategy"}
 SUHAS = {"email": "suhasc@theviralfever.com", "name": "Suhas C", "title": "Business Development"}
 DASHES = ("—", "–", "‒", "―", "−", " - ", "--")

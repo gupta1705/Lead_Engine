@@ -39,6 +39,7 @@ scratch_*.json
 scratch_*.js
 scratch_*.txt
 logs/
+supabase/.temp/
 .gmail_token.json
 
 # every Gmail token: per segment and per mailbox (.gmail_token.<segment>.<mailbox>.json)
