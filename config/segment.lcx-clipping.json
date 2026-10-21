@@ -911,12 +911,12 @@
    "name": "LCX",
    "title": "Clipping desk",
    "company": "LCX",
-   "postal_address": "SET_ME street address for the email footer (CAN-SPAM)",
+   "postal_address": "",
    "email_env": "GMAIL_SENDER_ADDRESS_LCX_CLIPPING",
-   "guidance": "The canonical sign-off a draft is stored in (name LCX, title Clipping desk, company LCX: it reads \"LCX / Clipping desk, LCX\", the same text as before 2026-10-13), never what goes out: since the owner's update of 2026-10-13 (\"sign with the approver's name\", sign_as approver) whoever opens a draft sees it signed with their own name and title, approving stores exactly that, and approval is refused while the approver's profile has no name or title. The name was SET_ME until then; it may not be, because SET_ME must never appear in a draft. The address is retained as an optional footer field and omitted from the email footer (owner, 2026-10-09); it stays SET_ME until the owner confirms one (2026-10-13: it is not in the footer, so it never reaches a draft, and `outreach.py send` refuses this project while it is SET_ME). The sending address is the project's own pool mailbox (mailboxes)."
+   "guidance": "Canonical LCX identity used to store drafts. Each approver's connected Gmail sends new mail and their profile supplies the displayed sign-off. Postal address is optional and not in the footer; no unused SET_ME placeholder may block sending. The email_env entry is retained only for historical pool mail."
   },
   "sign_as": "approver",
-  "sign_as_guidance": "The owner, 2026-10-13: \"sign with the approver's name\". LCX Clipping keeps sending from its own pool mailboxes (mailboxes, not send_from approver), but each email is signed with the approving person's own name and title, as LCX Services' emails are (tools/draft_render.signs_as_approver, personalize; app/main.py approval).",
+  "sign_as_guidance": "Emails are signed by their approver and sent from that person's connected Gmail (send_from approver).",
   "subject_max_words": 16,
   "subject_max_words_guidance": "Owner, 2026-10-21: the four ReelForge subjects supersede the earlier five-word rule for LCX Clipping alone. Named shows and clips/48-hour subjects are allowed; a long show name uses the template's fallback.",
   "send_window": {
@@ -1033,7 +1033,7 @@
     }
    }
   ],
-  "mailbox_guidance": "Owner decision 2026-09-10. Openers are spread across the connected mailboxes, each to the one with the most room left today; follow-ups always leave from the mailbox that sent the opener (sql/24 enforces it). A mailbox takes part once its address is in .env under email_env and `outreach.py auth --mailbox <key>` has been run on the sending machine; the others are skipped, never guessed. Warm-up: start_cap a day from the mailbox's first send, +step every every_days, up to daily_cap (10 -> 40 over twelve days). Use addresses on a sending domain of LCX's own, not the main company domain, so a bad week cannot hurt everyday mail. Each email is signed by the person who approved it (sign_as approver, owner 2026-10-13), whichever mailbox it leaves from. daily_send_cap is the ceiling across all of them.",
+  "mailbox_guidance": "Legacy project-pool entries are retained for historical reply polling. New emails use the approving person's connected Gmail and that mailbox's cross-project daily cap.",
   "footer": {
    "text": "Regards,\n{{sender_name}}\nLCX | lightscameraexperiment.com",
    "guidance": "Owner's 2026-10-21 sign-off, using each approver's own name under the existing sign_as setup."
@@ -1047,7 +1047,9 @@
    "max_calls_per_run": 200,
    "requests_per_minute": 25
   },
-  "reelforge_templates": "reelforge-20261021"
+  "reelforge_templates": "reelforge-20261021",
+  "send_from": "approver",
+  "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads."
  },
  "schedule": [
   {

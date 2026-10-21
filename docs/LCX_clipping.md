@@ -442,5 +442,9 @@ uses these templates and deterministic facts without Groq. Subjects may use up t
 this project; all other projects retain their existing limits.
 
 Sign-offs use the existing approver-name setup and end in `LCX | lightscameraexperiment.com`.
+Since 21 October 2026, new emails also send through that approver's connected Gmail
+(`send_from: approver`), using its existing daily limit across projects. Historical pool
+mailboxes remain for reading replies. The unused postal-address placeholder is empty,
+so it cannot prevent the scheduler from sending a signed and approved email.
 The rewrite moves any affected approval back to Drafts for a fresh review. Sent history,
 recipient choices, qualification rules, source pipelines and sending limits are preserved.
