@@ -465,5 +465,6 @@ first. Explicit subscriber/view/score/date sorts still work. Existing approved
 email sending times and the mailbox's 50-per-day cap remain in force.
 
 The Wednesday refresh automatically discovers, qualifies, enriches and drafts
-new leads with the four ReelForge templates. No Apollo credits or model calls
+new leads with the four ReelForge templates. Its initial scoring pass defers
+shortlisting until enrichment finishes and the final gates have run. No Apollo credits or model calls
 are used for clipping. An email still requires a person's approval before sending.

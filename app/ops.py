@@ -187,6 +187,13 @@ JOBS = {
                 "duplicates, judge inputs (LCX Services), zero-unverified, score, apply gates, auto-shortlist.",
         "cmd": [PY, "tools/run_chain.py"],
     },
+    "prepare_clipping_candidates": {
+        "label": "Qualify new clipping candidates",
+        "group": "Process",
+        "desc": "Promote and score new candidates; defer shortlisting until channel and contact enrichment finish.",
+        "cmd": [PY, "tools/run_chain.py", "--defer-shortlist"],
+        "segments": ["lcx-clipping"],
+    },
     "resolve_domains": {
         "label": "Resolve missing websites",
         "group": "Enrich",

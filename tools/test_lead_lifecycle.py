@@ -13,6 +13,18 @@ from run_sql import load_db_url
 
 
 class Lifecycle(unittest.TestCase):
+    def test_candidate_pass_defers_shortlist_until_final_pass(self):
+        from unittest.mock import patch
+        import run_chain
+        with patch('sys.argv',['run_chain.py','--defer-shortlist']), patch('subprocess.call',return_value=0) as calls:
+            self.assertEqual(run_chain.main(),0)
+            commands = [call.args[0] for call in calls.call_args_list]
+            self.assertTrue(any('sql/13_apply_gates.sql' in command for command in commands))
+            self.assertFalse(any('sql/14_auto_shortlist.sql' in command for command in commands))
+        with patch('sys.argv',['run_chain.py']), patch('subprocess.call',return_value=0) as calls:
+            self.assertEqual(run_chain.main(),0)
+            self.assertTrue(any('sql/14_auto_shortlist.sql' in call.args[0] for call in calls.call_args_list))
+
     def test_scheduler_expires_before_drafting_and_keeps_send_step(self):
         from scheduler import Scheduler
         from types import SimpleNamespace

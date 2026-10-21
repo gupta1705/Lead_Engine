@@ -11,6 +11,7 @@ stops the chain -- a half-run chain with a clear error beats a full run with
 silent damage.
 """
 import os
+import argparse
 import re
 import subprocess
 import sys
@@ -65,12 +66,18 @@ def command(args):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--defer-shortlist", action="store_true",
+                        help="Qualify candidates now; shortlist only after enrichment finishes")
+    options = parser.parse_args()
     print("segment: %s" % SEGMENT, flush=True)
     # every step is told the segment explicitly: a tool's own default may differ from the chain's
     # (tools/lcx_judge.py defaults to lcx-services, the chain to us-production-houses), so a chain started
     # with no SEGMENT_SLUG must not judge another project's leads
     env = dict(os.environ, SEGMENT_SLUG=SEGMENT)
     for name, args in STEPS:
+        if options.defer_shortlist and name == "auto shortlist":
+            continue
         print("== %s ==" % name, flush=True)
         rc = subprocess.call(command(args), cwd=str(REPO), env=env)
         if rc != 0:

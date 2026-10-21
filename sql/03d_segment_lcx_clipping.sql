@@ -1078,7 +1078,7 @@ values (
       "discover_podcasts",
       "discover_youtube",
       "discover_wikidata_channels",
-      "promote_chain",
+      "prepare_clipping_candidates",
       "enrich_clipping",
       "enrich_contacts",
       "promote_chain",
