@@ -40,6 +40,13 @@ LOGDIR = REPO / "logs" / "ops"
 PY = "python"
 
 JOBS = {
+    "expire_leads": {
+        "label": "Clear expired leads",
+        "group": "Process",
+        "desc": "Archive untouched leads after the project's retention period; keep approvals and conversations.",
+        "cmd": [PY, "tools/lead_lifecycle.py"],
+        "hidden": True,
+    },
     "discover_apollo": {
         "label": "Find leads on Apollo",
         "group": "Discover",

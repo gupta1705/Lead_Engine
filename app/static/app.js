@@ -1256,7 +1256,8 @@ function renderOutreachFilters(d) {
   const o = state.outreach;
   const options = (rows, all, value) => `<option value="">${all}</option>` + (rows || []).map((r) =>
     `<option value="${esc(r.key)}" ${value === r.key ? "selected" : ""}>${esc(r.label || r.key)} (${r.n})</option>`).join("");
-  const sorts = [["default:desc", "Default order"], ["subscribers:desc", "Subscriber count: high to low"],
+  const defaultLabel = o.folder === "drafts" && segUi().prioritize_fresh_leads ? "Priority: fresh + high score" : "Default order";
+  const sorts = [["default:desc", defaultLabel], ["subscribers:desc", "Subscriber count: high to low"],
     ["subscribers:asc", "Subscriber count: low to high"], ["views:desc", "Views: high to low"], ["views:asc", "Views: low to high"],
     ["score:desc", "Lead score: high to low"], ["score:asc", "Lead score: low to high"],
     ["date:desc", "Date: newest first"], ["date:asc", "Date: oldest first"]];

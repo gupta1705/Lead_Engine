@@ -913,7 +913,8 @@ values (
     ],
     "lead_first": "person",
     "summary_label": "Host · show",
-    "entity_plural": "shows"
+    "entity_plural": "shows",
+    "prioritize_fresh_leads": true
   },
   "outreach": {
     "sender": {
@@ -1058,7 +1059,8 @@ values (
     },
     "reelforge_templates": "reelforge-20261021",
     "send_from": "approver",
-    "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads."
+    "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads.",
+    "prioritize_fresh_leads": true
   },
   "schedule": [
     {
@@ -1072,13 +1074,15 @@ values (
   ],
   "pipelines": {
     "weekly_refresh": [
+      "expire_leads",
       "discover_podcasts",
       "discover_youtube",
       "discover_wikidata_channels",
       "promote_chain",
       "enrich_clipping",
       "enrich_contacts",
-      "promote_chain"
+      "promote_chain",
+      "draft_outreach"
     ]
   },
   "wikidata_channel_discovery": {
@@ -1107,6 +1111,11 @@ values (
     "enabled": true,
     "guidance": "Owner decision 2026-09-14. Every ready_for_review lead with fit_score strictly above min_score is shortlisted by the last step of the promote chain (sql/14_auto_shortlist.sql) instead of by hand. Rejected, archived and contacted rows are never touched, and a lead a person moves back to review is never shortlisted again (metadata.auto_shortlisted_at). Shortlisting sends nothing: every draft still needs approval. Set enabled to false to go back to shortlisting by hand.",
     "min_score": 20
+  },
+  "lead_retention": {
+    "enabled": true,
+    "days": 14,
+    "keep_approved_and_conversations": true
   }
 }'::jsonb
 )

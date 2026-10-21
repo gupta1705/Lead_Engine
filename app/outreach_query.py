@@ -15,10 +15,13 @@ WHEN = "coalesce(f.sent_at,case when f.status='approved' then f.approved_at end,
 SORTS = {"subscribers": SUBSCRIBERS, "views": VIEWS, "score": "e.fit_score", "date": WHEN}
 
 
-def ordering(folder, sort, direction):
+def ordering(folder, sort, direction, prioritize_fresh=False):
     if sort not in ("default", *SORTS) or direction not in ("asc", "desc"):
         raise ValueError("Choose a valid outreach sort and direction.")
     if sort == "default":
+        if folder == "drafts" and prioritize_fresh:
+            from lead_lifecycle import priority_order
+            return priority_order() + ",f.id"
         order = ("(f.send_error is not null),f.send_after asc nulls first,f.created_at"
                  if folder == "outbox" else WHEN + " desc")
     else:

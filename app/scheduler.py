@@ -360,6 +360,16 @@ class Scheduler:
         now = now or _now()
         with self._cursor() as cur:
             cfg = pol.outreach_config(cur, segment)
+            from lead_lifecycle import PROTECTED, OPEN, retention_days
+            cur.execute("select config from segments where slug=%s", (segment,))
+            retention = cur.fetchone()
+            days = retention_days(retention["config"]) if retention else None
+            expire = False
+            if days:
+                cur.execute("select 1 from entities e join segments s on s.id=e.segment_id "
+                            "where s.slug=%s and e.status in %s and not (" + PROTECTED + ") "
+                            "and e.created_at <= now() - %s * interval '1 day' limit 1", (segment, OPEN, days))
+                expire = cur.fetchone() is not None
             templates = bool((cfg or {}).get("templates"))
             # a project whose emails a person writes (outreach.compose, the Universal project since
             # 2026-09-27) has nothing to draft, but what they approved still has to go out
@@ -398,7 +408,7 @@ class Scheduler:
                     room = min(max(0, int(cfg.get("daily_send_cap", 20)) - sent_today),
                                sum(st["remaining"] for st in status if st["key"] in connected))
         return {"draft": draft, "followups": followups, "approved": approved, "connected": connected,
-                "paused": bool(paused), "send": approved and room > 0, "pull": pull}
+                "paused": bool(paused), "send": approved and room > 0, "pull": pull, "expire": expire}
 
     def outreach_tick(self, segment, trigger="schedule"):
         """Draft what needs drafting, send what is approved. -> "idle" | "ok" | "skipped" | "failed"."""
@@ -406,7 +416,7 @@ class Scheduler:
         if not work:
             return "idle"
         # replies first: a reply that arrived pauses the follow-ups the next step would draft
-        steps = ([("pull_replies", work.get("pull")), ("draft_followups", work["followups"]),
+        steps = ([("expire_leads", work.get("expire")), ("pull_replies", work.get("pull")), ("draft_followups", work["followups"]),
                   ("draft_outreach", work["draft"]), ("send_outreach", work["send"])])
         steps = [k for k, needed in steps if needed]
         if not steps:

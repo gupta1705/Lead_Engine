@@ -448,3 +448,22 @@ mailboxes remain for reading replies. The unused postal-address placeholder is e
 so it cannot prevent the scheduler from sending a signed and approved email.
 The rewrite moves any affected approval back to Drafts for a fresh review. Sent history,
 recipient choices, qualification rules, source pipelines and sending limits are preserved.
+
+## Fresh lead lifecycle (2026-10-21)
+
+Untouched LCX Clipping leads expire 14 days after their original discovery time.
+The scheduler checks every 15 minutes and after a restart. Expiry archives the
+lead and cancels its unapproved drafts, removing both from active queues while
+retaining the history used to prevent duplicate reimports. Enrichment never
+resets the discovery date. Approved leads, any previous approval, sent messages,
+in-flight sends, contacted leads and conversations are protected.
+
+The Leads list, draft generation and Outreach's default Drafts order use lead
+score plus a freshness bonus: two points for each day remaining in the 14-day
+window, up to 28 points. Equal priorities put higher scores, then newer leads
+first. Explicit subscriber/view/score/date sorts still work. Existing approved
+email sending times and the mailbox's 50-per-day cap remain in force.
+
+The Wednesday refresh automatically discovers, qualifies, enriches and drafts
+new leads with the four ReelForge templates. No Apollo credits or model calls
+are used for clipping. An email still requires a person's approval before sending.

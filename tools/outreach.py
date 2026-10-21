@@ -127,6 +127,7 @@ from recipient_selection import CONTACT_SELECTION_SQL, recipient_metadata  # noq
 
 def cmd_draft(args):
     from dbconn import Db
+    from lead_lifecycle import priority_order
     db = Db()
     cfg = load_outreach_config(db)
     requested = None
@@ -148,6 +149,7 @@ def cmd_draft(args):
     # Respect the recipient the reviewer chose; otherwise use the best-ranked
     # eligible contact. A stale choice holds the lead instead of changing who
     # receives it. The shared selector retains contact verification/rank checks.
+    order = priority_order() if cfg.get("prioritize_fresh_leads") else "e.fit_score desc nulls last,e.created_at desc,e.id"
     rows = db.run(lambda cur: (cur.execute("""
         select e.id, e.name, e.metadata, c.id, c.full_name, c.email, c.source
         from entities e
@@ -157,7 +159,7 @@ def cmd_draft(args):
           and not exists (select 1 from outreach o
                           where o.entity_id = e.id and o.direction = 'outbound'
                             and o.status not in ('cancelled','failed'))
-        order by e.fit_score desc nulls last limit %s
+        order by """ + order + """ limit %s
     """, (SEGMENT, args.limit)), cur.fetchall())[1])
 
     if not rows:

@@ -469,6 +469,9 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
         where.append("coalesce(e.fit_score,0) >= %s")
         params.append(min_score)
     order = "e.fit_score desc nulls last, e.name"
+    if segment_info(segment)["ui"].get("prioritize_fresh_leads"):
+        from lead_lifecycle import priority_order
+        order = priority_order()
     # The contact filter is kept out of `clause` so the counts below can say how
     # the CURRENT selection splits -- which is what decides whether the filter is
     # worth showing at all. The lead-service tab is kept out the same way, for the
@@ -980,6 +983,7 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
     people = _people()
     with cursor() as cur:
         cfg = pol.outreach_config(cur, segment)
+        order = oq.ordering(folder, sort, direction, bool(cfg.get("prioritize_fresh_leads")))
         cur.execute(
             _outreach_select() +
             " where f.folder = any(%s) and " + clause +
