@@ -1034,6 +1034,9 @@ def pick_template(cfg, meta, ctx=None):
     there, as the owner's samples do); else the first template with no
     conditions. Follow-up templates are never openers."""
     tpls = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]
+    if cfg.get("reelforge_templates") and ctx:
+        from clipping_templates import pick
+        return pick(tpls, ctx)
     for t in tpls:
         w = t.get("when") or {}
         if not w:
@@ -1099,8 +1102,9 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
     meta = meta or {}
     partnership = cfg.get("hook_style") == "tvf_partnership"
     lcxs = cfg.get("hook_style") == "lcx_services"
+    reelforge = bool(cfg.get("reelforge_templates"))
     written = None
-    if generator is not None and not partnership and not lcxs:
+    if generator is not None and not partnership and not lcxs and not reelforge:
         try:
             written = generator(facts_for(company, meta, now), seed)
         except Exception:                    # a model must never fail a draft run
@@ -1110,7 +1114,7 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "company": company,
         "greeting_name": person or greeting_for(None, contact_email, company, cfg.get("greeting_fallback")),
         "contact_named": bool(person),
-        "hook": written or (None if (partnership or lcxs) else hook_line(meta, company, cfg, seed, now)),
+        "hook": written or (None if (partnership or lcxs or reelforge) else hook_line(meta, company, cfg, seed, now)),
         "generated_hook": written or "",
         "latest_work": latest_work(meta, now),
         "clip_math": clip_math(meta),
@@ -1133,6 +1137,10 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         import contacts
         ctx.update(tvf_partnership_context(cfg, company, meta, seed, now, generator, person,
                                            contacts.clean_name(contact_name, contact_email, company) if person else None))
+    if cfg.get("reelforge_templates"):
+        from clipping_templates import context as clipping_context
+        title, noun = latest_title(meta, now)
+        ctx.update(clipping_context(meta, company, seed, title, noun))
     ctx["footer"] = clean_text(render(footer_text(cfg), ctx), remove_offer=False)
     return ctx
 

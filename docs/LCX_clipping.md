@@ -424,3 +424,23 @@ dialog shows the status reason, with its date, as its Decision note.
   three clips are attached. Cheap to add once the production side exists.
 - Podcast Index as a second directory (needs a free key). Apple alone gives
   more shows than the sending capacity can use.
+
+## ReelForge email templates, 21 October 2026
+
+The four owner-provided approaches now rotate across clipping drafts: archive plus an episode,
+500+ clips in 48 hours, an episode's clip potential, and archive-to-daily-feed. The delivery offer
+is **500+ clips per episode within 48 hours**, with human approval before publication. Copy covers
+AI and human editors, show-specific seeding pages, third-party distribution and the show's own
+channels, and links to https://reelforge-lcx.vercel.app. The owner has authorized the free-clip
+question. The old "reply yes" CTA and em dashes remain disallowed.
+
+Only recorded episode counts support archive arithmetic. This is stated as potential output,
+never as proof that the footage has not been clipped before. Recent episode names come from the
+lead's saved feed/channel data; missing facts use neutral wording. Figuring Out, FO518, Vidita
+Vaidya and the example's audience segments are not copied to unrelated shows. Draft generation
+uses these templates and deterministic facts without Groq. Subjects may use up to 16 words for
+this project; all other projects retain their existing limits.
+
+Sign-offs use the existing approver-name setup and end in `LCX | lightscameraexperiment.com`.
+The rewrite moves any affected approval back to Drafts for a fresh review. Sent history,
+recipient choices, qualification rules, source pipelines and sending limits are preserved.

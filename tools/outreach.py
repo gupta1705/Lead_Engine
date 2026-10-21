@@ -227,9 +227,11 @@ def cmd_draft(args):
                 " from entities e join lateral (" + CONTACT_SELECTION_SQL + ") c on true"
                 " where e.id = %s and e.status = 'shortlisted' and c.id = %s"
                 " and lower(btrim(c.email)) = lower(btrim(%s))"
+                " and (select config#>>'{outreach,reelforge_templates}' from segments where id=e.segment_id)"
+                " is not distinct from %s"
                 " on conflict do nothing returning id",
                 (eid, cid, tpl["key"], subject, body, written, json.dumps(files) if files else None,
-                 ctx.get("lead_service"), eid, cid, email))
+                 ctx.get("lead_service"), eid, cid, email, cfg.get("reelforge_templates")))
             return cur.fetchone() is not None
 
         if not db.run(save_draft):
