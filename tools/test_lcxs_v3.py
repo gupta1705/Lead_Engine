@@ -35,7 +35,9 @@ if hasattr(sys.stdout, "reconfigure"):
 CFG = json.loads((ROOT / "config" / "segment.lcx-services.json").read_text(encoding="utf-8"))
 OUT = CFG["outreach"]
 GP = OUT["generated_pitch"]
-POL = llm.lcxs_policy(OUT)
+# the writer's rules as they stand when it is on: the owner switched it off on 2026-10-19 (generated_pitch.enabled
+# false, every draft takes the service's fixed lines), and the leash is kept for when it is switched on again
+POL = llm.lcxs_policy(dict(OUT, generated_pitch=dict(OUT["generated_pitch"], enabled=True)))
 ALL = GP["all_services"]
 NOW = dt.datetime(2026, 10, 13, 9, 0, tzinfo=dt.timezone.utc)
 # the dash characters, built from code points (the editing tools turn \u escapes into the characters themselves)

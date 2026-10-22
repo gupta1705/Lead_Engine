@@ -206,8 +206,10 @@ def live_section():
     try:
         seg = "lcx-clipping"
         cfg = pol.outreach_config(cur, seg)
-        check("the clipping segment asks for a written opener",
-              (cfg.get("generated_hook") or {}).get("enabled") is True)
+        # the owner's ReelForge templates (2026-10-21) use the lead's recorded facts only: no model-written opener.
+        # Written drafts from before then still exist, so the batch rules below still apply to them
+        check("the clipping segment asks for no written opener since ReelForge (2026-10-21)",
+              (cfg.get("generated_hook") or {}).get("enabled") is False)
         check("TVF does not", not (pol.outreach_config(cur, "us-production-houses")
                                    .get("generated_hook") or {}).get("enabled"))
         policy = pol.batch_policy(cfg)

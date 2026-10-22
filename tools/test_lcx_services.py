@@ -38,6 +38,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))                # the app as the server runs it (uvicorn app.main:app): app/universal.py
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "app"))
 os.environ["SCHEDULER_ENABLED"] = "0"
@@ -682,7 +683,11 @@ def main_():
                rows[bean_n][6]["lcx_judgement"]["content_activity"], rows[corp_n][6]["lcx_judgement"]["site_read"]),
               (True, "instagram", True))
         outreach.SEGMENT = lx
-        # the model (Groq) is stubbed: the email structure Groq follows (2026-10-08), with what it would write
+        # the model (Groq) is stubbed: the email structure Groq follows (2026-10-08), with what it would write. The owner
+        # switched the writer off on 2026-10-19 (generated_pitch.enabled false: every draft takes the service's fixed
+        # lines, checked below with no model); the path is kept, so it is switched on here, in this copy only
+        cur.execute("update segments set config = jsonb_set(config, '{outreach,generated_pitch,enabled}', 'true')"
+                    " where id = %s", (lx_id,))
         import llm
         keep_gen = llm.make_generator
         seen_facts = []
@@ -700,6 +705,8 @@ def main_():
             outreach.cmd_draft(argparse.Namespace(limit=20, template=None, dry_run=False))
         finally:
             llm.make_generator = keep_gen
+            cur.execute("update segments set config = jsonb_set(config, '{outreach,generated_pitch,enabled}', 'false')"
+                        " where id = %s", (lx_id,))
         cur.execute("select o.id, o.subject, o.body, o.attachments, o.template_key, o.generated_hook from outreach o"
                     " join entities e on e.id = o.entity_id where e.segment_id = %s", (lx_id,))
         drafts = cur.fetchall()

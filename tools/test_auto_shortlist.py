@@ -55,10 +55,10 @@ def main():
         cur.execute("update segments set config = jsonb_set(config, '{auto_shortlist}', %s::jsonb)"
                     " where id = %s", ('{"enabled": true, "min_score": 20}', seg_id))
 
-        def lead(segment_id, status, score, meta=None):
+        def lead(segment_id, status, score, meta=None, source="test"):
             cur.execute("insert into entities (segment_id, name, source, status, fit_score, metadata)"
-                        " values (%s, %s, 'test', %s, %s, %s::jsonb) returning id",
-                        (segment_id, "ZZ auto shortlist " + uuid.uuid4().hex[:8], status, score,
+                        " values (%s, %s, %s, %s, %s, %s::jsonb) returning id",
+                        (segment_id, "ZZ auto shortlist " + uuid.uuid4().hex[:8], source, status, score,
                          json.dumps(meta or {})))
             return cur.fetchone()[0]
 
@@ -112,8 +112,9 @@ def main():
         check("US Production Houses has the rule on, at 30",
               (tvf_rule or {}).get("enabled") is True and float((tvf_rule or {}).get("min_score") or 0) == 30,
               tvf_rule)
-        at_line = lead(tvf_id, "ready_for_review", 30)
-        over_line = lead(tvf_id, "ready_for_review", 30.5)
+        # US Production Houses takes new leads only from Apollo since 2026-10-19 (sourcing.allowed_sources)
+        at_line = lead(tvf_id, "ready_for_review", 30, source="apollo")
+        over_line = lead(tvf_id, "ready_for_review", 30.5, source="apollo")
         run("us-production-houses")
         check("  a score of exactly 30 stays in review", row(at_line)[0] == "ready_for_review", row(at_line))
         check("  30.5 is shortlisted", row(over_line)[0] == "shortlisted", row(over_line))

@@ -267,10 +267,14 @@ def main():
                 check("template %s renders with no leftover placeholder" % t["key"], True)
             except ValueError as e:
                 check("template %s renders with no leftover placeholder" % t["key"], False, e)
+        # the owner's four ReelForge openers (2026-10-21) replaced clipping_intro_v1 and clipping_studio_v1, for
+        # creators and production houses alike
+        openers = {t["key"] for t in cfg["templates"] if t.get("kind") != "follow_up"}
+        picked = draft_render.pick_template(cfg, {"kind": "creator_show"})
         check("a follow-up template is never picked as an opener",
-              draft_render.pick_template(cfg, {"kind": "creator_show"})["key"] == "clipping_intro_v1")
-        check("studio opener still picked for production houses",
-              draft_render.pick_template(cfg, {"kind": "production_house"})["key"] == "clipping_studio_v1")
+              picked["key"] in openers and picked.get("kind") != "follow_up", picked["key"])
+        check("a production house gets a ReelForge opener too",
+              draft_render.pick_template(cfg, {"kind": "production_house"})["key"] in openers)
     finally:
         conn.rollback()
         conn.close()

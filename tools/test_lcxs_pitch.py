@@ -29,7 +29,9 @@ if hasattr(sys.stdout, "reconfigure"):
 RESULTS = []
 CFG = json.loads((ROOT / "config" / "segment.lcx-services.json").read_text(encoding="utf-8"))
 OUT = CFG["outreach"]
-POL = llm.lcxs_policy(OUT)
+# the writer's rules as they stand when it is on: the owner switched it off on 2026-10-19 (generated_pitch.enabled
+# false, every draft takes the service's fixed lines), and the leash is kept for when it is switched on again
+POL = llm.lcxs_policy(dict(OUT, generated_pitch=dict(OUT["generated_pitch"], enabled=True)))
 ALL = OUT["generated_pitch"]["all_services"]
 
 
@@ -60,10 +62,11 @@ def the_config():
     print("\n-- the policy")
     check("the draft step picks v3 first; v2 and v1 kept for the drafts written with them",
           [t["key"] for t in OUT["templates"]][:1], ["lcx_services_problem_v3"])
-    check("  the policy: on, Groq, the word ranges of v3, three requests a minute",
-          (OUT["generated_pitch"]["enabled"], OUT["generated_pitch"]["provider"], POL["problem_words"],
-           POL["solution_words"], POL["rpm"], POL["kind"], sorted(POL["services"]) == sorted(ALL)),
-          (True, "groq", (14, 30), (18, 40), 3, "lcxs", True))
+    check("  the policy: off since 2026-10-19 (the services' fixed lines); when on, Groq, the word ranges of v3, three "
+          "requests a minute",
+          (OUT["generated_pitch"]["enabled"], llm.lcxs_policy(OUT), OUT["generated_pitch"]["provider"],
+           POL["problem_words"], POL["solution_words"], POL["rpm"], POL["kind"], sorted(POL["services"]) == sorted(ALL)),
+          (False, None, "groq", (14, 30), (18, 40), 3, "lcxs", True))
     check("  every service has the deck's own line", sorted(OUT["generated_pitch"]["service_lines"]) == sorted(ALL), True)
     check("  a model-written draft is approved one at a time", OUT["batch_approval"]["allow_generated"], False)
 

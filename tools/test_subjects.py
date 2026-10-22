@@ -8,9 +8,11 @@ A. "remove the last line from every single service": no footer carries the opt-o
    no longer asks for one (empty, SET_ME and unknown fields are still refused).
 B. "subject for all emails for all services should be less than 5 or equal to 5 words": every project that drafts
    has outreach.subject_max_words 5, every opener template a subject_fallback that fits, every subject it can
-   render fits, and a subject over the cap never ships (fallback, else not drafted).
-C. "sign with the approver's name": LCX Clipping keeps its pool mailboxes but is signed by the approver
-   (outreach.sign_as), and no project signed by its approver stores a SET_ME in its drafts.
+   render fits, and a subject over the cap never ships (fallback, else not drafted). LCX Clipping alone is the
+   exception since the owner's ReelForge templates of 2026-10-21: its cap is 16 and its subjects may name the show.
+C. "sign with the approver's name": LCX Clipping is signed by the approver (outreach.sign_as) and, since
+   2026-10-21, sent from the approver's own Gmail (send_from approver); no project signed by its approver stores a
+   SET_ME in its drafts.
 Exit code 1 on any failure.
 """
 import json
@@ -25,6 +27,12 @@ CFGS = {p.name[len("segment."):-len(".json")]: json.loads(p.read_text(encoding="
         for p in sorted((ROOT / "config").glob("segment.*.json"))}
 OPT_OUT = ("no thanks", "hear from me", "hear from us", "unsubscribe", "opt out", "opt-out")
 LONG_COMPANY = "Example Studios International Holdings Worldwide"
+# the subject cap each project keeps: five words everywhere, except LCX Clipping's ReelForge subjects (owner,
+# 2026-10-21: "the four ReelForge subjects supersede the earlier five-word rule for LCX Clipping alone"), which
+# may also name the show
+CAP = {"lcx-clipping": 16}
+NAMES_SHOW = {"lcx-clipping"}
+ARCHIVE = "6,000"                                      # tools/clipping_templates.context: episodes x 30, or "More"
 fails = 0
 
 
@@ -40,8 +48,10 @@ def openers(o):
 
 def sample_ctx(slug, o):
     """Every value a subject can take in this project: [(label, ctx)]."""
-    base = {"company": LONG_COMPANY, "subject_max_words": o.get("subject_max_words")}
+    base = {"company": LONG_COMPANY, "subject_max_words": o.get("subject_max_words"), "archive_potential": ARCHIVE}
     out = [("company", dict(base))]
+    if any("{{archive_potential}}" in (t.get("subject") or "") for t in o.get("templates") or []):
+        out.append(("archive count unknown", dict(base, archive_potential="More")))     # LCX Clipping
     if o.get("angles"):                                   # US Production Houses: "On {{theme}}"
         for lane, copy in o["angles"].items():
             if isinstance(copy, dict):
@@ -107,11 +117,12 @@ def main():
             check(not tpls and "subject_max_words" not in o, "universal: the writer's own subject, no cap")
             continue
         cap = o.get("subject_max_words")
-        check(cap == 5, "%s: outreach.subject_max_words is 5" % slug, cap)
+        want = CAP.get(slug, 5)
+        check(cap == want, "%s: outreach.subject_max_words is %d" % (slug, want), cap)
         for t in openers(o):
             fb = t.get("subject_fallback")
-            check(bool(fb) and dr.subject_words(fb) <= 5 and not dr.has_dash(fb) and "{{" not in fb,
-                  "%s %s: a fixed subject_fallback of 5 words or fewer" % (slug, t["key"]), fb)
+            check(bool(fb) and dr.subject_words(fb) <= want and not dr.has_dash(fb) and "{{" not in fb,
+                  "%s %s: a fixed subject_fallback of %d words or fewer" % (slug, t["key"], want), fb)
             fields = set(dr.PLACEHOLDER.findall(t["subject"]))
             tried = 0
             for label, c in sample_ctx(slug, o):
@@ -122,25 +133,28 @@ def main():
                     got = dr.capped_subject(dr.render(t["subject"], c), t, c)
                 except ValueError as e:
                     got = "RAISED %s" % e
-                ok = (not got.startswith("RAISED") and dr.subject_words(got) <= 5 and not dr.has_dash(got)
-                      and LONG_COMPANY not in got)
+                ok = (not got.startswith("RAISED") and dr.subject_words(got) <= want and not dr.has_dash(got)
+                      and (slug in NAMES_SHOW or LONG_COMPANY not in got))
                 if not ok or label in ("company", "lane animation", "a six-word model theme"):
                     check(ok, "%s %s (%s)" % (slug, t["key"], label), got)
-            check(tried > 0, "%s %s: %d subjects it can render, all 5 words or fewer" % (slug, t["key"], tried))
+            check(tried > 0, "%s %s: %d subjects it can render, all %d words or fewer" % (slug, t["key"], tried, want))
         if slug != "lcx-services":
             for t in openers(o):
-                plain = dr.render(t["subject"], {"company": LONG_COMPANY, "theme": "Stories Built to Travel"})
-                check(dr.subject_words(plain) <= 5 and "{{company}}" not in t["subject"],
-                      "%s %s: the subject itself fits and names no company" % (slug, t["key"]), plain)
+                plain = dr.render(t["subject"], {"company": LONG_COMPANY, "theme": "Stories Built to Travel",
+                                                 "archive_potential": ARCHIVE})
+                check(dr.subject_words(plain) <= want and (slug in NAMES_SHOW or "{{company}}" not in t["subject"]),
+                      "%s %s: the subject itself fits%s" % (slug, t["key"], "" if slug in NAMES_SHOW
+                                                            else " and names no company"), plain)
         for t in tpls:
             if t.get("kind") == "follow_up":
                 check(t["subject"] == "Re: {{opener_subject}}", "%s %s: keeps 'Re: {{opener_subject}}'"
                       % (slug, t["key"]))
                 for op in openers(o):
-                    c = {"opener_subject": dr.render(op["subject"], {"company": LONG_COMPANY}),
+                    c = {"opener_subject": dr.render(op["subject"], {"company": LONG_COMPANY,
+                                                                      "archive_potential": ARCHIVE}),
                          "subject_max_words": cap}
                     got = dr.capped_subject(dr.render(t["subject"], c), t, c)
-                    check(dr.subject_words(got) <= 5, "%s %s after %s" % (slug, t["key"], op["key"]), got)
+                    check(dr.subject_words(got) <= want, "%s %s after %s" % (slug, t["key"], op["key"]), got)
     uph = CFGS["us-production-houses"]
     check([t["subject"] for t in uph["templates"][:2]] == ["Stories built to travel", "Stories built to travel"],
           "us-production-houses: the owner's subject of 2026-10-14 on both new templates")
@@ -153,8 +167,12 @@ def main():
     check(dr.pick_theme({}, "Animation That Speaks to Every Age", "x") == "Animation That Speaks to Every Age",
           "no theme_max_words: the model's theme, as before")
     clip = CFGS["lcx-clipping"]
-    check([t["subject"] for t in openers(clip)] == ["Your episodes, as shorts", "Shorts from your archive"],
-          "lcx-clipping: the owner's two subjects")
+    check([(t["key"], t["subject"]) for t in openers(clip)] == [
+        ("reelforge_archive_episode_v1", "500+ more shorts for {{company}}"),
+        ("reelforge_volume_48h_v1", "500+ clips per episode in 48 hrs"),
+        ("reelforge_episode_potential_v1", "How many clips can {{company}} carry?"),
+        ("reelforge_archive_feed_v1", "{{archive_potential}} shorts in {{company}}'s archive")],
+        "lcx-clipping: the owner's four ReelForge subjects (2026-10-21)")
     check(openers(CFGS["startup-acquisitions"])[0]["subject"] == "A conversation worth having",
           "startup-acquisitions: 'A conversation worth having'")
     # the whole drafting path, for one US production house: the subject that would be stored
@@ -170,9 +188,9 @@ def main():
         check(not any(m in body.lower() for m in OPT_OUT), "  ...and its body has no opt-out line")
 
     # ---------------------------------------------------------------- C: signed by the approver
-    check(dr.signs_as_approver(clip) and not dr.sends_as_approver(clip),
-          "lcx-clipping: signed by the approver, sent from its pool")
-    check(clip.get("mailboxes") and clip.get("send_from") != "approver", "lcx-clipping: still its own mailboxes")
+    check(dr.signs_as_approver(clip) and dr.sends_as_approver(clip),
+          "lcx-clipping: signed by the approver, sent from their own Gmail (2026-10-21)")
+    check(clip.get("send_from") == "approver", "lcx-clipping: send_from approver (its old pool kept for replies)")
     for slug, o in CFGS.items():
         if dr.signs_as_approver(o):
             canon = dr.footer_for(o)
@@ -180,9 +198,9 @@ def main():
     me = {"email": "suhasc@theviralfever.com", "name": "Suhas C", "title": "Business Development"}
     stored = "Hello,\n\nbody text\n\n" + dr.footer_for(clip)
     mine = dr.personalize(stored, clip, me)
-    # 2026-10-13 review: the title line names LCX, so a person's own title never reads as the clipping desk's
-    check(mine.endswith("Suhas C\nBusiness Development, LCX"), "lcx-clipping: the viewer sees their own sign-off",
-          mine[-40:].replace("\n", " / "))
+    # the owner's ReelForge sign-off of 2026-10-21: "Regards," the approver's name, then LCX and its site
+    check(mine.endswith("Regards,\nSuhas C\nLCX | lightscameraexperiment.com"),
+          "lcx-clipping: the viewer sees their own sign-off", mine[-40:].replace("\n", " / "))
     check(dr.canonicalize(mine, clip, me) == stored, "lcx-clipping: saving stores it back in the project's form")
     check(dr.personalize(stored, clip, {"email": "x@y", "name": "", "title": ""}) == stored,
           "lcx-clipping: no name or title, nothing is swapped (approval refuses)")

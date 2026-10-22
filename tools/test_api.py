@@ -28,7 +28,8 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT))                # the app as the server runs it (uvicorn app.main:app): app/universal.py
+sys.path.insert(0, str(ROOT / "tools"))      # imports app.auth
 sys.path.insert(0, str(ROOT / "app"))
 os.environ["SCHEDULER_ENABLED"] = "0"                # the real scheduler must never start in a test
 
@@ -161,7 +162,7 @@ def main_():
     secret_values = secrets()
     leaked = []
 
-    client = TestClient(main.app, follow_redirects=False, raise_server_exceptions=False)
+    client = TestClient(main.app, follow_redirects=False, raise_server_exceptions=bool(os.environ.get("ZZ_RAISE")))
 
     def call(method, url, cookies=None, **kw):
         # only the cookies a check names: the client would otherwise keep what a response set (a login,
@@ -373,7 +374,10 @@ def main_():
         check("a project sending from its own mailbox: 35 a day on the counter", (own["segment_cap"], own["limit_today"]),
               (35, 35))
         lcx = call("GET", "/api/mailboxes", cookies=dict(good, tvf_segment="lcx-clipping")).json()
-        check("  LCX clipping says it is paused, and cannot send", (bool(lcx["paused"]), lcx["can_send"]), (True, False))
+        # the owner resumed LCX Clipping's sending on 2026-10-19 (d69eab1), from each approver's own Gmail since
+        # 2026-10-21 (83949eb): not paused, per person -- and this test user has no Gmail, so cannot send
+        check("  LCX Clipping sends again, from each approver's Gmail (this user has none)",
+              (lcx.get("mode"), bool(lcx["paused"]), lcx["can_send"]), ("approver", False, False))
         k = call("GET", "/api/kpis", cookies=tvf).json()
         check("the numbers page has its queries", len(k) >= 3 and "by_source" in k, True)
         x = call("GET", "/api/export.xlsx?status=shortlisted", cookies=tvf)
@@ -580,12 +584,13 @@ def main_():
                    json={"ids": [m2], "sample": [m2], "token": "forged"}).status_code, 409)
         # a batch with a sending window: each approved one draws its own second, and the answer says when, by day
         bslug = "zz-api-batch-" + uuid.uuid4().hex[:6]
-        # 2026-10-13: clipping now signs as the approver (outreach.sign_as), which needs a name and title this test
-        # user does not have; this block is about the sending window, so the copy drops sign_as (the signature has its
-        # own checks in test_subjects and test_lcxs_v3)
+        # 2026-10-13: clipping signs as the approver (outreach.sign_as), and since 2026-10-21 sends from the approver's
+        # Gmail (send_from approver); both need a name and title this test user does not have. This block is about the
+        # sending window, so the copy drops sign_as and send_from (signing has its own checks in test_subjects,
+        # test_approver_sign and test_lcxs_v3; per-person sending in test_accounts and test_send)
         cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'ZZ API batch', 'company',"
-                    " config #- '{outreach,sending_paused}' #- '{outreach,sign_as}' from segments"
-                    " where slug = 'lcx-clipping' returning id", (bslug,))
+                    " config #- '{outreach,sending_paused}' #- '{outreach,sign_as}' #- '{outreach,send_from}'"
+                    " from segments where slug = 'lcx-clipping' returning id", (bslug,))
         bseg = cur.fetchone()[0]
         lcx_block = json.loads((ROOT / "config" / "segment.lcx-clipping.json").read_text(encoding="utf-8"))[
             "outreach"]["send_window"]
@@ -663,8 +668,11 @@ def main_():
         check("status: connected, credits shown, the filters listed",
               (st["apollo"]["connected"], st["apollo"]["credits"]["lead_credits_left"], bool(st["filters"])), (True, 2483, True))
         r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "producers in California"}})
+        if r.status_code != 200:
+            print("  people search answered %s: %s" % (r.status_code, r.text[:300]))
+        pj = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
         check("people search: 200, the preview rows, how the words were read",
-              (r.status_code, len(r.json().get("people", [])), bool(r.json().get("read_as"))), (200, 1, True))
+              (r.status_code, len(pj.get("people", [])), bool(pj.get("read_as"))), (200, 1, True))
         r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "companies", "filters": {"q_text": "US arcades"}})
         check("company search: 200 and the company", (r.status_code, [c["name"] for c in r.json().get("companies", [])]),
               (200, ["ZZ Arcade Co"]))
@@ -684,8 +692,10 @@ def main_():
         check("  a people search (free) runs, with the suggestion beside it",
               (r.status_code, bool(r.json().get("held")), r.json().get("did_you_mean")), (200, False, "UAE Restaurants"))
         r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "UAE restaurants"}})
+        # the reading names the levels searched (since 2026-10-19: "People · Management level: Owner, Founder, C-suite")
         check("a people search with no job: decision makers, and the page is told so",
-              (r.status_code, r.json().get("decision_makers"), r.json().get("read_as", "").startswith("decision makers")), (200, True, True))
+              (r.status_code, r.json().get("decision_makers"), "Management level: Owner, Founder" in r.json().get("read_as", "")),
+              (200, True, True))
         r = call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "filters": {"q_text": "owners of restaurants in Dubai"}})
         check("  with a job typed: that job, no default", (r.status_code, r.json().get("decision_makers")), (200, False))
         check("a search with no kind: 400", call("POST", "/api/universal/search", cookies=tvf, json={}).status_code, 400)
@@ -693,16 +703,30 @@ def main_():
                                                         json={"kind": "companies", "filters": {"revenue_range": {"min": -5}}}).status_code, 400)
         check("a page that is not a number: 400, not a server error",
               call("POST", "/api/universal/search", cookies=tvf, json={"kind": "people", "page": "two"}).status_code, 400)
-        before = len([c for c in fake.calls if c == "/people/bulk_match"])
+        # the plain save path, in this test's own project (no Apollo-only sourcing). A project with sourcing.contacts
+        # "apollo" (the live US Production Houses since 2026-10-19) refuses a save without the server's receipt of a
+        # fresh search, and a person whose company has not qualified: tools/test_apollo_constraints.py
         r = call("POST", "/api/universal/save", cookies=tvf, json={"kind": "people", "ids": [PID[0]], "filters": {}})
+        check("an Apollo-only project: a save without a fresh search's receipt is refused, nothing revealed",
+              (r.status_code, "Search again" in r.json().get("detail", "")), (409, True))
+        # a throwaway copy of Universal without the Apollo-only sourcing, named in the URL as the page names it
+        uni = "zz-api-uni-" + uuid.uuid4().hex[:6]
+        cur.execute("insert into segments (slug, name, entity_type, config, is_active) select %s, 'ZZ API universal',"
+                    " entity_type, (config - 'sourcing'), true from segments where slug = 'universal'", (uni,))
+        main.segment_rows(force=True)
+        save_url = "/api/universal/save?project=" + uni
+        before = len([c for c in fake.calls if c == "/people/bulk_match"])
+        r = call("POST", save_url, cookies=tvf, json={"kind": "people", "ids": [PID[0]], "filters": {}})
+        if r.status_code != 200:
+            print("  (save answered %s: %s)" % (r.status_code, r.text[:300]))
         check("reveal and save one person: 200, one credit, saved",
               (r.status_code, r.json().get("credits"), len([c for c in fake.calls if c == "/people/bulk_match"]) - before),
               (200, 1, 1))
-        r = call("POST", "/api/universal/save", cookies=tvf, json={"kind": "people", "ids": [PID[0]], "filters": {}})
+        r = call("POST", save_url, cookies=tvf, json={"kind": "people", "ids": [PID[0]], "filters": {}})
         check("  saving the same person again reveals nothing (no second credit)", (r.status_code, r.json().get("credits"),
               r.json().get("already_saved")), (200, 0.0, 1))
-        check("save nobody: 400", call("POST", "/api/universal/save", cookies=tvf, json={"kind": "people", "ids": []}).status_code, 400)
-        r = call("POST", "/api/universal/save", cookies=tvf, json={"kind": "companies", "companies": [
+        check("save nobody: 400", call("POST", save_url, cookies=tvf, json={"kind": "people", "ids": []}).status_code, 400)
+        r = call("POST", save_url, cookies=tvf, json={"kind": "companies", "companies": [
             {"id": OID[2], "name": "ZZ Saved Co", "website_url": "https://zz-saved.example"}]})
         check("save a company: 200, free", (r.status_code, r.json().get("credits")), (200, 0))
         name = "ZZ test search " + uuid.uuid4().hex[:4]

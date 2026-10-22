@@ -94,6 +94,7 @@ class ApiTests(unittest.TestCase):
         tag = uuid.uuid4().hex[:8]
         cls.slug = "zz-rewrite-" + tag
         cfg = json.loads((ROOT / "config/segment.universal.json").read_text(encoding="utf-8"))
+        cfg.pop("sourcing", None)                  # legacy test lead; the Apollo-only gates: test_apollo_constraints
         cls.cur.execute("insert into segments(slug,name,entity_type,config) values(%s,'ZZ rewrite','company',%s) returning id",
                         (cls.slug, json.dumps(cfg)))
         sid = cls.cur.fetchone()[0]
