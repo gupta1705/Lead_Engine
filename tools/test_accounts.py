@@ -156,6 +156,7 @@ def api():
         slug = "zz-acct-" + tag
         cur.execute("select config from segments where slug = 'us-production-houses'")
         cfg = cur.fetchone()[0]
+        cfg.pop("sourcing", None)                  # legacy test leads; the Apollo-only gates: test_apollo_constraints
         out = cfg["outreach"]
         out.pop("sending_paused", None)
         kart_email = "zz-kart-%s@example.com" % tag

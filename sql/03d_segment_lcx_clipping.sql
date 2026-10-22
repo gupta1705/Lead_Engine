@@ -1048,6 +1048,10 @@ values (
       "text": "Regards,\n{{sender_name}}\nLCX | lightscameraexperiment.com",
       "guidance": "Owner''s 2026-10-21 sign-off, using each approver''s own name under the existing sign_as setup."
     },
+    "default_cc": [
+      "amritanshv@lightscameraexperiment.com"
+    ],
+    "default_cc_guidance": "The owner, 2026-10-22: \"add a feature to cc someone from the software itself. Make default cc to the email amritanshv@lightscameraexperiment.com and obvio make a toggle to switch that off\". Every email of this project is copied to these addresses unless the person approving it switches that off in the email (the CC toggle) or changes the list. The list an email is approved with is the one it goes out with (outreach.cc, sql/39, frozen at approval): changing this default never changes an email already approved. A reply from one of these addresses is not taken for the recipient''s reply. [] copies nobody by default.",
     "generated_hook": {
       "model": "openai/gpt-oss-120b",
       "enabled": false,

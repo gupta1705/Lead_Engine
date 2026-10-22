@@ -259,6 +259,69 @@ def alias_mode(cur, gmail):
     check("  the alias shares the account's daily limit: every one counted on the account", cur.fetchone()[0], 3)
 
 
+def cc_mode(cur, gmail):
+    """Copying someone (owner, 2026-10-22: "Make default cc to the email amritanshv@lightscameraexperiment.com and
+    obvio make a toggle to switch that off"; sql/39): an email goes out with the copy list it was approved with --
+    the project's default for one approved before CC existed -- never copying its own recipient or sender, and the
+    list it went with is recorded."""
+    import os
+    import mailbox_store as store
+    os.environ.setdefault("SESSION_SECRET", "zz-send-test-" + uuid.uuid4().hex)
+    args = argparse.Namespace(limit=500)
+    print("\n-- CC: the list it was approved with (sql/39)")
+    slug = "zz-send-cc-" + uuid.uuid4().hex[:6]
+    cur.execute("insert into segments (slug, name, entity_type, config)"
+                " select %s, 'send test (cc)', 'company', (config - 'sourcing') from segments where slug = 'us-production-houses'"
+                " returning id", (slug,))
+    seg_id = cur.fetchone()[0]
+    cur.execute("update segments set config = jsonb_set(jsonb_set(config #- '{outreach,sending_paused}'"
+                " #- '{outreach,send_window}' #- '{outreach,send_as_domain}', '{outreach,send_from}', '\"approver\"'),"
+                " '{outreach,default_cc}', '[\"boss@zz-cc.example\"]') where id = %s", (seg_id,))
+    outreach.SEGMENT = slug
+    tag = uuid.uuid4().hex[:6]
+    who = "zz-ccp-%s@example.com" % tag
+    acct = "ccp.%s@zz-mail.example" % tag
+    cur.execute("insert into app_users (email, password_hash, role, name, title) values (%s, 'x', 'member', 'P', 'T')", (who,))
+    cur.execute("insert into user_mailboxes (user_email, address, token_enc, daily_cap) values (%s, %s, %s, 35)",
+                (who, acct, store.encrypt({"refresh_token": "1//" + acct})))
+    outreach.user_gmail_service = lambda db, box: gmail
+
+    def approved(cc):
+        cur.execute("insert into entities (segment_id, name, domain, source, status) values"
+                    " (%s, %s, %s, 'test', 'shortlisted') returning id",
+                    (seg_id, "ZZ cc " + uuid.uuid4().hex[:6], uuid.uuid4().hex[:8] + ".example"))
+        eid = cur.fetchone()[0]
+        to = "kay.%s@zz-ccto.example" % uuid.uuid4().hex[:6]
+        cur.execute("insert into contacts (entity_id, full_name, email, email_status, source, verifier) values"
+                    " (%s, 'Kay', %s, 'valid', 'apollo', 'apollo') returning id", (eid, to))
+        cid = cur.fetchone()[0]
+        cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status, approved_at,"
+                    " approved_by, approval_mode, created_at, cc) values (%s, %s, 't', 'Hello', 'Hello Kay,\n\nBody',"
+                    " 'approved', now(), %s, 'single', clock_timestamp(), %s::text[]) returning id",
+                    (eid, cid, who, [c.replace("{to}", to) for c in cc] if cc is not None else None))
+        return cur.fetchone()[0], to
+
+    rows = {"before": approved(None), "off": approved([]),
+            "more": approved(["boss@zz-cc.example", "Partner@zz-cc.example", "{to}", acct])}
+    before = len(gmail.sent)
+    run_logged(args)
+    sent = {header(m, "To"): m for m in gmail.sent[before:]}
+
+    def cc_of(key):
+        m = sent.get(rows[key][1])
+        return None if m is None else header(m, "Cc")
+
+    def stored(key):
+        cur.execute("select status, cc from outreach where id = %s", (rows[key][0],))
+        return list(cur.fetchone())
+    check("approved before CC existed: copied to the project's default, and that recorded",
+          (cc_of("before"), stored("before")), ("boss@zz-cc.example", ["sent", ["boss@zz-cc.example"]]))
+    check("the default switched off: no Cc line at all", (cc_of("off"), stored("off")), (None, ["sent", []]))
+    check("the default and someone added, never its own recipient or sender: all lower-case",
+          (cc_of("more"), stored("more")[1]),
+          ("boss@zz-cc.example, partner@zz-cc.example", ["boss@zz-cc.example", "partner@zz-cc.example"]))
+
+
 def window_mode(cur, gmail):
     """The sending window (owner, 2026-10-12: "send mails to the sender's time region between 10 to 10:30AM and
     that must be randmized"): each approved email holds its own second inside its recipient's 10:00-10:30
@@ -915,7 +978,7 @@ def main():
                         " #- '{outreach,send_window}', '{outreach,daily_send_cap}', '3') where id = %s", (seg_id,))
             outreach.SEGMENT = slug
 
-            def approved(subject="From TVF in India — a note", body=None, address=None, status="shortlisted",
+            def approved(subject="From TVF in India: café notes", body=None, address=None, status="shortlisted",
                          name=None):
                 cur.execute("insert into entities (segment_id, name, domain, source, status) values"
                             " (%s, %s, %s, 'test', %s) returning id",
@@ -926,7 +989,7 @@ def main():
                 cur.execute("insert into contacts (entity_id, full_name, email, email_status) values"
                             " (%s, 'Kay Doe', %s, 'valid') returning id", (eid, addr))
                 cid = cur.fetchone()[0]
-                text = body or "Hello Kay,\n\nI’m writing on behalf of Kartikeya — test.\n\nVedansh"
+                text = body or "Hello Kay,\n\nI’m writing on behalf of Kartikeya: café test.\n\nVedansh"
                 # clock_timestamp, not now(): now() is one instant for the whole transaction, and the
                 # send order ("oldest first") needs the rows apart
                 cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, status,"
@@ -950,10 +1013,14 @@ def main():
                   state(rows[0][0]), ["sent", False, SENDER, True, "contacted"])
             m = gmail.sent[0]
             check("the message: To the contact, From the mailbox, Subject as written (non-ASCII kept)",
-                  [m["To"], m["From"], header(m, "Subject")], [rows[0][2], SENDER, "From TVF in India — a note"])
+                  [m["To"], m["From"], header(m, "Subject")], [rows[0][2], SENDER, "From TVF in India: café notes"])
             check("  the body as written, in UTF-8", m.get_payload(decode=True).decode(m.get_content_charset()),
-                  "Hello Kay,\n\nI’m writing on behalf of Kartikeya — test.\n\nVedansh")
-            check("  nobody copied in", [m.get("Cc"), m.get("Bcc")], [None, None])
+                  "Hello Kay,\n\nI’m writing on behalf of Kartikeya: café test.\n\nVedansh")
+            # copied to the project's default CC and nobody else (owner, 2026-10-22; sql/39), never blind-copied
+            cur.execute("select config #> '{outreach,default_cc}' from segments where slug = %s", (outreach.SEGMENT,))
+            want_cc = ", ".join(cur.fetchone()[0] or []) or None
+            check("  copied only to the project's default CC, nobody blind-copied", [m.get("Cc"), m.get("Bcc")],
+                  [want_cc, None])
             check("  our own Message-ID, one per row, on one line", m["Message-ID"],
                   "<tvf-%s@%s>" % (str(rows[0][0]).replace("-", ""), SENDER.split("@")[1]))
             outreach.cmd_send(args)
@@ -1154,6 +1221,7 @@ def main():
 
             approver_mode(cur, gmail)
             alias_mode(cur, gmail)
+            cc_mode(cur, gmail)
             window_mode(cur, gmail)
             pool_elsewhere(cur, gmail)
     finally:

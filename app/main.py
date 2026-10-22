@@ -228,6 +228,7 @@ def segment_rows(force=False):
                             " coalesce((config->'outreach'->>'compose')::boolean, false) as compose,"
                             " config->'outreach'->'compose_start' as compose_start,"
                             " config->'outreach'->'send_window' as send_window,"
+                            " config->'outreach'->'default_cc' as default_cc,"
                             " coalesce(jsonb_array_length(case when jsonb_typeof(config->'outreach'->'templates') = 'array'"
                             "   then config->'outreach'->'templates' end), 0) > 0 as has_templates,"
                             " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
@@ -326,6 +327,8 @@ def outreach_policy_info(row):
         "drafts": bool(row.get("has_templates", True)),
         # each approved email at its own second, 10:00-10:30 on its recipient's clock (owner, 2026-10-12)
         "send_window": _window_info(row.get("send_window")),
+        # who an email is copied to unless its approver switches that off (owner, 2026-10-22; sql/39)
+        "default_cc": [str(a).strip().lower() for a in (row.get("default_cc") or []) if str(a).strip()],
     }
 
 
@@ -938,6 +941,13 @@ def _present_outreach(rows, request, segment, cfg, people=None):
         # who reached out: the person who approved it, from their own Gmail (sender_address)
         r["approved_by_name"] = _display(r.get("approved_by"), people)
         _shown_sender(r)
+        # who it is copied to (sql/39): as set on it; a draft or approval still at null takes the project's default
+        # (as the sender would); a sent email shows exactly who it went to (the sender records it)
+        default_cc = [str(a).strip().lower() for a in (cfg.get("default_cc") or []) if str(a).strip()]
+        if r.get("direction") == "outbound":
+            r["cc_default"] = default_cc
+            r["cc"] = (list(r["cc"]) if r.get("cc") is not None
+                       else default_cc if r["status"] in ("drafted", "approved") else [])
         if r["status"] == "drafted" and r["direction"] == "outbound":
             r["body"] = dr.personalize(r["body"], cfg, me)
             r["approval_blocked"] = ("Needs a verified contact before approval." if not r.get("contact_email")
@@ -1156,6 +1166,9 @@ def outreach_edit(oid: str, request: Request, body: dict = Body(...),
     oid = _id(oid, "draft")
     subject = (body or {}).get("subject")
     text = (body or {}).get("body")
+    # who it is copied to (owner, 2026-10-22; sql/39): a list, [] for nobody, or null for the project's default
+    cc_given = "cc" in (body or {})
+    cc = _clean_cc(body["cc"]) if cc_given else None
     if subject is not None and ("\n" in str(subject) or "\r" in str(subject)):
         # one line, always: the sender refuses a subject with a line break in it
         raise HTTPException(400, "the subject must be one line")
@@ -1175,12 +1188,37 @@ def outreach_edit(oid: str, request: Request, body: dict = Body(...),
         cur.execute(
             "update outreach set subject = coalesce(%s, subject),"
             " body = coalesce(%s, body), generated_hook = case when %s then coalesce(%s, body)"
-            " else generated_hook end, updated_at = now()"
+            " else generated_hook end, cc = case when %s then %s::text[] else cc end, updated_at = now()"
             " where id = %s and status = 'drafted' returning id",
-            (subject, text, (body or {}).get("ai_rewritten") is True, text, oid))
+            (subject, text, (body or {}).get("ai_rewritten") is True, text, cc_given, cc, oid))
         if not cur.fetchone():
             raise HTTPException(409, "only drafts can be edited")
     return {"ok": True}
+
+
+_CC_RE = re.compile(r"^[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[a-z]{2,}$")
+CC_MAX = 10
+
+
+def _clean_cc(value):
+    """A CC list from the page -> lower-cased, de-duplicated addresses, or None (the project's default). Anything
+    that is not an email address is refused (400), so Gmail never sees a malformed Cc line."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise HTTPException(400, "cc is a list of email addresses")
+    out = []
+    for v in value:
+        a = str(v or "").strip().lower()
+        if not a:
+            continue
+        if not _CC_RE.match(a):
+            raise HTTPException(400, "%s is not an email address" % str(v)[:80])
+        if a not in out:
+            out.append(a)
+    if len(out) > CC_MAX:
+        raise HTTPException(400, "at most %d addresses in CC" % CC_MAX)
+    return out
 
 
 @app.post("/api/outreach/{oid}/decision")
@@ -1479,7 +1517,8 @@ def _compose(request, body, segment, apply):
         person = cur.fetchone()
         try:
             out = comp.plan(cur, segment, b.get("ids") or [], b.get("subject") or "", b.get("body") or "",
-                            dict(person) if person else None, cfg, apply=apply)
+                            dict(person) if person else None, cfg, apply=apply,
+                            cc=_clean_cc(b["cc"]) if "cc" in b else None)
         except comp.Refused as e:
             raise HTTPException(e.code, str(e))
         boxes = []

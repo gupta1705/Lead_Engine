@@ -587,6 +587,12 @@ it checked against the evidence before it was kept. A written draft is approved
 on its own, never in a batch, because a random sample cannot stand for a
 sentence written once for one company.
 
+**CC.** Every email is copied to amritanshv@lightscameraexperiment.com unless you
+switch that off: in the draft's details, under **CC**, untick the address. Type any
+other address into the same box and press Enter to copy them in too; the × removes
+one. Changes save at once. The list an email is approved with is the one it goes out
+with, and the **Write email** box has the same switch.
+
 **Approve** records your name against the email and sends it at its own minute
 in the recipient's next 10:00–10:30 (the draft shows that window under **Next
 window**, with why that time zone; the minute itself is drawn when you approve).

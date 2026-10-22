@@ -64,6 +64,10 @@ values (
       "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}",
       "guidance": "Owner decision 2026-10-09: the sign-off, with the postal address omitted. The owner, 2026-10-13: the opt-out line is removed from every project''s footer (\"remove the last line from every single service\"); any reply that is not neutral still stops all mail to that address. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
     },
+    "default_cc": [
+      "amritanshv@lightscameraexperiment.com"
+    ],
+    "default_cc_guidance": "The owner, 2026-10-22: \"add a feature to cc someone from the software itself. Make default cc to the email amritanshv@lightscameraexperiment.com and obvio make a toggle to switch that off\". Every email of this project is copied to these addresses unless the person approving it switches that off in the email (the CC toggle) or changes the list. The list an email is approved with is the one it goes out with (outreach.cc, sql/39, frozen at approval): changing this default never changes an email already approved. A reply from one of these addresses is not taken for the recipient''s reply. [] copies nobody by default.",
     "guidance": "Owner, 2026-09-27: \"in the universal segment there should be a widget to send mail to them\". Universal leads come from Apollo, not a harvest, so there are no templates and nothing is drafted: a person picks leads (Leads page, or one lead) and writes one email with {{first_name}} and {{company}} in it (tools/outreach_compose.py). The page shows how it reads for each of them; approving it is the same gate as everywhere -- one approved email per company, checked like an approved draft -- and it goes out from the writer''s own Gmail (send_from approver, linked by the owner with tools/users.py gmail), inside that address''s daily limit, which it shares with every other project. A lead still in To review is shortlisted by being written to. Replies land in Outreach -> Replies."
   },
   "apollo": {

@@ -300,6 +300,10 @@ values (
       "text": "Regards,\n{{sender_name}}.\nThe Viral Fever",
       "guidance": "The owner''s sign-off of 2026-10-14: \"Regards,\", the approver''s own name with a full stop, \"The Viral Fever\". No title, no postal address, no opt-out line (the owner, 2026-10-13)."
     },
+    "default_cc": [
+      "amritanshv@lightscameraexperiment.com"
+    ],
+    "default_cc_guidance": "The owner, 2026-10-22: \"add a feature to cc someone from the software itself. Make default cc to the email amritanshv@lightscameraexperiment.com and obvio make a toggle to switch that off\". Every email of this project is copied to these addresses unless the person approving it switches that off in the email (the CC toggle) or changes the list. The list an email is approved with is the one it goes out with (outreach.cc, sql/39, frozen at approval): changing this default never changes an email already approved. A reply from one of these addresses is not taken for the recipient''s reply. [] copies nobody by default.",
     "signed_intro": "I''m {{sender_first}}, who handles {{sender_title}} at The Viral Fever (TVF)",
     "tvf_hook": "line"
   },

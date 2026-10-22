@@ -187,9 +187,10 @@ def main_():
         slug = "zz-api-" + uuid.uuid4().hex[:6]
         # the project's own-mailbox mode, whatever the live one says: per-person sending (send_from
         # "approver", 2026-09-26) has its own table, tools/test_accounts.py
+        # (config - 'sourcing'): legacy test leads; the Apollo-only gates have their own suite, test_apollo_constraints
         cur.execute("insert into segments (slug, name, entity_type, config) select %s, 'ZZ API test', 'company',"
-                    " config #- '{outreach,sending_paused}' #- '{outreach,send_from}' from segments where slug = %s"
-                    " returning id", (slug, TVF))
+                    " (config - 'sourcing') #- '{outreach,sending_paused}' #- '{outreach,send_from}' from segments"
+                    " where slug = %s returning id", (slug, TVF))
         seg_id = cur.fetchone()[0]
 
         def company(status="ready_for_review", score=50, address=True):
@@ -245,8 +246,8 @@ def main_():
               (200, True, False))
         check("  but only that page: its file under /static stays behind the wall",
               call("GET", "/privacy.html").status_code, 302)
-        check("health is public and says ok", (call("GET", "/api/health").status_code,
-                                               call("GET", "/api/health").json()), (200, {"ok": True}))
+        h = call("GET", "/api/health")
+        check("health is public and says ok", (h.status_code, h.json().get("ok")), (200, True))
         check("auth state: set up, not signed in", call("GET", "/api/auth/state").json(),
               {"needs_setup": False, "authed": False, "user": None})
         check("no API console (docs, openapi)", [call("GET", u, cookies=tvf).status_code

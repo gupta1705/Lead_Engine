@@ -1490,6 +1490,8 @@ function bindLeadsCompose() {
 }
 
 async function openCompose(leads) {
+  // who these emails are copied to (sql/39): the project's default, unless the writer switches it off or adds someone
+  const ccDraft = { cc: [...(outreachPolicy().default_cc || [])], cc_default: outreachPolicy().default_cc || [] };
   const ids = leads.map((l) => String(l.id));
   leaveLeadRoute();                    // opened from a lead: that lead's sheet is gone, and must open again later
   modal.open(`${modalHead(`${typeIcon("mail")}<span class="key">New email</span>`)}
@@ -1543,6 +1545,7 @@ async function openCompose(leads) {
       </div>
       <div class="modal-side">
         <div class="side-group"><div class="group-head">${icon("send", 16)} Sends from</div><div class="group-body" id="cFrom">${from}</div></div>
+        <div class="side-group"><div class="group-head">${icon("mail", 16)} CC</div><div class="group-body" id="ccCell">${ccCellHtml(ccDraft)}</div></div>
         <div class="side-group"><div class="group-head">${icon("users", 16)} Goes to <span class="pts" id="cCount"></span></div>
           <div class="group-body"><ul class="rcpt-list" id="cList"></ul></div></div>
         ${chk.skipped.length ? `<div class="side-group"><div class="group-head">${icon("alert", 16)} Can't be written to <span class="pts">${chk.skipped.length}</span></div>
@@ -1556,6 +1559,7 @@ async function openCompose(leads) {
 
   const root = $("#modalRoot");
   const subj = $("#cSubject", root), body = $("#cBody", root);
+  bindCc(root, ccDraft, null);
   const paint = () => {
     const n = c.ready.length;
     if (c.at >= n) c.at = Math.max(0, n - 1);
@@ -1616,7 +1620,7 @@ async function openCompose(leads) {
     const b = e.currentTarget;
     b.classList.add("loading"); b.disabled = true;
     try {
-      const r = await post("/api/outreach/compose", { ids: c.ready.map((x) => x.id), subject: subj.value, body: body.value });
+      const r = await post("/api/outreach/compose", { ids: c.ready.map((x) => x.id), subject: subj.value, body: body.value, cc: ccDraft.cc });
       modal.guard = null; modal.close(true);
       state.leads.selected.clear();
       const n = r.approved, skipped = r.skipped || [];
@@ -1734,6 +1738,59 @@ function expectedRecipients(rows, ids) {
   }]));
 }
 
+/* Who an email is copied to (owner, 2026-10-22: "add a feature to cc someone from the software itself. Make default
+   cc to the email amritanshv@lightscameraexperiment.com and obvio make a toggle to switch that off"; sql/39).
+   A draft: each of the project's default addresses as a switch (on unless someone switched it off), anyone else
+   added as a chip, and a box to add another; every change is saved at once. The list it is approved with is the
+   one it goes out with. Any other email: the list it has, or nothing. */
+function ccRow(r, isDraft) {
+  const cc = r.cc || [];
+  if (!isDraft) return cc.length ? `<dt>CC</dt><dd>${cc.map((a) => `<div class="mail">${esc(a)}</div>`).join("")}</dd>` : "";
+  return `<dt>CC</dt><dd id="ccCell">${ccCellHtml(r)}</dd>`;
+}
+function ccCellHtml(r) {
+  const cc = r.cc || [], defaults = r.cc_default || [];
+  const extra = cc.filter((a) => !defaults.includes(a));
+  return `${defaults.map((a) => `<label class="check"><input type="checkbox" data-cc-default="${esc(a)}" ${cc.includes(a) ? "checked" : ""}><span>${esc(a)}</span></label>`).join("")}
+    <div class="chip-input" style="margin-top:6px">${extra.map((a) => `<span class="chip">${esc(a)}<button type="button" class="chip-x" data-cc-drop="${esc(a)}" aria-label="Remove ${esc(a)} from CC">${icon("x", 12)}</button></span>`).join("")}<input type="email" id="ccAdd" placeholder="Add someone to CC" aria-label="Add an address to CC" autocomplete="off"></div>
+    <div class="small muted" id="ccNote" role="status"></div>`;
+}
+/* `persist(list)`: saves a draft's list (the email sheet); none: the list stays here until it is sent (compose). */
+function bindCc(root, r, persist) {
+  const cell = $("#ccCell", root);
+  if (!cell) return;
+  const save = async (list) => {
+    const before = r.cc;
+    $$("input, button", cell).forEach((x) => { x.disabled = true; });
+    try {
+      if (persist) await persist(list);
+      r.cc = list;
+      if (persist) flag("CC updated", { desc: list.length ? "Copied to " + list.join(", ") + "." : "Nobody is copied on this email." });
+    } catch (e) { r.cc = before; toast("Could not change CC: " + e.message, true); }
+    cell.innerHTML = ccCellHtml(r);
+    wire();
+  };
+  const wire = () => {
+    $$("[data-cc-default]", cell).forEach((box) => box.addEventListener("change", () => {
+      const a = box.dataset.ccDefault, cc = r.cc || [];
+      save(box.checked ? [...cc.filter((x) => x !== a), a] : cc.filter((x) => x !== a));
+    }));
+    $$("[data-cc-drop]", cell).forEach((b) => b.addEventListener("click", () =>
+      save((r.cc || []).filter((x) => x !== b.dataset.ccDrop))));
+    const add = $("#ccAdd", cell), note = $("#ccNote", cell);
+    add.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== ",") return;
+      e.preventDefault();
+      const a = add.value.trim().toLowerCase();
+      if (!a) return;
+      if (!/^[^@\s,;<>"']+@[^@\s,;<>"']+\.[a-z]{2,}$/.test(a)) { note.textContent = "That is not an email address."; return; }
+      if ((r.cc || []).includes(a)) { note.textContent = "Already copied."; add.value = ""; return; }
+      save([...(r.cc || []), a]);
+    });
+  };
+  wire();
+}
+
 function openMessage(id, message) {
   const o = state.outreach, r = message || o.rows.find((x) => x.id === id);
   if (!r) return;
@@ -1764,6 +1821,7 @@ function openMessage(id, message) {
             ${r.service ? `<dt>${r.sent_at ? "Pitched" : "Pitches"}</dt><dd>${esc(r.service)}</dd>` : ""}
             ${files(r).length ? `<dt>Attached</dt><dd>${attachList(r)}</dd>` : ""}
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
+            ${!isReply ? ccRow(r, isDraft) : ""}
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
             ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.schedule && r.schedule.held && !r.sent_at && r.status === "approved" ? `<dt>Goes out</dt><dd>Held back, not sent${r.send_error ? "" : `<div class="small muted">${esc(r.schedule.held_why || "")}</div>`}</dd>` : ""}
@@ -1798,6 +1856,8 @@ function openMessage(id, message) {
       if (foot) foot.textContent = footNote(r, true, w);
     }).catch(() => { const cell = $("#msgWindow", root); if (cell) cell.textContent = "—"; });
   }
+  if (isDraft) bindCc(root, r, (list) => api("/api/outreach/" + id, { method: "PATCH",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cc: list, ...recipientGuard }) }));
   // the list stays in view beside the sheet, so a stray click could close it: an edited draft asks first
   if (isDraft) {
     const was = { s: r.subject || "", b: r.body || "" };

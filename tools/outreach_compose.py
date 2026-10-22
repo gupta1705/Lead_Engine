@@ -114,8 +114,11 @@ def message(subject, body, fields, footer):
             clean_text(render(body.strip(), fields) + "\n\n" + footer, remove_offer=True))
 
 
-def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
+def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=None):
     """-> {"ready": [...], "skipped": [...], "footer": str}.
+
+    `cc`: who every one of these emails is copied to (sql/39), [] for nobody, or None for the project's
+    default (outreach.default_cc), as the writer left the CC switch in the box.
 
     Runs every recipient through exactly what an approval checks. With apply=False (the page asking
     before approving) nothing is kept; with apply=True each recipient that passes becomes an approved
@@ -180,9 +183,9 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False):
                 if r["status"] != "shortlisted":
                     cur.execute("update entities set status = 'shortlisted', status_changed_at = now(), updated_at = now()"
                                 " where id = %s and status = any(%s)", (eid, list(REVIEW_STATUSES)))
-                cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body)"
-                            " values (%s, %s, %s, %s, %s) on conflict do nothing returning id",
-                            (eid, r["contact_id"], TEMPLATE_KEY, subj, text))
+                cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, cc)"
+                            " values (%s, %s, %s, %s, %s, %s::text[]) on conflict do nothing returning id",
+                            (eid, r["contact_id"], TEMPLATE_KEY, subj, text, cc))
                 got = cur.fetchone()
                 if not got:
                     reason = "it already has an email from us"

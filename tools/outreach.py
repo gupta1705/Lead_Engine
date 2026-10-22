@@ -472,7 +472,10 @@ select o.id, o.entity_id, o.subject, o.body,
        exists (select 1 from outreach r where r.entity_id = o.entity_id
                 and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
        p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver, o.attachments,
-       o.send_after, o.send_before, o.send_tz, p.sent_as as parent_sent_as
+       o.send_after, o.send_before, o.send_tz, p.sent_as as parent_sent_as,
+       -- who it is copied to (sql/39): as approved; a row approved before that file gets the project's default
+       coalesce(o.cc, array(select lower(btrim(x)) from jsonb_array_elements_text(
+                coalesce(s.config #> '{outreach,default_cc}', '[]'::jsonb)) as x where btrim(x) <> '')) as cc
 from outreach o
 join entities e on e.id = o.entity_id
 join segments s on s.id=e.segment_id
@@ -926,6 +929,8 @@ def cmd_send(args):
             for b in db.run(lambda cur: store_.mailboxes(cur)):
                 got.add(b["address"].lower())
                 got |= {a["address"] for a in (b.get("send_as") or []) if isinstance(a, dict)}   # its aliases (sql/36)
+            # the project's default CC (sql/39): our side of the thread, so their reply-all is not the recipient's
+            got |= {str(a).strip().lower() for a in (cfg.get("default_cc") or []) if a}
             own_cache.append(got)
         return own_cache[0]
 
@@ -1309,6 +1314,11 @@ def cmd_send(args):
                 else:
                     msg_from = sender_addr
                 msg["to"], msg["from"], msg["subject"] = email.strip(), msg_from, subject
+                # the copy list it was approved with (sql/39), never the recipient or the sender themselves
+                cc = [a for a in dict.fromkeys(str(x).strip().lower() for x in (r.get("cc") or []))
+                      if a and a not in (email.strip().lower(), sender_addr.lower(), from_addr.lower())]
+                if cc:
+                    msg["cc"] = ", ".join(cc)
                 # our own Message-ID, one per row: an unknown outcome can be settled by searching Sent for
                 # rfc822msgid:<tvf-...>, and a transport-level resend of the same POST is recognisable.
                 # The row id without its dashes keeps the header on one line (folded at 78 characters)
@@ -1360,12 +1370,12 @@ def cmd_send(args):
                 continue
             # 4. record
             as_alias = from_addr if from_addr != sender_addr else None
-            db.run(lambda cur, _o=oid, _e=eid, _m=resp, _a=as_alias: (
+            db.run(lambda cur, _o=oid, _e=eid, _m=resp, _a=as_alias, _cc=cc: (
                 cur.execute(
                     "update outreach set status='sent', sent_at=clock_timestamp(),"
-                    " gmail_message_id=%s, gmail_thread_id=%s, sent_as=%s, updated_at=clock_timestamp()"
-                    " where id=%s and status='sending'",
-                    (_m.get("id"), _m.get("threadId"), _a, _o)),
+                    " gmail_message_id=%s, gmail_thread_id=%s, sent_as=%s, cc=%s::text[],"
+                    " updated_at=clock_timestamp() where id=%s and status='sending'",
+                    (_m.get("id"), _m.get("threadId"), _a, _cc, _o)),
                 cur.execute(
                     "update entities set status='contacted', status_changed_at=now(),"
                     " updated_at=now() where id=%s and status='shortlisted'", (_e,))))
@@ -1446,9 +1456,11 @@ def cmd_pull(args):
     import outreach_policy as pol
     from dbconn import Db
     db = Db()
-    load_outreach_config(db)
+    cfg = load_outreach_config(db)
     mbmap = {mb["key"]: mb for mb in MAILBOXES}
     own = [a.strip().lower() for a in (env(mb["email_env"]) for mb in MAILBOXES) if a]
+    # the project's default CC (sql/39): our side of the thread -- their reply-all is not the recipient's reply
+    own += [str(a).strip().lower() for a in ((cfg or {}).get("default_cc") or []) if a]
     # the addresses people connected in the app: a thread they sent is read through their Gmail
     import mailbox_store as store
     user_boxes = {b["address"].lower(): b for b in db.run(lambda cur: store.mailboxes(cur, with_token=True))}

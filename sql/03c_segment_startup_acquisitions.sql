@@ -731,7 +731,11 @@ values (
     "footer": {
       "text": "{{sender_name}}\n{{sender_title}}",
       "guidance": "Owner decision 2026-10-09: the sign-off, with the postal address omitted. The owner, 2026-10-13: the opt-out line is removed from every project''s footer (\"remove the last line from every single service\"); any reply that is not neutral still stops all mail to that address. Edited in Outreach -> Footer. Postal addresses are optional; templates end with {{footer}}."
-    }
+    },
+    "default_cc": [
+      "amritanshv@lightscameraexperiment.com"
+    ],
+    "default_cc_guidance": "The owner, 2026-10-22: \"add a feature to cc someone from the software itself. Make default cc to the email amritanshv@lightscameraexperiment.com and obvio make a toggle to switch that off\". Every email of this project is copied to these addresses unless the person approving it switches that off in the email (the CC toggle) or changes the list. The list an email is approved with is the one it goes out with (outreach.cc, sql/39, frozen at approval): changing this default never changes an email already approved. A reply from one of these addresses is not taken for the recipient''s reply. [] copies nobody by default."
   },
   "schedule": [
     {
