@@ -975,12 +975,6 @@ values (
         "kind": "follow_up",
         "subject": "Re: {{opener_subject}}",
         "body": "Hi {{greeting_name}},\n\nFollowing up on ReelForge for {{company}}: 500+ clips per episode within 48 hours. Our AI and human editors handle clipping, we seed on pages built around your show, and distribute across third-party networks and your own channels. Nothing goes live without your approval.\n\nMore on how it runs: https://reelforge-lcx.vercel.app\n\nWould a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"
-      },
-      {
-        "key": "clipping_followup_2",
-        "kind": "follow_up",
-        "subject": "Re: {{opener_subject}}",
-        "body": "Hi {{greeting_name}},\n\nLast note from me on ReelForge for {{company}}. A pod of AI and human editors clips at volume, with seeding on show-specific pages and distribution across third-party networks and your own channels. 500+ clips per episode within 48 hours, all approved by you.\n\nHere''s how it works: https://reelforge-lcx.vercel.app\n\nWould a free clip set from any archive episode be useful to see?\n\n{{footer}}"
       }
     ],
     "guidance": "Owner, 2026-10-21: rotate the four provided ReelForge opener approaches, with 500+ clips per episode within 48 hours. Use only this lead''s recorded episode count and a recent recorded title; never copy Figuring Out, FO518 or its guest to unrelated leads. Archive arithmetic is hypothetical, not a claim of previously unseen footage. The free-clip question is authorized; no reply-yes offer and no em dashes. Approver names and all existing approval, qualification, recipient, sender and scheduling rules remain in force.",
@@ -992,14 +986,9 @@ values (
           "step": 1,
           "after_days": 4,
           "template": "clipping_followup_1"
-        },
-        {
-          "step": 2,
-          "after_days": 7,
-          "template": "clipping_followup_2"
         }
       ],
-      "guidance": "Owner decision 2026-09-10. One thread per company: the opener plus these steps, in the same Gmail thread, each counted from the previous email''s send. Any reply pauses the thread at once; a reply triaged as an auto-reply lets it resume, anything else ends it. A person can stop a thread from the message dialog. Follow-ups are drafts and need approval like any email. The database caps a thread at three follow-ups and refuses to send one after a reply (sql/23)."
+      "guidance": "Owner, 2026-10-23: \"set only 1 follow up after 4 days\" (it was two, 4 and 7 days, decided 2026-09-10). One thread per company: the opener plus this one follow-up, in the same Gmail thread, 4 days after the opener was sent. Any reply pauses the thread at once; a reply triaged as an auto-reply lets it resume, anything else ends it. A person can stop a thread from the message dialog. A follow-up is a draft in the Follow-ups tab and needs approval like any email. The database caps a thread at three follow-ups and refuses to send one after a reply (sql/23)."
     },
     "batch_approval": {
       "enabled": true,

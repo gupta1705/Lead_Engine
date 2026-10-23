@@ -98,11 +98,6 @@ def apply_config(outreach):
                  "Our AI and human editors handle clipping, we seed on pages built around your show, and distribute across third-party networks and your own channels. "
                  "Nothing goes live without your approval.\n\nMore on how it runs: " + URL + "\n\n"
                  "Would a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"},
-        {"key": "clipping_followup_2", "kind": "follow_up", "subject": "Re: {{opener_subject}}",
-         "body": "Hi {{greeting_name}},\n\nLast note from me on ReelForge for {{company}}. "
-                 "A pod of AI and human editors clips at volume, with seeding on show-specific pages and distribution across third-party networks and your own channels. "
-                 "500+ clips per episode within 48 hours, all approved by you.\n\nHere's how it works: " + URL + "\n\n"
-                 "Would a free clip set from any archive episode be useful to see?\n\n{{footer}}"},
     ]
     outreach["guidance"] = (
         "Owner, 2026-10-21: rotate the four provided ReelForge opener approaches, with 500+ clips per episode within 48 hours. "

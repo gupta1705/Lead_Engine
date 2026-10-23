@@ -125,7 +125,7 @@ in its config (config/segment.<slug>.json) that does this:
   window** once their minutes are drawn at random (31 is only the ceiling if
   they were packed end to end); the rest of a big batch to one place go the
   next weekday.
-- **The daily limit is still a UTC day** — "35 a day" counts from 00:00 UTC
+- **The daily limit is still a UTC day** — "50 a day" counts from 00:00 UTC
   (05:30 in India), on every counter and in every check. A window is counted
   on the UTC day it falls in.
 

@@ -284,8 +284,26 @@ set config = '{
         "when": {
           "metadata.retired_template": true
         }
+      },
+      {
+        "key": "tvf_partner_followup_v1",
+        "kind": "follow_up",
+        "subject": "Re: {{opener_subject}}",
+        "body": "{{hello}}\n\nI hope you are well. I wanted to follow up on my note about {{company}} and The Viral Fever. If a short call in the coming weeks would be useful, I would gladly work around your schedule.\n\n{{footer}}",
+        "guidance": "The follow-up to the owner''s partnership note: the same formal voice (Hello, I hope you are well), the same ask (a short call, around their schedule), signed by the person who sent the note."
       }
     ],
+    "follow_ups": {
+      "enabled": true,
+      "steps": [
+        {
+          "step": 1,
+          "after_days": 4,
+          "template": "tvf_partner_followup_v1"
+        }
+      ],
+      "guidance": "Owner, 2026-10-23: \"Make follo ups for all\", after \"set only 1 follow up after 4 days\" for LCX Clipping. One follow-up, four days after the first email went out with no reply, in the same Gmail thread (\"Re: <the first email''s subject>\"), from the same address, signed by the person whose Gmail the thread is in. It is a draft in the Follow-ups tab and needs approval like any email. Any reply stops it at once (an auto-reply lets it resume); Stop follow-ups ends the thread by hand; the database refuses one after a reply (sql/23)."
+    },
     "angles": {
       "guidance": "The owner''s own sentences for each lane a production company works in, taken from the samples of 2026-09-18. tools/draft_render.tvf_angle() picks the lane from what the company says about itself and what the engine recorded: animation, then documentary and impact work (conscience), then digital-first (digital), then scripted drama and genre (drama), else general. intro_line ends the first paragraph, partnership is the third, theme is the subject when no model writes one.",
       "general": {

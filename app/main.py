@@ -229,8 +229,11 @@ def segment_rows(force=False):
                             " config->'outreach'->'compose_start' as compose_start,"
                             " config->'outreach'->'send_window' as send_window,"
                             " config->'outreach'->'default_cc' as default_cc,"
-                            " coalesce(jsonb_array_length(case when jsonb_typeof(config->'outreach'->'templates') = 'array'"
-                            "   then config->'outreach'->'templates' end), 0) > 0 as has_templates,"
+                            # first-email templates only: a project whose emails people write (Universal) may
+                            # still have a follow-up template, and drafts no first emails
+                            " exists (select 1 from jsonb_array_elements(case when jsonb_typeof("
+                            "   config->'outreach'->'templates') = 'array' then config->'outreach'->'templates'"
+                            "   else '[]'::jsonb end) t where coalesce(t->>'kind', '') <> 'follow_up') as has_templates,"
                             " coalesce((config->'auto_shortlist'->>'enabled')::boolean, false) as auto_shortlist,"
                             " config->'auto_shortlist'->>'min_score' as auto_min,"
                             # LCX Services (2026-10-13): each lead pitched ONE service (config lead_service)
@@ -918,6 +921,9 @@ def _outreach_select():
         "select f.*,e.fit_score as lead_score," + oq.CATEGORY + " as category,"
         + oq.SUBSCRIBERS + " as subscriber_count," + oq.VIEWS + " as view_count,"
         " stored.contact_id as recipient_contact_id,"
+        # a follow-up's thread owner: the opener's approver, whose Gmail it goes out from and who signs it
+        " case when coalesce(f.sequence_step, 0) > 0 and f.status = 'drafted' then"
+        "  (select p.approved_by from outreach p where p.id = f.parent_id) end as thread_owner,"
         " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
         " (e.status in ('shortlisted','contacted') and exists(select 1 from (" + CONTACT_SELECTION_SQL
         + ") available)) as can_link_contact"
@@ -949,7 +955,8 @@ def _present_outreach(rows, request, segment, cfg, people=None):
             r["cc"] = (list(r["cc"]) if r.get("cc") is not None
                        else default_cc if r["status"] in ("drafted", "approved") else [])
         if r["status"] == "drafted" and r["direction"] == "outbound":
-            r["body"] = dr.personalize(r["body"], cfg, me)
+            owner = people.get(str(r.get("thread_owner") or "").lower()) if int(r.get("sequence_step") or 0) > 0 else None
+            r["body"] = dr.personalize(r["body"], cfg, owner if owner and owner.get("name") and owner.get("title") else me)
             r["approval_blocked"] = ("Needs a verified contact before approval." if not r.get("contact_email")
                 else "Recipient failed email verification." if r.get("email_status") == "invalid"
                 else "Recipient email is not eligible for sending." if not r.get("contact_verified")
@@ -1280,12 +1287,13 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
                     raise HTTPException(409, needs_signer(segment) if signed else
                                         "Add your name and title first (the account menu at the bottom of the sidebar): "
                                         "the emails you approve are signed with them.")
+                signer = _sign_as(cur, oid, dict(person))      # a follow-up: its thread's owner
                 cur.execute("select body from outreach where id = %s and status = 'drafted'", (oid,))
                 row = cur.fetchone()
                 if row:
-                    mine = dr.personalize(row["body"], cfg, dict(person))
-                    if signed and project_signoff(mine, cfg, dict(person)):
-                        raise HTTPException(409, "cannot approve: " + project_signoff(mine, cfg, dict(person)))
+                    mine = dr.personalize(row["body"], cfg, signer)
+                    if signed and project_signoff(mine, cfg, signer):
+                        raise HTTPException(409, "cannot approve: " + project_signoff(mine, cfg, signer))
                     if mine != row["body"]:
                         cur.execute("update outreach set body = %s, updated_at = now()"
                                     " where id = %s and status = 'drafted'", (mine, oid))
@@ -1409,7 +1417,8 @@ def outreach_batch_sample(request: Request, body: dict = Body(...),
             dr = _render()
             cur.execute("select id, body from outreach where id = any(%s::uuid[]) and status = 'drafted'", (ids,))
             for row in cur.fetchall():
-                why = project_signoff(dr.personalize(row["body"], cfg, dict(person)), cfg, dict(person))
+                signer = _sign_as(cur, row["id"], dict(person))
+                why = project_signoff(dr.personalize(row["body"], cfg, signer), cfg, signer)
                 if why and str(row["id"]) not in {u["id"] for u in unsigned}:
                     unsigned.append({"id": str(row["id"]), "reason": why})
         held = {u["id"] for u in unsigned}
@@ -1465,8 +1474,9 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
             for row in cur.fetchall():
                 if str(row["id"]) in too_long:
                     continue
-                mine = dr.personalize(row["body"], cfg, dict(person))
-                why = project_signoff(mine, cfg, dict(person)) if signed else None
+                signer = _sign_as(cur, row["id"], dict(person))
+                mine = dr.personalize(row["body"], cfg, signer)
+                why = project_signoff(mine, cfg, signer) if signed else None
                 if why:
                     unsigned.append({"id": str(row["id"]), "reason": why})
                     continue
@@ -1619,6 +1629,17 @@ def _send_paused(segment):
 # ------------------------------------------------------------------ people
 # One login per person (owner, 2026-09-26). Their name is how the page says who approved or reached out
 # to a lead, and their name and title sign the emails they approve.
+def _sign_as(cur, oid, person):
+    """Who signs this draft. A follow-up goes out in its thread, from the Gmail of the person who approved the
+    opener, so it is signed by them too (owner, 2026-10-23: follow-ups for every project), whoever approves it;
+    when they have no name and title any more, and for every other draft, by `person`, the approver."""
+    cur.execute("select u.email, u.name, u.title from outreach f join outreach p on p.id = f.parent_id"
+                " join app_users u on lower(u.email) = lower(p.approved_by)"
+                " where f.id = %s and coalesce(f.sequence_step, 0) > 0", (str(oid),))
+    owner = cur.fetchone()
+    return dict(owner) if owner and owner["name"] and owner["title"] else person
+
+
 def _people():
     """{email (lower case): {"email", "name", "title"}} for everyone with a login."""
     with cursor() as cur:

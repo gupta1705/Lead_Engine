@@ -126,7 +126,7 @@ def outreach_config(cur, segment):
 # --------------------------------------------------------------- follow-ups
 CANDIDATES_SQL = """
 with openers as (
-    select o0.id, o0.entity_id, o0.contact_id, o0.subject
+    select o0.id, o0.entity_id, o0.contact_id, o0.subject, o0.service
     from outreach o0
     join entities e on e.id = o0.entity_id
     where o0.direction = 'outbound' and o0.sequence_step = 0 and o0.status = 'sent'
@@ -145,6 +145,7 @@ chain as (
     group by op.id
 )
 select op.id as opener_id, op.entity_id, op.contact_id, op.subject as opener_subject,
+       op.service as opener_service,
        e.name as company, e.metadata, c.full_name, c.email, c.email_status,
        ch.last_step,
        (select s.sent_at from outreach s
@@ -886,7 +887,7 @@ class _Placer:
         that fits every rule, the second drawn uniformly over the free ones. NoSendSlot when none in 60 days.
           * the approval's lead time (min_lead_seconds) and never in a window's last minute
           * at most n x slots_per_window in one window (n: the key's addresses)
-          * at most the key's daily limit placed and sent on the window's UTC day -- "35 a day" is a UTC-day
+          * at most the key's daily limit placed and sent on the window's UTC day -- "50 a day" is a UTC-day
             count everywhere (mailbox_store.USAGE_SQL), so a window is counted on the day the claim counts it
           * no two moments of the key closer than spacing_s / n"""
         sw, w = _sw(), self.w

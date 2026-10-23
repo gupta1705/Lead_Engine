@@ -96,7 +96,8 @@ def the_copy():
           " metric, the solution naming its own service once and no other", bad, [])
     subjects = [sc[s]["subject"] for s in ALL]
     check("  each service has a subject of its own", len(set(subjects)), 18)
-    for t in OUT["templates"]:
+    # a follow-up keeps "Re: <the first email's subject>" to stay in its thread ("Re:" is not counted), so it has none
+    for t in [x for x in OUT["templates"] if x.get("kind") != "follow_up"]:
         check("  template %s has a fallback subject of at most 5 words, no dash" % t["key"],
               (bool(t.get("subject_fallback")), len((t.get("subject_fallback") or "x " * 9).split()) <= 5,
                any_dash(t.get("subject_fallback") or "")), (True, True, False))

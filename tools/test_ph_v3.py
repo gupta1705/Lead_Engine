@@ -62,8 +62,10 @@ def email(meta=META, person="Kelly Smith", addr="kelly@87north.example", gen=Non
 def main():
     print("-- the template (config/segment.us-production-houses.json)")
     keys = [t["key"] for t in OUT["templates"]]
-    check("v3 named and plain come first; the v2 pair kept for older drafts, never picked again",
-          keys, ["tvf_partner_named_v3", "tvf_partner_v3", "tvf_partner_named_v2", "tvf_partner_v2"])
+    check("v3 named and plain come first; the v2 pair kept for older drafts, never picked again; then the follow-up"
+          " (owner, 2026-10-23)",
+          keys, ["tvf_partner_named_v3", "tvf_partner_v3", "tvf_partner_named_v2", "tvf_partner_v2",
+                 "tvf_partner_followup_v1"])
     check("  subject: Stories built to travel, 4 words, on both",
           [(t["subject"], dr.subject_words(t["subject"])) for t in OUT["templates"][:2]],
           [("Stories built to travel", 4)] * 2)

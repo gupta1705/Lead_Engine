@@ -137,6 +137,10 @@ def cmd_draft(args):
             sys.exit("unknown template %r; segment %s has: %s"
                      % (args.template, SEGMENT, [t["key"] for t in cfg["templates"]]))
     openers = [t for t in cfg["templates"] if t.get("kind") != "follow_up"]
+    if not openers and not requested:
+        # a project whose first emails people write (Universal: only a follow-up template, 2026-10-23)
+        log("no first-email templates in segment %s: its first emails are written by people" % SEGMENT)
+        db.close(); return 0
     tpl = requested or next((t for t in openers if not t.get("when")), openers[0])
     sender = cfg["sender"]
     import outreach_policy as _pol
@@ -285,6 +289,10 @@ def cmd_followups(args):
         try:
             ctx = build_context(cfg, company, meta, row["full_name"], row["email"],
                                 seed=row["entity_id"], opener_subject=row["opener_subject"])
+            if row.get("opener_service"):
+                # LCX Services: the service its first email pitched (sql/35), not whatever the lead is tagged with now
+                ctx["lead_service"] = row["opener_service"]
+                ctx.pop("draft_hold", None)
             subject, body = render_message(tpl, ctx)
         except ValueError as e:
             # 2026-10-13: a follow-up whose opener's subject is over outreach.subject_max_words cannot be shortened
@@ -299,7 +307,7 @@ def cmd_followups(args):
                      pol.insert_followup(cur, _r, _s["step"], _k, _sub, _b))
         made += 1 if new else 0
     db.close()
-    log("\n%d follow-up draft(s) created. Approve them in the Outreach tab (Drafts)." % made)
+    log("\n%d follow-up draft(s) created. Approve them in the Outreach tab (Follow-ups)." % made)
     return 0
 
 

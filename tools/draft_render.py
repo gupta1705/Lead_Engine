@@ -1073,6 +1073,8 @@ def render(template, ctx):
         for apos in ("'", "\u2019"):
             out = out.replace("{{company}}%ss" % apos, possessive(ctx["company"]).replace("'", apos))
     for k, v in ctx.items():
+        if v is None:
+            continue                         # unknown is unfilled, never the word "None" in an email (2026-10-23)
         out = out.replace("{{%s}}" % k, v if isinstance(v, str) else str(v))
     leftover = PLACEHOLDER.findall(out)
     if leftover:
@@ -1114,6 +1116,8 @@ def build_context(cfg, company, meta, contact_name=None, contact_email=None,
         "company": company,
         "greeting_name": person or greeting_for(None, contact_email, company, cfg.get("greeting_fallback")),
         "contact_named": bool(person),
+        # a plain greeting for a follow-up (owner, 2026-10-23): "Hello Kelly," with a named person, "Hello," without
+        "hello": ("Hello %s," % person) if person else "Hello,",
         "hook": written or (None if (partnership or lcxs or reelforge) else hook_line(meta, company, cfg, seed, now)),
         "generated_hook": written or "",
         "latest_work": latest_work(meta, now),

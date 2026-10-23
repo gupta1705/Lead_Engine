@@ -370,10 +370,12 @@ class Scheduler:
                             "where s.slug=%s and e.status in %s and not (" + PROTECTED + ") "
                             "and e.created_at <= now() - %s * interval '1 day' limit 1", (segment, OPEN, days))
                 expire = cur.fetchone() is not None
-            templates = bool((cfg or {}).get("templates"))
+            # first emails to draft: opener templates only. Universal's emails are written by people and it has
+            # only a follow-up template (owner, 2026-10-23), so it drafts no first emails
+            templates = any(isinstance(t, dict) and t.get("kind") != "follow_up" for t in (cfg or {}).get("templates") or [])
             # a project whose emails a person writes (outreach.compose, the Universal project since
             # 2026-09-27) has nothing to draft, but what they approved still has to go out
-            if not templates and not (cfg or {}).get("compose"):
+            if not templates and not (cfg or {}).get("compose") and not pol.followup_steps(cfg):
                 return None
             draft = False
             if templates:

@@ -46,6 +46,19 @@ def openers(o):
     return [t for t in o.get("templates") or [] if t.get("kind") != "follow_up"]
 
 
+def live_openers(o):
+    """The first-email templates the draft step can still pick: in order, up to the first one with no `when` (it
+    takes every lead after it), so a retired template kept for older drafts (LCX Services v1/v2) is left out."""
+    if o.get("reelforge_templates"):
+        return openers(o)                     # LCX Clipping rotates its four ReelForge openers (tools/clipping_templates)
+    out = []
+    for t in openers(o):
+        out.append(t)
+        if not t.get("when"):
+            break
+    return out
+
+
 def sample_ctx(slug, o):
     """Every value a subject can take in this project: [(label, ctx)]."""
     base = {"company": LONG_COMPANY, "subject_max_words": o.get("subject_max_words"), "archive_potential": ARCHIVE}
@@ -114,7 +127,9 @@ def main():
     for slug, o in CFGS.items():
         tpls = o.get("templates") or []
         if slug == "universal":
-            check(not tpls and "subject_max_words" not in o, "universal: the writer's own subject, no cap")
+            # people write its first emails (their own subject, no cap); its only template is the follow-up (2026-10-23)
+            check(all(t.get("kind") == "follow_up" for t in tpls) and "subject_max_words" not in o,
+                  "universal: the writer's own subject, no cap; only a follow-up template")
             continue
         cap = o.get("subject_max_words")
         want = CAP.get(slug, 5)
@@ -149,10 +164,12 @@ def main():
             if t.get("kind") == "follow_up":
                 check(t["subject"] == "Re: {{opener_subject}}", "%s %s: keeps 'Re: {{opener_subject}}'"
                       % (slug, t["key"]))
-                for op in openers(o):
-                    c = {"opener_subject": dr.render(op["subject"], {"company": LONG_COMPANY,
-                                                                      "archive_potential": ARCHIVE}),
-                         "subject_max_words": cap}
+                for op in live_openers(o):              # a follow-up after a first email it can still send
+                    fields = set(dr.PLACEHOLDER.findall(op["subject"]))
+                    sample = next((c_ for _, c_ in sample_ctx(slug, o) if fields <= set(c_)), None)
+                    if sample is None:
+                        continue                          # a subject this project fills from what it was drafted with
+                    c = {"opener_subject": dr.render(op["subject"], sample), "subject_max_words": cap}
                     got = dr.capped_subject(dr.render(t["subject"], c), t, c)
                     check(dr.subject_words(got) <= want, "%s %s after %s" % (slug, t["key"], op["key"]), got)
     uph = CFGS["us-production-houses"]

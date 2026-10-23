@@ -11,7 +11,7 @@ arguments (which would land in shell history).
     python tools/users.py add    teammate@theviralfever.com [--starting]
     python tools/users.py passwd teammate@theviralfever.com [--starting]
     python tools/users.py remove teammate@theviralfever.com
-    python tools/users.py gmail  teammate@theviralfever.com [--cap 35] [--move]
+    python tools/users.py gmail  teammate@theviralfever.com [--cap 50] [--move]
     python tools/users.py gmail-remove sending@theviralfever.com
 
 One account per person (owner, 2026-09-26): each person signs in with their own
@@ -21,7 +21,7 @@ to them, signed with their name.
 `gmail` links a sending address to a person: Google's own sign-in opens in a
 browser, the owner signs in to the address that person will send from, and the
 sign-in is sealed so that only the live server can read it (it is fetched the
-server's public key first, over HTTPS). Each address sends up to 35 a day
+server's public key first, over HTTPS). Each address sends up to 50 a day
 (`--cap` for another number); a person may have several. Running it again for
 the same address refreshes its sign-in; `--move` moves an address from one
 person to another. `gmail-remove` unlinks an address.
@@ -223,13 +223,13 @@ def main():
             try:
                 cap = int(args[i + 1])
             except (IndexError, ValueError):
-                sys.exit("--cap needs a number, e.g. --cap 35")
+                sys.exit("--cap needs a number, e.g. --cap 50")
             if not 1 <= cap <= 2000:
                 sys.exit("--cap is between 1 and 2000 a day")
             args = args[:i] + args[i + 2:]
         emails = _emails(args)
         if len(emails) != 1:
-            sys.exit("usage: users.py gmail <person's login> [--cap 35] [--move]")
+            sys.exit("usage: users.py gmail <person's login> [--cap 50] [--move]")
         person = emails[0]
         known = db.run(lambda cur: (cur.execute("select email from app_users where lower(email) = lower(%s)",
                                                 (person,)), cur.fetchone())[1])

@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "app" / "static"
 DEFAULT_FIXTURES = ROOT / "logs" / "ui_fixtures.json"
-FOLDERS = ["drafts", "outbox", "sent", "inbox", "attention"]
+FOLDERS = ["drafts", "followups", "outbox", "sent", "inbox", "attention"]
 STATUSES = ["open", "shortlisted", "contacted", "in_conversation", "rejected", "archived"]
 
 
@@ -226,6 +226,7 @@ MOCK_JS = r"""
   });
   const folderOf = (r) => {
     if (r.direction === "inbound") return "inbox";
+    if (r.status === "drafted" && (+r.sequence_step || 0) > 0) return "followups";      // sql/40
     return ({ drafted: "drafts", approved: "outbox", sending: "outbox", sent: "sent", cancelled: "cancelled" })[r.status] || "attention";
   };
   window.fetch = async (url, opts) => {

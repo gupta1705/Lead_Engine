@@ -227,8 +227,8 @@ hold even if something else goes wrong:
 - **No email goes out unless a person approved it.** There is no "approve all
   without reading".
 - **One conversation per company, ever.** Production houses get one email. LCX
-  gets at most one email and two follow-ups in the same thread, and any reply
-  stops the follow-ups.
+  gets one email and one follow-up (four days later) in the same thread, and any
+  reply stops the follow-up.
 - **A rejected lead never comes back**, whichever source finds it again.
 - **"No thanks" is permanent.** That company is never written to again.
 - **Nothing is claimed that the evidence does not support.** Every sentence

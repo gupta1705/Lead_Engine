@@ -725,8 +725,26 @@ values (
         "body": "Hi {{greeting_name}},\n\nI lead corporate development at The Viral Fever (TVF) - one of India''s largest independent studios, with a platform reaching tens of millions of viewers.\n\n{{hook}}\n\nWe''re looking at a small number of product companies whose technology would slot straight into how we make and distribute content, and {{company}} is one of them. I''d value 20 minutes to understand where you''re headed and whether there''s a fit - as a customer, a partner, or something more strategic.\n\nOpen to a call?\n\n{{footer}}",
         "guidance": "First touch. Deliberately ambiguous about acquisition - founders hear ''strategic'' and choose how to read it. Human-approved per draft like every template. Subject (owner, 2026-10-13): \"A conversation worth having\", at most five words and no company name.",
         "subject_fallback": "A short conversation"
+      },
+      {
+        "key": "strategic_followup_v1",
+        "kind": "follow_up",
+        "subject": "Re: {{opener_subject}}",
+        "body": "Hi {{greeting_name}},\n\nFollowing up on my note about {{company}} and The Viral Fever. If 20 minutes in the coming weeks would be useful, I would be glad to find a time that suits you.\n\n{{footer}}",
+        "guidance": "The follow-up to the corporate development note: the same voice and the same 20-minute ask."
       }
     ],
+    "follow_ups": {
+      "enabled": true,
+      "steps": [
+        {
+          "step": 1,
+          "after_days": 4,
+          "template": "strategic_followup_v1"
+        }
+      ],
+      "guidance": "Owner, 2026-10-23: \"Make follo ups for all\", after \"set only 1 follow up after 4 days\" for LCX Clipping. One follow-up, four days after the first email went out with no reply, in the same Gmail thread (\"Re: <the first email''s subject>\"), from the same address, signed by the person whose Gmail the thread is in. It is a draft in the Follow-ups tab and needs approval like any email. Any reply stops it at once (an auto-reply lets it resume); Stop follow-ups ends the thread by hand; the database refuses one after a reply (sql/23)."
+    },
     "guidance": "Identical pipeline to Segment 1: drafted -> human-approved -> sent, one touch per company enforced by the database. The footer -- the sign-off -- is one setting for the whole segment (outreach.footer.text), edited in the app under Outreach -> Footer; templates end with {{footer}}.",
     "footer": {
       "text": "{{sender_name}}\n{{sender_title}}",

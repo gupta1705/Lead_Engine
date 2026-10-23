@@ -343,7 +343,8 @@ def api():
             check("the owner links Asha's sending address", run_users("gmail", a_email), 0)
             cur.execute("select user_email, address, token_enc, daily_cap from user_mailboxes where lower(address) = %s", (a_gmail,))
             row = cur.fetchone()
-            check("  kept for Asha, address in lower case, 35 a day", (row[0], row[1], row[3]), (a_email, a_gmail, 35))
+            check("  kept for Asha, address in lower case, 50 a day (the owner's limit, 2026-10-23)", (row[0], row[1], row[3]),
+                  (a_email, a_gmail, 50))
             check("  sealed for the server: not readable as stored, readable with the server's secret",
                   ("1//zz-asha" in row[2], row[2].startswith(store.SEALED), (store.decrypt(row[2]) or {}).get("refresh_token")),
                   (False, True, "1//zz-asha"))
@@ -364,19 +365,19 @@ def api():
             check("--move gives it to Kartikeya", run_users("gmail", kart_email, "--move"), 0)
             cur.execute("select user_email from user_mailboxes where lower(address) = %s", (a_gmail,))
             check("  now his", cur.fetchone()[0], kart_email)
-            check("and back to Asha, at 35 again", run_users("gmail", a_email, "--move", "--cap", "35"), 0)
+            check("and back to Asha, at 50 again", run_users("gmail", a_email, "--move", "--cap", "50"), 0)
         finally:
             users.Db, users._server_key, users._google_signin, gdisc.build, sys.argv = real
 
         mine = call("GET", "/api/me/mailboxes", cookies=a).json()
         check("Asha's sending address, read-only: the address and today's use, no secrets", (
             [m["address"] for m in mine["mailboxes"]], mine["mailboxes"][0]["remaining"],
-            "token_enc" in json.dumps(mine), "zz-asha" in json.dumps(mine)), ([a_gmail], 35, False, False))
+            "token_enc" in json.dumps(mine), "zz-asha" in json.dumps(mine)), ([a_gmail], 50, False, False))
         strip = call("GET", "/api/mailboxes", cookies=a).json()
         me_row = next(x for x in strip["accounts"] if x["me"])
         check("Sending today: everyone listed, hers first with her address and 35",
               (strip["mode"], strip["accounts"][0]["me"], [m["address"] for m in me_row["mailboxes"]],
-               me_row["mailboxes"][0]["daily_cap"], strip["can_send"]), ("approver", True, [a_gmail], 35, True))
+               me_row["mailboxes"][0]["daily_cap"], strip["can_send"]), ("approver", True, [a_gmail], 50, True))
         kart_row = next(x for x in strip["accounts"] if x["email"] == kart_email)
         check("  Kartikeya: no sending address, one approval waiting", (kart_row["mailboxes"], kart_row["approved_waiting"]), ([], 1))
         check("  and the day it goes out (India's clock), for the counter: one, on its day",
@@ -455,8 +456,8 @@ def api():
                         (a2,))
             row = cur.fetchone()
             creds = store.decrypt(row[2]) if row else {}
-            check("Asha connects a second Gmail herself: linked to her, at 35, the address as Google says it",
-                  (back(r)[0], back(r)[1].startswith(a2), row[:2] if row else None), ("connected", True, (a_email, 35)))
+            check("Asha connects a second Gmail herself: linked to her, at 50, the address as Google says it",
+                  (back(r)[0], back(r)[1].startswith(a2), row[:2] if row else None), ("connected", True, (a_email, 50)))
             check("  its LCX alias read at once (an LCX address cannot be signed in to: it lives in this account)",
                   (row[3], ("also sends as " + lcx) in back(r)[1]),
                   ([{"address": lcx, "name": "Asha at LCX"}], True))

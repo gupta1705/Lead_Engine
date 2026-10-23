@@ -1104,7 +1104,10 @@ function refreshCurrentView() {
 /* Every reply sits in Replies with its mark (Positive, Negative, Needs triage); a positive one
    also moves the company to In conversation. Attention shows only when a send's outcome is
    unknown. (Positive, Negative and Cancelled folders went on 2026-09-19.) */
-const FOLDERS = [["drafts", "Drafts"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"], ["attention", "Attention"]];
+// Follow-ups (owner, 2026-10-23: "Create another tab for follow ups"): follow-up drafts waiting for approval, apart
+// from first emails (sql/40); once approved or sent they are in Approved and Sent, marked as follow-ups
+const FOLDERS = [["drafts", "Drafts"], ["followups", "Follow-ups"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"], ["attention", "Attention"]];
+const REVIEW_FOLDERS = ["drafts", "followups"];         // the folders a person approves from (batch approval too)
 function outreachPolicy() { return (state.segment && state.segment.outreach_policy) || {}; }
 function batchOn() { return !!outreachPolicy().batch_approval; }
 function draftsOn() {
@@ -1112,6 +1115,13 @@ function draftsOn() {
   return outreachPolicy().drafts !== false || (state.outreach.counts.drafts || 0) > 0;
 }
 function followUpsOn() { return !!(outreachPolicy().follow_ups || {}).enabled; }
+/* The empty Follow-ups tab says when one will come: N days after a first email goes out with no reply. */
+function followUpsEmpty() {
+  const steps = (outreachPolicy().follow_ups || {}).steps || [];
+  if (!followUpsOn() || !steps.length) return "This project sends no follow-ups.";
+  const d = steps[0].after_days;
+  return `No follow-ups waiting. One is drafted here ${d} day${d === 1 ? "" : "s"} after a first email goes out with no reply, for you to approve.`;
+}
 function stepLozenge(r) {
   const n = +r.sequence_step || 0;
   return n > 0 ? `<span class="lozenge new" title="Follow-up in the same thread">Follow-up ${n}</span> ` : "";
@@ -1195,10 +1205,11 @@ async function loadOutreach() {
   }
   const present = new Set(d.rows.filter((r) => !r.approval_blocked).map((r) => r.id));
   o.selected = new Set([...(o.selected || [])].filter((id) => present.has(id)));
-  const batch = batchOn() && o.folder === "drafts" && d.rows.length > 0;
+  const batch = batchOn() && REVIEW_FOLDERS.includes(o.folder) && d.rows.length > 0;
   $("#outreachTable").classList.toggle("batch", batch);
   $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => (key !== "attention" || o.counts.attention || o.folder === "attention")
-      && (key !== "drafts" || draftsOn())).map(([key, label]) =>
+      && (key !== "drafts" || draftsOn())
+      && (key !== "followups" || followUpsOn() || o.counts.followups || o.folder === "followups")).map(([key, label]) =>
     `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${(d.filtered_counts || o.counts)[key] || 0}</span></button>`).join("");
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
     o.folder = b.dataset.f; o.offset = 0; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
@@ -1229,6 +1240,7 @@ async function loadOutreach() {
     </tr>`).join("")
     : `<tr class="empty-row"><td colspan="6">${o.category || o.service ? "No emails match these filters. Clear the filters to see all categories." : o.folder === "drafts"
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
+        : o.folder === "followups" ? followUpsEmpty()
         : o.folder === "outbox" && composeOn() ? "Nothing waiting to go out. To write to leads, pick them on the Leads page."
         : "Nothing in this folder yet."}</td></tr>`;
   // who reached out: the person who approved it, from which address (owner, 2026-09-26)
@@ -1284,7 +1296,7 @@ function outreachMetric(row) {
 
 function renderBatchBar() {
   const o = state.outreach, bar = $("#batchBar");
-  const on = batchOn() && o.folder === "drafts" && o.rows.length > 0;
+  const on = batchOn() && REVIEW_FOLDERS.includes(o.folder) && o.rows.length > 0;
   bar.hidden = !on;
   if (!on) return;
   const n = o.selected.size, pol = outreachPolicy().batch_approval;
@@ -2787,9 +2799,9 @@ function bindUniversal() {
    2026-09-19.) */
 function updateOutreachCount(counts) {
   const side = $("#outreachCount");
-  const waiting = (counts.drafts || 0) + (counts.untriaged || 0) + (counts.attention || 0);
+  const waiting = (counts.drafts || 0) + (counts.followups || 0) + (counts.untriaged || 0) + (counts.attention || 0);
   side.hidden = waiting === 0; side.textContent = String(waiting);
-  side.title = "Drafts to approve, replies to read and sends that failed";
+  side.title = "Drafts and follow-ups to approve, replies to read and sends that failed";
   state.notif.counts = counts; state.notif.at = Date.now();
 }
 async function refreshOutreachCount(force) {
@@ -2966,7 +2978,7 @@ async function openSendingAddress(opts) {
       ${b.usable || !d.web_connect ? "" : `<button class="btn compact" data-reconnect>Connect again</button>`}
       <button class="btn subtle compact danger-text" data-drop="${esc(b.id)}" data-addr="${esc(b.address)}">Disconnect</button></li>`).join("")}</ul>`
     : `<p class="muted">No Gmail connected yet. Until you connect one, the emails you approve wait in Approved.</p>`;
-  const cap = String((rows[0] || {}).daily_cap || 35);
+  const cap = String((rows[0] || {}).daily_cap || 50);
   modal.open(`
     ${modalHead(`${typeIcon("mail")}<span class="key">Your Gmail</span>`)}
     <div class="modal-body single"><div class="modal-main">

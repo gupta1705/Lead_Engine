@@ -542,7 +542,7 @@ reply's mark sits in front of its subject.
 
 Nothing here needs a button to get it going. A shortlisted lead's email is
 drafted into Drafts within minutes, and in LCX Clipping a follow-up that falls
-due is drafted the same way. The one button at the top right, **Footer**, sets
+due is drafted into its own tab, **Follow-ups**, the same way. The one button at the top right, **Footer**, sets
 the sign-off every email ends with.
 
 
@@ -611,7 +611,7 @@ for them.
 
 Approving is the decision to send, and in US Production Houses **it goes out from
 your own Gmail**, signed with your own name and title. You connect it yourself
-(account menu, Your Gmail; see *Getting in*). A person can have more than one. Each address sends **up to 35 a day**, and an approval goes
+(account menu, Your Gmail; see *Getting in*). A person can have more than one. Each address sends **up to 50 a day**, and an approval goes
 out from whichever of yours has the most room left. Nobody's approval ever
 leaves from somebody else's address.
 
@@ -622,7 +622,7 @@ Strategy…" when Kartikeya opens it). Approving stores exactly the text you rea
 have not set them, it says so.
 
 **Sending today**, at the top of Outreach, lists everyone: each of their sending
-addresses with today's count out of its limit (for example `3/35`), anyone who
+addresses with today's count out of its limit (for example `3/50`), anyone who
 has none linked yet, and their approvals by the day each goes out ("approved: 3
 on Tue 14 Oct, 2 on Wed 15 Oct", days on India's clock). The counts start again
 at midnight UTC, which is 5:30 am in India. An approval by someone with no
@@ -656,7 +656,7 @@ than 45 seconds apart, so one window holds about 24 per address per window; the
 rest go in the next weekday's window, each at a new minute. An approval after
 the day's window, or at a weekend, goes in the next weekday's. If an email's
 window passes and it has not gone — the server was down, its address had used
-up its 35 for the day, Gmail refused the address — it moves to its next window
+up its 50 for the day, Gmail refused the address — it moves to its next window
 at a new minute, never later the same afternoon, and says why: *Its earlier
 window passed unsent (…): now Wed 15 Oct, 10:04 New York time*. Until a sending
 address is connected (see *What only you can do*), approved emails wait in
@@ -740,12 +740,13 @@ as you wrote it. Emails already sent are never touched.
 
 # Follow-ups
 
-For LCX Clipping, one company gets one thread: the opener, then up to two
-follow-ups in the same email thread.
+For LCX Clipping, one company gets one thread: the opener, then one follow-up
+in the same email thread, **four days after the opener went out** with no reply
+(since 23 October; it used to be two). Then the thread is closed for good.
 
-- **Follow-up 1** four days after the opener.
-- **Follow-up 2** seven days after that.
-- Then the thread is closed for good.
+Follow-ups wait in their own tab, **Follow-ups**, next to Drafts (which holds
+first emails only). Approve them there, one at a time or in a batch. Once
+approved they are in Approved, and once sent in Sent, marked as a follow-up.
 
 **Any reply stops it immediately.** A genuine reply ends the thread; an
 out-of-office lets it resume. This is enforced in the database, not just in the
@@ -755,8 +756,8 @@ if something else goes wrong.
 Follow-ups are drafts like any other email and need the same approval. They are
 drafted by themselves when they fall due; read and approve them like any other.
 
-To stop a thread by hand, open its sent email, or a follow-up waiting in Drafts,
-and press **Stop follow-ups**. Rejecting the lead stops it too.
+To stop a thread by hand, open its sent email, or a follow-up waiting in
+Follow-ups, and press **Stop follow-ups**. Rejecting the lead stops it too.
 
 The TVF projects do not use follow-ups at all. One email per company, full stop.
 
@@ -891,7 +892,7 @@ read that exact text, and approving is what sends it. Nothing goes out that
 nobody approved, and there is no "approve all without looking". Nor does an
 approved email go outside its own window: the database refuses that too.
 
-**One thread per company, ever.** An opener and at most two follow-ups. Checked
+**One thread per company, ever.** An opener and, in LCX Clipping, one follow-up. Checked
 across every project, not just the one you are in, and it survives resets and
 re-imports.
 
