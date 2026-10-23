@@ -19,6 +19,7 @@ contact. A lead still in To review is shortlisted by being written to -- choosin
 that decision. `plan(..., apply=False)` runs all of it and undoes it, so the page can say who will
 be skipped and why before anyone approves.
 """
+import json
 import re
 
 from mail_copy import clean_text
@@ -114,11 +115,15 @@ def message(subject, body, fields, footer):
             clean_text(render(body.strip(), fields) + "\n\n" + footer, remove_offer=True))
 
 
-def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=None):
+def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=None, service=None,
+         attachments=None):
     """-> {"ready": [...], "skipped": [...], "footer": str}.
 
     `cc`: who every one of these emails is copied to (sql/39), [] for nobody, or None for the project's
     default (outreach.default_cc), as the writer left the CC switch in the box.
+    `service` and `attachments` (a lead added by hand, tools/manual_lead.py): the one service the email pitches
+    (outreach.service, sql/35; LCX Services' database refuses a first email without it) and the files it carries,
+    as tools/outreach_policy.attachments_for records them.
 
     Runs every recipient through exactly what an approval checks. With apply=False (the page asking
     before approving) nothing is kept; with apply=True each recipient that passes becomes an approved
@@ -183,9 +188,11 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=N
                 if r["status"] != "shortlisted":
                     cur.execute("update entities set status = 'shortlisted', status_changed_at = now(), updated_at = now()"
                                 " where id = %s and status = any(%s)", (eid, list(REVIEW_STATUSES)))
-                cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, cc)"
-                            " values (%s, %s, %s, %s, %s, %s::text[]) on conflict do nothing returning id",
-                            (eid, r["contact_id"], TEMPLATE_KEY, subj, text, cc))
+                cur.execute("insert into outreach (entity_id, contact_id, template_key, subject, body, cc, service,"
+                            " attachments) values (%s, %s, %s, %s, %s, %s::text[], %s, %s)"
+                            " on conflict do nothing returning id",
+                            (eid, r["contact_id"], TEMPLATE_KEY, subj, text, cc, service,
+                             json.dumps(attachments) if attachments else None))
                 got = cur.fetchone()
                 if not got:
                     reason = "it already has an email from us"

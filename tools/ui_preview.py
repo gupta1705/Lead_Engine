@@ -38,6 +38,11 @@ def generate(out, slug):
     fx = {"auth": {"needs_setup": False, "authed": True, "user": None}}
     fx["segment"] = main.segment_info(slug)
     fx["segments"] = main.segments_list(slug)
+    # Add a lead: what each project's form says (tools/manual_lead.project)
+    import manual_lead
+    with main.cursor() as cur:
+        cur.execute("select slug, config from segments where is_active")
+        fx["manual_projects"] = {r["slug"]: manual_lead.project(r["config"] or {}) for r in cur.fetchall()}
     with main.cursor() as cur:
         # the person the preview is signed in as: the owner, or anyone, with a name so no first-sign-in screen
         cur.execute("select email, name, title from app_users order by role = 'owner' desc, created_at limit 1")
@@ -296,7 +301,7 @@ MOCK_JS = r"""
       if (d) { d.status = row.status; d.status_reason = row.status_reason; d.status_changed_at = row.status_changed_at; }
       return json({ id, name: row.name, status: row.status, status_reason: body.reason || null });
     }
-    if ((m = p.match(/^\/api\/leads\/([^/]+)$/))) {
+    if ((m = p.match(/^\/api\/leads\/([^/]+)$/)) && method === "GET") {
       const d = FX.details[m[1]];
       if (d) return json(d);
       const row = FX.leads.find((r) => r.id === m[1]);
@@ -428,6 +433,61 @@ MOCK_JS = r"""
       }
       return json({ ready, skipped, footer, approved: apply ? ready.length : 0, fields: ["first_name", "company"], max: 100,
                     mailboxes: (FX.me_mailboxes && FX.me_mailboxes.mailboxes) || [], can_send: false, paused: null, sends_from: [] });
+    }
+    // ---- a lead found by hand (2026-10-23): tools/manual_lead.py, in short ----
+    if (p === "/api/leads/manual/check" || p === "/api/leads/manual") {
+      const me = FX.auth, apply = p === "/api/leads/manual";
+      if (!me.name || !me.title) return json({ detail: "Add your name and title first (the account menu at the bottom of the sidebar): the emails you write are signed with them." }, 409);
+      const cc = (FX.segment.outreach_policy || {}).default_cc || [];
+      // an older snapshot has no per-project form: each project as the form reads it, in short
+      const P = FX.manual_projects || Object.fromEntries((FX.segments.segments || []).map((s) => [s.slug, {
+        entity_label: { "lcx-clipping": "show", "startup-acquisitions": "startup", "lcx-services": "business" }[s.slug] || "company",
+        lead_first: s.slug === "lcx-clipping", follow_up_days: 4, default_cc: cc,
+        services: s.slug === "lcx-services" ? ["AI Onboarding Employee", "Explainer Videos", "Reel Forge"] : null,
+        files: s.slug === "lcx-services" ? ["LCX Services - pitch deck.pdf"] : [] }]));
+      const proj = P[body.project];
+      if (!proj) return json({ problems: { project: "Pick the project this lead belongs to." }, warnings: {}, project: null, ready: [], skipped: [] });
+      const t = (k) => String(body[k] || "").trim(), problems = {};
+      if (!t("company")) problems.company = "Write the " + proj.entity_label + "'s name.";
+      if (!t("email")) problems.email = "Write the address the email goes to.";
+      else if (!/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/i.test(t("email"))) problems.email = "That does not read as an email address.";
+      if (t("website") && !/^(https?:\/\/)?(www\.)?[a-z0-9\-]+(\.[a-z0-9\-]+)*\.[a-z]{2,}(\/.*)?$/i.test(t("website"))) problems.website = "Write the website as example.com.";
+      if (proj.services && !proj.services.includes(t("service"))) problems.service = "Pick the service this email pitches.";
+      const out = { project: Object.assign({ slug: body.project }, proj), problems, warnings: {}, match: null, reopens: null,
+                    replaces_draft: false, ready: [], skipped: [], footer: "Regards,\n" + me.name + "\n" + me.title, elsewhere: [],
+                    lead_id: null, outreach_id: null, mailboxes: (FX.me_mailboxes && FX.me_mailboxes.mailboxes) || [],
+                    can_send: false, paused: null, sends_from: [], send_window: (FX.segment.outreach_policy || {}).send_window || null };
+      // a lead already here, by its address or its name: the page says so, as the server does
+      const known = body.project === FX.segment.slug && FX.leads.find((l) =>
+        (t("email") && String(l.email || "").toLowerCase() === t("email").toLowerCase())
+        || (t("company") && String(l.name || "").toLowerCase() === t("company").toLowerCase()));
+      if (known) {
+        out.match = { id: known.id, name: known.name, status: known.status, status_reason: known.status_reason || null, since: known.status_changed_at || null };
+        if (known.status === "contacted" || known.status === "in_conversation")
+          problems.lead = known.name + " is already a lead in this project, already contacted. Its emails are in Outreach.";
+        if (known.status === "rejected" || known.status === "archived") out.reopens = known.status;
+      }
+      if (Object.keys(problems).length) return json(out);
+      const first = t("name").split(/\s+/)[0] || "", id = known ? known.id : "m" + Math.random().toString(16).slice(2);
+      out.ready = [{ id, company: t("company"), company_as_written: t("company"), contact_name: t("name") || null, email: t("email"),
+                     first_name: first || "there", named: !!first, window: windowFor(id) }];
+      if (apply) {
+        const now = new Date().toISOString(), x = out.ready[0];
+        const fill = (s) => String(s || "").replace(/{{\s*first_name\s*}}/g, x.first_name).replace(/{{\s*company\s*}}/g, x.company);
+        x.schedule = scheduleFor(id);
+        if (!known && body.project === FX.segment.slug)
+          FX.leads.unshift({ id, name: t("company"), domain: t("website") || null, source: "manual", status: "shortlisted",
+            status_reason: "Added by hand by " + me.name, fit_score: null, email: t("email"), contact_name: t("name") || null,
+            created_at: now, metadata: { hq_country: t("country"), hq_city: t("city") } });
+        else if (known) known.status = "shortlisted";
+        out.outreach_id = "c" + Math.random().toString(16).slice(2); out.lead_id = id;
+        if (body.project === FX.segment.slug)
+          FX.outreach.rows.unshift({ id: out.outreach_id, entity_id: id, company: x.company, contact_name: x.contact_name,
+            contact_email: x.email, direction: "outbound", status: "approved", subject: fill(body.subject).trim(),
+            body: fill(body.body).trim() + "\n\n" + out.footer, schedule: x.schedule, approved_by: me.user,
+            approved_by_name: me.name, approval_mode: "compose", approved_at: now, created_at: now, sequence_step: 0 });
+      }
+      return json(out);
     }
     // ---- the Apollo page: a pretend Apollo (made-up people at example.com) ----
     if (p.startsWith("/api/universal/")) {

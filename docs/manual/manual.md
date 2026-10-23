@@ -440,6 +440,47 @@ a spreadsheet named after the project. It is hidden when the list is empty.
 
 Click anywhere on a row to open it.
 
+## Adding a lead you found
+
+Not every lead comes from the software. When you find one yourself (a company
+someone mentioned, a show you came across, a card from an event), press
+**Add a lead** at the top of the Leads page. One window holds all of it:
+
+- **Project:** which of our projects it belongs to. The email then goes out the
+  way that project's emails do. It starts on the project you are in.
+- **The lead:** its name (a company, a show, a startup or a business, as the
+  project calls it), and if you know them, its website, country and city. The
+  country and city decide its clock, so the email lands between 10:00 and 10:30
+  where they are.
+- **Who it goes to:** the person's name, their role and their email address.
+  The address is your word for it: Apollo never saw it, and it is allowed
+  because you typed it.
+- **LCX Services only:** the one service the email pitches. The deck its first
+  emails carry goes with it, unless you untick it.
+- **The email:** subject and text, written by you. **{{first_name}}** and
+  **{{company}}** work as in Universal's Write email, the preview shows it as
+  they will read it, and your sign-off goes under it. **Rewrite with AI** is
+  there too.
+
+The window checks as you type, and says plainly when something stops it:
+
+- **The lead is already in the project:** it is used, never added twice. A
+  draft the software wrote for it, and nobody approved, is replaced by yours.
+- **It was rejected or archived:** the window says so, with the reason, and
+  approving your email reopens it.
+- **It is refused:** a lead already contacted or in conversation, an address or
+  company that already has a first email from us in any project, one of our own
+  addresses, TVF itself, or a country the project never emails (LCX: Canada,
+  Germany, Austria and Italy, where cold business email needs consent first; LCX
+  Services: countries it cannot be paid from).
+
+**Approve** adds the lead and approves the email in one step. Nothing is kept
+before that, and if the email cannot go, the lead is not added either. Then the
+usual: it goes from your own Gmail, signed by you, copied to the project's CC
+unless you switch that off. If nobody replies in four days, its follow-up waits
+for approval in Follow-ups. The lead shows on the Leads page and the board, with
+**Manual** as its source and who added it.
+
 
 # Deciding on a lead
 
@@ -740,9 +781,11 @@ as you wrote it. Emails already sent are never touched.
 
 # Follow-ups
 
-For LCX Clipping, one company gets one thread: the opener, then one follow-up
-in the same email thread, **four days after the opener went out** with no reply
-(since 23 October; it used to be two). Then the thread is closed for good.
+In every project, one company gets one thread: the first email, then one
+follow-up in the same email thread, **four days after the first email went out**
+with no reply (since 23 October). It goes from the same address, as
+"Re: <the first email's subject>", signed by the person who sent the first
+email. Then the thread is closed for good.
 
 Follow-ups wait in their own tab, **Follow-ups**, next to Drafts (which holds
 first emails only). Approve them there, one at a time or in a batch. Once
@@ -759,7 +802,9 @@ drafted by themselves when they fall due; read and approve them like any other.
 To stop a thread by hand, open its sent email, or a follow-up waiting in
 Follow-ups, and press **Stop follow-ups**. Rejecting the lead stops it too.
 
-The TVF projects do not use follow-ups at all. One email per company, full stop.
+Each project has its own follow-up wording. LCX Services' names the service its
+first email pitched; Universal's, whose first emails people write themselves,
+says only what fits any of them.
 
 
 # Replies
@@ -892,12 +937,14 @@ read that exact text, and approving is what sends it. Nothing goes out that
 nobody approved, and there is no "approve all without looking". Nor does an
 approved email go outside its own window: the database refuses that too.
 
-**One thread per company, ever.** An opener and, in LCX Clipping, one follow-up. Checked
+**One thread per company, ever.** A first email and one follow-up. Checked
 across every project, not just the one you are in, and it survives resets and
 re-imports.
 
 **A rejected lead never comes back.** No later harvest will re-import something
-you turned down.
+you turned down. Only a person can bring one back, by adding it by hand and
+writing to it (*Adding a lead you found*), and the page says so before anything
+is approved.
 
 **"Remove me" is permanent.** An opt-out request marks that domain unsubscribed
 forever.

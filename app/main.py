@@ -1071,10 +1071,17 @@ def _rewrite_email(body, cfg, person=None, context=None):
 def outreach_compose_rewrite(request: Request, body: dict = Body(...),
                              segment: str = Depends(current_segment)):
     """Rewrite the unsaved email in the compose window. Never creates or approves outreach."""
+    want = str((body or {}).get("project") or "").strip()
     with cursor() as cur:
-        cfg = _policy().outreach_config(cur, segment)
-        if not cfg.get("compose"):
-            raise HTTPException(403, "Writing emails to picked leads is not on for this project.")
+        if want:
+            # Add a lead (tools/manual_lead.py): the email is for the project the person picked there
+            if want not in [r["slug"] for r in segment_rows()]:
+                raise HTTPException(404, "no such project")
+            cfg = _policy().outreach_config(cur, want)
+        else:
+            cfg = _policy().outreach_config(cur, segment)
+            if not cfg.get("compose"):
+                raise HTTPException(403, "Writing emails to picked leads is not on for this project.")
         cur.execute("select email, name, title from app_users where lower(email) = lower(%s)",
                     (getattr(request.state, "user", ""),))
         person = cur.fetchone()
@@ -1557,6 +1564,64 @@ def outreach_compose(request: Request, body: dict = Body(...), segment: str = De
     if out["approved"]:
         _scheduler.kick_outreach(segment, "manual")            # approved means sent: no terminal step
         _scheduler.wake_sender()                                # each at its own moment, where there is a window
+    return out
+
+
+# --------------------------------------------------------- a lead found by hand
+def _manual_module():
+    """tools/manual_lead.py -- a lead a person found on their own, and the email they write to it."""
+    _compose_module()                                           # tools/ on the import path
+    import manual_lead
+    return manual_lead
+
+
+def _manual(request, body, apply):
+    ml, comp = _manual_module(), _compose_module()
+    b = dict(body or {})
+    if "cc" in b:
+        b["cc"] = _clean_cc(b["cc"])
+    user = getattr(request.state, "user", None) or ""
+    with cursor() as cur:
+        cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user,))
+        person = cur.fetchone()
+        try:
+            out = ml.run(cur, b, dict(person) if person else None, apply=apply,
+                         segments=[r["slug"] for r in segment_rows()])
+        except ml.Problems as e:
+            return {"problems": e.problems, "warnings": {}, "project": None, "ready": [], "skipped": []}
+        except comp.Refused as e:
+            raise HTTPException(e.code, str(e))
+        slug = out["project"]["slug"]
+        cfg = _policy().outreach_config(cur, slug)
+        boxes = []
+        if cfg.get("send_from") == "approver":
+            boxes = [{k: m[k] for k in ("address", "daily_cap", "out_today", "remaining", "usable")}
+                     for m in _mailbox_store().mailboxes(cur, user_email=user)]
+    out.update(mailboxes=boxes, can_send=_can_send(slug, user), paused=_send_paused(slug),
+               sends_from=_sends_from(slug, user), send_window=_window_info(cfg.get("send_window")))
+    return out
+
+
+@app.post("/api/leads/manual/check")
+def manual_lead_check(request: Request, body: dict = Body(...)):
+    """As a person fills in Add a lead: what is missing or wrong, the lead it matches if it is already in the
+    project, how the email reads, where it sends from and when. Nothing is kept."""
+    return _manual(request, body, apply=False)
+
+
+@app.post("/api/leads/manual")
+def manual_lead_add(request: Request, body: dict = Body(...)):
+    """Add a lead a person found on their own, in the project they picked, and approve the email they wrote to it
+    (the owner, 2026-10-23: "send custom mail to a lead that we find on our own ... select the category it belongs
+    to and then the usual"). The usual: it goes out from the approver's own Gmail in the project's sending window,
+    copied to the default CC, with one follow-up four days later if nobody replies. All or nothing: when the email
+    cannot go, no lead is added."""
+    out = _manual(request, body, apply=True)
+    if out.get("outreach_id"):
+        slug = out["project"]["slug"]
+        _SEG_CACHE.update(at=0.0)                               # the Leads page's sources now include Manual
+        _scheduler.kick_outreach(slug, "manual")
+        _scheduler.wake_sender()
     return out
 
 

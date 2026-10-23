@@ -52,6 +52,10 @@ The engine looks in public places where the right kind of company shows up:
 - **Apollo**, a paid business database of people and companies, when you
   search it yourself in the Universal project.
 
+- **A person**, when they find a lead on their own: **Add a lead** on the Leads
+  page takes its project, who it is, who the email goes to and the email they
+  wrote, and approving it adds the lead and sends the email the usual way.
+
 When the same company turns up in two places, it becomes **one lead, not two**.
 The engine matches it by website, then by name, and keeps what each source
 said about it.

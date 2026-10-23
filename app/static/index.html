@@ -170,6 +170,11 @@
         <div class="title-row">
           <h1 id="leadsTitle">Leads</h1>
           <div class="page-actions">
+            <!-- a lead someone found on their own: its project, who it is, and the email to it (tools/manual_lead.py) -->
+            <button class="btn primary" id="leadsAdd" type="button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              Add a lead
+            </button>
             <a class="btn" id="leadsExport" href="/api/export.xlsx?status=all">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></svg>
               <span id="leadsExportText">Export this view</span>

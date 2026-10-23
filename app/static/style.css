@@ -1036,6 +1036,23 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .from-meter { display: flex; align-items: center; gap: 8px; }
 .skip-list li { color: var(--text-subtle); font-size: 13px; }
 
+/* a lead someone found on their own, and the email to it (owner, 2026-10-23; tools/manual_lead.py) */
+.al-group { border: 0; margin: 0; padding: 0; min-width: 0; }
+.al-group > legend { padding: 0; margin-bottom: 10px; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--text-subtle); }
+.al-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.al-grid .wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .al-grid { grid-template-columns: 1fr; } }
+.al-notes { display: flex; flex-direction: column; gap: 8px; }
+.al-notes:empty { display: none; }
+.al-note { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--surface-sunken); font-size: 13.5px; line-height: 20px; }
+.al-note svg { flex: none; margin-top: 2px; color: var(--text-subtlest); }
+.al-note.bad { background: var(--bg-danger); color: var(--text-danger); }
+.al-note.bad svg { color: var(--text-danger); }
+.add-lead .compose-body { height: 24dvh; }
+.al-after li { margin: 4px 0; }
+.field-error.warn { color: var(--text-warning); }
+
 /* batch approval (LCX) */
 .sel-col { display: none; width: 44px; }
 .tbl.batch .sel-col { display: table-cell; }

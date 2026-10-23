@@ -102,6 +102,7 @@ const PATHS = {
   building: '<path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M3 21h18M10 7h4M10 11h4M10 15h4"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   arrowRight: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
 };
 function icon(name, size, extra) {
   return `<svg width="${size || 16}" height="${size || 16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra || ""}>${PATHS[name] || ""}</svg>`;
@@ -961,7 +962,7 @@ async function openLead(id, opts) {
   const wv = m.web_verification && typeof m.web_verification === "object" ? m.web_verification : null;
   const credits = Array.isArray(m.notable_credits) ? m.notable_credits.map((c) => typeof c === "string" ? c : (c && (c.title || c.name)) || "").filter(Boolean) : [];
   const det = [
-    (m.hq_city || m.hq_state) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state].filter(Boolean).join(", "))}</dd>` : "",
+    (m.hq_city || m.hq_state || (d.source === "manual" && m.hq_country)) ? `<dt>Location</dt><dd>${esc([m.hq_city, m.hq_state, d.source === "manual" ? m.hq_country : ""].filter(Boolean).join(", "))}</dd>` : "",
     uiDetails(d),
     wv && wv.note ? `<dt>Web check</dt><dd>${esc(wv.note)}${wv.date ? ` <span class="muted small">${esc(wv.date)}</span>` : ""}</dd>` : "",
     m.team_size_estimate ? `<dt>Team size (research)</dt><dd>${esc(m.team_size_estimate)}</dd>` : "",
@@ -970,6 +971,8 @@ async function openLead(id, opts) {
   (m.genres || []).slice(0, 4).forEach((g) => pills.push(`<span class="tag">${esc(g)}</span>`));
   (m.platform_relationships || []).slice(0, 4).forEach((g) => pills.push(`<span class="tag">${esc(g)}</span>`));
   const t = leadTitle(d), hosted = personFirst() && hostOf(d) && !t.same;
+  // a lead a person added by hand (tools/manual_lead.py) has no score until the project's scoring reads it
+  const handAdded = d.source === "manual" && d.fit_score == null && !d.explain;
 
   modal.open(`
     ${modalHead(`${typeIcon("lead")}${statusLozenge(d.status)}`,
@@ -980,12 +983,12 @@ async function openLead(id, opts) {
         <div class="lead-hero">${monoTile(hosted ? t.title : d.name, d.domain || d.id, "lg")}
           <div class="lead-hero-text"><h2 class="modal-title">${esc(hosted ? t.title : d.name)}</h2>
             ${hosted ? `<p class="lead-hero-sub">Host of <strong>${esc(d.name)}</strong></p>` : ""}</div>
-          ${unscoredProject() ? "" : `<div class="lead-hero-score">${scoreRing(score, 56)}<span class="small">fit score</span></div>`}</div>
+          ${unscoredProject() || handAdded ? "" : `<div class="lead-hero-score">${scoreRing(score, 56)}<span class="small">fit score</span></div>`}</div>
         <div class="pill-list lead-tags">${pills.join("")}</div>
 
         ${d.explain ? `<div class="section"><h3>${icon("sparkle", 16)} Analysis</h3><div class="body">${renderAnalysis(d.explain)}</div></div>` : ""}
 
-        ${d.explain && !(d.explain.criteria || []).length ? "" : `<div class="section"><h3>${icon("chart", 16)} Score breakdown</h3>
+        ${(d.explain && !(d.explain.criteria || []).length) || handAdded ? "" : `<div class="section"><h3>${icon("chart", 16)} Score breakdown</h3>
           <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) : ""}</div></div>`}
 
         ${research.ownership || research.caveats ? `<div class="section"><h3>${icon("book", 16)} Research notes</h3><div class="body">
@@ -1404,7 +1407,7 @@ function rewritePanel() {
     <div class="help" id="rewriteStatus" role="status">Review the result and edit anything before saving or approving.</div></details>`;
 }
 
-function bindRewrite(root, subject, body, endpoint, changed = () => {}) {
+function bindRewrite(root, subject, body, endpoint, changed = () => {}, extra = () => ({})) {
   const go = $("#rewriteGo", root), undo = $("#rewriteUndo", root), status = $("#rewriteStatus", root);
   let before = null, busy = false;
   go.addEventListener("click", async () => {
@@ -1418,7 +1421,7 @@ function bindRewrite(root, subject, body, endpoint, changed = () => {}) {
     controls.forEach(([el]) => { el.disabled = true; });
     go.classList.add("loading"); status.textContent = "Rewriting your draft…";
     try {
-      const result = await post(endpoint, { ...snapshot, instructions: $("#rewriteInstructions", root).value });
+      const result = await post(endpoint, { ...snapshot, instructions: $("#rewriteInstructions", root).value, ...extra() });
       if (!body.isConnected) return;
       before = snapshot; subject.value = result.subject; body.value = result.body; body.dataset.aiRewritten = "true";
       undo.hidden = false;
@@ -1477,6 +1480,7 @@ function renderLeadsBatch() {
     <button class="btn primary" id="leadsCompose">${icon("mail", 16)} Write email to ${n}</button>`;
 }
 function bindLeadsCompose() {
+  $("#leadsAdd").addEventListener("click", openAddLead);
   const picked = state.leads.selected;
   $("#leadsBody").addEventListener("change", (e) => {
     const t = e.target.closest("[data-pick]");
@@ -1653,6 +1657,215 @@ async function openCompose(leads) {
     } catch (err) { toast(err.message, true); b.classList.remove("loading"); paint(); }
   });
   paint();
+}
+
+/* ------------------------------------------------------- a lead found by hand
+   The owner, 2026-10-23: "Add a feature to send custom mail to a lead that we find on our own ... select the
+   category it belongs to and then the usual". Add a lead: the project it belongs to, who it is, who the email
+   goes to, and the email. The server reads it as it is typed (tools/manual_lead.py): what is missing, a lead it
+   already is, how it reads. Approving adds the lead and approves the email, and the usual follows: the writer's own
+   Gmail, the project's sending window and CC, one follow-up four days later. Nothing is kept before that. */
+const LEAD_FIELDS = ["company", "website", "country", "city", "name", "role", "email", "service"];
+function projName(slug) { const s = state.segments.find((x) => x.slug === slug); return s ? s.project_name : slug; }
+
+function openAddLead() {
+  const segs = state.segments.length ? state.segments
+    : [{ slug: state.segment && state.segment.slug, project_name: ((state.segment || {}).ui || {}).project_name || "This project" }];
+  const here = (state.segment && state.segment.slug) || segs[0].slug;
+  const GREETING = "Hi {{first_name}},\n\n";
+  const touched = new Set(), ccDraft = { cc: [], cc_default: [] };
+  let chk = null, seq = 0, timer = null, pending = true, tried = false, attach = true, opened = false;
+  const fld = (k, label, attrs, req, wide) => `<div class="field${wide ? " wide" : ""}"><label for="al_${k}">${label}${req ? ` <span class="req">*</span>` : ""}</label>
+      <input id="al_${k}" data-k="${k}" type="${k === "email" ? "email" : "text"}" autocomplete="off" ${attrs || ""}>
+      <div class="field-error" data-err="${k}" hidden></div></div>`;
+  modal.open(`
+    ${modalHead(`${typeIcon("lead")}<span class="key">Add a lead</span>`)}
+    <div class="modal-body">
+      <div class="modal-main compose-main add-lead">
+        <div class="field"><label for="al_project">Project</label>
+          <select id="al_project">${segs.map((s) => `<option value="${esc(s.slug)}" ${s.slug === here ? "selected" : ""}>${esc(s.project_name)}</option>`).join("")}</select>
+          <div class="help">The project it belongs to. Its email goes out the way that project's emails do.</div>
+          <div class="field-error" data-err="project" hidden></div></div>
+        <fieldset class="al-group"><legend>The lead</legend><div class="al-grid">
+          ${fld("company", `<span id="al_company_label">Company</span>`, 'maxlength="160" autofocus', true)}
+          ${fld("website", "Website", 'maxlength="200" placeholder="example.com"')}
+          ${fld("country", "Country", 'maxlength="60" placeholder="United States"')}
+          ${fld("city", "City", 'maxlength="80"')}
+        </div></fieldset>
+        <fieldset class="al-group"><legend>Who it goes to</legend><div class="al-grid">
+          ${fld("name", "Name", 'maxlength="120"')}
+          ${fld("role", "Role", 'maxlength="120"')}
+          ${fld("email", "Email address", 'maxlength="200" placeholder="name@example.com"', true, true)}
+        </div></fieldset>
+        <div class="field" id="al_service_box" hidden><label for="al_service">Service it pitches <span class="req">*</span></label>
+          <select id="al_service" data-k="service"></select>
+          <div class="field-error" data-err="service" hidden></div></div>
+        <div class="al-notes" id="al_notes" role="status"></div>
+        <div class="field"><label for="cSubject">Subject <span class="req">*</span></label>
+          <input id="cSubject" type="text" maxlength="200" autocomplete="off"></div>
+        <div class="field"><div class="label-row"><label for="cBody">Email <span class="req">*</span></label>
+          <span class="insert"><span class="small muted">Insert</span>
+            <button type="button" class="btn compact" data-insert="first_name">First name</button>
+            <button type="button" class="btn compact" data-insert="company">Company</button></span></div>
+          <textarea id="cBody" class="compose-body">${esc(GREETING)}</textarea>
+          <div class="help">{{first_name}} and {{company}} are filled in for you. Your sign-off goes under it.</div>
+          <div class="field-error" id="cErr" role="alert" hidden></div></div>
+        ${rewritePanel()}
+        <div class="compose-preview">
+          <div class="preview-head"><span class="small muted">How it reads for</span> <strong id="cWho"></strong></div>
+          <div class="mail-preview"><div class="mp-subject" id="cPrevSubject"></div><div class="mp-body" id="cPreview"></div></div>
+        </div>
+      </div>
+      <div class="modal-side">
+        <div class="side-group"><div class="group-head">${icon("send", 16)} Sends from</div><div class="group-body" id="cFrom"><span class="skel" style="width:80%;height:12px"></span></div></div>
+        <div class="side-group"><div class="group-head">${icon("mail", 16)} CC</div><div class="group-body" id="ccCell"></div></div>
+        <div class="side-group" id="al_files_box" hidden><div class="group-head">${icon("paperclip", 16)} Attached</div><div class="group-body" id="al_files"></div></div>
+        <div class="side-group"><div class="group-head">${icon("clock", 16)} After you approve</div><div class="group-body"><ul class="plain-list al-after" id="al_after"></ul></div></div>
+      </div>
+    </div>
+    <div class="modal-foot"><span class="left" id="cNote"></span>
+      <button class="btn subtle" data-close>Cancel</button>
+      <button class="btn primary" id="cGo" disabled>${icon("send", 16)} <span>Approve</span></button></div>`,
+    { label: "Add a lead", sheet: true });
+
+  const root = $("#modalRoot");
+  const subj = $("#cSubject", root), body = $("#cBody", root), go = $("#cGo", root);
+  const fields = () => {
+    const o = { project: $("#al_project", root).value, attach };
+    LEAD_FIELDS.forEach((k) => { const el = $(`[data-k="${k}"]`, root); o[k] = el ? el.value.trim() : ""; });
+    return o;
+  };
+  const project = (p) => {   // what changes with the project: what its lead is called, its services, CC, deck
+    $("#al_company_label", root).textContent = (p.entity_label || "company").replace(/^./, (c) => c.toUpperCase());
+    const box = $("#al_service_box", root), sel = $("#al_service", root), keep = sel.value;
+    box.hidden = !p.services;
+    sel.innerHTML = p.services ? `<option value="">Pick one</option>` + p.services.map((s) =>
+      `<option ${s === keep ? "selected" : ""}>${esc(s)}</option>`).join("") : "";
+    ccDraft.cc = [...(p.default_cc || [])]; ccDraft.cc_default = p.default_cc || [];
+    $("#ccCell", root).innerHTML = ccCellHtml(ccDraft);
+    bindCc(root, ccDraft, null);
+    $("#al_files_box", root).hidden = !(p.files || []).length;
+    $("#al_files", root).innerHTML = (p.files || []).map((n) => `<label class="check"><input type="checkbox" id="al_attach" ${attach ? "checked" : ""}>
+      <span>${esc(n)}<div class="guidance">What this project's first emails carry.</div></span></label>`).join("");
+    const a = $("#al_attach", root);
+    if (a) a.addEventListener("change", () => { attach = a.checked; later(); });
+  };
+  const check = async () => {
+    const my = ++seq;
+    let r;
+    try { r = await post("/api/leads/manual/check", fields()); }
+    catch (e) {
+      if (my !== seq || !root.isConnected) return;
+      if (!opened) { modal.close(true); return toast(e.message, true); }   // no name and title yet: nothing to fill in
+      pending = false; $("#cNote", root).textContent = e.message; return paint();
+    }
+    if (my !== seq || !modal.isOpen() || !root.isConnected) return;
+    opened = true;
+    if (r.project && (!chk || !chk.project || chk.project.slug !== r.project.slug)) project(r.project);
+    chk = r; pending = false;
+    paint();
+  };
+  const later = () => { clearTimeout(timer); seq++; pending = true; timer = setTimeout(check, 450); paint(); };
+  const ok = () => {
+    const c = chk || {};
+    return !pending && !!c.project && !Object.keys(c.problems || {}).length && (c.ready || []).length === 1
+      && !!subj.value.trim() && !!body.value.trim() && body.value.trim() !== GREETING.trim()
+      && !composeUnknown(subj.value + " " + body.value).length;
+  };
+  const paint = () => {
+    if (!root.isConnected) return;
+    const f = fields(), c = chk || {}, probs = c.problems || {}, warns = c.warnings || {};
+    LEAD_FIELDS.concat(["project"]).forEach((k) => {
+      const el = $(`[data-err="${k}"]`, root);
+      if (!el) return;
+      const bad = !!probs[k] && (tried || touched.has(k) || k === "project");
+      el.hidden = !(bad || warns[k]);
+      el.textContent = bad ? probs[k] : (warns[k] || "");
+      el.classList.toggle("warn", !bad && !!warns[k]);
+    });
+    const notes = [], m = c.match;
+    if (probs.lead) notes.push(`<div class="al-note bad">${icon("alert", 16)}<span>${esc(probs.lead)}</span></div>`);
+    else if (m) notes.push(`<div class="al-note">${icon("info", 16)}<span>${c.reopens
+      ? `<strong>${esc(m.name)}</strong> is already a lead here, ${esc(leadStatus(m.status).label.toLowerCase())}${m.since ? ` on ${esc(fmtDate(m.since))}` : ""}${m.status_reason ? ` (${esc(m.status_reason)})` : ""}. Approving this email reopens it.`
+      : `<strong>${esc(m.name)}</strong> is already a lead in this project (${esc(leadStatus(m.status).label)}). The email goes to it, and nothing new is added.${c.replaces_draft ? " Yours replaces the draft waiting for approval." : ""}`}</span></div>`);
+    (c.elsewhere || []).forEach((e) => notes.push(`<div class="al-note">${icon("info", 16)}<span>This address was already ${e.status === "sent" ? "emailed" : "approved for an email"} in ${esc(projName(e.project))}${e.at ? ` on ${esc(fmtDate(e.at))}` : ""}.</span></div>`));
+    $("#al_notes", root).innerHTML = notes.join("");
+    // the preview: the server's reading of the person once the lead checks out, until then the name as typed
+    const r0 = (c.ready || [])[0];
+    const fl = { first_name: r0 ? r0.first_name : ((f.name.split(/\s+/)[0] || "").replace(/^./, (x) => x.toUpperCase()) || "there"),
+                 company: r0 ? (r0.company_as_written || r0.company) : (f.company || "the company") };
+    $("#cWho", root).textContent = f.email ? `${f.name || fl.first_name} at ${fl.company}` : "the person you write to";
+    $("#cPrevSubject", root).textContent = composeFill(subj.value.trim(), fl) || "(no subject yet)";
+    $("#cPreview", root).textContent = composeFill(body.value.trim(), fl) + (c.footer ? "\n\n" + c.footer : "");
+    const unknown = composeUnknown(subj.value + " " + body.value), err = $("#cErr", root);
+    err.hidden = !unknown.length;
+    err.textContent = unknown.length ? unknown.map((b) => "{{" + b + "}}").join(", ") + " is not a field an email can use: it can use {{first_name}} and {{company}}." : "";
+    const boxes = (c.mailboxes || []).filter((b) => b.usable);
+    if (c.project) $("#cFrom", root).innerHTML = c.paused
+      ? `<p class="small">Sending is paused for this project: what you approve waits in Approved.</p>`
+      : boxes.length ? boxes.map((b) => `<div class="from-box"><div class="truncate"><strong>${esc(b.address)}</strong></div>
+          <span class="small muted">${b.remaining} of ${b.daily_cap} left today</span></div>`).join("")
+      : (c.sends_from || []).length ? `<div class="from-box"><div class="truncate"><strong>${esc(c.sends_from[0])}</strong></div></div>`
+      : `<p class="small">You have no Gmail connected yet. What you approve waits in Approved until you connect one (account menu, Your Gmail).</p>`;
+    const p = c.project || {}, w = c.send_window, win = r0 && r0.window;
+    $("#al_after", root).innerHTML = [
+      win && win.enabled && win.window_label ? `It goes out ${esc(win.window_label)}.${win.send_tz_reason ? ` <span class="muted">(${esc(win.send_tz_reason)})</span>` : ""}`
+        : w && w.enabled ? `It goes out at a moment between ${esc(w.start)} and ${esc(w.end)} on ${w.timezone_of === "sender" ? esc(w.sender_place || "India") + "'s clock" : "the recipient's clock, read from the country and city"}.`
+        : "It goes out within minutes.",
+      p.follow_up_days ? `If they don't reply, one follow-up is drafted ${p.follow_up_days} days later, in the same thread, for approval in Follow-ups.` : "",
+      "Their reply shows in Outreach, and stops the follow-up.",
+    ].filter(Boolean).map((x) => `<li>${x}</li>`).join("");
+    go.disabled = pending || go.classList.contains("loading");
+    $("#cNote", root).textContent = tried && !ok() && !pending && Object.keys(probs).length ? "Fix what is marked above."
+      : !c.project ? "" : c.paused || (!boxes.length && !c.can_send) ? "It waits in Approved until it can go."
+      : "It goes from your address, signed by you.";
+  };
+  const dirty = () => LEAD_FIELDS.some((k) => { const el = $(`[data-k="${k}"]`, root); return el && el.value.trim(); })
+    || subj.value.trim() || body.value !== GREETING;
+  modal.guard = () => !dirty() || confirm("Discard this lead and its email?");
+  $$("[data-k]", root).forEach((el) => {
+    el.addEventListener("input", later);
+    el.addEventListener("change", later);
+    el.addEventListener("blur", () => { if (el.value.trim()) touched.add(el.dataset.k); paint(); });
+  });
+  $("#al_project", root).addEventListener("change", later);
+  subj.addEventListener("input", paint);
+  body.addEventListener("input", paint);
+  bindRewrite(root, subj, body, "/api/outreach/rewrite", paint, () => ({ project: $("#al_project", root).value }));
+  $$("[data-insert]", root).forEach((b) => b.addEventListener("click", () => {
+    const s = body.selectionStart ?? body.value.length, e = body.selectionEnd ?? s;
+    body.setRangeText("{{" + b.dataset.insert + "}}", s, e, "end");
+    body.focus(); paint();
+  }));
+  go.addEventListener("click", async () => {
+    if (!ok()) {
+      tried = true; paint();
+      const first = $$(".field-error:not([hidden]):not(.warn)", root)[0];
+      if (first) (first.parentElement.querySelector("input, select, textarea") || first).focus();
+      else if (!subj.value.trim()) subj.focus();
+      else body.focus();
+      return;
+    }
+    go.classList.add("loading"); go.disabled = true;
+    try {
+      const r = await post("/api/leads/manual", { ...fields(), subject: subj.value, body: body.value, cc: ccDraft.cc });
+      go.classList.remove("loading");
+      if (!r.outreach_id) { chk = r; tried = true; return paint(); }
+      modal.guard = null; modal.close(true);
+      const s = ((r.ready || [])[0] || {}).schedule, from = (r.sends_from || [])[0] || "your address";
+      const days = (r.project || {}).follow_up_days, name = (r.ready[0] || {}).company || fields().company;
+      flag(r.match ? "Email approved" : "Lead added, email approved", { ms: 9000,
+        desc: `${name} is in ${projName(r.project.slug)}. `
+          + (r.paused ? "It waits in Approved: sending is paused for this project."
+             : s && !s.held && s.send_after ? (r.can_send ? `It goes out ${whenText(s)}, from ${from}.`
+                                                          : `It is set for ${whenText(s)}, but waits in Approved until you connect your Gmail (account menu, Your Gmail).`)
+             : r.can_send ? `It goes out from ${from} within minutes.` : "It waits in Approved until you connect your Gmail (account menu, Your Gmail).")
+          + (days ? ` If they don't reply, a follow-up is drafted ${days} days later.` : "") });
+      refreshCurrentView(); refreshOutreachCount(true);
+    } catch (err) { toast(err.message, true); go.classList.remove("loading"); paint(); }
+  });
+  paint();
+  check();
 }
 
 /* ---------------------------------------------------------------- footer
