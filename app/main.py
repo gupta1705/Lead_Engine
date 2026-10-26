@@ -85,8 +85,18 @@ async def auth_wall(request, call_next):
             return JSONResponse({"detail": "a request from another site is refused"}, status_code=403)
     request.state.user = None
     request.state.must_change = False
+    request.state.via_key = False
     request.state.segment = _segment_for(request)
-    token = request.cookies.get(_auth.COOKIE)
+    # the API and MCP server (app/api_v1.py): a person's key, on /api/v1 and /mcp only
+    import api_v1 as _api
+    key_user, refusal = _api.authenticate(request, path, cursor)
+    if refusal is not None:
+        for k, v in SECURITY_HEADERS.items():
+            refusal.headers.setdefault(k, v)
+        return refusal
+    if key_user:
+        request.state.user, request.state.via_key = key_user, True
+    token = None if key_user else request.cookies.get(_auth.COOKIE)
     if token:
         found = {}
 
@@ -111,8 +121,14 @@ async def auth_wall(request, call_next):
         for k, v in SECURITY_HEADERS.items():
             response.headers.setdefault(k, v)
         return response
-    if path.startswith("/api/"):
-        return JSONResponse({"detail": "not signed in"}, status_code=401)
+    if path.startswith("/api/") or path == "/mcp":
+        # a program is told how to get in, not sent to a login page
+        return JSONResponse({"detail": "not signed in" if path.startswith("/api/") and not path.startswith("/api/v1/")
+                             else "A key is needed: Authorization: Bearer tle_... (account menu, API and MCP)."},
+                            status_code=401, headers={"WWW-Authenticate": 'Bearer realm="TVF Lead Engine"'})
+    if path.startswith("/.well-known/"):
+        # an MCP client looking for an OAuth server: there is none, a key is the way in
+        return JSONResponse({"detail": "no OAuth here: use a key (Authorization: Bearer tle_...)"}, status_code=404)
     return RedirectResponse("/login", status_code=302)
 
 
@@ -2159,6 +2175,9 @@ app.include_router(_universal_module.build_router(
 
 import mailbox_connect as _mailbox_connect_module   # each person's Gmail: connected in the app, or linked by the owner
 app.include_router(_mailbox_connect_module.build_router(cursor))
+
+import api_v1 as _api_v1_module                # the API (/api/v1) and MCP server (/mcp), with each person's keys
+app.include_router(_api_v1_module.build_router(_sys.modules[__name__]))
 
 # ---------------------------------------------------------------- scheduler
 import scheduler as _sched_module

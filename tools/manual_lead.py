@@ -306,8 +306,11 @@ def _prepare(cur, slug, seg_id, cfg, s, person):
     return eid, note
 
 
-def run(cur, body, person, apply=False, segments=None):
+def run(cur, body, person, apply=False, segments=None, approve=True):
     """-> {"project", "problems", "warnings", "match", "ready", "skipped", "footer", "lead_id", "outreach_id"}.
+
+    `approve=False` (the API and MCP, app/api_v1.py): the email is kept as a draft in Outreach, Drafts, for a person
+    to read and approve in the app; nothing a program writes goes out on its own.
 
     `segments`: the slugs this deployment shows (app/main.segment_rows). `person`: {email, name, title}. Raises
     comp.Refused for the email itself (an empty subject, an unknown field) and comp.NeedsProfile."""
@@ -365,7 +368,8 @@ def run(cur, body, person, apply=False, segments=None):
             return out
         out.update(lead_id=eid, **note)
         got = comp.plan(cur, slug, [eid], b.get("subject") or "", b.get("body") or "", person, o, apply=apply,
-                        cc=b.get("cc"), service=s["service"] or None, attachments=files or None)
+                        cc=b.get("cc"), service=s["service"] or None, attachments=files or None,
+                        approve=approve)
         out.update(ready=got["ready"], skipped=got["skipped"], footer=got["footer"])
         if got["skipped"]:
             out["problems"] = {"lead": "It cannot be written to: %s." % got["skipped"][0]["reason"]}

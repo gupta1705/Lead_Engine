@@ -927,6 +927,24 @@ shortlisted. It shows only in projects with more than one source.
 The Universal project has no Reports page.
 
 
+# The API and MCP
+
+The Lead Engine can also be used from another program, or from an AI assistant such as Claude, as you. In the
+account menu, **API and MCP** makes a key. The key is shown once: copy it and keep it like a password. The same
+window shows how to connect Claude Code, Claude Desktop or a program, with your key filled in.
+
+A key works as you. It can:
+
+- read projects, leads and emails;
+- add a lead you found, with its email;
+- shortlist or reject a lead;
+- change a draft.
+
+It can never approve or send an email. Whatever it writes waits in **Outreach, Drafts**, signed with your name, for
+a person to read and approve, as every email does. **Revoke** stops a key straight away (within half a minute
+everywhere). The full reference, every call and every tool, is in `docs/api.md`.
+
+
 # The rules that never bend
 
 These are built into the database, not just into the screens. They hold even if

@@ -434,6 +434,26 @@ MOCK_JS = r"""
       return json({ ready, skipped, footer, approved: apply ? ready.length : 0, fields: ["first_name", "company"], max: 100,
                     mailboxes: (FX.me_mailboxes && FX.me_mailboxes.mailboxes) || [], can_send: false, paused: null, sends_from: [] });
     }
+    // ---- API and MCP keys (2026-10-26): app/api_v1.py, in short; a made-up key, never a real one ----
+    if (p === "/api/keys" || p.startsWith("/api/keys/")) {
+      const K = (window.__keys = window.__keys || []);
+      const base = location.origin;
+      if (method === "GET") return json({ keys: K, api: base + "/api/v1", mcp: base + "/mcp", max: 10 });
+      if (method === "POST") {
+        const name = String(body.name || "").trim();
+        if (!name) return json({ detail: "Give the key a name, e.g. Claude on my laptop." }, 400);
+        const key = "tle_preview" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+        const row = { id: "k" + Math.random().toString(16).slice(2), name, prefix: key.slice(0, 10),
+                      created_at: new Date().toISOString(), last_used_at: null, revoked_at: null };
+        K.unshift(row);
+        return json(Object.assign({ key }, row));
+      }
+      if (method === "DELETE") {
+        const r = K.find((x) => x.id === p.split("/").pop());
+        if (r) r.revoked_at = new Date().toISOString();
+        return json({ ok: !!r });
+      }
+    }
     // ---- a lead found by hand (2026-10-23): tools/manual_lead.py, in short ----
     if (p === "/api/leads/manual/check" || p === "/api/leads/manual") {
       const me = FX.auth, apply = p === "/api/leads/manual";

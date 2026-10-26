@@ -116,7 +116,7 @@ def message(subject, body, fields, footer):
 
 
 def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=None, service=None,
-         attachments=None):
+         attachments=None, approve=True):
     """-> {"ready": [...], "skipped": [...], "footer": str}.
 
     `cc`: who every one of these emails is copied to (sql/39), [] for nobody, or None for the project's
@@ -124,6 +124,9 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=N
     `service` and `attachments` (a lead added by hand, tools/manual_lead.py): the one service the email pitches
     (outreach.service, sql/35; LCX Services' database refuses a first email without it) and the files it carries,
     as tools/outreach_policy.attachments_for records them.
+    `approve=False` (the API and MCP, app/api_v1.py): each passing recipient is left a DRAFT, in the project's own
+    form (its sign-off swapped for the project's, as every draft is stored, tools/draft_render.canonicalize), for a
+    person to read and approve in the app. Nothing a program writes is approved by it.
 
     Runs every recipient through exactly what an approval checks. With apply=False (the page asking
     before approving) nothing is kept; with apply=True each recipient that passes becomes an approved
@@ -185,6 +188,8 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=N
             reason, oid, window, sched = None, None, {"enabled": False}, None
             try:
                 subj, text = message(subject or "(subject)", body or "(email)", f, footer)
+                if not approve:
+                    text = dr.canonicalize(text, cfg, person)        # a draft: whoever opens it sees their own
                 if r["status"] != "shortlisted":
                     cur.execute("update entities set status = 'shortlisted', status_changed_at = now(), updated_at = now()"
                                 " where id = %s and status = any(%s)", (eid, list(REVIEW_STATUSES)))
@@ -205,10 +210,11 @@ def plan(cur, segment, entity_ids, subject, body, person, cfg, apply=False, cc=N
                         # the window it would go in, never a minute: the minute is drawn on approval
                         if timed:
                             window = pol.draft_window(cur, oid, cfg)
-                        cur.execute("update outreach set status = 'approved', approved_at = now(), approved_by = %s,"
-                                    " approval_mode = 'compose', spot_checked = true, updated_at = now()"
-                                    " where id = %s and status = 'drafted'", (person["email"], oid))
-                        if apply and timed:
+                        if approve:
+                            cur.execute("update outreach set status = 'approved', approved_at = now(), approved_by = %s,"
+                                        " approval_mode = 'compose', spot_checked = true, updated_at = now()"
+                                        " where id = %s and status = 'drafted'", (person["email"], oid))
+                        if apply and timed and approve:
                             # approving it is when its own second in its recipient's 10:00-10:30 is drawn
                             # (owner, 2026-10-12), the same as an approved draft
                             sched = pol.schedule_sends(cur, [oid], cfg, segment).get(oid)

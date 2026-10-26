@@ -3044,8 +3044,10 @@ function renderUserMenu(menu) {
     <button class="menu-item" id="myGmailBtn">${icon("mail", 18)}<span>Your Gmail</span></button>
     <button class="menu-item" id="myProfileBtn">${icon("user", 18)}<span>Your name and title</span></button>
     <button class="menu-item" id="myPasswordBtn">${icon("shield", 18)}<span>Change password</span></button>
+    <button class="menu-item" id="myKeysBtn">${icon("link", 18)}<span>API and MCP</span></button>
     <div class="menu-sep"></div>
     <button class="menu-item" id="logoutBtn">${icon("logout", 18)}<span>Log out</span></button>`;
+  $("#myKeysBtn", menu).addEventListener("click", () => { closeMenus(); openApiKeys(); });
   $("#myGmailBtn", menu).addEventListener("click", () => { closeMenus(); openSendingAddress(); });
   $("#myProfileBtn", menu).addEventListener("click", () => { closeMenus(); openProfile(); });
   $("#myPasswordBtn", menu).addEventListener("click", () => { closeMenus(); openPassword(); });
@@ -3213,6 +3215,67 @@ async function openSendingAddress(opts) {
       flag("Disconnected", { desc: b.dataset.addr });
       openSendingAddress();
     } catch (e) { toast(e.message, true); }
+  }));
+}
+
+/* ------------------------------------------------------------ API and MCP
+   The owner, 2026-10-26: "I want to build mcp and api for this". Each person makes their own keys here
+   (app/api_v1.py, sql/43). A key works as them, on /api/v1 and /mcp only; it can read leads and emails, add a
+   lead with a draft, shortlist or reject, and edit drafts, but never approve or send: drafts wait here. The key
+   is shown once, when it is made; only its fingerprint is kept. */
+function keySnippets(d, key) {
+  const k = key || "tle_YOUR_KEY";
+  return [
+    ["Claude Code", `claude mcp add --transport http lead-engine ${d.mcp} --header "Authorization: Bearer ${k}"`],
+    ["Claude Desktop (claude_desktop_config.json; needs Node.js)", JSON.stringify({ mcpServers: { "lead-engine": {
+      command: "npx", args: ["-y", "mcp-remote", d.mcp, "--header", "Authorization:${AUTH}"],
+      env: { AUTH: "Bearer " + k } } } }, null, 2)],
+    ["The API", `curl -H "Authorization: Bearer ${k}" ${d.api}/projects`],
+  ];
+}
+async function openApiKeys(made) {
+  let d;
+  try { d = await api("/api/keys"); } catch (e) { return toast("Could not load your keys: " + e.message, true); }
+  const live = (d.keys || []).filter((k) => !k.revoked_at);
+  const snip = keySnippets(d, made && made.key);
+  modal.open(`
+    ${modalHead(`${typeIcon("user")}<span class="key">API and MCP</span>`)}
+    <div class="modal-body single"><div class="modal-main">
+      <p class="sub" style="margin-bottom:16px">Use the Lead Engine from another program, or from an AI assistant such as
+        Claude (MCP). A key works as you: it can read leads and emails, add a lead with a draft email, shortlist or
+        reject, and edit drafts. It can never approve or send an email: what it drafts waits for you in Outreach,
+        Drafts, signed with your name.</p>
+      ${made ? `<div class="key-made" role="status"><div class="label-row"><strong>${esc(made.name)}</strong>
+          <button type="button" class="btn compact" data-copy="${esc(made.key)}">Copy key</button></div>
+        <code class="key-text">${esc(made.key)}</code>
+        <div class="small warn-text">Copy it now: it is never shown again. Keep it like a password.</div></div>` : ""}
+      ${live.length ? `<ul class="mbx-list">${live.map((k) => `<li><span><div><strong>${esc(k.name)}</strong> <span class="muted mono">${esc(k.prefix)}…</span></div>
+          <div class="secondary">Made ${esc(fmtDate(k.created_at))} · ${k.last_used_at ? "last used " + esc(fmtDate(k.last_used_at)) : "not used yet"}</div></span>
+          <span class="grow"></span><button class="btn subtle compact danger-text" data-revoke="${esc(k.id)}" data-name="${esc(k.name)}">Revoke</button></li>`).join("")}</ul>`
+        : `<p class="muted">You have no keys yet.</p>`}
+      <form class="key-new" id="keyForm"><div class="field" style="flex:1"><label for="keyName">Name a new key</label>
+        <input id="keyName" type="text" maxlength="60" placeholder="Claude on my laptop" autocomplete="off"></div>
+        <button class="btn primary" type="submit" ${live.length >= d.max ? "disabled" : ""}>${icon("plus", 16)} Make a key</button></form>
+      <details class="key-how" ${made ? "open" : ""}><summary>How to connect</summary>
+        ${snip.map(([t, s]) => `<div class="key-snip"><div class="label-row"><span class="small muted">${esc(t)}</span>
+          <button type="button" class="btn compact" data-copy="${esc(s)}">Copy</button></div><pre>${esc(s)}</pre></div>`).join("")}
+        <p class="small muted">The API's own description is at ${esc(d.api)}/openapi.json (with a key).</p></details>
+    </div></div>
+    <div class="modal-foot"><button class="btn" data-close>Close</button></div>`, { label: "API and MCP", narrow: true });
+  const root = $("#modalRoot");
+  $$("[data-copy]", root).forEach((b) => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); flag("Copied"); } catch (e) { toast("Could not copy: select it and copy by hand.", true); }
+  }));
+  $("#keyForm", root).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = $("#keyName", root).value.trim();
+    if (!name) return $("#keyName", root).focus();
+    try { openApiKeys(await post("/api/keys", { name })); } catch (err) { toast(err.message, true); }
+  });
+  $$("[data-revoke]", root).forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Revoke " + b.dataset.name + "? Anything using it stops working.")) return;
+    try { await api("/api/keys/" + encodeURIComponent(b.dataset.revoke), { method: "DELETE" }); flag("Key revoked", { desc: b.dataset.name }); openApiKeys(); }
+    catch (err) { toast(err.message, true); }
   }));
 }
 

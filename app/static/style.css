@@ -1053,6 +1053,18 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .al-after li { margin: 4px 0; }
 .field-error.warn { color: var(--text-warning); }
 
+/* API and MCP keys (owner, 2026-10-26; app/api_v1.py) */
+.key-made { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; margin-bottom: 16px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-sunken); }
+.key-text { display: block; padding: 8px 10px; border-radius: var(--radius); background: var(--surface);
+  font: 13px/20px var(--mono); overflow-wrap: anywhere; user-select: all; }
+.key-new { display: flex; gap: 10px; align-items: flex-end; margin: 16px 0 8px; flex-wrap: wrap; }
+.key-how { margin-top: 12px; }
+.key-how summary { cursor: pointer; font-weight: 600; font-size: 13.5px; padding: 6px 0; }
+.key-snip { margin-top: 10px; }
+.key-snip pre { margin: 6px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-sunken);
+  font: 12.5px/19px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
 /* batch approval (LCX) */
 .sel-col { display: none; width: 44px; }
 .tbl.batch .sel-col { display: table-cell; }
