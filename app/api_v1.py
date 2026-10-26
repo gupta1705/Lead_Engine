@@ -12,13 +12,23 @@ tle_..." and works as that person: what it drafts is signed with their name and 
 as theirs. Only a SHA-256 of a key is kept; the key is shown once. A key reaches /api/v1 and /mcp only: never the
 app's own endpoints, never key management (a key cannot make keys), never a pipeline, Apollo or anyone's Gmail.
 
-WHAT IT CAN DO (the same nine through both)
-  read:  whoami, list_projects, search_leads, get_lead, list_emails, get_email
-  write: add_lead      a lead found by hand (tools/manual_lead.py) and the email to it, kept as a DRAFT
-         decide_lead   shortlist or reject a lead (rejecting withdraws its waiting email)
-         edit_draft    change a draft's subject, text or CC
-Nothing here approves or sends an email. Approval means a person read that exact text (the rules that never bend,
-docs/manual): a draft made or changed here waits in Outreach, Drafts, for a person to approve in the app.
+WHAT IT CAN DO (the same eleven through both)
+  read:    whoami, list_projects, search_leads, get_lead, list_emails, get_email
+  write:   add_lead       a lead found by hand (tools/manual_lead.py) and the email to it, kept as a DRAFT
+           decide_lead    shortlist or reject a lead (rejecting withdraws its waiting email)
+           edit_draft     change a draft's subject, text or CC
+           withdraw_email take back a draft, or an approved email that has not gone yet
+  approve: approve_email  the owner, 2026-10-26: "Yea allow it". Exactly the app's own approval
+                          (main.outreach_decide): the same checks and signing, the approver's own Gmail, the
+                          project's sending window and daily limit; recorded as approval_mode 'api' (sql/44). Only a
+                          key that may approve (api_keys.can_approve, asked when the key is made or a connection is
+                          allowed) can; any other gets 403.
+A draft made or changed here otherwise waits in Outreach, Drafts, for a person.
+
+SIGNING IN INSTEAD OF A KEY
+claude.ai's custom connectors (and any MCP client that prefers it) sign in with OAuth 2.1 (app/oauth.py): the
+person allows the client on a page of ours, and the client gets a short-lived token that works exactly like a key.
+A 401 from /mcp says where to start (WWW-Authenticate: Bearer resource_metadata=...).
 
 THE MCP SERVER
 Streamable HTTP, stateless: every request is one POST of JSON-RPC 2.0, answered with JSON (no event stream, no
@@ -75,25 +85,28 @@ def new_key():
 
 
 def resolve(cursor, token):
-    """The person a key belongs to, or None (unknown, revoked, or a login still on its starting password)."""
+    """(the person a key or OAuth token belongs to, whether it may approve), or (None, False): unknown, revoked,
+    expired (an OAuth access token, within the hour), or a login still on its starting password."""
     token = str(token or "").strip()
     if not token.startswith(KEY_PREFIX) or len(token) > 100:
-        return None
+        return None, False
     h = hash_key(token)
     hit = _KEYS.get(h)
-    if hit and time.monotonic() - hit[1] < CACHE_SECONDS:
-        return hit[0]
+    if hit and time.monotonic() - hit[2] < CACHE_SECONDS and (hit[3] is None or hit[3] > time.time()):
+        return hit[0], hit[1]
     with cursor() as cur:
-        cur.execute("select k.id, k.user_email, u.must_change_password from api_keys k"
-                    " join app_users u on lower(u.email) = lower(k.user_email)"
-                    " where k.key_hash = %s and k.revoked_at is null", (h,))
+        cur.execute("select k.id, k.user_email, k.can_approve, extract(epoch from k.expires_at) as ends,"
+                    " u.must_change_password from api_keys k join app_users u on lower(u.email) = lower(k.user_email)"
+                    " where k.key_hash = %s and k.revoked_at is null"
+                    " and (k.expires_at is null or k.expires_at > now())", (h,))
         row = cur.fetchone()
         user = row["user_email"] if row and not row["must_change_password"] else None
         if user:
             cur.execute("update api_keys set last_used_at = now() where id = %s and"
                         " (last_used_at is null or last_used_at < now() - interval '1 minute')", (row["id"],))
-    _KEYS[h] = (user, time.monotonic())
-    return user
+    can = bool(user and row["can_approve"])
+    _KEYS[h] = (user, can, time.monotonic(), float(row["ends"]) if user and row["ends"] is not None else None)
+    return user, can
 
 
 def allow(token):
@@ -116,7 +129,8 @@ def _iso(v):
 
 def _key_view(r):
     return {"id": str(r["id"]), "name": r["name"], "prefix": r["prefix"], "created_at": _iso(r["created_at"]),
-            "last_used_at": _iso(r["last_used_at"]), "revoked_at": _iso(r["revoked_at"])}
+            "last_used_at": _iso(r["last_used_at"]), "revoked_at": _iso(r["revoked_at"]),
+            "can_approve": bool(r.get("can_approve")), "connected_app": bool(r.get("client_id"))}
 
 
 # ---------------------------------------------------------------- bodies
@@ -160,7 +174,7 @@ class Ops:
 
     # -- helpers
     def _req(self, user, segment):
-        state = type("State", (), {"user": user, "segment": segment, "must_change": False})()
+        state = type("State", (), {"user": user, "segment": segment, "must_change": False, "via_key": True})()
         return type("Req", (), {"state": state, "headers": {}, "cookies": {}})()
 
     def _projects(self):
@@ -354,6 +368,28 @@ class Ops:
         self.m.outreach_edit(oid, self._req(user, slug), body=change, segment=slug)
         return self.get_email(user, {"email_id": oid})
 
+    def approve_email(self, user, a):
+        """The app's own approval (main.outreach_decide), as this person: approval_mode 'api' (sql/44)."""
+        if not a.get("_can_approve"):
+            raise ApiError(403, "This key may not approve emails. Make one that may (account menu, API and MCP), "
+                                "or approve it in the app.")
+        oid, slug = self._where("email", a.get("email_id"), "email")
+        r = self.m.outreach_decide(oid, self._req(user, slug), body={"action": "approve"}, segment=slug)
+        sched = r.get("schedule") or {}
+        return {"email_id": oid, "status": "approved", "approved_by": user,
+                "goes_out": sched.get("send_label") if isinstance(sched, dict) else None,
+                "sends_from": r.get("sends_from") or [], "can_send": bool(r.get("can_send")),
+                "paused": r.get("paused"),
+                "next": ("Sending is paused for this project: it waits in Approved." if r.get("paused") else
+                         "It goes out from your Gmail at its time." if r.get("can_send") else
+                         "It waits in Approved until you connect your Gmail (account menu, Your Gmail).")}
+
+    def withdraw_email(self, user, a):
+        """Take back a draft, or an approved email whose moment has not come (the app's own cancel)."""
+        oid, slug = self._where("email", a.get("email_id"), "email")
+        self.m.outreach_decide(oid, self._req(user, slug), body={"action": "cancel"}, segment=slug)
+        return {"email_id": oid, "status": "cancelled"}
+
 
 # ------------------------------------------------------------ the tools
 def _s(t, d=None, **kw):
@@ -445,13 +481,29 @@ TOOLS = [
          "cc": _s("array", "Who it is copied to; [] for nobody.", items={"type": "string"})}),
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
                      "openWorldHint": False}},
+    {"name": "approve_email", "title": "Approve an email (it will be sent)",
+     "description": "Approve a draft or a follow-up draft, exactly as pressing Approve in the Lead Engine does: it "
+                    "WILL BE SENT to the recipient, from the Gmail of the person this key belongs to, signed with "
+                    "their name, at its time (10:00-10:30 on the recipient's clock) and inside the daily limit. "
+                    "Read the email first (get_email). Refused if the email fails any of the app's checks, or if "
+                    "this key was not allowed to approve.",
+     "inputSchema": _s("object", required=["email_id"], properties={"email_id": _s("string", "A draft's id.")}),
+     "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False,
+                     "openWorldHint": True}},
+    {"name": "withdraw_email", "title": "Withdraw an email",
+     "description": "Take back a draft, or an approved email that has not gone out yet. One already going out or "
+                    "sent cannot be withdrawn. Withdrawing a follow-up also stops that thread's follow-ups.",
+     "inputSchema": _s("object", required=["email_id"], properties={"email_id": _s("string")}),
+     "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True,
+                     "openWorldHint": False}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
 INSTRUCTIONS = (
     "The TVF Lead Engine: leads for The Viral Fever and LCX, and the outreach emails to them. Start with "
-    "list_projects. You work as the person whose key this is. You can read leads and emails, add a lead found by "
-    "hand with a draft email, shortlist or reject leads, and edit drafts. You cannot approve or send an email: "
-    "every draft waits in the Lead Engine (Outreach, Drafts) for a person to read and approve.")
+    "list_projects. You work as the person whose key or sign-in this is. You can read leads and emails, add a lead "
+    "found by hand with a draft email, shortlist or reject leads, edit and withdraw drafts, and, if this "
+    "connection was allowed to, approve an email: approving SENDS it to a real person from this person's Gmail, so "
+    "show the person the exact email (get_email) and approve only what they asked you to.")
 
 
 def _detail(e):
@@ -464,8 +516,15 @@ def build_router(main):
     ops = Ops(main)
     r = APIRouter()
 
+    def may_approve(request):
+        # a key or an OAuth token: what it was allowed when it was made; a signed-in page: as in the app
+        if getattr(request.state, "via_key", False):
+            return bool(getattr(request.state, "key_can_approve", False))
+        return True
+
     def run(request, name, args):
         user = getattr(request.state, "user", None)
+        args = dict(args, _can_approve=may_approve(request))       # never what the caller sent
         try:
             return getattr(ops, name)(user, args)
         except ApiError as e:
@@ -515,6 +574,16 @@ def build_router(main):
         b = body.model_dump() if hasattr(body, "model_dump") else body.dict()
         return run(request, "edit_draft", dict(b, email_id=email_id))
 
+    @r.post("/api/v1/emails/{email_id}/approve", tags=["emails"],
+            summary="Approve an email: it WILL BE SENT, from your Gmail, at its time (a key that may approve)")
+    def v1_approve(request: Request, email_id: str):
+        return run(request, "approve_email", {"email_id": email_id})
+
+    @r.post("/api/v1/emails/{email_id}/withdraw", tags=["emails"],
+            summary="Withdraw a draft, or an approved email that has not gone yet")
+    def v1_withdraw(request: Request, email_id: str):
+        return run(request, "withdraw_email", {"email_id": email_id})
+
     api_routes = list(r.routes)
 
     @r.get("/api/v1/openapi.json", include_in_schema=False)
@@ -522,8 +591,9 @@ def build_router(main):
         from fastapi.openapi.utils import get_openapi
         doc = get_openapi(title="TVF Lead Engine API", version=VERSION, routes=api_routes,
                           description="Each call works as the person whose key it is (Authorization: Bearer "
-                                      "tle_...). Nothing here approves or sends an email: drafts wait for a person "
-                                      "in the app. The same actions are an MCP server at /mcp. See docs/api.md.")
+                                      "tle_...). Approving (only with a key that may) sends the email, exactly as "
+                                      "Approve in the app does. The same actions are an MCP server at /mcp. See "
+                                      "docs/api.md.")
         doc.setdefault("components", {})["securitySchemes"] = {"key": {"type": "http", "scheme": "bearer"}}
         doc["security"] = [{"key": []}]
         return doc
@@ -563,6 +633,7 @@ def build_router(main):
                 return reply(mid, error={"code": -32602, "message": "Unknown tool: %s" % name})
             if not isinstance(args, dict):
                 return reply(mid, error={"code": -32602, "message": "arguments must be an object"})
+            args = dict(args, _can_approve=may_approve(request))   # never what the caller sent
             try:
                 data = getattr(ops, name)(getattr(request.state, "user", None), args)
                 return reply(mid, {"content": [{"type": "text", "text": json.dumps(data, default=str, indent=1)}],
@@ -626,18 +697,20 @@ def build_router(main):
         name = " ".join(str((body or {}).get("name") or "").split())[:60]
         if not name:
             raise HTTPException(400, "Give the key a name, e.g. Claude on my laptop.")
+        can_approve = (body or {}).get("can_approve", True) is not False
         key = new_key()
         with main.cursor() as cur:
-            cur.execute("select count(*) as n from api_keys where lower(user_email) = lower(%s) and revoked_at is null",
-                        (user,))
+            cur.execute("select count(*) as n from api_keys where lower(user_email) = lower(%s) and revoked_at is null"
+                        " and client_id is null", (user,))
             if cur.fetchone()["n"] >= MAX_KEYS:
                 raise HTTPException(409, "You have %d keys already: revoke one first." % MAX_KEYS)
             cur.execute("select email from app_users where lower(email) = lower(%s)", (user,))
             owner = cur.fetchone()
             if not owner:
                 raise HTTPException(403, "no such person")
-            cur.execute("insert into api_keys (user_email, name, prefix, key_hash) values (%s, %s, %s, %s) returning *",
-                        (owner["email"], name, key[:len(KEY_PREFIX) + 6], hash_key(key)))
+            cur.execute("insert into api_keys (user_email, name, prefix, key_hash, can_approve)"
+                        " values (%s, %s, %s, %s, %s) returning *",
+                        (owner["email"], name, key[:len(KEY_PREFIX) + 6], hash_key(key), can_approve))
             row = _key_view(cur.fetchone())
         # the only time the key is ever shown
         return dict(row, key=key)
@@ -650,6 +723,9 @@ def build_router(main):
             cur.execute("update api_keys set revoked_at = now() where id = %s and lower(user_email) = lower(%s)"
                         " and revoked_at is null returning key_hash", (key_id, user))
             row = cur.fetchone()
+            if row:
+                # a connected app (OAuth): its refresh tokens end with it, so it cannot renew itself
+                cur.execute("update oauth_grants set used_at = now() where key_id = %s and used_at is null", (key_id,))
         if not row:
             raise HTTPException(404, "no such key")
         _KEYS.pop(row["key_hash"], None)
@@ -666,11 +742,19 @@ def authenticate(request, path, cursor):
     if not (path == "/mcp" or path.startswith("/api/v1/")):
         return None, JSONResponse({"detail": "A key works only on /api/v1 and /mcp."}, status_code=403)
     token = head[7:].strip()
-    user = resolve(cursor, token)
+    user, can_approve = resolve(cursor, token)
     if not user:
-        return None, JSONResponse({"detail": "That key is not valid (unknown or revoked)."}, status_code=401,
-                                  headers={"WWW-Authenticate": 'Bearer realm="TVF Lead Engine"'})
+        return None, JSONResponse({"detail": "That key is not valid (unknown, revoked or expired)."}, status_code=401,
+                                  headers={"WWW-Authenticate": challenge(request, "invalid_token")})
     if not allow(token):
         return None, JSONResponse({"detail": "Too many calls: at most %d a minute per key." % RATE[0]},
                                   status_code=429, headers={"Retry-After": "30"})
+    request.state.key_can_approve = can_approve
     return user, None
+
+
+def challenge(request, error=None):
+    """The WWW-Authenticate of a 401: where an MCP client finds how to sign in (RFC 9728; app/oauth.py)."""
+    import oauth
+    out = 'Bearer realm="TVF Lead Engine", resource_metadata="%s"' % oauth.metadata_url(request)
+    return out + (', error="%s"' % error if error else "")

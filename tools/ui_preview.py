@@ -444,7 +444,8 @@ MOCK_JS = r"""
         if (!name) return json({ detail: "Give the key a name, e.g. Claude on my laptop." }, 400);
         const key = "tle_preview" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
         const row = { id: "k" + Math.random().toString(16).slice(2), name, prefix: key.slice(0, 10),
-                      created_at: new Date().toISOString(), last_used_at: null, revoked_at: null };
+                      created_at: new Date().toISOString(), last_used_at: null, revoked_at: null,
+                      can_approve: body.can_approve !== false, connected_app: false };
         K.unshift(row);
         return json(Object.assign({ key }, row));
       }

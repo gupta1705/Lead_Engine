@@ -929,20 +929,26 @@ The Universal project has no Reports page.
 
 # The API and MCP
 
-The Lead Engine can also be used from another program, or from an AI assistant such as Claude, as you. In the
-account menu, **API and MCP** makes a key. The key is shown once: copy it and keep it like a password. The same
-window shows how to connect Claude Code, Claude Desktop or a program, with your key filled in.
+The Lead Engine can also be used from another program, or from an AI assistant such as Claude, as you.
 
-A key works as you. It can:
+- **claude.ai** needs no key. In claude.ai, open Settings, then Connectors, then Add custom connector, and paste
+  `https://tvf-lead-engine.onrender.com/mcp`. Then connect, log in to the Lead Engine if it asks, and **Allow**.
+- **Anything else** (Claude Code, Claude Desktop, a program) uses a key. In the account menu, **API and MCP** makes
+  one. The key is shown once: copy it and keep it like a password. The same window shows how to connect each, with
+  your key filled in.
+
+A key, or a connected app, works as you. It can:
 
 - read projects, leads and emails;
-- add a lead you found, with its email;
+- add a lead you found, with its email as a draft;
 - shortlist or reject a lead;
-- change a draft.
+- change or withdraw a draft;
+- approve an email, if you allowed that when you made the key or connected the app.
 
-It can never approve or send an email. Whatever it writes waits in **Outreach, Drafts**, signed with your name, for
-a person to read and approve, as every email does. **Revoke** stops a key straight away (within half a minute
-everywhere). The full reference, every call and every tool, is in `docs/api.md`.
+Approving through it is the same as pressing Approve here. The email is sent from your Gmail, signed by you, at its
+time, and shows "approved through the API or an assistant". **Revoke**, or **Disconnect** for a connected app, stops
+it straight away (within half a minute everywhere). The full reference, every call and every tool, is in
+`docs/api.md`.
 
 
 # The rules that never bend
@@ -950,10 +956,13 @@ everywhere). The full reference, every call and every tool, is in `docs/api.md`.
 These are built into the database, not just into the screens. They hold even if
 the app has a bug.
 
-**No email is ever sent that a person has not approved.** Approval means a human
-read that exact text, and approving is what sends it. Nothing goes out that
-nobody approved, and there is no "approve all without looking". Nor does an
-approved email go outside its own window: the database refuses that too.
+**No email is ever sent that nobody approved.** Approving is what sends it,
+and every approval is recorded against a person. Usually that person read the
+exact text here. It can also be an assistant or program using a key or
+connection that the person allowed to approve (*The API and MCP*). That is
+recorded as such, and passes the same checks. There is no "approve all without
+looking". Nor does an approved email go outside its own window: the database
+refuses that too.
 
 **One thread per company, ever.** A first email and one follow-up. Checked
 across every project, not just the one you are in, and it survives resets and

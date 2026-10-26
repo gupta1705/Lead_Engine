@@ -12,7 +12,7 @@ with sql/42, sql/43 and the repo's configs applied inside it. Checked:
     refused; at most ten live keys; a key's rate is limited
   * the API: projects, leads, one lead, emails, one email; add a lead with its email kept as a DRAFT (signed for
     whoever opens it, never approved), a dry run that adds nothing, problems named; edit a draft; shortlist/reject;
-    nothing approves or sends
+    approving needs a key that may (and is recorded as through the API); withdrawing takes it back
   * MCP: initialize (version negotiation), notifications, ping, tools/list, tools/call (results and tool errors),
     unknown tools and methods, batches, a parse error, no event stream, another site's page refused
 Exit code 1 on any failure.
@@ -92,7 +92,7 @@ def main_():
     client = TestClient(main.app, follow_redirects=False, raise_server_exceptions=bool(os.environ.get("ZZ_RAISE")))
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        for f in ("42_manual_leads.sql", "43_api_keys.sql"):
+        for f in ("42_manual_leads.sql", "43_api_keys.sql", "44_api_approve_oauth.sql"):
             cur.execute((ROOT / "sql" / f).read_text(encoding="utf-8"))
         for slug in SLUGS:
             cur.execute("update segments set config = %s where slug = %s", (json.dumps(CFGS[slug]), slug))
@@ -145,19 +145,25 @@ def main_():
               (401, "Bearer"))
         r, _ = call("POST", "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
         check("no key on /mcp: 401, not a login page", r.status_code, 401)
-        r, _ = call("GET", "/.well-known/oauth-protected-resource")
-        check("an OAuth probe: there is none (404)", r.status_code, 404)
+        r, b = call("GET", "/.well-known/oauth-protected-resource")
+        check("an MCP client finds where to sign in (OAuth, tools/test_oauth.py)", (r.status_code, b["resource"][-4:]),
+              (200, "/mcp"))
+        r, _ = call("GET", "/.well-known/something-else")
+        check("  any other well-known path: 404", r.status_code, 404)
         new, new_ck = person("Newbie Starter", "Sales", starting=True)
         cur.execute("insert into api_keys (user_email, name, prefix, key_hash) values (%s, 'x', 'tle_x', %s)",
                     (new, hashlib.sha256(b"tle_zz-starting-" + tag.encode()).hexdigest()))
         r, _ = call("GET", "/api/v1/me", key="tle_zz-starting-" + tag)
         check("a login still on its starting password: its key is refused", r.status_code, 401)
+        r, k3 = call("POST", "/api/keys", cookies=zed_ck, json={"name": "reads and drafts", "can_approve": False})
+        no_approve = k3["key"]
+        check("a key can be made that may not approve", (r.status_code, k3["can_approve"]), (200, False))
         r, k2 = call("POST", "/api/keys", cookies=zed_ck, json={"name": "to revoke"})
         call("GET", "/api/v1/me", key=k2["key"])
         r, _ = call("DELETE", "/api/keys/%s" % k2["id"], cookies=zed_ck)
         r2, _ = call("GET", "/api/v1/me", key=k2["key"])
         check("a revoked key stops at once", (r.status_code, r2.status_code), (200, 401))
-        for i in range(9):                     # with the first, ten live keys (the revoked one does not count)
+        for i in range(8):                     # with the first two, ten live keys (the revoked one does not count)
             call("POST", "/api/keys", cookies=zed_ck, json={"name": "spare %d" % i})
         r, b = call("POST", "/api/keys", cookies=zed_ck, json={"name": "one too many"})
         check("at most ten live keys", r.status_code, 409)
@@ -227,15 +233,25 @@ def main_():
               (200, ["approved", "attention", "drafts"], True))
         r, ed = call("PATCH", "/api/v1/emails/%s" % oid, key=key, json={"subject": "A better subject"})
         check("edit a draft", (r.status_code, ed["subject"]), (200, "A better subject"))
-        r, _ = call("POST", "/api/v1/emails/%s/approve" % oid, key=key, json={})
         r2, _ = call("POST", "/api/outreach/%s/decision" % oid, key=key, json={"action": "approve"})
-        check("nothing approves: no such API, and the app's own is closed to keys",
-              (r.status_code in (404, 405), r2.status_code), (True, 403))
+        check("the app's own approval stays closed to keys", r2.status_code, 403)
+        r, b = call("POST", "/api/v1/emails/%s/approve" % oid, key=no_approve)
+        cur.execute("select status from outreach where id = %s", (oid,))
+        check("a key made without approving may not approve (403), and nothing changed",
+              (r.status_code, cur.fetchone()["status"]), (403, "drafted"))
+        r, ap = call("POST", "/api/v1/emails/%s/approve" % oid, key=key)
+        cur.execute("select status, approval_mode, approved_by, body from outreach where id = %s", (oid,))
+        x = cur.fetchone()
+        check("a key that may: approved exactly as the app does, recorded as through the API",
+              (r.status_code, ap.get("status"), x["status"], x["approval_mode"], x["approved_by"],
+               "Zed Tester" in x["body"]), (200, "approved", "approved", "api", zed, True))
+        r, wd = call("POST", "/api/v1/emails/%s/withdraw" % oid, key=no_approve)
+        cur.execute("select status from outreach where id = %s", (oid,))
+        check("withdraw: an approved email not yet gone is taken back", (r.status_code, cur.fetchone()["status"]),
+              (200, "cancelled"))
         r, dc = call("POST", "/api/v1/leads/%s/decision" % eid, key=key, json={"decision": "reject",
                                                                                "reason": "not a fit"})
-        cur.execute("select status from outreach where id = %s", (oid,))
-        check("reject: the lead is rejected and its waiting draft withdrawn",
-              (dc["status"], dc["emails_withdrawn"], cur.fetchone()["status"]), ("rejected", 1, "cancelled"))
+        check("reject: the lead is rejected", (dc["status"], dc["emails_withdrawn"]), ("rejected", 0))
         r, _ = call("PATCH", "/api/v1/emails/%s" % oid, key=key, json={"subject": "too late"})
         check("  a withdrawn email can no longer be edited", r.status_code >= 400, True)
         r, spec = call("GET", "/api/v1/openapi.json", key=key)
@@ -268,10 +284,10 @@ def main_():
         check("ping", b, {"jsonrpc": "2.0", "id": "p", "result": {}})
         r, tl = rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         names = [t["name"] for t in tl["result"]["tools"]]
-        check("tools/list: the nine, each with an object schema",
+        check("tools/list: the eleven, each with an object schema",
               (sorted(names), all(t["inputSchema"]["type"] == "object" for t in tl["result"]["tools"])),
               (sorted(["whoami", "list_projects", "search_leads", "get_lead", "list_emails", "get_email", "add_lead",
-                       "decide_lead", "edit_draft"]), True))
+                       "decide_lead", "edit_draft", "approve_email", "withdraw_email"]), True))
         r, c = rpc({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "list_projects",
                                                                                  "arguments": {}}})
         res = c["result"]
@@ -288,9 +304,14 @@ def main_():
                                                                                  "arguments": {"lead_id": "nope"}}})
         check("  a tool that fails says why, as a tool error", (c["result"]["isError"], c["result"]["content"][0]["text"]),
               (True, "no such lead"))
-        r, c = rpc({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "approve_email",
+        r, c = rpc({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "send_everything",
                                                                                  "arguments": {}}})
-        check("an unknown tool (there is no approving): -32602", c["error"]["code"], -32602)
+        check("an unknown tool: -32602", c["error"]["code"], -32602)
+        r, c = rpc({"jsonrpc": "2.0", "id": 13, "method": "tools/call", "params": {
+            "name": "approve_email", "arguments": {"email_id": oid, "_can_approve": True}}},
+            headers={"Authorization": "Bearer " + no_approve})
+        check("  approve_email with a key that may not: a tool error, whatever the arguments claim",
+              (c["result"]["isError"], "may not approve" in c["result"]["content"][0]["text"]), (True, True))
         r, c = rpc({"jsonrpc": "2.0", "id": 8, "method": "resources/list"})
         check("an unknown method: -32601", c["error"]["code"], -32601)
         r, c = rpc([{"jsonrpc": "2.0", "id": 9, "method": "ping"}, {"jsonrpc": "2.0", "method": "notifications/x"},

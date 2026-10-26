@@ -4,34 +4,45 @@ Use the Lead Engine from another program, or from an AI assistant such as Claude
 
 - **The API** is plain JSON over HTTPS, under `https://tvf-lead-engine.onrender.com/api/v1`.
 - **The MCP server** is at `https://tvf-lead-engine.onrender.com/mcp`. It offers the same actions as tools that an
-  assistant can call (Claude Desktop, Claude Code, Cursor and others).
+  assistant can call (claude.ai, Claude Desktop, Claude Code, Cursor and others).
 
-Both work **as you**, with a key you make in the app.
+Both work **as you**: with a key you make in the app, or, for claude.ai, by signing in as you.
 
 ## What it can and cannot do
 
 | It can | It cannot |
 |---|---|
-| list projects, search leads, read a lead in full | approve or send an email |
-| read any Outreach folder, and any email in full | run a refresh, or spend Apollo credits |
-| add a lead you found by hand, with the email to it **as a draft** | connect or use anyone's Gmail |
-| shortlist or reject a lead | reach the app's own pages and endpoints |
-| change a draft's subject, text or CC | make, see or revoke keys |
+| list projects, search leads, read a lead in full | run a refresh, or spend Apollo credits |
+| read any Outreach folder, and any email in full | connect or use anyone's Gmail |
+| add a lead you found by hand, with the email to it **as a draft** | reach the app's own pages and endpoints |
+| shortlist or reject a lead | make, see or revoke keys |
+| change a draft's subject, text or CC, or withdraw it | |
+| **approve an email**, only if you allowed it (see below) | |
 
-Every email made or changed through the API waits in **Outreach, Drafts**, signed with your name and title. It goes
-out only when a person reads it and approves it in the app. The rule that a person approves every email holds here
-too.
+**Approving sends the email.** It is exactly the app's own Approve:
+
+- the same checks, refused when the email fails one;
+- your Gmail, signed by you;
+- the project's sending window (10:00 to 10:30 on the recipient's clock) and its daily limit;
+- the project's CC, and its follow-up four days later.
+
+The email shows "Approved by you, through the API or an assistant (MCP)". **Withdraw** takes back an approved email
+until it starts going out.
+
+Each key, and each connected app, either may approve or may not. You choose when you make the key, or when you
+allow the app. A key that may not approve can still do everything else.
 
 ## Getting a key
 
 1. In the app, open the account menu at the bottom of the sidebar, then **API and MCP**.
-2. Name the key (for example *Claude on my laptop*) and press **Make a key**.
+2. Name the key (for example *Claude on my laptop*). Untick **It may approve emails** if this key should only read
+   and draft. Then press **Make a key**.
 3. **Copy it straight away.** It starts with `tle_`, is shown once, and can never be shown again. Only its
    fingerprint is kept.
 
 Rules for keys:
 
-- **Keep it like a password.** Anyone who has it can do, as you, what the table above allows.
+- **Keep it like a password.** Anyone who has it can do, as you, what the key allows.
 - **Lost or leaked:** press **Revoke** next to it, and make a new one. A revoked key stops within half a minute.
 - **Limits:** up to 10 live keys per person, and up to 120 calls a minute per key.
 - **People leaving:** a key stops when its person's login is removed. It also doesn't work while that login is
@@ -39,11 +50,23 @@ Rules for keys:
 
 ## Connecting an assistant (MCP)
 
+**claude.ai** (in the browser) needs no key:
+
+1. In claude.ai: **Settings**, **Connectors**, **Add custom connector**.
+2. Paste `https://tvf-lead-engine.onrender.com/mcp`, and press **Add**.
+3. Press **Connect**. The Lead Engine opens: log in if it asks, then **Allow**. Untick **Also approve emails** if
+   Claude should only read and draft.
+4. You land back in claude.ai, connected.
+
+The connection shows in the app (**API and MCP**) as a connected app. **Disconnect** there ends it.
+
 **Claude Code:**
 
 ```bash
 claude mcp add --transport http lead-engine https://tvf-lead-engine.onrender.com/mcp --header "Authorization: Bearer tle_YOUR_KEY"
 ```
+
+Without `--header`, Claude Code signs in through the browser, as claude.ai does.
 
 **Claude Desktop** needs Node.js installed. Add this to `claude_desktop_config.json` (Settings, Developer, Edit
 config), then restart Claude:
@@ -60,8 +83,8 @@ config), then restart Claude:
 }
 ```
 
-**Other clients** (Cursor and the like): a Streamable HTTP server at `/mcp`, with the header
-`Authorization: Bearer tle_YOUR_KEY`.
+**Other clients** (Cursor and the like): a Streamable HTTP server at `/mcp`. Either sign in (OAuth), or send the
+header `Authorization: Bearer tle_YOUR_KEY`.
 
 The app's **API and MCP** window shows these snippets with your own key filled in, right after you make it.
 
@@ -69,7 +92,8 @@ Then ask in plain words, for example:
 
 - *"What's in my LCX Clipping drafts?"*
 - *"Find shortlisted production houses in Los Angeles."*
-- *"Add Northlight Pictures, maya@northlight.com, to US Production Houses with a short intro email."*
+- *"Add Northlight Pictures, maya@northlight.com, to US Production Houses with a short intro email, show it to me,
+  and approve it if I say so."*
 
 ### The tools
 
@@ -84,10 +108,12 @@ Then ask in plain words, for example:
 | `add_lead` | A lead found by hand, with its email **as a draft**. `dry_run` checks it and shows how it reads, and adds nothing. |
 | `decide_lead` | Shortlist, or reject with a reason. Rejecting withdraws its waiting email. |
 | `edit_draft` | Change a draft's subject, text or CC. |
+| `approve_email` | Approve a draft or follow-up draft. **It will be sent.** Only with a key or connection that may approve. |
+| `withdraw_email` | Take back a draft, or an approved email not yet gone. |
 
 The server speaks the MCP initialize handshake, protocol versions 2024-11-05 to 2025-11-25. It is stateless: every
-call is one POST, answered with JSON. There is no OAuth sign-in, so clients that only connect through OAuth (for
-example claude.ai's custom connectors) cannot use it yet. Claude Desktop through `mcp-remote` can.
+call is one POST, answered with JSON. Signing in is OAuth 2.1: discovery (RFC 9728 and RFC 8414), dynamic client
+registration, PKCE S256 and rotating refresh tokens.
 
 ## The API
 
@@ -105,6 +131,8 @@ is at `/api/v1/openapi.json` (with a key).
 | `GET /api/v1/projects/{project}/emails?folder=drafts&limit=25&offset=0` | One Outreach folder. |
 | `GET /api/v1/emails/{id}` | One email in full. |
 | `PATCH /api/v1/emails/{id}` | `{"subject": ..., "body": ..., "cc": [...]}`. Drafts only. |
+| `POST /api/v1/emails/{id}/approve` | Approve it. **It will be sent.** Only with a key that may approve. |
+| `POST /api/v1/emails/{id}/withdraw` | Take back a draft, or an approved email not yet gone. |
 
 Adding a lead:
 
@@ -117,7 +145,13 @@ curl -X POST https://tvf-lead-engine.onrender.com/api/v1/projects/us-production-
        "body": "Hi {{first_name}},\n\nI came across your slate and would love to talk about a series together."}'
 ```
 
-What you send:
+Then, to send it, use the `email_id` it returns:
+
+```bash
+curl -X POST https://tvf-lead-engine.onrender.com/api/v1/emails/EMAIL_ID/approve -H "Authorization: Bearer tle_YOUR_KEY"
+```
+
+What you send when adding a lead:
 
 - **Required:** `company`, `email`, `subject` and `body`.
 - **Placeholders:** `{{first_name}}` and `{{company}}` are filled in. Don't add a sign-off: yours goes under it.
@@ -143,17 +177,22 @@ Errors:
 
 | Status | Meaning |
 |---|---|
-| `401` | No key, or the key is unknown or revoked. |
-| `403` | A key used outside `/api/v1` and `/mcp`. |
+| `401` | No key, or the key or sign-in is unknown, revoked or expired. |
+| `403` | A key used outside `/api/v1` and `/mcp`, or approving with a key that may not. |
 | `404` | No such project, lead or email. |
+| `409` | The app refused it, for example a draft that fails a check. The reason is given. |
 | `422` | The lead cannot be taken. `problems` names each field. |
 | `429` | Over 120 calls a minute. |
 
 ## How it is built
 
-- **The API and MCP server:** `app/api_v1.py`. The nine actions call the app's own endpoint functions, so a rule
+- **The API and MCP server:** `app/api_v1.py`. The eleven actions call the app's own endpoint functions, so a rule
   that holds on the page holds here.
-- **The keys:** `sql/43_api_keys.sql` (only a SHA-256 of each key is kept).
-- **Drafts and added leads:** made the way the app's own Add a lead makes them (`tools/manual_lead.py`, drafts
-  only).
-- **Tests:** `tools/test_api_v1.py`.
+- **Signing in:** `app/oauth.py`.
+  - The documents at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`, then
+    `/oauth/register`, `/oauth/authorize` (the page that asks you) and `/oauth/token`.
+  - A connected app's access token lasts an hour. Its refresh token lasts 60 days and is used once.
+- **The keys and connections:** `sql/43_api_keys.sql` and `sql/44_api_approve_oauth.sql`. Only a SHA-256 of each
+  key, code and refresh token is kept.
+- **Drafts and added leads:** made the way the app's own Add a lead makes them (`tools/manual_lead.py`).
+- **Tests:** `tools/test_api_v1.py` and `tools/test_oauth.py`.

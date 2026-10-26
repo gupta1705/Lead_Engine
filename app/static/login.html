@@ -109,10 +109,15 @@ button:disabled { opacity: .6; cursor: default; }
 <p class="foot">Internal tool. Access is by invitation from the workspace owner.</p>
 <script>
 let mode = "login";
+// where to go once signed in: an MCP client's "allow" page (app/oauth.py), or the app; only a path on this site
+const NEXT = (() => {
+  const n = new URLSearchParams(location.search).get("next") || "";
+  return n.startsWith("/oauth/authorize?") && !n.includes("\\") && !n.includes("//") ? n : "/";
+})();
 (async () => {
   try {
     const s = await (await fetch("/api/auth/state")).json();
-    if (s.authed) { location.href = "/"; return; }
+    if (s.authed) { location.href = NEXT; return; }
     if (s.needs_setup) {
       mode = "setup";
       document.querySelector("#title").textContent = "Create the owner account";
@@ -140,7 +145,7 @@ document.querySelector("#f").addEventListener("submit", async (ev) => {
       body: JSON.stringify({ email, password }),
     });
     if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    location.href = "/";
+    location.href = NEXT;
   } catch (e) {
     err.textContent = e.message === "wrong email or password"
       ? "That email and password did not match. Check both and try again."

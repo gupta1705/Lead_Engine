@@ -228,8 +228,9 @@ to-do list.
 These rules are built into the database itself, not just the screens, so they
 hold even if something else goes wrong:
 
-- **No email goes out unless a person approved it.** There is no "approve all
-  without reading".
+- **No email goes out unless it was approved**, by a person or by an assistant
+  using a key that person allowed to approve. Either way it is recorded against
+  them. There is no "approve all without reading".
 - **One conversation per company, ever.** Production houses get one email. LCX
   gets one email and one follow-up (four days later) in the same thread, and any
   reply stops the follow-up.

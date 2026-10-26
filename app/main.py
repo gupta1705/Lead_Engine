@@ -59,7 +59,11 @@ app = FastAPI(title="TVF Lead Engine", docs_url=None, redoc_url=None, openapi_ur
 AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup",
                "/api/health",
                "/privacy",                     # what Google's consent screen links to (static/privacy.html)
-               "/api/mailboxes/server-key")   # a public key, for the owner's laptop (app/mailbox_connect.py)
+               "/api/mailboxes/server-key",   # a public key, for the owner's laptop (app/mailbox_connect.py)
+               # signing an MCP client in (app/oauth.py): the discovery documents, registering, the token exchange,
+               # and the page that asks the person (it checks the session itself and sends them to log in)
+               "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
+               "/.well-known/oauth-authorization-server", "/oauth/register", "/oauth/token", "/oauth/authorize")
 # what a person still on a starting password may call: the screen that replaces it
 MUST_CHANGE_OK = ("/api/auth/state", "/api/auth/password", "/api/auth/profile", "/api/auth/logout",
                   "/api/health")
@@ -123,12 +127,12 @@ async def auth_wall(request, call_next):
         return response
     if path.startswith("/api/") or path == "/mcp":
         # a program is told how to get in, not sent to a login page
+        # ... and an MCP client (claude.ai) where to sign in: resource_metadata (RFC 9728, app/oauth.py)
         return JSONResponse({"detail": "not signed in" if path.startswith("/api/") and not path.startswith("/api/v1/")
-                             else "A key is needed: Authorization: Bearer tle_... (account menu, API and MCP)."},
-                            status_code=401, headers={"WWW-Authenticate": 'Bearer realm="TVF Lead Engine"'})
+                             else "Sign in, or send a key: Authorization: Bearer tle_... (account menu, API and MCP)."},
+                            status_code=401, headers={"WWW-Authenticate": _api.challenge(request)})
     if path.startswith("/.well-known/"):
-        # an MCP client looking for an OAuth server: there is none, a key is the way in
-        return JSONResponse({"detail": "no OAuth here: use a key (Authorization: Bearer tle_...)"}, status_code=404)
+        return JSONResponse({"detail": "not found"}, status_code=404)
     return RedirectResponse("/login", status_code=302)
 
 
@@ -1323,9 +1327,11 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             ok, skipped = pol.check_drafts(cur, [oid], segment)
             if skipped:
                 raise HTTPException(409, "cannot approve: " + skipped[0]["reason"])
+            # through the API or MCP (app/api_v1.py, a key that may approve): recorded as such (sql/44)
+            mode = "api" if getattr(request.state, "via_key", False) else "single"
             cur.execute("update outreach set status='approved', approved_at=now(), approved_by=%s,"
-                        " approval_mode='single', spot_checked=true, updated_at=now()"
-                        " where id=%s and status='drafted' returning id", (user, oid))
+                        " approval_mode=%s, spot_checked=true, updated_at=now()"
+                        " where id=%s and status='drafted' returning id", (user, mode, oid))
         elif action == "cancel":
             cur.execute("update outreach set status='cancelled', updated_at=now()"
                         " where id=%s and status in ('drafted','approved')"
@@ -2178,6 +2184,9 @@ app.include_router(_mailbox_connect_module.build_router(cursor))
 
 import api_v1 as _api_v1_module                # the API (/api/v1) and MCP server (/mcp), with each person's keys
 app.include_router(_api_v1_module.build_router(_sys.modules[__name__]))
+
+import oauth as _oauth_module                  # signing an MCP client in (claude.ai's custom connectors)
+app.include_router(_oauth_module.build_router(cursor))
 
 # ---------------------------------------------------------------- scheduler
 import scheduler as _sched_module

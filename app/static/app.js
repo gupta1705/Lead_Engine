@@ -2048,7 +2048,7 @@ function openMessage(id, message) {
             <dt>${isReply ? "From" : "To"}</dt><dd>${r.contact_email ? `<div class="person">${avatar(r.contact_name, r.contact_email)}<div><div class="who">${esc(r.contact_name || "Unnamed")}</div><div class="mail"><a href="mailto:${esc(r.contact_email)}">${esc(r.contact_email)}</a></div></div></div>` : '<span class="muted">No address</span>'}</dd>
             ${!isReply ? ccRow(r, isDraft) : ""}
             ${!isReply && (r.sender_address || r.sender_mailbox) ? `<dt>Sent from</dt><dd>${esc(r.sender_address || "")}<div class="small muted mono">${esc(r.sender_mailbox || "")}</div></dd>` : ""}
-            ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
+            ${r.approved_by ? `<dt>Approved by</dt><dd>${esc(r.approved_by_name || r.approved_by)}${r.approved_by_name ? `<div class="small muted">${esc(r.approved_by)}</div>` : ""}<div class="small muted">${esc(r.approval_mode === "batch" ? (r.spot_checked ? "in a batch, spot-checked" : "in a batch") : r.approval_mode === "compose" ? "written and approved here" : r.approval_mode === "api" ? "through the API or an assistant (MCP)" : "individually")} · ${esc(fmtDate(r.approved_at))}</div></dd>` : ""}
             ${r.schedule && r.schedule.held && !r.sent_at && r.status === "approved" ? `<dt>Goes out</dt><dd>Held back, not sent${r.send_error ? "" : `<div class="small muted">${esc(r.schedule.held_why || "")}</div>`}</dd>` : ""}
             ${r.schedule && !r.schedule.held && !r.sent_at && ["approved", "sending"].includes(r.status) ? `<dt>Goes out</dt><dd>${esc(whenText(r.schedule))}${r.schedule.send_tz_reason ? `<div class="small muted">${esc(r.schedule.send_tz_reason)}</div>` : ""}${r.schedule.reschedules && r.schedule.wait_why ? `<div class="small muted">Moved ${r.schedule.reschedules === 1 ? "once" : r.schedule.reschedules + " times"}: ${esc(r.schedule.wait_why)}</div>` : ""}</dd>` : ""}
             ${isDraft && sendWindow() && !r.approval_blocked ? `<dt>Next window</dt><dd id="msgWindow"><span class="skel" style="width:70%;height:12px"></span></dd>` : ""}
@@ -3226,6 +3226,7 @@ async function openSendingAddress(opts) {
 function keySnippets(d, key) {
   const k = key || "tle_YOUR_KEY";
   return [
+    ["claude.ai (no key: Settings, Connectors, Add custom connector, paste this; then sign in and allow it)", d.mcp],
     ["Claude Code", `claude mcp add --transport http lead-engine ${d.mcp} --header "Authorization: Bearer ${k}"`],
     ["Claude Desktop (claude_desktop_config.json; needs Node.js)", JSON.stringify({ mcpServers: { "lead-engine": {
       command: "npx", args: ["-y", "mcp-remote", d.mcp, "--header", "Authorization:${AUTH}"],
@@ -3243,19 +3244,23 @@ async function openApiKeys(made) {
     <div class="modal-body single"><div class="modal-main">
       <p class="sub" style="margin-bottom:16px">Use the Lead Engine from another program, or from an AI assistant such as
         Claude (MCP). A key works as you: it can read leads and emails, add a lead with a draft email, shortlist or
-        reject, and edit drafts. It can never approve or send an email: what it drafts waits for you in Outreach,
-        Drafts, signed with your name.</p>
+        reject, edit and withdraw drafts, and, if you allow it, approve emails, which sends them from your Gmail,
+        signed by you. claude.ai needs no key: it signs in as you, and shows up here as a connected app.</p>
       ${made ? `<div class="key-made" role="status"><div class="label-row"><strong>${esc(made.name)}</strong>
           <button type="button" class="btn compact" data-copy="${esc(made.key)}">Copy key</button></div>
         <code class="key-text">${esc(made.key)}</code>
         <div class="small warn-text">Copy it now: it is never shown again. Keep it like a password.</div></div>` : ""}
-      ${live.length ? `<ul class="mbx-list">${live.map((k) => `<li><span><div><strong>${esc(k.name)}</strong> <span class="muted mono">${esc(k.prefix)}…</span></div>
-          <div class="secondary">Made ${esc(fmtDate(k.created_at))} · ${k.last_used_at ? "last used " + esc(fmtDate(k.last_used_at)) : "not used yet"}</div></span>
-          <span class="grow"></span><button class="btn subtle compact danger-text" data-revoke="${esc(k.id)}" data-name="${esc(k.name)}">Revoke</button></li>`).join("")}</ul>`
-        : `<p class="muted">You have no keys yet.</p>`}
+      ${live.length ? `<ul class="mbx-list">${live.map((k) => `<li><span><div><strong>${esc(k.name)}</strong> ${k.connected_app
+            ? `<span class="tag">Connected app</span>` : `<span class="muted mono">${esc(k.prefix)}…</span>`}
+            ${k.can_approve ? `<span class="tag">Can approve</span>` : ""}</div>
+          <div class="secondary">${k.connected_app ? "Connected" : "Made"} ${esc(fmtDate(k.created_at))} · ${k.last_used_at ? "last used " + esc(fmtDate(k.last_used_at)) : "not used yet"}</div></span>
+          <span class="grow"></span><button class="btn subtle compact danger-text" data-revoke="${esc(k.id)}" data-name="${esc(k.name)}">${k.connected_app ? "Disconnect" : "Revoke"}</button></li>`).join("")}</ul>`
+        : `<p class="muted">You have no keys or connected apps yet.</p>`}
       <form class="key-new" id="keyForm"><div class="field" style="flex:1"><label for="keyName">Name a new key</label>
         <input id="keyName" type="text" maxlength="60" placeholder="Claude on my laptop" autocomplete="off"></div>
-        <button class="btn primary" type="submit" ${live.length >= d.max ? "disabled" : ""}>${icon("plus", 16)} Make a key</button></form>
+        <button class="btn primary" type="submit" ${live.filter((k) => !k.connected_app).length >= d.max ? "disabled" : ""}>${icon("plus", 16)} Make a key</button>
+        <label class="check" style="flex-basis:100%"><input type="checkbox" id="keyApprove" checked>
+          <span>It may approve emails<div class="guidance">An approved email is sent from your Gmail, signed by you. Untick for a key that only reads and drafts.</div></span></label></form>
       <details class="key-how" ${made ? "open" : ""}><summary>How to connect</summary>
         ${snip.map(([t, s]) => `<div class="key-snip"><div class="label-row"><span class="small muted">${esc(t)}</span>
           <button type="button" class="btn compact" data-copy="${esc(s)}">Copy</button></div><pre>${esc(s)}</pre></div>`).join("")}
@@ -3270,7 +3275,7 @@ async function openApiKeys(made) {
     e.preventDefault();
     const name = $("#keyName", root).value.trim();
     if (!name) return $("#keyName", root).focus();
-    try { openApiKeys(await post("/api/keys", { name })); } catch (err) { toast(err.message, true); }
+    try { openApiKeys(await post("/api/keys", { name, can_approve: $("#keyApprove", root).checked })); } catch (err) { toast(err.message, true); }
   });
   $$("[data-revoke]", root).forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Revoke " + b.dataset.name + "? Anything using it stops working.")) return;
