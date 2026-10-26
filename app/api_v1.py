@@ -35,7 +35,7 @@ import json
 import secrets
 import threading
 import time
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -481,8 +481,8 @@ def build_router(main):
         return run(request, "list_projects", {})
 
     @r.get("/api/v1/projects/{project}/leads", tags=["leads"], summary="Search a project's leads")
-    def v1_leads(request: Request, project: str, status: str = Query("open", enum=list(LEAD_STATUSES)),
-                 q: str = "", has_address: str = Query("", enum=["", "yes", "no"]),
+    def v1_leads(request: Request, project: str, status: Literal[LEAD_STATUSES] = "open",
+                 q: str = "", has_address: Literal["", "yes", "no"] = "",
                  limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
         return run(request, "search_leads", {"project": project, "status": status, "query": q,
                                              "has_address": has_address, "limit": limit, "offset": offset})
@@ -502,7 +502,7 @@ def build_router(main):
         return run(request, "decide_lead", {"lead_id": lead_id, "decision": body.decision, "reason": body.reason})
 
     @r.get("/api/v1/projects/{project}/emails", tags=["emails"], summary="One Outreach folder")
-    def v1_emails(request: Request, project: str, folder: str = Query("drafts", enum=list(FOLDERS)),
+    def v1_emails(request: Request, project: str, folder: Literal[tuple(FOLDERS)] = "drafts",
                   limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
         return run(request, "list_emails", {"project": project, "folder": folder, "limit": limit, "offset": offset})
 

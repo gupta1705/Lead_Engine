@@ -187,7 +187,7 @@ def main_():
               (r.status_code, len(ls["rows"]) <= 2, all(x["status"] == "shortlisted" for x in ls["rows"])),
               (200, True, True))
         r, _ = call("GET", "/api/v1/projects/us-production-houses/leads?status=bogus", key=key)
-        check("  a status it does not know: refused", r.status_code, 400)
+        check("  a status it does not know: refused", r.status_code, 422)
         dom = "zz-api-%s.example" % tag
         lead = {"company": "ZZ API Films %s" % tag, "email": "kelly@" + dom, "contact_name": "Kelly Smith",
                 "role": "Head of Development", "website": dom, "country": "US", "city": "Austin",
