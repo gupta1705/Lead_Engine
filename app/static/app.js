@@ -316,9 +316,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* ============================================================ routing */
-const VIEWS = ["universal", "board", "leads", "outreach", "reports", "ops"];
+const VIEWS = ["universal", "board", "leads", "outreach", "reports", "ops", "docs"];
 let TITLES = { universal: "Search Apollo", board: "Lead board", leads: "Leads", outreach: "Outreach", reports: "Reports",
-  ops: "Operations" };
+  ops: "Operations", docs: "Docs" };
 function go(hash) { location.hash = hash; }
 function currentView() { return state.route || defaultRoute(); }
 /* A project's config may hide pages it has no use for (Universal has no outreach and no
@@ -343,12 +343,18 @@ function showView(name) {
   if (name === "reports") loadReports();
   if (name === "ops") loadOps();
   if (name === "universal") loadUniversal();
+  if (name === "docs") loadDocs();
 }
 function router() {
   const h = (location.hash || "#" + defaultRoute()).slice(1);
   const [head, rest] = h.split("/");
   if (head === "lead" && rest) { if (!state.route) showView(defaultRoute()); openLead(rest); return; }
   if (head === "outreach" && rest) state.outreach.folder = FOLDERS.some(([k]) => k === rest) ? rest : "drafts";
+  if (head === "docs") {                                       // a section of the Docs page: #docs/api-mcp
+    if (modal.isOpen()) modal.close(true);
+    if (state.route !== "docs") showView("docs");
+    return loadDocs(rest);
+  }
   if (state.route === head && head !== "outreach") return;   // same view, nothing to do
   if (modal.isOpen()) modal.close(true);
   showView(head);
@@ -1109,7 +1115,9 @@ function refreshCurrentView() {
    unknown. (Positive, Negative and Cancelled folders went on 2026-09-19.) */
 // Follow-ups (owner, 2026-10-23: "Create another tab for follow ups"): follow-up drafts waiting for approval, apart
 // from first emails (sql/40); once approved or sent they are in Approved and Sent, marked as follow-ups
-const FOLDERS = [["drafts", "Drafts"], ["followups", "Follow-ups"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"], ["attention", "Attention"]];
+// In conversation (owner, 2026-10-27): a company per row that wrote back with a real reply, after Replies
+const FOLDERS = [["drafts", "Drafts"], ["followups", "Follow-ups"], ["outbox", "Approved"], ["sent", "Sent"], ["inbox", "Replies"],
+  ["conversation", "In conversation"], ["attention", "Attention"]];
 const REVIEW_FOLDERS = ["drafts", "followups"];         // the folders a person approves from (batch approval too)
 function outreachPolicy() { return (state.segment && state.segment.outreach_policy) || {}; }
 function batchOn() { return !!outreachPolicy().batch_approval; }
@@ -1223,7 +1231,9 @@ async function loadOutreach() {
       <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div>${outreachMetric(r)}</span></div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
       <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.service ? `<div class="secondary" title="The one service this email ${r.sent_at ? "pitched" : "pitches"}">${r.sent_at ? "Pitched" : "Pitches"} ${esc(r.service)}</div>` : ""}${r.approval_blocked ? `<div class="secondary outreach-hold">${esc(r.approval_blocked)}</div>` : ""}${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
-      <td class="by-col">${r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
+      <td class="by-col">${o.folder === "conversation" ? (r.reached_by ? `<div>${esc(r.reached_by_name || r.reached_by)}</div>` : "")
+          + `<div class="secondary">${r.thread_messages || 1} message${(r.thread_messages || 1) === 1 ? "" : "s"} in the thread</div>`
+        : r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
       ${(() => {   // when it last moved: sent, approved, or written -- not the draft's age on every tab
         const s = r.schedule;
         if (s && s.held && !r.sent_at && r.status === "approved") {
@@ -1245,9 +1255,11 @@ async function loadOutreach() {
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
         : o.folder === "followups" ? followUpsEmpty()
         : o.folder === "outbox" && composeOn() ? "Nothing waiting to go out. To write to leads, pick them on the Leads page."
+        : o.folder === "conversation" ? "No conversations yet. A company shows here once it writes back with a real reply (not an auto-reply or a bounce); marking its reply Not interested takes it out."
         : "Nothing in this folder yet."}</td></tr>`;
   // who reached out: the person who approved it, from which address (owner, 2026-09-26)
-  $("#outreachTable").classList.toggle("show-by", ["outbox", "sent", "attention"].includes(o.folder));
+  $("#outreachTable").classList.toggle("show-by", ["outbox", "sent", "attention", "conversation"].includes(o.folder));
+  $("#outreachByCol").textContent = o.folder === "conversation" ? "Reached out by" : "By";
   // the Approved folder is a queue with times in it where the project has a sending window
   $("#outreachWhenCol").textContent = o.folder === "outbox" && sendWindow() ? "Goes out" : "When";
   delegateOpen("#outreachBody", (id) => { setNav("mail", state.outreach.rows.map((r) => String(r.id))); openMessage(id); }, ".sel-col");
@@ -2196,13 +2208,8 @@ async function loadReports() {
   ].filter(Boolean).map(([kk, n, d, hi]) => `<div class="tile ${hi ? "hi" : ""}"><div class="n">${esc(n)}</div><div class="k">${esc(kk)}</div>${d ? `<div class="d">${esc(d)}</div>` : ""}</div>`).join("")
     : `<div class="empty-state" style="padding:24px 8px">${icon("send", 22)}<p style="margin:8px auto 0">Nothing sent yet.</p></div>`;
 
-  // by person: who reached out, from their own Gmail, and which companies wrote back (owner, 2026-09-26)
-  const byPerson = k.by_account || [];
-  $("#accountPanel").hidden = !byPerson.length;
-  $("#accountTable").innerHTML = `<thead><tr><th>Person</th><th class="r">Approved</th><th class="r">Sent today</th><th class="r">Sent, 7 days</th><th class="r">Sent, all</th><th class="r">Replied</th><th class="r">Positive</th></tr></thead><tbody>` +
-    byPerson.map((x) => `<tr><td><span class="cell-person">${avatar(x.name, x.account)}<span><div>${esc(x.name || x.account)}</div><div class="secondary">${esc(x.account)}</div></span></span></td>
-      <td class="r num">${x.approved}</td><td class="r num">${x.sent_today}</td><td class="r num">${x.sent_last_7d}</td>
-      <td class="r num">${x.sent}</td><td class="r num">${x.replied}</td><td class="r num">${x.positive}</td></tr>`).join("") + "</tbody>";
+  // the team: each person's outreach over a span, and how it was answered (owner, 2026-10-27)
+  loadTeam();
 
   // by source: only where a project has more than one to compare
   const src = k.by_source || [];
@@ -2210,6 +2217,107 @@ async function loadReports() {
   $("#sourceTable").innerHTML = `<thead><tr><th>Source</th><th class="r">Found</th><th class="r">Contactable</th><th class="r">Shortlisted</th></tr></thead><tbody>` +
     src.map((x) => `<tr><td>${sourceLozenge(x.source)}</td><td class="r num">${x.found}</td><td class="r num">${x.contactable}</td>
       <td class="r num">${x.approved}</td></tr>`).join("") + "</tbody>";
+}
+
+/* ---------------------------------------------------------------- team
+   The owner, 2026-10-27: "how many outreaches each person has sent in different timelines their response rate and
+   all" (app/team_report.py). One row per person with a login: first emails sent in the span (one per company),
+   follow-ups, the companies that wrote back and the rate, positive replies, bounces, the typical time to a reply,
+   what is approved and still to go, and a bar per day (per week for the long spans). The span and the projects are
+   remembered on this browser only. */
+const TEAM = { period: "7d", scope: "all", token: 0 };
+try { const s = JSON.parse(localStorage.getItem("tvf_team") || "{}"); Object.assign(TEAM, { period: s.period || "7d", scope: s.scope || "all" }); } catch (e) {}
+function teamHours(h) {
+  if (h == null) return "—";
+  if (h < 1) return "under 1 h";
+  return h < 48 ? `${Math.round(h)} h` : `${(h / 24).toFixed(1)} d`;
+}
+function teamPct(v) { return v == null ? "—" : `${v}%`; }
+/* one series, one hue: a bar per bucket, a 1px stub for a bucket with none, the count on hover */
+function teamSpark(series, keys, bucket) {
+  const n = series.length;
+  if (!n) return "";
+  const W = 96, H = 28, gap = n > 40 ? 1 : 2, w = Math.max(1, (W - gap * (n - 1)) / n), top = Math.max(1, ...series);
+  const day = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { weekday: bucket === "day" ? "short" : undefined, day: "numeric", month: "short" });
+  const bars = series.map((v, i) => {
+    const h = v ? Math.max(3, Math.round((v / top) * (H - 2))) : 1, x = (i * (w + gap)).toFixed(2);
+    return `<rect x="${x}" y="${H - h}" width="${w.toFixed(2)}" height="${h}" rx="${v && w >= 3 ? 1.5 : 0}" class="${v ? "spark-bar" : "spark-none"}">`
+      + `<title>${esc((bucket === "week" ? "Week of " : "") + day(keys[i]))}: ${v} sent</title></rect>`;
+  }).join("");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(series.reduce((a, b) => a + b, 0))} sent, ${n} ${bucket}s">${bars}</svg>`;
+}
+async function loadTeam() {
+  const token = ++TEAM.token;
+  $$("#teamPeriod [data-period]").forEach((b) => { const on = b.dataset.period === TEAM.period; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
+  $$("#teamScope [data-scope]").forEach((b) => { const on = b.dataset.scope === TEAM.scope; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
+  let d;
+  try { d = await api(`/api/reports/team?period=${encodeURIComponent(TEAM.period)}&scope=${encodeURIComponent(TEAM.scope)}`); }
+  catch (e) { if (token === TEAM.token) $("#teamTable").innerHTML = `<tbody><tr><td class="muted">Could not load the team: ${esc(e.message)}</td></tr></tbody>`; return; }
+  if (token !== TEAM.token) return;                      // a newer choice is on its way
+  const trend = d.period !== "today";
+  const who = (x) => {
+    const sub = TEAM.scope === "all" && x.projects.length
+      ? x.projects.map((p) => `${p.name} ${p.sent}`).join(" · ")
+      : x.title || x.account;
+    return `<span class="cell-person">${avatar(x.name, x.account)}<span><div>${esc(x.name || x.account)}${x.has_login ? "" : ` <span class="muted small">(no login now)</span>`}</div>
+      <div class="secondary truncate" title="${esc(x.account)}">${esc(sub)}</div></span></span>`;
+  };
+  const cells = (x) => `<td class="r num">${x.sent}</td><td class="r num">${x.followups}</td><td class="r num">${x.replied}</td>
+      <td class="r num"><strong>${teamPct(x.reply_rate)}</strong></td><td class="r num">${x.positive}</td>
+      <td class="r num">${x.bounced}${x.bounced ? ` <span class="muted small">${teamPct(x.bounce_rate)}</span>` : ""}</td>
+      <td class="r num">${esc(teamHours(x.median_reply_hours))}</td><td class="r num">${x.approved_waiting}</td>`;
+  $("#teamTable").innerHTML = `<thead><tr><th>Person</th><th class="r">Sent</th><th class="r">Follow-ups</th><th class="r">Replied</th>
+      <th class="r">Reply rate</th><th class="r">Positive</th><th class="r">Bounced</th><th class="r">Typical reply</th>
+      <th class="r" title="Approved, waiting for its time to go out">Waiting to go</th>${trend ? `<th>${d.bucket === "week" ? "Per week" : "Per day"}</th>` : ""}</tr></thead>
+    <tbody>${d.people.map((x) => `<tr class="${x.sent || x.followups || x.approved_waiting ? "" : "quiet"}"><td>${who(x)}</td>${cells(x)}
+      ${trend ? `<td>${teamSpark(x.series, d.buckets, d.bucket)}</td>` : ""}</tr>`).join("")
+      || `<tr><td colspan="10" class="muted">No one has a login yet.</td></tr>`}</tbody>
+    <tfoot><tr><td><strong>Everyone</strong><div class="secondary">${esc(d.label)}${TEAM.scope === "project" ? " · this project" : " · all projects"}</div></td>${cells(d.totals)}
+      ${trend ? `<td>${teamSpark(d.totals.series, d.buckets, d.bucket)}</td>` : ""}</tr></tfoot>`;
+}
+function bindTeam() {
+  const pick = (k, v) => { TEAM[k] = v; try { localStorage.setItem("tvf_team", JSON.stringify({ period: TEAM.period, scope: TEAM.scope })); } catch (e) {} loadTeam(); };
+  $("#teamPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-period]"); if (b) pick("period", b.dataset.period); });
+  $("#teamScope").addEventListener("click", (e) => { const b = e.target.closest("[data-scope]"); if (b) pick("scope", b.dataset.scope); });
+}
+
+/* ================================================================ docs */
+/* The Docs page (owner, 2026-10-27: "Add a docs page which explains all features of this application and how to use
+   api and mcp and all"). static/docs.html, read once: this server's address goes where it says {{BASE}}, its tables
+   take the app's table style, and its h2s make the contents on the left (each a link: #docs/<section>). */
+async function loadDocs(section) {
+  const body = $("#docsBody");
+  if (!state.docsLoaded) {
+    if (!state.docsLoading) {
+      state.docsLoading = (async () => {
+        const r = await fetch("/docs.html", { cache: "no-cache" });
+        if (!r.ok) throw new Error(r.statusText);
+        return r.text();
+      })();
+    }
+    let html;
+    try { html = await state.docsLoading; }
+    catch (e) { state.docsLoading = null; body.innerHTML = `<p class="muted">Could not load the docs: ${esc(e.message)}</p>`; return; }
+    if (!state.docsLoaded) {
+      body.innerHTML = html.split("{{BASE}}").join(location.origin);
+      body.removeAttribute("aria-busy");
+      $$("table", body).forEach((t) => t.classList.add("tbl"));
+      $$("pre", body).forEach((pre) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn compact docs-copy"; b.textContent = "Copy";
+        b.addEventListener("click", async () => {
+          try { await navigator.clipboard.writeText(pre.textContent); flag("Copied"); } catch (e) { toast("Could not copy: select it and copy by hand.", true); }
+        });
+        pre.before(b);
+      });
+      $("#docsToc").innerHTML = `<div class="docs-toc-head">On this page</div>` + $$("h2", body).map((h) =>
+        `<a href="#docs/${esc(h.id)}" data-sec="${esc(h.id)}">${esc(h.textContent)}</a>`).join("");
+      state.docsLoaded = true;
+    }
+  }
+  const target = section && document.getElementById(section);
+  $$("#docsToc a").forEach((a) => a.classList.toggle("on", a.dataset.sec === (target ? section : "")));
+  if (target) target.scrollIntoView({ block: "start" });
 }
 
 /* ================================================================ ops */
@@ -3264,7 +3372,8 @@ async function openApiKeys(made) {
       <details class="key-how" ${made ? "open" : ""}><summary>How to connect</summary>
         ${snip.map(([t, s]) => `<div class="key-snip"><div class="label-row"><span class="small muted">${esc(t)}</span>
           <button type="button" class="btn compact" data-copy="${esc(s)}">Copy</button></div><pre>${esc(s)}</pre></div>`).join("")}
-        <p class="small muted">The API's own description is at ${esc(d.api)}/openapi.json (with a key).</p></details>
+        <p class="small muted">The API's own description is at ${esc(d.api)}/openapi.json (with a key).
+          The full guide: <a href="#docs/api-mcp">Docs, API and MCP</a>.</p></details>
     </div></div>
     <div class="modal-foot"><button class="btn" data-close>Close</button></div>`, { label: "API and MCP", narrow: true });
   const root = $("#modalRoot");
@@ -3333,7 +3442,7 @@ function bindFilters() {
 
 /* ================================================================ init */
 (async function init() {
-  bindShell(); bindFilters(); bindOps(); bindLeadsCompose();
+  bindShell(); bindFilters(); bindOps(); bindLeadsCompose(); bindTeam();
   try {
     const a = await api("/api/auth/state");
     state.user = a.user || null;

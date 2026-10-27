@@ -830,6 +830,21 @@ counts.
 A bounce (a mailer-daemon reply) is handled without you: the address is marked
 invalid, the thread ends, and no mailbox writes to that address again.
 
+## In conversation
+
+The tab after Replies lists the companies we are talking to: one row per company
+that has written back with a real reply. An auto-reply or a bounce notice
+doesn't count. Each row shows:
+
+- their latest reply;
+- who on our side reached out;
+- how many messages the thread has.
+
+A company leaves the list when its latest reply is marked Negative (not
+interested), or when the company is rejected. A newer reply from the same
+company replaces the row, so each company appears once. Open a row to read the
+reply and mark it.
+
 
 # Operations
 
@@ -913,12 +928,28 @@ Then: the companies contacted in the last 7 days (follow-ups not counted), the
 reply rate and the positive rate, and in LCX Clipping the follow-ups sent. The
 target is 15 to 20 companies contacted a week.
 
-**By person** — who reached out: for each person, the first emails they
-approved, how many went out today, in the last 7 days and in all, and the
-companies that wrote back (a reply counts once per company, for whoever reached
-out to it). The same name shows in the Sent folder's **By** column, under
-**Contacted** in the leads list, on the board card, and in the lead's own
-**Outreach** box, with the address it went out from.
+**Team** — what each person sent, and how it was answered. Pick the span along
+the top: **Today** (since midnight, India's clock), **7 days**, **30 days**, **90
+days** or **All time**. Then pick **All projects** or **This project**. The page
+remembers both on your browser. Everyone with a login has a row, including
+someone who sent nothing. For each person:
+
+- **Sent:** first emails that went out in that span, one per company, credited to
+  whoever approved them (their Gmail, their name). With All projects, the
+  projects they went to are listed under the name.
+- **Follow-ups:** follow-ups that went out, credited to whoever's thread it is.
+- **Replied** and **Reply rate:** how many of those companies wrote back, at any
+  time since. An auto-reply or a bounce notice is not a reply.
+- **Positive:** the replies marked positive.
+- **Bounced:** emails whose address rejected them, with the rate.
+- **Typical reply:** the usual time from a first email to its reply.
+- **Waiting to go:** approved now, waiting for its time.
+- **Per day** (or **Per week** for the long spans): a bar for each, with the count
+  on hover.
+
+**Everyone** at the bottom adds them all up. The same name shows in the Sent
+folder's **By** column, under **Contacted** in the leads list, on the board
+card, and in the lead's own **Outreach** box, with the address it went out from.
 
 **By source** — which connectors are earning their place: for each one, how
 many companies it found, how many can be contacted, and how many were

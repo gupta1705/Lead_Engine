@@ -270,6 +270,29 @@ MOCK_JS = r"""
     }
     if (p === "/api/stats") return json(FX.stats);
     if (p === "/api/kpis") return json(FX.kpis);
+    // Reports, Team (2026-10-27): app/team_report.py's shape, made-up numbers for made-up people
+    if (p === "/api/reports/team") {
+      const period = q.get("period") || "7d", n = { today: 0, "7d": 8, "30d": 31, "90d": 13, all: 6 }[period] ?? 8;
+      const bucket = period === "90d" || period === "all" ? "week" : "day";
+      const day = (i) => { const d = new Date(); d.setDate(d.getDate() - (n - 1 - i) * (bucket === "week" ? 7 : 1)); return d.toISOString().slice(0, 10); };
+      const mk = (account, name, title, scale, rr) => {
+        const series = Array.from({ length: n }, (_, i) => Math.max(0, Math.round(scale * (0.4 + ((i * 37 + name.length * 11) % 10) / 10))));
+        const sent = period === "today" ? Math.round(scale) : series.reduce((a, b) => a + b, 0), replied = Math.round(sent * rr);
+        return { account, name, title, has_login: true, sent, followups: Math.round(sent * 0.3), replied, reply_rate: sent ? Math.round(1000 * replied / sent) / 10 : null,
+          positive: Math.round(replied / 3), positive_rate: sent ? Math.round(1000 * Math.round(replied / 3) / sent) / 10 : null, negative: 0,
+          bounced: Math.round(sent * 0.02), bounce_rate: sent ? 2 : null, median_reply_hours: sent ? 3 + name.length : null,
+          approved_waiting: Math.round(scale * 2), last_sent_at: null, series,
+          projects: sent ? [{ slug: "lcx-clipping", name: "LCX Clipping", sent: Math.round(sent * 0.8) }, { slug: "us-production-houses", name: "US Production Houses", sent: sent - Math.round(sent * 0.8) }] : [] };
+      };
+      const people = [mk("asha@example.com", "Asha Rao", "Partnerships", 12, 0.06), mk("dev@example.com", "Dev Mehta", "Business Development", 5, 0.1),
+                      mk("tara@example.com", "Tara Singh", "Sales", 0, 0)];
+      const sum = (k) => people.reduce((a, x) => a + (x[k] || 0), 0), sent = sum("sent"), replied = sum("replied");
+      return json({ period, label: { today: "Today", "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days", all: "All time" }[period],
+        bucket, buckets: Array.from({ length: n }, (_, i) => day(i)), scope: q.get("scope") || "all", people,
+        totals: { sent, followups: sum("followups"), replied, reply_rate: sent ? Math.round(1000 * replied / sent) / 10 : null, positive: sum("positive"),
+          bounced: sum("bounced"), bounce_rate: sent ? 2 : null, median_reply_hours: sent ? 7.5 : null, approved_waiting: sum("approved_waiting"),
+          series: Array.from({ length: n }, (_, i) => people.reduce((a, x) => a + x.series[i], 0)) } });
+    }
     if (p === "/api/schedule") return json(FX.schedule);
     if (p.startsWith("/api/schedule/run/")) return json({ ok: true });
     if (p === "/api/ops") return json({ busy: RUN.key, label: RUN.key });
@@ -312,7 +335,15 @@ MOCK_JS = r"""
       const f = q.get("folder") || "drafts";
       const counts = {}; FX.outreach.rows.forEach((r) => { const k = folderOf(r); counts[k] = (counts[k] || 0) + 1; });
       counts.untriaged = FX.outreach.rows.filter((r) => r.direction === "inbound" && r.triage !== "positive" && r.triage !== "negative").length;
-      return json({ rows: FX.outreach.rows.filter((r) => folderOf(r) === f), counts });
+      // In conversation (2026-10-27): a company per row, its latest real reply, as app/outreach_query.CONVERSATION
+      const latest = {};
+      FX.outreach.rows.filter((r) => r.direction === "inbound" && r.triage !== "neutral").forEach((r) => {
+        const k = r.entity_id; if (!latest[k] || String(r.created_at) > String(latest[k].created_at)) latest[k] = r; });
+      const talking = Object.values(latest).filter((r) => r.triage !== "negative").map((r) => Object.assign({}, r, {
+        reached_by: FX.auth.user, reached_by_name: FX.auth.name,
+        thread_messages: FX.outreach.rows.filter((x) => x.entity_id === r.entity_id && (x.direction === "inbound" || x.status === "sent")).length }));
+      counts.conversation = talking.length;
+      return json({ rows: f === "conversation" ? talking : FX.outreach.rows.filter((r) => folderOf(r) === f), counts });
     }
     if ((m = p.match(/^\/api\/outreach\/([^/]+)\/window$/))) {
       const r = FX.outreach.rows.find((x) => x.id === m[1]);

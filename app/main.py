@@ -1001,6 +1001,7 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
     would send it: their sign-off, their voice (tools/draft_render.personalize). Approving stores
     exactly that; the stored draft stays in the project's own form until then."""
     folders = ["inbox", "positive", "negative"] if folder == "inbox" else [folder]
+    talking = folder == "conversation"          # In conversation: a company per row, not a folder of the view
     pol = _policy()
     import outreach_query as oq
     try:
@@ -1021,19 +1022,41 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
     with cursor() as cur:
         cfg = pol.outreach_config(cur, segment)
         order = oq.ordering(folder, sort, direction, bool(cfg.get("prioritize_fresh_leads")))
-        cur.execute(
-            _outreach_select() +
-            " where f.folder = any(%s) and " + clause +
-            " order by " + order + " limit %s offset %s", [folders] + params + [limit, offset])
+        if talking:
+            cur.execute(_outreach_select() + " where " + oq.CONVERSATION + " and " + clause +
+                        " order by " + order + " limit %s offset %s", params + [limit, offset])
+        else:
+            cur.execute(
+                _outreach_select() +
+                " where f.folder = any(%s) and " + clause +
+                " order by " + order + " limit %s offset %s", [folders] + params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
         rows = _present_outreach(rows, request, segment, cfg, people)
+        if talking and rows:
+            # who on our side is in it (whoever's first email it answers), and how long the thread is
+            cur.execute("select e.id as eid,"
+                        " (select p.approved_by from outreach p where p.entity_id = e.id and p.direction = 'outbound'"
+                        "   and coalesce(p.sequence_step, 0) = 0 and p.status = 'sent' order by p.sent_at desc limit 1)"
+                        "   as reached_by,"
+                        " (select count(*) from outreach m where m.entity_id = e.id and (m.direction = 'inbound'"
+                        "   or m.status = 'sent')) as messages"
+                        " from entities e where e.id = any(%s::uuid[])", ([r["entity_id"] for r in rows],))
+            extra = {str(x["eid"]): x for x in cur.fetchall()}
+            for r in rows:
+                x = extra.get(r["entity_id"]) or {}
+                r["reached_by"] = x.get("reached_by")
+                r["reached_by_name"] = _display(x.get("reached_by"), people) if x.get("reached_by") else None
+                r["thread_messages"] = x.get("messages") or 0
+        # In conversation is counted in the same round trip as the folders (it is no folder of the view)
+        talk = (" union all select 'conversation', count(*) from outreach_folders f join entities e on e.id = f.entity_id"
+                " where " + oq.CONVERSATION + " and ")
         cur.execute("select f.folder, count(*) as n from outreach_folders f"
                     " join entities e on e.id = f.entity_id"
-                    " where e.segment_id = (select id from segments where slug = %s) group by f.folder",
-                    (segment,))
+                    " where e.segment_id = (select id from segments where slug = %s) group by f.folder" + talk + base,
+                    (segment, segment))
         counts = oq.folder_counts(cur.fetchall())
         cur.execute("select f.folder,count(*) as n from outreach_folders f join entities e on e.id=f.entity_id"
-                    " where " + clause + " group by f.folder", params)
+                    " where " + clause + " group by f.folder" + talk + clause, params + params)
         filtered_counts = oq.folder_counts(cur.fetchall())
         cur.execute("select " + oq.CATEGORY + " as key,count(*) as n from outreach_folders f"
                     " join entities e on e.id=f.entity_id where " + base + " group by 1 order by 1", (segment,))
@@ -2187,6 +2210,10 @@ app.include_router(_api_v1_module.build_router(_sys.modules[__name__]))
 
 import oauth as _oauth_module                  # signing an MCP client in (claude.ai's custom connectors)
 app.include_router(_oauth_module.build_router(cursor))
+
+import team_report as _team_report_module      # Reports, Team: what each person sent, and how it was answered
+app.include_router(_team_report_module.build_router(
+    cursor, current_segment, lambda: {s["slug"]: s["project_name"] for s in segments_list(None)["segments"]}))
 
 # ---------------------------------------------------------------- scheduler
 import scheduler as _sched_module

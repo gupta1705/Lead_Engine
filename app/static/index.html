@@ -82,6 +82,11 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5 6.8 15M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.5"/></svg>
           <span class="label">Operations</span>
         </button>
+        <!-- every feature, and how to use the API and MCP (owner, 2026-10-27; static/docs.html) -->
+        <button class="side-item" data-route="docs" title="Docs">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>
+          <span class="label">Docs</span>
+        </button>
       </div>
     </div>
 
@@ -245,7 +250,7 @@
       <div class="toolbar batch-bar" id="batchBar" hidden></div>
       <div class="table-wrap">
         <table class="tbl" id="outreachTable">
-          <thead><tr><th class="sel-col"><input type="checkbox" id="outreachSelAll" aria-label="Select drafts, up to one batch"></th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th class="by-col">By</th><th id="outreachWhenCol">When</th></tr></thead>
+          <thead><tr><th class="sel-col"><input type="checkbox" id="outreachSelAll" aria-label="Select drafts, up to one batch"></th><th id="outreachEntityCol">Company</th><th>Contact</th><th>Subject</th><th class="by-col" id="outreachByCol">By</th><th id="outreachWhenCol">When</th></tr></thead>
           <tbody id="outreachBody"></tbody>
         </table>
       </div>
@@ -268,9 +273,23 @@
           <div class="tiles" id="kpiTiles"></div>
         </div>
       </div>
-      <div class="panel" id="accountPanel" hidden>
-        <div class="panel-head"><div><h2>By person</h2><p class="sub">Who reached out, from their own Gmail, and which companies wrote back. Replies are counted once per company, for whoever reached out to it.</p></div></div>
-        <div class="table-wrap"><table class="tbl" id="accountTable"></table></div>
+      <!-- each person's outreach over a time span, and how it was answered (owner, 2026-10-27; app/team_report.py) -->
+      <div class="panel" id="teamPanel">
+        <div class="panel-head team-head"><div><h2>Team</h2><p class="sub">Who reached out, how much, and how it was answered. Sent counts first emails, one per company; a reply counts once per company, for whoever reached out to it. Auto-replies and bounce notices are not replies.</p></div>
+          <div class="team-controls">
+            <div class="tabs segmented" id="teamPeriod" role="tablist" aria-label="Time span">
+              <button class="tab" role="tab" data-period="today">Today</button>
+              <button class="tab active" role="tab" aria-selected="true" data-period="7d">7 days</button>
+              <button class="tab" role="tab" data-period="30d">30 days</button>
+              <button class="tab" role="tab" data-period="90d">90 days</button>
+              <button class="tab" role="tab" data-period="all">All time</button>
+            </div>
+            <div class="tabs segmented" id="teamScope" role="tablist" aria-label="Which projects">
+              <button class="tab active" role="tab" aria-selected="true" data-scope="all">All projects</button>
+              <button class="tab" role="tab" data-scope="project">This project</button>
+            </div>
+          </div></div>
+        <div class="table-wrap"><table class="tbl team-tbl" id="teamTable"></table></div>
       </div>
       <div class="panel" id="sourcePanel">
         <div class="panel-head"><div><h2>By source</h2><p class="sub">Which harvests find leads worth shortlisting.</p></div></div>
@@ -279,6 +298,18 @@
     </section>
 
     <!-- OPERATIONS -->
+    <!-- DOCS -->
+    <section class="view" id="view-docs" aria-labelledby="docsTitle">
+      <header class="page-head">
+        <div class="title-row"><h1 id="docsTitle">Docs</h1></div>
+        <p class="sub">Everything the Lead Engine does, and how to use it from Claude or your own program (API and MCP).</p>
+      </header>
+      <div class="docs-layout">
+        <nav class="docs-toc" id="docsToc" aria-label="On this page"></nav>
+        <article class="docs-body" id="docsBody" aria-busy="true"><span class="skel" style="width:60%;height:22px"></span></article>
+      </div>
+    </section>
+
     <section class="view" id="view-ops" aria-labelledby="opsTitle">
       <header class="page-head">
         <div class="title-row">

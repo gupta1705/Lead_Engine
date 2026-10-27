@@ -13,6 +13,14 @@ SUBSCRIBERS = number(("youtube_channel", "subscribers"))
 VIEWS = number(("youtube_channel", "view_count"))
 WHEN = "coalesce(f.sent_at,case when f.status='approved' then f.approved_at end,f.created_at)"
 SORTS = {"subscribers": SUBSCRIBERS, "views": VIEWS, "score": "e.fit_score", "date": WHEN}
+# In conversation (owner, 2026-10-27: "add a in conversation section after replies section which we are talking to"):
+# one row per company that wrote back with a real reply, its latest one. An auto-reply or a bounce notice (triaged
+# 'neutral') is not a conversation, as follow-ups count it; a company whose latest reply was marked Not interested,
+# or that was rejected or archived since, is out of it.
+CONVERSATION = ("f.direction = 'inbound' and f.triage is distinct from 'neutral' and f.triage is distinct from 'negative'"
+                " and e.status not in ('rejected', 'archived')"
+                " and f.id = (select r.id from outreach r where r.entity_id = f.entity_id and r.direction = 'inbound'"
+                " and r.triage is distinct from 'neutral' order by r.created_at desc, r.id desc limit 1)")
 
 
 def ordering(folder, sort, direction, prioritize_fresh=False):

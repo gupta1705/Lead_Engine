@@ -60,7 +60,7 @@ PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 LEAD_STATUSES = ("open", "shortlisted", "contacted", "in_conversation", "rejected", "archived", "all")
 # the API's folder names -> the app's (the outreach_folders view)
 FOLDERS = {"drafts": "drafts", "followups": "followups", "approved": "outbox", "sent": "sent",
-           "replies": "inbox", "attention": "attention"}
+           "replies": "inbox", "in_conversation": "conversation", "attention": "attention"}
 PUBLIC_FOLDER = {v: k for k, v in FOLDERS.items()}
 PUBLIC_FOLDER.update(positive="replies", negative="replies")
 
@@ -428,8 +428,9 @@ TOOLS = [
      "annotations": {"readOnlyHint": True}},
     {"name": "list_emails", "title": "List emails",
      "description": "One Outreach folder of a project, newest first: drafts (waiting for approval), followups "
-                    "(follow-up drafts), approved (waiting to go out), sent, replies, attention (failed or stuck). "
-                    "Also counts every folder.",
+                    "(follow-up drafts), approved (waiting to go out), sent, replies, in_conversation (a company per "
+                    "row that wrote back with a real reply, its latest), attention (failed or stuck). Also counts "
+                    "every folder.",
      "inputSchema": _s("object", required=["project"], properties={
          "project": PROJECT, "folder": _s("string", enum=list(FOLDERS), default="drafts"),
          "limit": _s("integer", minimum=1, maximum=100, default=25), "offset": _s("integer", minimum=0, default=0)}),

@@ -1,0 +1,337 @@
+<!-- The Docs page (owner, 2026-10-27: "Add a docs page which explains all features of this application and how to use
+     api and mcp and all"). A fragment: app.js puts it in the Docs view, builds the contents from its h2s, and writes
+     this server's address where {{BASE}} stands. The long internal manual is docs/manual/manual.md; the API's own
+     reference is docs/api.md. Keep this page true to the app when a feature changes. -->
+
+<h2 id="start">Getting started</h2>
+<p>The Lead Engine finds companies and creators worth pitching, works out who to write to, drafts the email,
+  and, once a person approves it, sends it from that person's own Gmail and watches for the reply. It runs one
+  <strong>project</strong> per kind of business we sell to.</p>
+<ol>
+  <li><strong>Log in</strong> with the email and starting password you were given. The first time, choose your own
+    password (10 or more characters) and enter your <strong>name and title</strong>. Every email you approve is
+    signed with them.</li>
+  <li><strong>Connect your Gmail</strong>: account menu (bottom of the sidebar), <strong>Your Gmail</strong>,
+    <strong>Connect your Gmail</strong>. Google's sign-in opens; pick the address you send from and allow it. If
+    Google says the app is unverified, click <em>Advanced</em>, then <em>Go to ... (unsafe)</em>: it is our own
+    app. Until you connect, what you approve waits in Approved.</li>
+  <li><strong>Pick a project</strong> at the top of the sidebar, and start on the <strong>Board</strong> or
+    <strong>Leads</strong>.</li>
+</ol>
+<div class="docs-callout">Each Gmail address sends up to <strong>50 emails a day</strong>. Connect a second address
+  for more. Any Google account works (Gmail or Workspace, TVF, LCX or another domain).</div>
+
+<h2 id="projects">Projects</h2>
+<table>
+  <thead><tr><th>Project</th><th>Who it finds</th><th>How the email is made</th></tr></thead>
+  <tbody>
+    <tr><td><strong>US Production Houses</strong></td><td>US production companies for TVF partnerships, from
+      Apollo.</td><td>Drafted from TVF's template, with a line about each company. Shortlisted automatically above
+      a score of 30.</td></tr>
+    <tr><td><strong>LCX Clipping</strong></td><td>Podcasts and YouTube creators with a back catalogue, for LCX's
+      clipping service. The host is the face of the lead.</td><td>Drafted from the ReelForge templates. Shortlisted
+      automatically above 20. Batch approval with a spot check.</td></tr>
+    <tr><td><strong>LCX Services</strong></td><td>Businesses that could buy one of LCX's 18 services, from
+      Apollo.</td><td>Each lead is tagged with one service. Its email pitches that service and carries the PDF
+      deck. Shortlisted automatically above 70. Batch approval.</td></tr>
+    <tr><td><strong>Startup Acquisition Targets</strong></td><td>Startups for TVF's corporate development.</td><td>Drafted
+      from its template (sending is not set up yet: no sender name).</td></tr>
+    <tr><td><strong>Universal</strong></td><td>Anyone you search for on Apollo yourself.</td><td>You write the email
+      (Write email), for the leads you pick.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="leads">Board and Leads</h2>
+<p>Every lead has a status:</p>
+<ul>
+  <li><strong>To review</strong>: found and scored, waiting for a decision.</li>
+  <li><strong>Shortlisted</strong>: someone (or the automatic line) said yes. Its email is drafted within
+    minutes.</li>
+  <li><strong>Contacted</strong>: its first email went out.</li>
+  <li><strong>In conversation</strong>: it replied and the reply was marked positive.</li>
+  <li><strong>Rejected</strong>: someone said no. It never comes back from a later search.</li>
+  <li><strong>Archived</strong>: out of scope, or expired untouched.</li>
+</ul>
+<p>The <strong>Board</strong> shows leads as cards by status. <strong>Leads</strong> is the whole list, best score
+  first, with search, status and source filters, a filter for whether there is an address to write to, and
+  <strong>Export this view</strong> (a spreadsheet of exactly what is shown).</p>
+<p>Click a lead to open its sheet:</p>
+<ul>
+  <li><strong>Score breakdown and analysis</strong>: why it fits, and what is missing.</li>
+  <li><strong>Contacts</strong>: every address, best first. Pick which person the email goes to.</li>
+  <li><strong>LCX Services</strong>: the service it is pitched, which you can change.</li>
+  <li><strong>Decisions</strong>: <strong>Shortlist</strong> or <strong>Reject</strong> (with a reason), and Undo.</li>
+</ul>
+<p><kbd>J</kbd> and <kbd>K</kbd> move to the next or previous lead without closing the sheet.</p>
+
+<h2 id="add-lead">Adding a lead you found</h2>
+<p>For a lead the software did not find: <strong>Leads</strong>, <strong>Add a lead</strong>.</p>
+<ol>
+  <li>Pick the <strong>project</strong> it belongs to.</li>
+  <li>Enter the lead (name, website, country, city) and who it goes to (name, role, email).</li>
+  <li>LCX Services only: pick the service.</li>
+  <li>Write the email. <code>{{first_name}}</code> and <code>{{company}}</code> are filled in, and your sign-off goes
+    under it. Rewrite with AI is there too.</li>
+  <li><strong>Approve</strong>. The lead is added and the email approved in one step, then sent the usual way.</li>
+</ol>
+<p>The window checks as you type:</p>
+<ul>
+  <li>A lead already in the project is used, not added twice.</li>
+  <li>A rejected one is reopened, and the window says so first.</li>
+  <li>It refuses:
+    <ul>
+      <li>a lead already contacted;</li>
+      <li>an address or company that already has a first email from us in any project;</li>
+      <li>our own addresses;</li>
+      <li>a country the project never emails. For LCX that is Canada, Germany, Austria and Italy, where cold email
+        needs consent.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="outreach">Outreach</h2>
+<p>Every email lives in one folder:</p>
+<table>
+  <thead><tr><th>Folder</th><th>What is in it</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Drafts</strong></td><td>First emails waiting for approval.</td></tr>
+    <tr><td><strong>Follow-ups</strong></td><td>Follow-up drafts waiting for approval.</td></tr>
+    <tr><td><strong>Approved</strong></td><td>Approved and waiting for their time, with when each goes.</td></tr>
+    <tr><td><strong>Sent</strong></td><td>Gone, with who sent it and from which address.</td></tr>
+    <tr><td><strong>Replies</strong></td><td>Everything that came back. Mark each Positive or Negative.</td></tr>
+    <tr><td><strong>In conversation</strong></td><td>One row per company that wrote back for real (not an
+      auto-reply or bounce), with its latest reply, who reached out, and how long the thread is. A Negative mark or a
+      rejection takes it out.</td></tr>
+    <tr><td><strong>Attention</strong></td><td>Emails that failed or got stuck, with the reason.</td></tr>
+  </tbody>
+</table>
+<h3>Approving</h3>
+<ul>
+  <li>Open a draft and read it. You see it exactly as it will go, signed with <strong>your</strong> name. Edit
+    the subject or text if you want, then press <strong>Approve</strong>. Approving is what sends it: nothing goes out
+    that nobody approved.</li>
+  <li><strong>Batch approval</strong> (LCX Clipping, LCX Services):
+    <ol>
+      <li>Tick up to 100 drafts.</li>
+      <li>The app picks a random handful (at least 3, or a tenth) for you to read.</li>
+      <li>Approve them all.</li>
+    </ol>
+    A draft with a model-written line is approved on its own.</li>
+  <li><strong>Rewrite with AI</strong> suggests a new version in the editor. Nothing is saved until you approve.</li>
+  <li><strong>CC</strong>: every email copies amritanshv@lightscameraexperiment.com unless you untick it on that
+    email. Add anyone else under CC.</li>
+</ul>
+<h3>When it goes</h3>
+<ul>
+  <li>Each approved email goes out at its own random minute between <strong>10:00 and 10:30 on the recipient's
+    clock</strong>, weekdays only. The country and city of the lead decide the clock.</li>
+  <li>It goes from your Gmail, inside your 50 a day.</li>
+  <li>You can withdraw it from Approved until its minute comes.</li>
+</ul>
+<h3>Follow-ups and replies</h3>
+<ul>
+  <li><strong>One follow-up</strong>, four days after the first email if nobody replied. It goes in the same Gmail
+    thread, from the same address, signed by whoever sent the first email. It waits in Follow-ups for approval like
+    any email.</li>
+  <li><strong>Any reply stops it.</strong> Replies are read every hour.</li>
+  <li><strong>Marking a reply:</strong> Positive moves the company to In conversation; Negative closes it.</li>
+  <li><strong>Bounces:</strong> a bounced address is marked invalid and never written to again.</li>
+  <li><strong>Stop follow-ups</strong> on a sent email ends its thread by hand.</li>
+</ul>
+<h3>The footer</h3>
+<p><strong>Outreach</strong>, <strong>Footer</strong> edits the project's sign-off. Each person's own name and title
+  go into it.</p>
+
+<h2 id="universal">Universal: searching Apollo</h2>
+<ul>
+  <li><strong>Searching:</strong> search people or companies by job, company type and place, with filters. Searching
+    is free.</li>
+  <li><strong>Saving:</strong> saving leads reveals their emails, which costs Apollo credits. The page says what a save
+    will cost before you agree.</li>
+  <li><strong>Saved searches:</strong> keep a search to run again.</li>
+  <li><strong>Writing to leads:</strong> on Leads, tick the ones you want and press <strong>Write email to N</strong>.
+    Write it once; it reads personally for each of them.</li>
+</ul>
+
+<h2 id="reports">Reports</h2>
+<ul>
+  <li><strong>Status overview</strong>: every lead in the project, by status.</li>
+  <li><strong>Outreach results</strong>: companies contacted in the last 7 days, reply rate and positive rate.</li>
+  <li><strong>Team</strong>: each person's outreach. Pick a span (Today, 7, 30 or 90 days, All time) and all projects
+    or this one. For each person it shows:
+    <ul>
+      <li>first emails sent, and follow-ups;</li>
+      <li>companies that replied, and the reply rate;</li>
+      <li>positive replies;</li>
+      <li>bounces;</li>
+      <li>the typical time to a reply;</li>
+      <li>what is approved and still to go;</li>
+      <li>a bar per day.</li>
+    </ul>
+  </li>
+  <li><strong>By source</strong>: which searches find leads worth shortlisting.</li>
+</ul>
+
+<h2 id="operations">Operations</h2>
+<ul>
+  <li><strong>Refreshing:</strong> each project's refresh (find, check, enrich, score, shortlist, draft) runs by
+    itself on a schedule (<strong>Automatic runs</strong>). <strong>Run refresh</strong> starts one now, and its log
+    shows as it goes.</li>
+  <li><strong>Mailboxes:</strong> who can send today, from which address, and how much room is left.</li>
+</ul>
+
+<h2 id="account">Your account</h2>
+<p>The account menu at the bottom of the sidebar:</p>
+<ul>
+  <li><strong>Your Gmail</strong>: connect, reconnect or disconnect the addresses you send from.</li>
+  <li><strong>Your name and title</strong>: what signs your emails.</li>
+  <li><strong>Change password</strong>.</li>
+  <li><strong>API and MCP</strong>: keys for programs and AI assistants, and the apps you connected (below).</li>
+</ul>
+
+<h2 id="api-mcp">API and MCP</h2>
+<p>Use the Lead Engine from Claude (or another AI assistant) through <strong>MCP</strong>, or from your own
+  program through the <strong>API</strong>. Both work <strong>as you</strong>:</p>
+<ul>
+  <li><strong>Reading</strong>: projects, leads and emails.</li>
+  <li><strong>Leads</strong>: add a lead with a draft email; shortlist or reject.</li>
+  <li><strong>Drafts</strong>: edit or withdraw them.</li>
+  <li><strong>Approving</strong>, if you allowed it.</li>
+</ul>
+<p>Neither can run a refresh, spend Apollo credits, touch anyone's Gmail, or reach the rest of the app.</p>
+<div class="docs-callout warn"><strong>Approving through it sends the email</strong>, exactly as pressing Approve
+  does:
+  <ul>
+    <li>the same checks;</li>
+    <li>from your Gmail, signed by you;</li>
+    <li>at the recipient's 10:00 to 10:30.</li>
+  </ul>
+  It is recorded as "approved through the API or an assistant". Each key or connection either may approve or may
+  not, and you choose.</div>
+
+<h3>Connect Claude in the browser (claude.ai)</h3>
+<ol>
+  <li>In claude.ai: <strong>Settings</strong>, <strong>Connectors</strong>, <strong>Add custom connector</strong>.</li>
+  <li>Paste <code>{{BASE}}/mcp</code> and press <strong>Add</strong>, then <strong>Connect</strong>.</li>
+  <li>The Lead Engine opens: log in if it asks, then <strong>Allow</strong>. Untick <em>Also approve emails</em> if
+    Claude should only read and draft.</li>
+  <li>You are back in claude.ai, connected. Ask it things like <em>"What's in my LCX Clipping drafts?"</em> or
+    <em>"Add Northlight Pictures, maya@northlight.com, to US Production Houses with a short intro email."</em></li>
+</ol>
+<p>It shows in <strong>API and MCP</strong> as a connected app. <strong>Disconnect</strong> ends it.</p>
+
+<h3>Connect Claude Code, Claude Desktop or a program (with a key)</h3>
+<ol>
+  <li>Account menu, <strong>API and MCP</strong>. Name a key, choose whether it may approve, press <strong>Make a
+    key</strong>.</li>
+  <li><strong>Copy it straight away</strong>: it starts with <code>tle_</code> and is shown once. Keep it like a
+    password.</li>
+  <li>Use it. The window shows these with your key filled in.</li>
+</ol>
+<p><strong>Claude Code</strong> (run in a terminal):</p>
+<pre>claude mcp add --transport http lead-engine {{BASE}}/mcp --header "Authorization: Bearer tle_YOUR_KEY"</pre>
+<p><strong>Claude Desktop</strong> (needs Node.js): Settings, Developer, Edit config, add this, and restart
+  Claude:</p>
+<pre>{
+  "mcpServers": {
+    "lead-engine": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "{{BASE}}/mcp", "--header", "Authorization:${AUTH}"],
+      "env": { "AUTH": "Bearer tle_YOUR_KEY" }
+    }
+  }
+}</pre>
+<p><strong>Other MCP clients</strong> (Cursor and the like): a Streamable HTTP server at <code>{{BASE}}/mcp</code>
+  that takes the header <code>Authorization: Bearer tle_YOUR_KEY</code>, or signs in with OAuth.</p>
+
+<h3>What the assistant can do (MCP tools)</h3>
+<table>
+  <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>whoami</code></td><td>You: name, title, Gmail addresses and today's room.</td></tr>
+    <tr><td><code>list_projects</code></td><td>Every project, its lead counts, follow-up, CC, and LCX Services'
+      services.</td></tr>
+    <tr><td><code>search_leads</code></td><td>A project's leads, by status, text and whether there is an address.</td></tr>
+    <tr><td><code>get_lead</code></td><td>One lead in full: score, analysis, contacts, its email.</td></tr>
+    <tr><td><code>list_emails</code></td><td>One Outreach folder: drafts, followups, approved, sent, replies,
+      in_conversation, attention.</td></tr>
+    <tr><td><code>get_email</code></td><td>One email in full.</td></tr>
+    <tr><td><code>add_lead</code></td><td>A lead found by hand, with its email as a draft (<code>dry_run</code>
+      previews it).</td></tr>
+    <tr><td><code>decide_lead</code></td><td>Shortlist, or reject with a reason.</td></tr>
+    <tr><td><code>edit_draft</code></td><td>Change a draft's subject, text or CC.</td></tr>
+    <tr><td><code>approve_email</code></td><td>Approve, which <strong>sends</strong> it. Only if allowed.</td></tr>
+    <tr><td><code>withdraw_email</code></td><td>Take back a draft, or an approved email not yet gone.</td></tr>
+  </tbody>
+</table>
+
+<h3>The API</h3>
+<p>JSON over HTTPS under <code>{{BASE}}/api/v1</code>. Send your key on every call:
+  <code>Authorization: Bearer tle_...</code>. The full description is at <code>{{BASE}}/api/v1/openapi.json</code>.</p>
+<table>
+  <thead><tr><th>Call</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /api/v1/me</code></td><td>Who the key works as.</td></tr>
+    <tr><td><code>GET /api/v1/projects</code></td><td>Every project, with its lead counts.</td></tr>
+    <tr><td><code>GET /api/v1/projects/{project}/leads</code></td><td>Search leads: <code>status</code>,
+      <code>q</code>, <code>has_address</code>, <code>limit</code>, <code>offset</code>.</td></tr>
+    <tr><td><code>POST /api/v1/projects/{project}/leads</code></td><td>Add a lead with its email as a draft.</td></tr>
+    <tr><td><code>GET /api/v1/leads/{id}</code></td><td>One lead in full.</td></tr>
+    <tr><td><code>POST /api/v1/leads/{id}/decision</code></td><td><code>{"decision": "shortlist" | "reject",
+      "reason": "..."}</code></td></tr>
+    <tr><td><code>GET /api/v1/projects/{project}/emails?folder=drafts</code></td><td>One Outreach folder.</td></tr>
+    <tr><td><code>GET /api/v1/emails/{id}</code></td><td>One email in full.</td></tr>
+    <tr><td><code>PATCH /api/v1/emails/{id}</code></td><td>Edit a draft: <code>subject</code>, <code>body</code>,
+      <code>cc</code>.</td></tr>
+    <tr><td><code>POST /api/v1/emails/{id}/approve</code></td><td>Approve it, which <strong>sends</strong> it.</td></tr>
+    <tr><td><code>POST /api/v1/emails/{id}/withdraw</code></td><td>Take it back.</td></tr>
+  </tbody>
+</table>
+<p>Adding a lead, then sending it:</p>
+<pre>curl -X POST {{BASE}}/api/v1/projects/us-production-houses/leads \
+  -H "Authorization: Bearer tle_YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"company": "Northlight Pictures", "website": "northlight.com", "country": "US",
+       "contact_name": "Maya Chen", "email": "maya@northlight.com",
+       "subject": "{{company}} and The Viral Fever",
+       "body": "Hi {{first_name}},\n\nI would love to talk about a series together."}'
+
+curl -X POST {{BASE}}/api/v1/emails/EMAIL_ID/approve -H "Authorization: Bearer tle_YOUR_KEY"</pre>
+<h3>Limits</h3>
+<ul>
+  <li><strong>Keys</strong>: up to 10 per person and 120 calls a minute each. Revoke stops a key within half a
+    minute. A connected app's sign-in lasts an hour and renews itself until you disconnect it.</li>
+  <li><strong>Errors</strong>:
+    <ul>
+      <li><code>401</code>: no key, or a wrong one.</li>
+      <li><code>403</code>: not allowed (for example approving with a key that may not).</li>
+      <li><code>404</code>: no such thing.</li>
+      <li><code>409</code>: the app refused it, with the reason.</li>
+      <li><code>422</code>: a lead it cannot take, with each problem named.</li>
+      <li><code>429</code>: too many calls.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2 id="rules">The rules that never bend</h2>
+<p>These are built into the database, so they hold even if something else goes wrong.</p>
+<ul>
+  <li><strong>Nothing is sent that nobody approved</strong>, and every approval is recorded against a person.</li>
+  <li><strong>One thread per company</strong>: a first email and one follow-up, across every project.</li>
+  <li><strong>A reply stops the follow-up</strong>, and a bounced address is never written to again.</li>
+  <li><strong>A rejected lead never comes back</strong> from a later search.</li>
+  <li><strong>Only public pages are read</strong>. No LinkedIn scraping.</li>
+  <li><strong>Apollo credits</strong> are spent only where a project allows it.</li>
+</ul>
+
+<h2 id="help">If something looks wrong</h2>
+<ul>
+  <li><strong>My approved emails are not going out.</strong> Check Your Gmail is connected and working, and look at
+    Approved: each one shows when it goes, or why it is held.</li>
+  <li><strong>"Add your name and title first."</strong> Account menu, Your name and title.</li>
+  <li><strong>A draft says it cannot be approved.</strong> The reason is on it, for example the address bounced, or
+    the company already has an email from us.</li>
+  <li><strong>claude.ai cannot connect.</strong> Remove the connector and add it again, then log in and Allow. If
+    it still fails, tell the owner where it stopped.</li>
+  <li><strong>A key stopped working.</strong> It was revoked, or its person's login was removed or reset. Make a new
+    one.</li>
+</ul>

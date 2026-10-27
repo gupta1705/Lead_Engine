@@ -103,7 +103,7 @@ Then ask in plain words, for example:
 | `list_projects` | Every project: its slug, what its leads are called, its lead counts, its follow-up and default CC, and for LCX Services the services an email may pitch. |
 | `search_leads` | One project's leads, best score first. Filter by status, by text, and by whether there is an address. |
 | `get_lead` | One lead in full: score and analysis, place, contacts (and which one an email goes to), and its email. |
-| `list_emails` | One Outreach folder (`drafts`, `followups`, `approved`, `sent`, `replies`, `attention`), with counts for every folder. |
+| `list_emails` | One Outreach folder (`drafts`, `followups`, `approved`, `sent`, `replies`, `in_conversation`, `attention`), with counts for every folder. `in_conversation` is one row per company that wrote back for real, its latest reply. |
 | `get_email` | One email in full, as you would send it. |
 | `add_lead` | A lead found by hand, with its email **as a draft**. `dry_run` checks it and shows how it reads, and adds nothing. |
 | `decide_lead` | Shortlist, or reject with a reason. Rejecting withdraws its waiting email. |
