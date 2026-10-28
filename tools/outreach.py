@@ -1460,6 +1460,12 @@ def cmd_pull(args):
       auto-reply triaged neutral lets it resume, anything else ends it.
     * a BOUNCE (mailer-daemon, "Delivery Status Notification (Failure)") marks
       the address invalid and ends the thread, so no mailbox writes to it again.
+    * a new reply in a person's own Gmail is starred and labelled there, and an
+      alert goes into their inbox; once a day, a reminder of the replies nobody
+      has marked (tools/reply_alert.py, sql/45).
+    * --recent (the app's five-minute look, app/scheduler.py): only the threads
+      with a message in the last two days, found with one search per mailbox; the
+      hourly run without it reads every thread of the last 60 days.
     """
     import outreach_policy as pol
     from dbconn import Db
@@ -1489,7 +1495,7 @@ def cmd_pull(args):
     by_box = {}
     for tid, eid, cid, mbk in threads:
         by_box.setdefault(mbk, []).append((tid, eid, cid))
-    found = errors = paused = bounced = skipped = 0
+    found = errors = paused = bounced = skipped = alerted = 0
     for mbk, items in by_box.items():
         mb = mbmap.get(mbk)
         ub = user_boxes.get(str(mbk or "").lower())
@@ -1512,6 +1518,14 @@ def cmd_pull(args):
             continue
         else:
             svc = gmail_service(mb)
+        if getattr(args, "recent", False):
+            try:
+                fresh = _recent_threads(svc)
+            except Exception as e:
+                errors += 1
+                log("  %s: the quick look failed (%s) -- the hourly run reads every thread" % (mbk, str(e)[:120]))
+                continue
+            items = [it for it in items if it[0] in fresh]
         for tid, eid, cid in items:
             try:
                 t = svc.users().threads().get(userId="me", id=tid, format="full").execute()
@@ -1559,10 +1573,32 @@ def cmd_pull(args):
                     found += 1
                     paused += n
                     log("  %s thread %s: new reply%s" % (mbk, tid, ("; %d pending follow-up(s) paused" % n) if n else ""))
+        if ub is not None:
+            # the person whose Gmail this is hears of it: an alert in their inbox, and the daily reminder
+            import reply_alert
+            try:
+                alerted += reply_alert.alert_new(db, svc, ub, [it[0] for it in items], log)
+                reply_alert.remind(db, svc, ub, log)
+            except Exception as e:
+                log("  %s: reply alerts failed (%s) -- the next pull tries again" % (mbk, str(e)[:160]))
     db.close()
-    log("\n%d new repl(ies), %d bounce(s), %d follow-up(s) paused; %d thread error(s); %d thread(s) on"
-        " unconnected mailboxes. Next: python tools/outreach.py triage" % (found, bounced, paused, errors, skipped))
+    log("\n%d new repl(ies), %d alert(s), %d bounce(s), %d follow-up(s) paused; %d thread error(s); %d thread(s) on"
+        " unconnected mailboxes" % (found, alerted, bounced, paused, errors, skipped))
     return 0
+
+
+def _recent_threads(svc, days=2, pages=5):
+    """The threads of this mailbox with a message from outside in the last few days: one search, not one read per
+    thread, so the app can look every five minutes."""
+    ids, token = set(), None
+    for _ in range(pages):
+        r = svc.users().messages().list(userId="me", q="newer_than:%dd -in:sent -in:drafts" % days, maxResults=500,
+                                        pageToken=token).execute()
+        ids.update(m.get("threadId") for m in r.get("messages") or [])
+        token = r.get("nextPageToken")
+        if not token:
+            break
+    return ids
 
 
 def _plain_body(payload):
@@ -1648,7 +1684,8 @@ def main():
                    help="a project with a sending window: keep going while the next email's moment is under this many"
                         " seconds away (the app's send loop uses 55); 0, the default, is one pass")
     s.add_argument("--max-seconds", type=int, default=900, help="the longest a --stay run keeps going")
-    sub.add_parser("pull")
+    pl = sub.add_parser("pull")
+    pl.add_argument("--recent", action="store_true", help="only threads with a message in the last two days")
     t = sub.add_parser("triage"); t.add_argument("--limit", type=int, default=50)
     f = sub.add_parser("followups"); f.add_argument("--limit", type=int, default=60)
     f.add_argument("--dry-run", action="store_true")

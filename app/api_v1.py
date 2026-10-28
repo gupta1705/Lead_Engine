@@ -303,7 +303,7 @@ class Ops:
             raise ApiError(400, "folder is one of: %s" % ", ".join(FOLDERS))
         limit = max(1, min(int(a.get("limit") or 25), 100))
         got = self.m.outreach_list(self._req(user, slug), folder=FOLDERS[folder], limit=limit,
-                                   offset=max(0, int(a.get("offset") or 0)), segment=slug)
+                                   offset=max(0, int(a.get("offset") or 0)), negatives_apart=False, segment=slug)
         counts = {k: (got.get("counts") or {}).get(v, 0) for k, v in FOLDERS.items()}
         counts["replies_unread"] = (got.get("counts") or {}).get("untriaged", 0)
         return {"project": slug, "folder": folder, "total": got.get("total"), "counts": counts,

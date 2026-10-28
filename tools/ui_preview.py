@@ -78,7 +78,7 @@ def generate(out, slug):
     rows, counts = [], {}
     for f in FOLDERS:
         d = main.outreach_list(req, folder=f, segment=slug)
-        rows += d["rows"]; counts = d["counts"]
+        rows += d["rows"] + d.get("negative_rows", []); counts = d["counts"]   # Replies keeps Negative apart
     fx["outreach"] = {"rows": rows, "counts": counts}
     # a project that searches Apollo (Universal, LCX Services) has no mailboxes of its own: each person sends from theirs
     apollo_page = (fx["segment"].get("ui") or {}).get("search_page") == "apollo"
@@ -343,7 +343,10 @@ MOCK_JS = r"""
         reached_by: FX.auth.user, reached_by_name: FX.auth.name,
         thread_messages: FX.outreach.rows.filter((x) => x.entity_id === r.entity_id && (x.direction === "inbound" || x.status === "sent")).length }));
       counts.conversation = talking.length;
-      return json({ rows: f === "conversation" ? talking : FX.outreach.rows.filter((r) => folderOf(r) === f), counts });
+      const inF = FX.outreach.rows.filter((r) => folderOf(r) === f);
+      if (f === "inbox")      // Replies: the ones marked Negative in their own section at the bottom (as the server does)
+        return json({ rows: inF.filter((r) => r.triage !== "negative"), negative_rows: inF.filter((r) => r.triage === "negative"), counts });
+      return json({ rows: f === "conversation" ? talking : inF, counts });
     }
     if ((m = p.match(/^\/api\/outreach\/([^/]+)\/window$/))) {
       const r = FX.outreach.rows.find((x) => x.id === m[1]);

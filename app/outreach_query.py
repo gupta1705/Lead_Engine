@@ -40,5 +40,6 @@ def ordering(folder, sort, direction, prioritize_fresh=False):
 def folder_counts(rows):
     counts = {r["folder"]: r["n"] for r in rows}
     counts["untriaged"] = counts.get("inbox", 0)
+    counts["negative_n"] = counts.get("negative", 0)        # Replies shows these in their own section, at the bottom
     counts["inbox"] = counts["untriaged"] + counts.pop("positive", 0) + counts.pop("negative", 0)
     return counts

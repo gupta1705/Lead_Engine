@@ -988,6 +988,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .mbx.none { color: var(--text-subtlest); font-style: italic; background: transparent; border-style: dashed; }
 #outreachTable .by-col { display: none; }
 #outreachTable.show-by .by-col { display: table-cell; }
+/* Replies: the ones marked Negative, apart at the bottom (owner, 2026-10-28) */
+#negativeTable .by-col { display: none; }
+.negative-replies { margin-top: 32px; }
+.negative-replies .section-title { font: 600 16px/24px var(--font-display); display: flex; align-items: center; gap: 8px; margin: 0; }
+.negative-replies .section-title .pts { font-size: 12px; font-weight: 600; padding: 0 7px; border-radius: 10px;
+  background: var(--bg-neutral, var(--surface-sunken)); color: var(--text-subtle); }
+.negative-replies .sub { color: var(--text-subtlest); font-size: 12.5px; margin: 2px 0 10px; }
+.negative-replies .tbl { opacity: .85; }
 .mbx-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .mbx-list li { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .mbx-list li:last-child { border-bottom: 0; }

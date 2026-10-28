@@ -245,7 +245,8 @@ JOBS = {
         "label": "Fetch replies",
         "group": "Outreach",
         "desc": "Replies and bounces to sent emails, read from each thread's mailbox: a reply pauses "
-                "the follow-ups, a bounce marks the address. Reads Gmail, never sends. Hourly, by itself.",
+                "the follow-ups, a bounce marks the address, and the person who sent it gets an alert in their own "
+                "inbox. Reads Gmail, never sends. New messages every five minutes, every thread hourly, by itself.",
         "cmd": [PY, "tools/outreach.py", "pull"],
         "hidden": True,
     },
@@ -360,6 +361,32 @@ def run_send(segment, env=None, stay=0, max_seconds=None, on_start=None, wait=0,
             with _SEND_GUARD:
                 _SEND_ACTIVE[0] -= 1
             _SEND_SEM.release()
+    finally:
+        lock.release()
+
+
+# THE REPLIES' OWN LANE (owner, 2026-10-28: an alert when a lead replies). The five-minute look for replies
+# (app/scheduler.py _reply_loop, `outreach.py pull --recent`) runs beside the single slot, as a send does: the
+# Friday refresh holds the slot for hours, and a reply should not wait for it. One per project at a time; it only
+# reads Gmail, writes the replies it finds (idempotent by message id) and puts alerts in people's own inboxes,
+# each claimed first (tools/reply_alert.py), so a full hourly pull running beside it is harmless.
+_PULL_LOCKS = {}
+
+
+def run_pull(segment, recent=True):
+    """Run `outreach.py pull [--recent]` for one project in the replies' lane. -> (rc, logpath), or (None, None)
+    when one is already running for it. One log file per project, written over each time."""
+    with _SEND_GUARD:
+        lock = _PULL_LOCKS.setdefault(segment, threading.Lock())
+    if not lock.acquire(blocking=False):
+        return None, None
+    try:
+        LOGDIR.mkdir(parents=True, exist_ok=True)
+        slug = "".join(ch if ch.isalnum() or ch == "-" else "-" for ch in str(segment).lower())
+        logpath = LOGDIR / ("pull_replies-recent-%s.log" % slug)
+        rc = _execute("pull_replies_recent", JOBS["pull_replies"], logpath, {"SEGMENT_SLUG": segment}, track=False,
+                      extra_args=["--recent"] if recent else None)
+        return rc, str(logpath)
     finally:
         lock.release()
 

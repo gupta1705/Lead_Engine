@@ -809,23 +809,34 @@ says only what fits any of them.
 
 # Replies
 
-When someone writes back, their reply appears in **Replies** within the hour:
-the engine reads each sent thread's mailbox hourly, by itself. It only reads; a
+When someone writes back, their reply appears in **Replies** within five
+minutes: the engine looks at each sent thread's mailbox by itself, newest
+messages every five minutes and every thread once an hour. It only reads; a
 bounce ("address not found") marks that address so nothing is written to it
-again. Open a reply.
+again. Replies are listed newest first. Open a reply.
+
+**You get an alert.** The person whose Gmail sent the email gets a short alert
+in that same inbox: who replied, what the reply says (read by AI, so check the
+reply itself before acting), its first lines, and a link to Replies. The reply
+itself is starred and labelled **Lead replied** in their Gmail, so they answer
+it from the thread there. The alert is put straight into the inbox: it is sent
+to no one, never leaves that mailbox and never counts against the 50 a day.
+Auto-replies (out of office) get no alert. Once a day, on weekdays from 10:00
+India time, a reminder lists the replies to that person's emails nobody has
+marked for over a day.
 
 ![A reply, with the two buttons that close the loop](img/12-reply.png){width=full}
 
-You mark it **Positive** or **Negative**. The reply stays in Replies either way,
-with its mark in front of the subject; one nobody has marked yet says **Needs
-triage** and counts in the number next to Outreach.
+You mark it **Positive** or **Negative**. A Positive reply stays in the list
+with its mark in front of the subject; a Negative one moves to its own
+**Negative replies** section at the bottom of Replies. One nobody has marked yet
+says **Needs triage** and counts in the number next to Outreach.
 
 Positive moves the company to **In conversation** on the board and hands it to
 you. Negative closes it out. Either way the follow-up thread stops.
 
-If an Anthropic key is configured, a triage step reads new replies first and
-suggests a label with a one-line reason. It is a suggestion. Your click is what
-counts.
+The AI's reading of each reply is kept on it (its "Triage note"). It is a
+suggestion. Your click is what counts.
 
 A bounce (a mailer-daemon reply) is handled without you: the address is marked
 invalid, the thread ends, and no mailbox writes to that address again.

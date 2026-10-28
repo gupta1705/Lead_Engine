@@ -88,6 +88,16 @@ select exists (select 1 from outreach o join entities e on e.id = o.entity_id
                      and r.started_at > now() - make_interval(mins => %(every)s)) as due"""
 PULL_EVERY_MINUTES = 60
 TICK_MINUTES = 15
+# A lead's reply, within minutes (owner, 2026-10-28: an alert when a lead replies): every five minutes a quick look
+# (`outreach.py pull --recent`: one Gmail search per address, then only the threads with something new), in the
+# replies' own lane (app/ops.py run_pull), for each project with threads to read. The hourly full read stays.
+REPLY_EVERY_SECONDS = 300
+REPLY_THREADS_SQL = """
+select 1 from outreach o join entities e on e.id = o.entity_id
+where e.segment_id = (select id from segments where slug = %s)
+  and o.direction = 'outbound' and o.status = 'sent' and o.gmail_thread_id is not null
+  and o.sent_at > now() - interval '60 days'
+limit 1"""
 # From the approver (owner, 2026-09-26): an approved email can go when its approver has a Gmail connected
 # in the app, working (no sign-in error), with room left today under that address's own limit.
 APPROVER_SENDABLE_SQL = """
@@ -769,6 +779,34 @@ class Scheduler:
             self._send_wake.wait(wait)
             self._send_wake.clear()
 
+    def reply_pass(self):
+        """One quick look for replies in every project that has threads to read. -> the projects looked at."""
+        looked = []
+        for segment in self.segments():
+            with self._cursor() as cur:
+                cur.execute(REPLY_THREADS_SQL, (segment,))
+                if cur.fetchone() is None:
+                    continue
+            rc, logpath = self._ops.run_pull(segment, recent=True)
+            if rc is None:
+                continue                                  # one is still running for it
+            looked.append(segment)
+            if rc != 0:
+                self._alert_once(("reply_pull", segment), "TVF Lead Engine [%s]: the five-minute look for replies"
+                                 " FAILED.\n%s" % (segment, self._logtail(logpath)[-400:]))
+        return looked
+
+    def _reply_loop(self):
+        """Every five minutes, a quick look for replies (REPLY_EVERY_SECONDS): a lead's reply reaches the app, and
+        the alert the inbox of the person who wrote to them, within minutes, not at the next hour."""
+        self._stop.wait(60)
+        while not self._stop.is_set():
+            try:
+                self.reply_pass()
+            except Exception as e:                        # the loop outlives any one bad pass
+                print("[replies] pass failed: %r" % (e,), flush=True)
+            self._stop.wait(REPLY_EVERY_SECONDS)
+
     # ------------------------------------------------------------- the loop
     def _due(self, entry, now):
         if not entry.get("enabled", True):
@@ -868,6 +906,9 @@ class Scheduler:
             self._send_thread = threading.Thread(target=self._send_loop, daemon=True)
             self._send_thread.start()
             print("[scheduler] send loop ON: %s" % self._send_loop_why, flush=True)
+            # the five-minute look for replies: where the sends run (the server), never on a laptop's stack
+            threading.Thread(target=self._reply_loop, daemon=True).start()
+            print("[scheduler] reply look ON: every %d minutes" % (REPLY_EVERY_SECONDS // 60), flush=True)
         else:
             print("[scheduler] send loop OFF: %s" % self._send_loop_why, flush=True)
 

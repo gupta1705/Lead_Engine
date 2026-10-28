@@ -1225,7 +1225,7 @@ async function loadOutreach() {
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
     o.folder = b.dataset.f; o.offset = 0; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
   }));
-  $("#outreachBody").innerHTML = d.rows.length ? d.rows.map((r) => `
+  const rowHtml = (r) => `
     <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
       <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} ${r.approval_blocked ? `disabled title="${esc(r.approval_blocked)}"` : ""} aria-label="Select this draft"></td>
       <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div>${outreachMetric(r)}</span></div></td>
@@ -1250,13 +1250,22 @@ async function loadOutreach() {
         const at = r.sent_at || (r.status === "approved" ? r.approved_at : null) || r.created_at;
         const what = r.sent_at ? "Sent" : r.status === "approved" && r.approved_at ? "Approved" : r.direction === "inbound" ? "Received" : "Written";
         return `<td class="secondary nowrap" title="${esc(what + " " + fmtDate(at))}">${rel(at)}</td>`; })()}
-    </tr>`).join("")
+    </tr>`;
+  $("#outreachBody").innerHTML = d.rows.length ? d.rows.map(rowHtml).join("")
     : `<tr class="empty-row"><td colspan="6">${o.category || o.service ? "No emails match these filters. Clear the filters to see all categories." : o.folder === "drafts"
         ? "No drafts waiting. Shortlist a company on the board and its email is drafted here within minutes."
         : o.folder === "followups" ? followUpsEmpty()
         : o.folder === "outbox" && composeOn() ? "Nothing waiting to go out. To write to leads, pick them on the Leads page."
         : o.folder === "conversation" ? "No conversations yet. A company shows here once it writes back with a real reply (not an auto-reply or a bounce); marking its reply Not interested takes it out."
+        : o.folder === "inbox" && (d.negative_rows || []).length ? "No other replies: the ones marked Negative are below."
         : "Nothing in this folder yet."}</td></tr>`;
+  // Replies: the ones marked Negative in their own section at the bottom (owner, 2026-10-28)
+  const neg = o.negRows = o.folder === "inbox" ? d.negative_rows || [] : [];
+  $("#negativeReplies").hidden = !neg.length;
+  $("#negativeBody").innerHTML = neg.map(rowHtml).join("");
+  $("#negativeCount").textContent = neg.length;
+  $("#negativeEntityCol").textContent = $("#outreachEntityCol").textContent;
+  delegateOpen("#negativeBody", (id) => { setNav("mail", state.outreach.negRows.map((r) => String(r.id))); openMessage(id); }, ".sel-col");
   // who reached out: the person who approved it, from which address (owner, 2026-09-26)
   $("#outreachTable").classList.toggle("show-by", ["outbox", "sent", "attention", "conversation"].includes(o.folder));
   $("#outreachByCol").textContent = o.folder === "conversation" ? "Reached out by" : "By";
@@ -1283,11 +1292,15 @@ function renderOutreachFilters(d) {
   const o = state.outreach;
   const options = (rows, all, value) => `<option value="">${all}</option>` + (rows || []).map((r) =>
     `<option value="${esc(r.key)}" ${value === r.key ? "selected" : ""}>${esc(r.label || r.key)} (${r.n})</option>`).join("");
-  const defaultLabel = o.folder === "drafts" && segUi().prioritize_fresh_leads ? "Priority: fresh + high score" : "Default order";
+  // where the default order is the date, newest first (Replies, owner 2026-10-28; Sent; In conversation), it says so
+  const byDate = ["inbox", "sent", "conversation"].includes(o.folder);
+  const defaultLabel = o.folder === "drafts" && segUi().prioritize_fresh_leads ? "Priority: fresh + high score"
+    : byDate ? "Date: newest first" : "Default order";
   const sorts = [["default:desc", defaultLabel], ["subscribers:desc", "Subscriber count: high to low"],
     ["subscribers:asc", "Subscriber count: low to high"], ["views:desc", "Views: high to low"], ["views:asc", "Views: low to high"],
     ["score:desc", "Lead score: high to low"], ["score:asc", "Lead score: low to high"],
-    ["date:desc", "Date: newest first"], ["date:asc", "Date: oldest first"]];
+    ...(byDate ? [] : [["date:desc", "Date: newest first"]]), ["date:asc", "Date: oldest first"]];
+  if (byDate && o.sort === "date" && o.direction === "desc") o.sort = "default";   // the same order: one choice for it
   $("#outreachFilters").innerHTML = `<label>Category <select id="outreachCategory">${options(d.categories, "All categories", o.category)}</select></label>
     ${(d.services || []).length ? `<label>Service <select id="outreachService">${options(d.services, "All services", o.service)}</select></label>` : ""}
     <label>Sort by <select id="outreachSort">${sorts.map(([key, label]) => `<option value="${key}" ${key === o.sort + ":" + o.direction ? "selected" : ""}>${label}</option>`).join("")}</select></label>
@@ -2029,7 +2042,7 @@ function bindCc(root, r, persist) {
 }
 
 function openMessage(id, message) {
-  const o = state.outreach, r = message || o.rows.find((x) => x.id === id);
+  const o = state.outreach, r = message || o.rows.find((x) => x.id === id) || (o.negRows || []).find((x) => x.id === id);
   if (!r) return;
   const recipientGuard = "recipient_contact_id" in r
     ? { expected_contact_id: r.recipient_contact_id, expected_contact_email: r.contact_email || null } : {};

@@ -992,15 +992,22 @@ def _present_outreach(rows, request, segment, cfg, people=None):
 @app.get("/api/outreach")
 def outreach_list(request: Request, folder: str = "drafts", category: str = "", service: str = "",
                   sort: str = "default", direction: str = "desc", limit: int = 200, offset: int = 0,
-                  segment: str = Depends(current_segment)):
+                  negatives_apart: bool = True, segment: str = Depends(current_segment)):
     """One folder of the outreach_folders view, newest first, for this segment. Replies holds
     every reply, marked or not (the mark is on the row); 'untriaged' counts the ones nobody has
     marked yet, which is what the sidebar count shows.
 
     Where emails go out from the approver's own Gmail, a draft is shown as the person looking at it
     would send it: their sign-off, their voice (tools/draft_render.personalize). Approving stores
-    exactly that; the stored draft stays in the project's own form until then."""
-    folders = ["inbox", "positive", "negative"] if folder == "inbox" else [folder]
+    exactly that; the stored draft stays in the project's own form until then.
+
+    Replies (owner, 2026-10-28: "Set replies to newest first as default and if a reply is categorised as [negative]
+    create another section at the bottom of this page only which has the negative replies"): the list holds the
+    replies not marked Negative, newest first; the Negative ones come apart, newest first, as negative_rows (all of
+    them, at most 200, whatever the filters) for their own section under it. The API (negatives_apart=False) keeps
+    every reply in one list."""
+    apart = folder == "inbox" and negatives_apart
+    folders = (["inbox", "positive"] if apart else ["inbox", "positive", "negative"]) if folder == "inbox" else [folder]
     talking = folder == "conversation"          # In conversation: a company per row, not a folder of the view
     pol = _policy()
     import outreach_query as oq
@@ -1032,6 +1039,11 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
                 " order by " + order + " limit %s offset %s", [folders] + params + [limit, offset])
         rows = [dict(r) for r in cur.fetchall()]
         rows = _present_outreach(rows, request, segment, cfg, people)
+        negative_rows = None
+        if apart:
+            cur.execute(_outreach_select() + " where f.folder = 'negative' and " + base +
+                        " order by " + oq.WHEN + " desc, f.id limit 200", [segment])
+            negative_rows = _present_outreach([dict(r) for r in cur.fetchall()], request, segment, cfg, people)
         if talking and rows:
             # who on our side is in it (whoever's first email it answers), and how long the thread is
             cur.execute("select e.id as eid,"
@@ -1069,9 +1081,15 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
         cur.execute("select f.service as key,count(*) as n from outreach_folders f join entities e on e.id=f.entity_id"
                     " where " + base + " and nullif(f.service,'') is not null group by 1 order by 1", (segment,))
         services = [dict(r) for r in cur.fetchall()]
-    return {"rows": rows, "counts": counts, "filtered_counts": filtered_counts,
-            "total": filtered_counts.get(folder, 0), "categories": categories, "services": services,
-            "limit": limit, "offset": offset}
+    total = filtered_counts.get(folder, 0)
+    if apart:                                    # the list's own pages: the Negative ones are under it
+        total = max(0, total - filtered_counts.get("negative_n", 0))
+    out = {"rows": rows, "counts": counts, "filtered_counts": filtered_counts,
+           "total": total, "categories": categories, "services": services,
+           "limit": limit, "offset": offset}
+    if negative_rows is not None:
+        out["negative_rows"] = negative_rows
+    return out
 
 
 @app.get("/api/outreach/attachment")
