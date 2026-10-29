@@ -937,10 +937,15 @@ def _outreach_select():
     """Shared row shape for a folder and a direct email lookup."""
     import outreach_query as oq
     from recipient_selection import CONTACT_SELECTION_SQL
+    pol = _policy()
     return (
         "select f.*,e.fit_score as lead_score," + oq.CATEGORY + " as category,"
         + oq.SUBSCRIBERS + " as subscriber_count," + oq.VIEWS + " as view_count,"
         " stored.contact_id as recipient_contact_id,"
+        # a reply: when it came, and whether our side has answered it, when and how (sql/46, waiting on us)
+        " case when f.direction = 'inbound' then " + pol.received("stored") + " end as received_at,"
+        " stored.answered_at, stored.answered_by, stored.answered_how, stored.reply_kind,"
+        " " + pol.unanswered("stored") + " as awaiting_answer,"
         # a follow-up's thread owner: the opener's approver, whose Gmail it goes out from and who signs it
         " case when coalesce(f.sequence_step, 0) > 0 and f.status = 'drafted' then"
         "  (select p.approved_by from outreach p where p.id = f.parent_id) end as thread_owner,"
@@ -1045,13 +1050,14 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
                         " order by " + oq.WHEN + " desc, f.id limit 200", [segment])
             negative_rows = _present_outreach([dict(r) for r in cur.fetchall()], request, segment, cfg, people)
         if talking and rows:
-            # who on our side is in it (whoever's first email it answers), and how long the thread is
+            # who on our side is in it (whoever's first email it answers), how long the thread is, and since when
+            # it waits for our answer (sql/46)
             cur.execute("select e.id as eid,"
                         " (select p.approved_by from outreach p where p.entity_id = e.id and p.direction = 'outbound'"
                         "   and coalesce(p.sequence_step, 0) = 0 and p.status = 'sent' order by p.sent_at desc limit 1)"
                         "   as reached_by,"
                         " (select count(*) from outreach m where m.entity_id = e.id and (m.direction = 'inbound'"
-                        "   or m.status = 'sent')) as messages"
+                        "   or m.status = 'sent')) as messages, " + oq.waiting_since("e.id") + " as waiting_since"
                         " from entities e where e.id = any(%s::uuid[])", ([r["entity_id"] for r in rows],))
             extra = {str(x["eid"]): x for x in cur.fetchall()}
             for r in rows:
@@ -1059,16 +1065,20 @@ def outreach_list(request: Request, folder: str = "drafts", category: str = "", 
                 r["reached_by"] = x.get("reached_by")
                 r["reached_by_name"] = _display(x.get("reached_by"), people) if x.get("reached_by") else None
                 r["thread_messages"] = x.get("messages") or 0
-        # In conversation is counted in the same round trip as the folders (it is no folder of the view)
-        talk = (" union all select 'conversation', count(*) from outreach_folders f join entities e on e.id = f.entity_id"
-                " where " + oq.CONVERSATION + " and ")
+                r["waiting_since"] = x.get("waiting_since")
+        def talk(where):
+            # In conversation, and how many of them wait on us, are counted in the same round trip as the folders
+            # (neither is a folder of the view)
+            them = " from outreach_folders f join entities e on e.id = f.entity_id where " + oq.CONVERSATION + " and "
+            return (" union all select 'conversation', count(*)" + them + where
+                    + " union all select 'waiting', count(*)" + them + oq.waiting_since() + " is not null and " + where)
         cur.execute("select f.folder, count(*) as n from outreach_folders f"
                     " join entities e on e.id = f.entity_id"
-                    " where e.segment_id = (select id from segments where slug = %s) group by f.folder" + talk + base,
-                    (segment, segment))
+                    " where e.segment_id = (select id from segments where slug = %s) group by f.folder" + talk(base),
+                    (segment, segment, segment))
         counts = oq.folder_counts(cur.fetchall())
         cur.execute("select f.folder,count(*) as n from outreach_folders f join entities e on e.id=f.entity_id"
-                    " where " + clause + " group by f.folder" + talk + clause, params + params)
+                    " where " + clause + " group by f.folder" + talk(clause), params * 3)
         filtered_counts = oq.folder_counts(cur.fetchall())
         cur.execute("select " + oq.CATEGORY + " as key,count(*) as n from outreach_folders f"
                     " join entities e on e.id=f.entity_id where " + base + " group by 1 order by 1", (segment,))
@@ -1392,6 +1402,15 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
         elif action == "stop_sequence":
             n = pol.stop_thread(cur, eid, "stopped by %s" % user)
             return {"ok": True, "cancelled": n}
+        elif action == "mark_answered":
+            # answered another way -- a call, WhatsApp, a new email (sql/46): the company's replies waiting on us are
+            # answered now, by this person; one answered in its thread the pull sees by itself
+            cur.execute("update outreach r set answered_at = now(), answered_by = %s, answered_how = 'marked'"
+                        " where r.entity_id = %s and " + pol.unanswered("r") + " returning r.id", (user, eid))
+            n = len(cur.fetchall())
+            if not n:
+                raise HTTPException(409, "No reply of this company is waiting for an answer.")
+            return {"ok": True, "answered": n}
         elif action in ("mark_positive", "mark_negative"):
             label = "positive" if action == "mark_positive" else "negative"
             cur.execute("update outreach set triage=%s, status='triaged',"

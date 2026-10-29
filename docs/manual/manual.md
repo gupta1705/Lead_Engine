@@ -822,8 +822,18 @@ itself is starred and labelled **Lead replied** in their Gmail, so they answer
 it from the thread there. The alert is put straight into the inbox: it is sent
 to no one, never leaves that mailbox and never counts against the 50 a day.
 Auto-replies (out of office) get no alert. Once a day, on weekdays from 10:00
-India time, a reminder lists the replies to that person's emails nobody has
-marked for over a day.
+India time, a reminder lists the replies to that person's emails that have
+waited over a day for an answer, and apart from them, the ones nobody has marked.
+
+**Waiting on us.** A real reply nobody on our side has answered yet is
+*waiting on us*. Answer it from its thread in Gmail, as usual: the app reads
+the thread every five minutes and sees the answer (one from the CC address
+counts too), and the reply stops waiting. Answered another way (a call,
+WhatsApp, a new email)? Open the reply and press **Answered another way**.
+Replies marked Negative, auto-replies, and ones the AI read as a no or an
+unsubscribe wait for no answer, unless someone marked them Positive. The reply's
+sheet says **Our answer**: how long it has waited, or when it was answered and
+from which address.
 
 ![A reply, with the two buttons that close the loop](img/12-reply.png){width=full}
 
@@ -849,7 +859,11 @@ doesn't count. Each row shows:
 
 - their latest reply;
 - who on our side reached out;
-- how many messages the thread has.
+- how many messages the thread has;
+- **Waiting on us** and for how long, or **Answered**.
+
+The ones waiting on us come first, the longest wait at the top; the rest follow,
+newest first. The tab says how many are waiting.
 
 A company leaves the list when its latest reply is marked Negative (not
 interested), or when the company is rejected. A newer reply from the same
@@ -954,6 +968,10 @@ someone who sent nothing. For each person:
 - **Positive:** the replies marked positive.
 - **Bounced:** emails whose address rejected them, with the rate.
 - **Typical reply:** the usual time from a first email to its reply.
+- **Typical answer:** the usual time from that reply to our first answer, in the
+  thread or marked answered another way.
+- **Waiting on us:** the companies whose reply nobody on our side has answered
+  yet, now.
 - **Waiting to go:** approved now, waiting for its time.
 - **Per day** (or **Per week** for the long spans): a bar for each, with the count
   on hover.

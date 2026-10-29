@@ -281,6 +281,7 @@ MOCK_JS = r"""
         return { account, name, title, has_login: true, sent, followups: Math.round(sent * 0.3), replied, reply_rate: sent ? Math.round(1000 * replied / sent) / 10 : null,
           positive: Math.round(replied / 3), positive_rate: sent ? Math.round(1000 * Math.round(replied / 3) / sent) / 10 : null, negative: 0,
           bounced: Math.round(sent * 0.02), bounce_rate: sent ? 2 : null, median_reply_hours: sent ? 3 + name.length : null,
+          median_answer_hours: replied ? 1 + name.length / 3 : null, waiting_on_us: replied ? Math.min(2, replied) : 0,
           approved_waiting: Math.round(scale * 2), last_sent_at: null, series,
           projects: sent ? [{ slug: "lcx-clipping", name: "LCX Clipping", sent: Math.round(sent * 0.8) }, { slug: "us-production-houses", name: "US Production Houses", sent: sent - Math.round(sent * 0.8) }] : [] };
       };
@@ -291,6 +292,7 @@ MOCK_JS = r"""
         bucket, buckets: Array.from({ length: n }, (_, i) => day(i)), scope: q.get("scope") || "all", people,
         totals: { sent, followups: sum("followups"), replied, reply_rate: sent ? Math.round(1000 * replied / sent) / 10 : null, positive: sum("positive"),
           bounced: sum("bounced"), bounce_rate: sent ? 2 : null, median_reply_hours: sent ? 7.5 : null, approved_waiting: sum("approved_waiting"),
+          median_answer_hours: replied ? 4 : null, waiting_on_us: sum("waiting_on_us"),
           series: Array.from({ length: n }, (_, i) => people.reduce((a, x) => a + x.series[i], 0)) } });
     }
     if (p === "/api/schedule") return json(FX.schedule);
@@ -339,10 +341,16 @@ MOCK_JS = r"""
       const latest = {};
       FX.outreach.rows.filter((r) => r.direction === "inbound" && r.triage !== "neutral").forEach((r) => {
         const k = r.entity_id; if (!latest[k] || String(r.created_at) > String(latest[k].created_at)) latest[k] = r; });
+      // waiting on us (2026-10-29): since the company's oldest reply nobody has answered; those first, longest wait on top
+      const since = (eid) => FX.outreach.rows.filter((x) => x.entity_id === eid && x.awaiting_answer)
+        .map((x) => String(x.received_at || x.created_at)).sort()[0] || null;
       const talking = Object.values(latest).filter((r) => r.triage !== "negative").map((r) => Object.assign({}, r, {
-        reached_by: FX.auth.user, reached_by_name: FX.auth.name,
+        reached_by: FX.auth.user, reached_by_name: FX.auth.name, waiting_since: since(r.entity_id),
         thread_messages: FX.outreach.rows.filter((x) => x.entity_id === r.entity_id && (x.direction === "inbound" || x.status === "sent")).length }));
+      talking.sort((a, b) => (a.waiting_since ? 0 : 1) - (b.waiting_since ? 0 : 1)
+        || String(a.waiting_since || "").localeCompare(String(b.waiting_since || "")) || String(b.created_at).localeCompare(String(a.created_at)));
       counts.conversation = talking.length;
+      counts.waiting = talking.filter((r) => r.waiting_since).length;
       const inF = FX.outreach.rows.filter((r) => folderOf(r) === f);
       if (f === "inbox")      // Replies: the ones marked Negative in their own section at the bottom (as the server does)
         return json({ rows: inF.filter((r) => r.triage !== "negative"), negative_rows: inF.filter((r) => r.triage === "negative"), counts });
@@ -366,7 +374,13 @@ MOCK_JS = r"""
       }
       else if (body.action === "cancel") r.status = "cancelled";
       else if (body.action === "mark_positive") { r.triage = "positive"; r.status = "triaged"; return json({ ok: true, entity_promoted: true }); }
-      else if (body.action === "mark_negative") { r.triage = "negative"; r.status = "triaged"; }
+      else if (body.action === "mark_negative") { r.triage = "negative"; r.status = "triaged"; r.awaiting_answer = false; }
+      else if (body.action === "mark_answered") {    // answered another way (sql/46): the company's waiting replies
+        const them = FX.outreach.rows.filter((x) => x.entity_id === r.entity_id && x.awaiting_answer);
+        if (!them.length) return json({ detail: "No reply of this company is waiting for an answer." }, 409);
+        them.forEach((x) => { x.awaiting_answer = false; x.answered_at = new Date().toISOString(); x.answered_by = FX.auth.user; x.answered_how = "marked"; });
+        return json({ ok: true, answered: them.length });
+      }
       return json({ ok: true });
     }
     if ((m = p.match(/^\/api\/outreach\/([^/]+)$/)) && method === "PATCH") {

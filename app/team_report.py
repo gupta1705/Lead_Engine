@@ -19,13 +19,18 @@ WHAT IS COUNTED, PER PERSON
   positive/negative replies a person marked so; positive_rate = positive / sent
   bounced           first emails whose address rejected them (stopped_reason 'bounced...'); bounce_rate = / sent
   median_reply_hours  the typical time from a first email to its first reply
+  median_answer_hours the typical time from that first reply to our first answer: written in the thread (the pull
+                    sees it), or marked answered another way (sql/46; the owner, 2026-10-29)
+  waiting_on_us     companies whose real reply nobody on our side has answered yet (now, not limited to the span)
   approved_waiting  approved now and not gone yet (not limited to the span)
   series            first emails sent per day (spans up to 30 days, India's days) or per week (90 days, all)
 Every person with a login is listed, so a person who sent nothing shows as nothing; anyone who approved emails and
 has since lost their login is listed too.
 """
 import datetime as dt
+import os
 import re
+import sys
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
@@ -46,7 +51,7 @@ openers as (
 
 PER_PERSON = "with " + OPENERS + """,
 replies as (
-  select op.id, min(r.created_at) as first_at,
+  select op.id, min(__RECEIVED__) as first_at, min(r.answered_at) as answered_at,
          bool_or(r.triage = 'positive') as pos, bool_or(r.triage = 'negative') as neg
   from openers op
   join outreach r on r.entity_id = op.entity_id and r.direction = 'inbound'
@@ -58,7 +63,9 @@ select op.who, (op.who is null) as total,
        count(*) filter (where rp.pos) as positive, count(*) filter (where rp.neg) as negative,
        count(*) filter (where op.bounced) as bounced, max(op.sent_at) as last_sent_at,
        percentile_cont(0.5) within group (order by extract(epoch from rp.first_at - op.sent_at) / 3600.0)
-         as median_reply_hours
+         as median_reply_hours,
+       percentile_cont(0.5) within group (order by extract(epoch from rp.answered_at - rp.first_at) / 3600.0)
+         as median_answer_hours
 from openers op left join replies rp on rp.id = op.id
 group by grouping sets ((op.who), ())
 """
@@ -77,6 +84,18 @@ WAITING = """
 select lower(o.approved_by) as who, count(*) as n
 from outreach o join entities e on e.id = o.entity_id join segments s on s.id = e.segment_id
 where o.direction = 'outbound' and o.status in ('approved', 'sending') and o.approved_by is not null
+  and (%(slug)s::text is null or s.slug = %(slug)s::text)
+group by 1
+"""
+
+# the companies waiting on this person's answer now (not limited to the span): a real reply to their thread that
+# nobody on our side has answered (sql/46)
+WAITING_ON_US = """
+select lower(o.approved_by) as who, count(distinct o.entity_id) as n
+from outreach o join entities e on e.id = o.entity_id join segments s on s.id = e.segment_id
+where o.direction = 'outbound' and coalesce(o.sequence_step, 0) = 0 and o.status = 'sent' and o.approved_by is not null
+  and e.status not in ('rejected', 'archived')
+  and exists (select 1 from outreach r where r.entity_id = o.entity_id and __UNANSWERED__)
   and (%(slug)s::text is null or s.slug = %(slug)s::text)
 group by 1
 """
@@ -133,12 +152,22 @@ def project_name(slug, names):
     return slug
 
 
+def _policy():
+    """tools/outreach_policy.py: what a reply waiting on us is (sql/46), as the pull and the reminder have it."""
+    tools = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import outreach_policy
+    return outreach_policy
+
+
 def report(cur, period, slug=None, names=None, now=None):
     if period not in PERIODS:
         raise ValueError("period is one of: %s" % ", ".join(PERIODS))
     since, bucket, label = span(period, now)
     p = {"since": since, "slug": slug, "bucket": bucket}
-    cur.execute(PER_PERSON, p)
+    pol = _policy()
+    cur.execute(PER_PERSON.replace("__RECEIVED__", pol.received("r")), p)
     rows = [dict(r) for r in cur.fetchall()]
     total = next((r for r in rows if r["total"]), None)
     per = {r["who"]: r for r in rows if not r["total"]}
@@ -146,6 +175,8 @@ def report(cur, period, slug=None, names=None, now=None):
     fu = {r["who"]: r["n"] for r in cur.fetchall()}
     cur.execute(WAITING, p)
     waiting = {r["who"]: r["n"] for r in cur.fetchall()}
+    cur.execute(WAITING_ON_US.replace("__UNANSWERED__", pol.unanswered("r")), p)
+    on_us = {r["who"]: r["n"] for r in cur.fetchall()}
     cur.execute(BY_PROJECT, p)
     proj = {}
     for r in cur.fetchall():
@@ -162,26 +193,30 @@ def report(cur, period, slug=None, names=None, now=None):
             series.setdefault(r["who"], [0] * len(keys))[index[r["d"]]] = r["n"]
     cur.execute("select lower(email) as who, name, title from app_users")
     people = {r["who"]: {"name": r["name"], "title": r["title"], "has_login": True} for r in cur.fetchall()}
-    for who in set(per) | set(fu) | set(waiting):
+    for who in set(per) | set(fu) | set(waiting) | set(on_us):
         people.setdefault(who, {"name": None, "title": None, "has_login": False})
 
-    def view(who, r, n_fu, n_wait, info):
+    def hours(v):
+        return round(float(v), 1) if v is not None else None
+
+    def view(who, r, n_fu, n_wait, n_on_us, info):
         sent = int(r["sent"]) if r else 0
         rep, pos, neg, bnc = [int(r[k]) if r else 0 for k in ("replied", "positive", "negative", "bounced")]
-        med = r.get("median_reply_hours") if r else None
         out = {"sent": sent, "followups": int(n_fu or 0), "replied": rep, "reply_rate": rate(rep, sent),
                "positive": pos, "positive_rate": rate(pos, sent), "negative": neg, "bounced": bnc,
-               "bounce_rate": rate(bnc, sent), "median_reply_hours": round(float(med), 1) if med is not None else None,
-               "approved_waiting": int(n_wait or 0),
+               "bounce_rate": rate(bnc, sent), "median_reply_hours": hours(r.get("median_reply_hours") if r else None),
+               "median_answer_hours": hours(r.get("median_answer_hours") if r else None),
+               "waiting_on_us": int(n_on_us or 0), "approved_waiting": int(n_wait or 0),
                "last_sent_at": r["last_sent_at"].isoformat() if r and r.get("last_sent_at") else None}
         if who is not None:
             out.update(account=who, name=info.get("name"), title=info.get("title"), has_login=info.get("has_login"),
                        projects=sorted(proj.get(who, []), key=lambda x: -x["sent"]),
                        series=series.get(who, [0] * len(keys)))
         return out
-    people_out = [view(who, per.get(who), fu.get(who), waiting.get(who), info) for who, info in people.items()]
+    people_out = [view(who, per.get(who), fu.get(who), waiting.get(who), on_us.get(who), info)
+                  for who, info in people.items()]
     people_out.sort(key=lambda x: (-x["sent"], -x["followups"], -x["approved_waiting"], (x["name"] or x["account"]).lower()))
-    totals = view(None, total, sum(fu.values()), sum(waiting.values()), {})
+    totals = view(None, total, sum(fu.values()), sum(waiting.values()), sum(on_us.values()), {})
     totals["series"] = [sum(x["series"][i] for x in people_out) for i in range(len(keys))]
     return {"period": period, "label": label, "since": since.isoformat() if since else None, "bucket": bucket,
             "buckets": [k.isoformat() for k in keys], "scope": "project" if slug else "all", "project": slug,

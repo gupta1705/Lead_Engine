@@ -647,6 +647,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
   height: 2px; background: var(--bg-brand-bold); border-radius: 2px 2px 0 0; }
 .tab .pts { height: 18px; line-height: 18px; font-size: 11px; min-width: 20px; padding: 0 6px; }
 .tab.active .pts { background: var(--bg-selected); color: var(--text-selected); }
+/* In conversation: how many wait on us (2026-10-29) */
+.tab .pts.wait, .tab.active .pts.wait { background: var(--bg-warning-bold); color: var(--text-on-warning-bold); margin-left: 4px; }
+.wait-n { color: var(--text-warning); }
 /* two choices side by side: a segmented control */
 .tabs.segmented { display: inline-flex; gap: 2px; padding: 3px; border: 0; border-radius: var(--radius-md);
   background: var(--bg-neutral); margin: 0; box-shadow: none; overflow: visible; }

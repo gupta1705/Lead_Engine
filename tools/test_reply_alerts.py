@@ -13,7 +13,8 @@ that answers by the reply's subject. Checked:
   * a bounce notice: nothing; an auto-reply: no star, no alert, but its reading kept
   * Gmail refusing the alert: tried again on the next pull, at most three times
   * no model: the alert still goes, without a reading
-  * the daily reminder: weekdays from 10:00 India time, the replies nobody marked for a day, once a day per person
+  * the daily reminder: weekdays from 10:00 India time, the replies nobody marked or answered for a day, once a day per
+    person (tools/test_waiting_on_us.py has the answered side)
   * quoted text is cut from what the alert shows
   * Replies: newest first, the Negative ones apart (negative_rows) and out of the list and its count; the API keeps
     them in one list
@@ -24,7 +25,7 @@ import json
 import os
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -159,7 +160,8 @@ def main_():
     db = TxDb(conn)
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute((ROOT / "sql" / "45_reply_alerts.sql").read_text(encoding="utf-8"))
+        # sql/45 and 46 are applied live; running their ALTER TABLE here would lock outreach for the live app while
+        # this runs
         tag = uuid.uuid4().hex[:6]
         slug = "zz-alert-" + tag
         cfg = json.loads((ROOT / "config" / "segment.lcx-clipping.json").read_text(encoding="utf-8"))
@@ -275,22 +277,31 @@ def main_():
         cur.execute("select now() as n")
         now = cur.fetchone()["n"]
         live = now.replace(hour=5, minute=40) if now.astimezone(ra.IST).weekday() < 5 else wed_11
-        got = ra.remind(db, g, box, log=lambda m: None, now=live if live <= now else now)
+        at = live if live <= now else now
+        got = ra.remind(db, g, box, log=lambda m: None, now=at)
         raws = [c[2] for c in g.calls if c[0] == "import"]
         if not got:      # the clock in India is before 10:00 or a weekend now: try a weekday at 11:10 instead
-            got = ra.remind(db, g, box, log=lambda m: None, now=wed_11)
+            at = wed_11
+            got = ra.remind(db, g, box, log=lambda m: None, now=at)
             raws = [c[2] for c in g.calls if c[0] == "import"]
         check("a weekday after 10:00: one reminder", (got, len(raws)), (True, 1))
         check("  of the reply unmarked for over a day, not the fresh ones",
               ("ZZ Show 1 %s" % tag in raws[0], "ZZ Show 5 %s" % tag in raws[0], "Subject: 1 reply is waiting" in raws[0]),
               (True, False, True))
         check("  with its reading", "Interested: Wants a call on Thursday." in raws[0], True)
-        again = ra.remind(db, g, box, log=lambda m: None, now=wed_11) or ra.remind(db, g, box, log=lambda m: None,
-                                                                                  now=live if live <= now else now)
-        check("  once a day", again, False)
+        # the same day again (the day the reminder above went on; 28 Oct is another day once that date has passed)
+        check("  once a day", ra.remind(db, g, box, log=lambda m: None, now=at + timedelta(hours=2)), False)
         cur.execute("update outreach set status = 'triaged', triage = 'positive' where id = %s", (r1,))
         cur.execute("delete from reply_reminders where user_email = lower(%s)", (person,))
-        check("marked: no reminder for it", ra.remind(db, Gmail(), box, log=lambda m: None, now=wed_11), False)
+        g = Gmail()
+        got = ra.remind(db, g, box, log=lambda m: None, now=wed_11) or ra.remind(db, g, box, log=lambda m: None,
+                                                                             now=live if live <= now else now)
+        raws = [c[2] for c in g.calls if c[0] == "import"]
+        check("marked Positive, not answered yet: still in it, as waiting for an answer (sql/46)",
+              (got, bool(raws) and "Nobody on our side has answered these" in raws[0]), (True, True))
+        cur.execute("update outreach set answered_at = now(), answered_how = 'thread' where id = %s", (r1,))
+        cur.execute("delete from reply_reminders where user_email = lower(%s)", (person,))
+        check("marked and answered: no reminder for it", ra.remind(db, Gmail(), box, log=lambda m: None, now=wed_11), False)
 
         print("\n-- Replies, the Negative ones apart")
         import main

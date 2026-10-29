@@ -1464,8 +1464,11 @@ def cmd_pull(args):
       alert goes into their inbox; once a day, a reminder of the replies nobody
       has marked (tools/reply_alert.py, sql/45).
     * --recent (the app's five-minute look, app/scheduler.py): only the threads
-      with a message in the last two days, found with one search per mailbox; the
-      hourly run without it reads every thread of the last 60 days.
+      with a message in the last two days, found with one search per mailbox, and
+      the threads waiting on us; the hourly run without it reads every thread of
+      the last 60 days.
+    * waiting on us (sql/46): on each reply, when it came and when our side first
+      wrote in the thread after it (from this Gmail, or another of our addresses).
     """
     import outreach_policy as pol
     from dbconn import Db
@@ -1495,7 +1498,11 @@ def cmd_pull(args):
     by_box = {}
     for tid, eid, cid, mbk in threads:
         by_box.setdefault(mbk, []).append((tid, eid, cid))
-    found = errors = paused = bounced = skipped = alerted = 0
+    # the replies waiting on us (sql/46) are read on the five-minute look too, however old: our answer shows at once
+    waiting = set(db.run(lambda cur: (cur.execute(
+        "select distinct r.gmail_thread_id from outreach r where r.gmail_thread_id is not null and "
+        + pol.unanswered("r")), [x[0] for x in cur.fetchall()])[1]))
+    found = errors = paused = bounced = skipped = alerted = answered = 0
     for mbk, items in by_box.items():
         mb = mbmap.get(mbk)
         ub = user_boxes.get(str(mbk or "").lower())
@@ -1525,7 +1532,7 @@ def cmd_pull(args):
                 errors += 1
                 log("  %s: the quick look failed (%s) -- the hourly run reads every thread" % (mbk, str(e)[:120]))
                 continue
-            items = [it for it in items if it[0] in fresh]
+            items = [it for it in items if it[0] in fresh or it[0] in waiting]
         for tid, eid, cid in items:
             try:
                 t = svc.users().threads().get(userId="me", id=tid, format="full").execute()
@@ -1533,15 +1540,18 @@ def cmd_pull(args):
                 errors += 1
                 log("  %s thread %s: fetch failed (%s) -- continuing" % (mbk, tid, type(e).__name__))
                 continue
+            ours, theirs = [], []                 # (when, from) of our side's messages; (id, when) of theirs
             for m in t.get("messages", []):
                 labels = set(m.get("labelIds") or [])
-                if "SENT" in labels or "DRAFT" in labels:
-                    continue                      # ours, or not yet sent by anyone
+                if "DRAFT" in labels:
+                    continue                      # not yet sent by anyone
                 headers = {h["name"].lower(): h["value"]
                            for h in m.get("payload", {}).get("headers", [])}
                 frm = (headers.get("from") or "").lower()
-                if any(a in frm for a in own):
-                    continue                      # ours, sent from another client
+                if "SENT" in labels or any(a in frm for a in own):
+                    ours.append((_message_time(m), frm))   # ours: from this Gmail, or from another of our addresses
+                    continue
+                theirs.append((m["id"], _message_time(m)))
                 subj = headers.get("subject", "")
                 bounce = pol.is_bounce(frm, subj)
                 mid = m["id"]
@@ -1573,6 +1583,7 @@ def cmd_pull(args):
                     found += 1
                     paused += n
                     log("  %s thread %s: new reply%s" % (mbk, tid, ("; %d pending follow-up(s) paused" % n) if n else ""))
+            answered += _note_answers(db, theirs, ours)
         if ub is not None:
             # the person whose Gmail this is hears of it: an alert in their inbox, and the daily reminder
             import reply_alert
@@ -1582,9 +1593,50 @@ def cmd_pull(args):
             except Exception as e:
                 log("  %s: reply alerts failed (%s) -- the next pull tries again" % (mbk, str(e)[:160]))
     db.close()
-    log("\n%d new repl(ies), %d alert(s), %d bounce(s), %d follow-up(s) paused; %d thread error(s); %d thread(s) on"
-        " unconnected mailboxes" % (found, alerted, bounced, paused, errors, skipped))
+    log("\n%d new repl(ies), %d alert(s), %d bounce(s), %d follow-up(s) paused, %d repl(ies) answered; %d thread"
+        " error(s); %d thread(s) on unconnected mailboxes" % (found, alerted, bounced, paused, answered, errors, skipped))
     return 0
+
+
+def _message_time(m):
+    """When Gmail got the message (its internalDate, milliseconds), or None."""
+    import datetime as dt
+    try:
+        return dt.datetime.fromtimestamp(int(m["internalDate"]) / 1000.0, tz=dt.timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+ANSWER_SQL = """
+update outreach set received_at = coalesce(received_at, %(at)s),
+       answered_at = coalesce(answered_at, %(ans)s),
+       answered_by = case when answered_at is null and %(ans)s is not null then %(by)s else answered_by end,
+       answered_how = case when answered_at is null and %(ans)s is not null then 'thread' else answered_how end
+where gmail_message_id = %(mid)s and direction = 'inbound'
+  and ((received_at is null and %(at)s is not null) or (answered_at is null and %(ans)s is not null))
+returning (answered_how = 'thread' and answered_at = %(ans)s)"""
+
+
+def _note_answers(db, theirs, ours):
+    """Waiting on us (sql/46): on each of their messages already read as a reply, when it came and when our side first
+    wrote in the thread after it, and from which address. A date already noted stays. -> replies newly answered."""
+    if not theirs:
+        return 0
+    from email.utils import parseaddr
+    rows = []
+    for mid, at in theirs:
+        nxt = min(((w, frm) for w, frm in ours if at and w and w > at), default=None)
+        by = (parseaddr(nxt[1])[1] or nxt[1])[:200] if nxt else None
+        rows.append({"mid": mid, "at": at, "ans": nxt[0] if nxt else None, "by": by})
+
+    def _write(cur):
+        n = 0
+        for r in rows:
+            cur.execute(ANSWER_SQL, r)
+            got = cur.fetchone()
+            n += 1 if got and got[0] else 0
+        return n
+    return db.run(_write)
 
 
 def _recent_threads(svc, days=2, pages=5):

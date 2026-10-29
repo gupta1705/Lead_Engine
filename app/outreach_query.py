@@ -23,6 +23,14 @@ CONVERSATION = ("f.direction = 'inbound' and f.triage is distinct from 'neutral'
                 " and r.triage is distinct from 'neutral' order by r.created_at desc, r.id desc limit 1)")
 
 
+def waiting_since(entity="f.entity_id"):
+    """Waiting on us (sql/46; the owner, 2026-10-29): when this company began to wait for our answer -- its oldest
+    real reply nobody on our side has answered (tools/outreach_policy.unanswered) -- or NULL."""
+    from outreach_policy import received, unanswered
+    return ("(select min(%s) from outreach r where r.entity_id = %s and %s)"
+            % (received("r"), entity, unanswered("r")))
+
+
 def ordering(folder, sort, direction, prioritize_fresh=False):
     if sort not in ("default", *SORTS) or direction not in ("asc", "desc"):
         raise ValueError("Choose a valid outreach sort and direction.")
@@ -30,6 +38,9 @@ def ordering(folder, sort, direction, prioritize_fresh=False):
         if folder == "drafts" and prioritize_fresh:
             from lead_lifecycle import priority_order
             return priority_order() + ",f.id"
+        if folder == "conversation":
+            # the ones waiting on us first, the longest wait at the top; then the rest, newest first
+            return waiting_since() + " asc nulls last," + WHEN + " desc,f.id"
         order = ("(f.send_error is not null),f.send_after asc nulls first,f.created_at"
                  if folder == "outbox" else WHEN + " desc")
     else:

@@ -215,6 +215,12 @@ class Ops:
                "approved_at": _iso(r.get("approved_at")), "sent_at": _iso(r.get("sent_at")),
                "goes_out": (r.get("schedule") or {}).get("send_label") if isinstance(r.get("schedule"), dict) else None,
                "reply_type": r.get("triage") if r.get("direction") == "inbound" else None}
+        if r.get("direction") == "inbound":
+            # waiting on us (sql/46): nobody on our side has answered it yet; in_conversation, since when the company waits
+            out.update(waiting_on_us=bool(r.get("awaiting_answer")), received_at=_iso(r.get("received_at")),
+                       answered_at=_iso(r.get("answered_at")))
+            if "waiting_since" in r:
+                out["waiting_since"] = _iso(r.get("waiting_since"))
         if full:
             out.update(body=r.get("body"), cc=r.get("cc") or [], service=r.get("service"),
                        parent_id=str(r["parent_id"]) if r.get("parent_id") else None,
@@ -306,6 +312,7 @@ class Ops:
                                    offset=max(0, int(a.get("offset") or 0)), negatives_apart=False, segment=slug)
         counts = {k: (got.get("counts") or {}).get(v, 0) for k, v in FOLDERS.items()}
         counts["replies_unread"] = (got.get("counts") or {}).get("untriaged", 0)
+        counts["waiting_on_us"] = (got.get("counts") or {}).get("waiting", 0)
         return {"project": slug, "folder": folder, "total": got.get("total"), "counts": counts,
                 "rows": [self._email(r) for r in got["rows"]]}
 
@@ -429,8 +436,9 @@ TOOLS = [
     {"name": "list_emails", "title": "List emails",
      "description": "One Outreach folder of a project, newest first: drafts (waiting for approval), followups "
                     "(follow-up drafts), approved (waiting to go out), sent, replies, in_conversation (a company per "
-                    "row that wrote back with a real reply, its latest), attention (failed or stuck). Also counts "
-                    "every folder.",
+                    "row that wrote back with a real reply, its latest; the ones waiting on us for an answer first, "
+                    "with waiting_since), attention (failed or stuck). A reply says waiting_on_us when nobody on our "
+                    "side has answered it yet. Also counts every folder, and waiting_on_us.",
      "inputSchema": _s("object", required=["project"], properties={
          "project": PROJECT, "folder": _s("string", enum=list(FOLDERS), default="drafts"),
          "limit": _s("integer", minimum=1, maximum=100, default=25), "offset": _s("integer", minimum=0, default=0)}),

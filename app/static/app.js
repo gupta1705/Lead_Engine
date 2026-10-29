@@ -173,6 +173,27 @@ function mailStatus(r) {
     replied: ["Replied", "success"] })[st] || [String(st || "").replace(/_/g, " "), ""];
 }
 function mailLozenge(r) { const [l, c] = mailStatus(r); return `<span class="lozenge ${c}">${esc(l)}</span>`; }
+/* Waiting on us (owner, 2026-10-29, build 6 of the outreach research; sql/46): a real reply nobody on our side has
+   answered yet, in its Gmail thread (the app looks every five minutes) or another way (marked in its sheet). On In
+   conversation, since the company's oldest such reply; on Replies, since this one came. */
+function waitingAt(r) { return r.waiting_since || (r.awaiting_answer ? r.received_at || r.created_at : null); }
+function waitedFor(iso) { return teamHours((Date.now() - new Date(iso).getTime()) / 3600000); }
+/* the reply's sheet: whether we have answered it, and when and how; nothing for one that waits for no answer */
+function answerRow(r) {
+  const at = waitingAt(r);
+  if (at) return `<dt>Our answer</dt><dd><strong>Waiting on us for ${esc(waitedFor(at))}</strong><div class="small muted">Nobody on our side has written in the thread since ${esc(fmtDate(at))}. Answer it from the thread in your Gmail: the app sees it within minutes.</div></dd>`;
+  if (!r.answered_at) return "";
+  const came = r.received_at || r.created_at;
+  const after = came ? teamHours((new Date(r.answered_at) - new Date(came)) / 3600000) : "";
+  return r.answered_how === "marked"
+    ? `<dt>Our answer</dt><dd>Answered another way<div class="small muted">Marked by ${esc(r.answered_by || "someone")} · ${esc(fmtDate(r.answered_at))}</div></dd>`
+    : `<dt>Our answer</dt><dd>Answered${after ? ` ${esc(after)} after it came` : ""}<div class="small muted">${esc(r.answered_by ? "From " + r.answered_by + " · " : "")}${esc(fmtDate(r.answered_at))}</div></dd>`;
+}
+function waitLozenge(r, talking) {
+  const at = waitingAt(r);
+  if (at) return `<span class="lozenge moved bold" title="${esc("Nobody on our side has answered since " + fmtDate(at))}">Waiting on us · ${esc(waitedFor(at))}</span> `;
+  return talking && r.answered_at ? `<span class="lozenge success" title="${esc("Answered " + fmtDate(r.answered_at))}">Answered</span> ` : "";
+}
 
 /* ============================================================== flags */
 function flag(title, opts) {
@@ -1221,7 +1242,8 @@ async function loadOutreach() {
   $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => (key !== "attention" || o.counts.attention || o.folder === "attention")
       && (key !== "drafts" || draftsOn())
       && (key !== "followups" || followUpsOn() || o.counts.followups || o.folder === "followups")).map(([key, label]) =>
-    `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${(d.filtered_counts || o.counts)[key] || 0}</span></button>`).join("");
+    `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${(d.filtered_counts || o.counts)[key] || 0}</span>${key === "conversation" && (d.filtered_counts || o.counts).waiting
+      ? `<span class="pts wait" title="Waiting on us: nobody on our side has answered yet">${(d.filtered_counts || o.counts).waiting} waiting</span>` : ""}</button>`).join("");
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
     o.folder = b.dataset.f; o.offset = 0; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
   }));
@@ -1230,7 +1252,7 @@ async function loadOutreach() {
       <td class="sel-col"><input type="checkbox" data-sel="${esc(r.id)}" ${o.selected.has(r.id) ? "checked" : ""} ${r.approval_blocked ? `disabled title="${esc(r.approval_blocked)}"` : ""} aria-label="Select this draft"></td>
       <td><div class="cell-company">${monoTile(r.company, r.domain || r.entity_id, "sm")}<span><div class="primary-cell">${esc(r.company)}</div><div class="secondary">${esc(r.domain || "")}</div>${outreachMetric(r)}</span></div></td>
       <td>${r.contact_email ? `<span class="cell-person">${avatar(r.contact_name, r.contact_email)}<span><div>${esc(r.contact_name || "Unnamed")}</div><div class="secondary">${esc(r.contact_email)}</div></span></span>` : '<span class="muted">No address</span>'}</td>
-      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.service ? `<div class="secondary" title="The one service this email ${r.sent_at ? "pitched" : "pitches"}">${r.sent_at ? "Pitched" : "Pitches"} ${esc(r.service)}</div>` : ""}${r.approval_blocked ? `<div class="secondary outreach-hold">${esc(r.approval_blocked)}</div>` : ""}${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
+      <td><div class="subject-cell">${r.direction === "inbound" ? mailLozenge(r) + waitLozenge(r, o.folder === "conversation") : ""}${stepLozenge(r)}<span class="subj">${esc(r.subject || "(no subject)")}</span>${files(r).length ? `<span class="clip" title="${esc(files(r).map((f) => f.name).join(", "))}">${icon("paperclip", 14)}</span>` : ""}</div>${r.service ? `<div class="secondary" title="The one service this email ${r.sent_at ? "pitched" : "pitches"}">${r.sent_at ? "Pitched" : "Pitches"} ${esc(r.service)}</div>` : ""}${r.approval_blocked ? `<div class="secondary outreach-hold">${esc(r.approval_blocked)}</div>` : ""}${r.send_error ? `<div class="secondary" style="color:var(--text-danger)">${esc(r.send_error)}</div>` : ""}</td>
       <td class="by-col">${o.folder === "conversation" ? (r.reached_by ? `<div>${esc(r.reached_by_name || r.reached_by)}</div>` : "")
           + `<div class="secondary">${r.thread_messages || 1} message${(r.thread_messages || 1) === 1 ? "" : "s"} in the thread</div>`
         : r.approved_by ? `<div>${esc(r.approved_by_name || r.approved_by)}</div>${r.sender_address ? `<div class="secondary">${esc(r.sender_address)}</div>` : ""}` : ""}</td>
@@ -1292,9 +1314,11 @@ function renderOutreachFilters(d) {
   const o = state.outreach;
   const options = (rows, all, value) => `<option value="">${all}</option>` + (rows || []).map((r) =>
     `<option value="${esc(r.key)}" ${value === r.key ? "selected" : ""}>${esc(r.label || r.key)} (${r.n})</option>`).join("");
-  // where the default order is the date, newest first (Replies, owner 2026-10-28; Sent; In conversation), it says so
-  const byDate = ["inbox", "sent", "conversation"].includes(o.folder);
+  // where the default order is the date, newest first (Replies, owner 2026-10-28; Sent), it says so; In conversation
+  // puts the ones waiting on us first, the longest wait at the top (2026-10-29)
+  const byDate = ["inbox", "sent"].includes(o.folder);
   const defaultLabel = o.folder === "drafts" && segUi().prioritize_fresh_leads ? "Priority: fresh + high score"
+    : o.folder === "conversation" ? "Waiting on us first"
     : byDate ? "Date: newest first" : "Default order";
   const sorts = [["default:desc", defaultLabel], ["subscribers:desc", "Subscriber count: high to low"],
     ["subscribers:asc", "Subscriber count: low to high"], ["views:desc", "Views: high to low"], ["views:asc", "Views: low to high"],
@@ -2077,6 +2101,7 @@ function openMessage(id, message) {
             ${r.schedule && r.schedule.held && !r.sent_at && r.status === "approved" ? `<dt>Goes out</dt><dd>Held back, not sent${r.send_error ? "" : `<div class="small muted">${esc(r.schedule.held_why || "")}</div>`}</dd>` : ""}
             ${r.schedule && !r.schedule.held && !r.sent_at && ["approved", "sending"].includes(r.status) ? `<dt>Goes out</dt><dd>${esc(whenText(r.schedule))}${r.schedule.send_tz_reason ? `<div class="small muted">${esc(r.schedule.send_tz_reason)}</div>` : ""}${r.schedule.reschedules && r.schedule.wait_why ? `<div class="small muted">Moved ${r.schedule.reschedules === 1 ? "once" : r.schedule.reschedules + " times"}: ${esc(r.schedule.wait_why)}</div>` : ""}</dd>` : ""}
             ${isDraft && sendWindow() && !r.approval_blocked ? `<dt>Next window</dt><dd id="msgWindow"><span class="skel" style="width:70%;height:12px"></span></dd>` : ""}
+            ${isReply ? answerRow(r) : ""}
             ${r.stopped_reason ? `<dt>Stopped</dt><dd>${esc(r.stopped_reason)}</dd>` : ""}
             ${r.send_error ? `<dt>Send error</dt><dd style="color:var(--text-danger)">${esc(r.send_error)}</dd>` : ""}
             ${r.generated_hook ? `<dt>Written by a model</dt><dd class="small muted">This draft includes text written or rewritten by AI. Review its facts and wording before approving.</dd>` : ""}
@@ -2089,6 +2114,7 @@ function openMessage(id, message) {
       ${canStop ? `<button class="btn subtle danger-text" data-act="stop_sequence" title="No further follow-ups for this company">Stop follow-ups</button>` : ""}
       ${isDraft ? `<button class="btn" id="draftSave">Save draft</button>${r.approval_blocked && r.can_link_contact ? '<button class="btn" data-act="link_contact">Use verified contact</button>' : ""}<button class="btn primary" data-act="approve" ${r.approval_blocked ? `disabled title="${esc(r.approval_blocked)}"` : ""}>${icon("send", 16)} ${sendWindow() ? "Approve" : "Approve and send"}</button>` : ""}
       ${r.status === "approved" ? `<button class="btn" data-act="cancel">Withdraw approval</button>` : ""}
+      ${isReply && waitingAt(r) ? `<button class="btn subtle" data-act="mark_answered" title="You answered by phone, WhatsApp or a new email: it stops waiting on us. An answer in its Gmail thread is seen by itself.">Answered another way</button>` : ""}
       ${isReply && r.status !== "cancelled" ? `<button class="btn" data-act="mark_negative">Mark negative</button><button class="btn primary" data-act="mark_positive">${icon("check", 16)} Mark positive</button>` : ""}
     </div>`, { label: r.subject || "Message", sheet: true });
 
@@ -2152,7 +2178,8 @@ function openMessage(id, message) {
       const heldNow = res.schedule && res.schedule.held ? res.schedule : null;
       if (heldNow) res.schedule = null;
       const msg = { approve: heldNow ? "Approved, held back" : res.can_send && !res.schedule ? "Approved: sending" : "Approved", cancel: "Approval withdrawn", mark_positive: "Marked positive",
-        mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped", link_contact: "Verified contact linked" }[b.dataset.act];
+        mark_negative: "Marked negative", stop_sequence: "Follow-ups stopped", link_contact: "Verified contact linked",
+        mark_answered: "Marked answered" }[b.dataset.act];
       const perPerson = o.mbx && o.mbx.mode === "approver";
       const from = res.sends_from && res.sends_from.length ? res.sends_from[0] : "";
       // with a sending window it goes at the second just drawn for it, on its recipient's clock
@@ -2235,9 +2262,9 @@ async function loadReports() {
 /* ---------------------------------------------------------------- team
    The owner, 2026-10-27: "how many outreaches each person has sent in different timelines their response rate and
    all" (app/team_report.py). One row per person with a login: first emails sent in the span (one per company),
-   follow-ups, the companies that wrote back and the rate, positive replies, bounces, the typical time to a reply,
-   what is approved and still to go, and a bar per day (per week for the long spans). The span and the projects are
-   remembered on this browser only. */
+   follow-ups, the companies that wrote back and the rate, positive replies, bounces, the typical time to a reply and
+   to our answer, the conversations waiting on us now (2026-10-29), what is approved and still to go, and a bar per day
+   (per week for the long spans). The span and the projects are remembered on this browser only. */
 const TEAM = { period: "7d", scope: "all", token: 0 };
 try { const s = JSON.parse(localStorage.getItem("tvf_team") || "{}"); Object.assign(TEAM, { period: s.period || "7d", scope: s.scope || "all" }); } catch (e) {}
 function teamHours(h) {
@@ -2278,13 +2305,16 @@ async function loadTeam() {
   const cells = (x) => `<td class="r num">${x.sent}</td><td class="r num">${x.followups}</td><td class="r num">${x.replied}</td>
       <td class="r num"><strong>${teamPct(x.reply_rate)}</strong></td><td class="r num">${x.positive}</td>
       <td class="r num">${x.bounced}${x.bounced ? ` <span class="muted small">${teamPct(x.bounce_rate)}</span>` : ""}</td>
-      <td class="r num">${esc(teamHours(x.median_reply_hours))}</td><td class="r num">${x.approved_waiting}</td>`;
+      <td class="r num">${esc(teamHours(x.median_reply_hours))}</td><td class="r num">${esc(teamHours(x.median_answer_hours))}</td>
+      <td class="r num">${x.waiting_on_us ? `<strong class="wait-n">${x.waiting_on_us}</strong>` : 0}</td><td class="r num">${x.approved_waiting}</td>`;
   $("#teamTable").innerHTML = `<thead><tr><th>Person</th><th class="r">Sent</th><th class="r">Follow-ups</th><th class="r">Replied</th>
       <th class="r">Reply rate</th><th class="r">Positive</th><th class="r">Bounced</th><th class="r">Typical reply</th>
+      <th class="r" title="From a lead's first reply to our first answer, in the thread or marked answered another way">Typical answer</th>
+      <th class="r" title="Companies whose reply nobody on our side has answered yet, now">Waiting on us</th>
       <th class="r" title="Approved, waiting for its time to go out">Waiting to go</th>${trend ? `<th>${d.bucket === "week" ? "Per week" : "Per day"}</th>` : ""}</tr></thead>
-    <tbody>${d.people.map((x) => `<tr class="${x.sent || x.followups || x.approved_waiting ? "" : "quiet"}"><td>${who(x)}</td>${cells(x)}
+    <tbody>${d.people.map((x) => `<tr class="${x.sent || x.followups || x.approved_waiting || x.waiting_on_us ? "" : "quiet"}"><td>${who(x)}</td>${cells(x)}
       ${trend ? `<td>${teamSpark(x.series, d.buckets, d.bucket)}</td>` : ""}</tr>`).join("")
-      || `<tr><td colspan="10" class="muted">No one has a login yet.</td></tr>`}</tbody>
+      || `<tr><td colspan="12" class="muted">No one has a login yet.</td></tr>`}</tbody>
     <tfoot><tr><td><strong>Everyone</strong><div class="secondary">${esc(d.label)}${TEAM.scope === "project" ? " · this project" : " · all projects"}</div></td>${cells(d.totals)}
       ${trend ? `<td>${teamSpark(d.totals.series, d.buckets, d.bucket)}</td>` : ""}</tr></tfoot>`;
 }

@@ -7,8 +7,9 @@ Run by `outreach.py pull` for each person's own Gmail (sql/45), after the replie
     it says -- then starred and labelled "Lead replied" in the Gmail that holds the thread, and a short alert goes
     into that person's own inbox: who replied, the model's reading, the first lines, and where to mark it. An
     auto-reply (out of office) gets no alert and no star: the reminder below still catches a misread one.
-  * remind: once a day, on weekdays from 10:00 India time, one reminder per person of the replies nobody has marked
-    Positive or Negative for over a day.
+  * remind: once a day, on weekdays from 10:00 India time, one reminder per person of the replies that have waited
+    over a day for our answer (nobody on our side has written back, sql/46), and of those nobody has marked Positive
+    or Negative for over a day.
 
 The alert is put into the mailbox with Gmail's messages.import, never sent: it goes to no one, it never leaves the
 person's own Gmail, it is not in their Sent, and it never counts against their 50 a day. It can never reach the
@@ -28,6 +29,8 @@ from html import escape
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import outreach_policy as pol  # noqa: E402
 
 LABEL = "Lead replied"
 # the model's reading of a reply -> what the alert calls it
@@ -256,20 +259,23 @@ def alert_new(db, svc, box, thread_ids, log=print, chat=None):
 
 
 # ------------------------------------------------------------------ the daily reminder
+# a person's replies of over a day ago that wait for their answer (sql/46: nobody on our side has written back), or
+# that nobody has marked Positive or Negative
+_UNANSWERED, _RECEIVED = pol.unanswered("i"), pol.received("i")
 WAITING_SQL = """
-select i.id::text, i.created_at, e.name, coalesce(nullif(s.config->'ui'->>'project_name', ''), s.name),
-       c.full_name, i.reply_kind, i.triage_reason
+select i.id::text, %(at)s, e.name, coalesce(nullif(s.config->'ui'->>'project_name', ''), s.name),
+       c.full_name, i.reply_kind, i.triage_reason, %(unanswered)s
 from outreach i
 join entities e on e.id = i.entity_id
 join segments s on s.id = e.segment_id
 left join contacts c on c.id = i.contact_id
-where i.direction = 'inbound' and i.status = 'received' and i.triage is null
-  and i.created_at < %s - make_interval(hours => %s)
+where i.direction = 'inbound' and (%(unanswered)s or (i.status = 'received' and i.triage is null))
+  and %(at)s < %%s - make_interval(hours => %%s)
   and e.status not in ('rejected', 'archived')
   and exists (select 1 from outreach x join user_mailboxes m on lower(m.address) = lower(x.sender_address)
               where x.gmail_thread_id = i.gmail_thread_id and x.direction = 'outbound' and x.status = 'sent'
-                and lower(m.user_email) = lower(%s))
-order by i.created_at"""
+                and lower(m.user_email) = lower(%%s))
+order by 2""" % {"at": _RECEIVED, "unanswered": _UNANSWERED}
 
 
 def _ago(then, now):
@@ -280,31 +286,39 @@ def _ago(then, now):
 def reminder_message(rows, now):
     n = len(rows)
     subject = "%d %s waiting for you" % (n, "reply is" if n == 1 else "replies are")
-    link = base_url() + "/#outreach/replies"
-    items = []
-    for _id, at, company, project, contact, kind, note in rows:
+    replies, talking = base_url() + "/#outreach/replies", base_url() + "/#outreach/conversation"
+    groups = ([], [])                                 # waiting for an answer; answered (or needing none), not marked
+    for _id, at, company, project, contact, kind, note, waiting in rows:
         reading = note[len("AI's reading: "):] if note and note.startswith("AI's reading: ") else (KINDS.get(kind) or "")
-        items.append(("%s%s, %s, %s" % (company, (" (%s)" % contact) if contact else "", project, _ago(at, now)), reading))
-    text = "\n".join(
-        ["Nobody has marked these replies Positive or Negative yet:", ""]
-        + ["- %s%s" % (head, ("\n    " + reading) if reading else "") for head, reading in items]
-        + ["", "Answer each from its thread in your Gmail (labelled \"%s\"), then mark it in the Lead Engine, Outreach,"
-               " Replies: %s" % (LABEL, link),
-           "Marked replies stop showing here."])
-    html = ("<div style=\"font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#172b4d\">"
-            "<p>Nobody has marked these replies Positive or Negative yet:</p><ul>"
-            + "".join("<li><b>%s</b>%s</li>" % (escape(head), ("<br><span style=\"color:#44546f\">%s</span>"
-                                                               % escape(reading)) if reading else "")
-                      for head, reading in items)
-            + "</ul><p>Answer each from its thread in your Gmail (labelled &ldquo;%s&rdquo;), then "
-              "<a href=\"%s\">mark it in the Lead Engine</a> (Outreach, Replies). Marked replies stop showing here.</p>"
-              "</div>" % (LABEL, escape(link)))
-    return subject, text, html
+        groups[0 if waiting else 1].append(
+            ("%s%s, %s, %s" % (company, (" (%s)" % contact) if contact else "", project, _ago(at, now)), reading))
+    heads = ("Nobody on our side has answered these yet:", "Nobody has marked these Positive or Negative yet:")
+    text, html = [], []
+    for head, items in zip(heads, groups):
+        if items:
+            text += [head, ""] + ["- %s%s" % (h, ("\n    " + rd) if rd else "") for h, rd in items] + [""]
+            html.append("<p>%s</p><ul>%s</ul>" % (escape(head), "".join(
+                "<li><b>%s</b>%s</li>" % (escape(h), ("<br><span style=\"color:#44546f\">%s</span>" % escape(rd)) if rd else "")
+                for h, rd in items)))
+    if groups[0]:
+        text += ["Answer each from its thread in your Gmail (labelled \"%s\"): the Lead Engine sees your answer within"
+                 " minutes. Answered another way, by phone or a new email? Say so in the reply's sheet (Outreach, In"
+                 " conversation): %s" % (LABEL, talking)]
+        html.append("<p>Answer each from its thread in your Gmail (labelled &ldquo;%s&rdquo;): the Lead Engine sees "
+                    "your answer within minutes. Answered another way, by phone or a new email? Say so in the reply's "
+                    "sheet (<a href=\"%s\">Outreach, In conversation</a>).</p>" % (LABEL, escape(talking)))
+    text += ["Mark each Positive or Negative in the Lead Engine, Outreach, Replies: %s" % replies,
+             "Answered and marked replies stop showing here."]
+    html.append("<p><a href=\"%s\">Mark each Positive or Negative</a> in the Lead Engine (Outreach, Replies). "
+                "Answered and marked replies stop showing here.</p>" % escape(replies))
+    return (subject, "\n".join(text),
+            "<div style=\"font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#172b4d\">%s</div>"
+            % "".join(html))
 
 
 def remind(db, svc, box, log=print, now=None):
-    """Once a day per person (weekdays, from 10:00 India time): the replies to their emails nobody has marked for a
-    day. -> True when a reminder was put in."""
+    """Once a day per person (weekdays, from 10:00 India time): the replies to their emails that have waited a day for
+    an answer, or that nobody has marked for a day. -> True when a reminder was put in."""
     now = now or datetime.now(timezone.utc)
     ist = now.astimezone(IST)
     if ist.weekday() >= 5 or ist.hour < REMIND_FROM_HOUR:
@@ -327,5 +341,6 @@ def remind(db, svc, box, log=print, now=None):
                                        (person, day)))
         log("  %s: the daily reminder failed (%s) -- tried again on the next pull" % (box["address"], str(e)[:120]))
         return False
-    log("  %s: reminder of %d unmarked repl(ies) put in the inbox" % (box["address"], len(rows)))
+    log("  %s: reminder of %d repl(ies) waiting (%d for an answer) put in the inbox"
+        % (box["address"], len(rows), sum(1 for r in rows if r[7])))
     return True

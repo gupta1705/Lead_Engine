@@ -226,6 +226,26 @@ def pause_on_reply(cur, entity_id):
     return cur.rowcount
 
 
+# Waiting on us (sql/46; the owner, 2026-10-29: build 6 of the outreach research): a real reply that nobody on our
+# side has answered yet, in its thread (the pull sees it) or another way (marked in its sheet). An auto-reply or a
+# bounce notice (triaged neutral), a reply marked Negative, and one the model read as an auto-reply, a no or an
+# unsubscribe wait for no answer -- unless a person marked it Positive.
+NO_ANSWER_KINDS = ("auto_reply", "not_interested", "unsubscribe")
+
+
+def unanswered(a="r"):
+    """SQL: the outreach row `a` is a reply waiting for our answer."""
+    return ("({a}.direction = 'inbound' and {a}.answered_at is null and {a}.triage is distinct from 'neutral'"
+            " and {a}.triage is distinct from 'negative' and (coalesce({a}.triage, '') = 'positive'"
+            " or coalesce({a}.reply_kind, '') not in ({kinds})))").format(
+        a=a, kinds=", ".join("'%s'" % k for k in NO_ANSWER_KINDS))
+
+
+def received(a="r"):
+    """SQL: when reply `a` came: Gmail's date for it, or when the app read it (a reply read before sql/46)."""
+    return "coalesce({a}.received_at, {a}.created_at)".format(a=a)
+
+
 # ---------------------------------------------------------- batch approval
 def _payload(user, segment, ids, sample, exp):
     return "|".join([user or "", segment, ",".join(sorted(ids)), ",".join(sorted(sample)), str(exp)])
