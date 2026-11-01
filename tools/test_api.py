@@ -249,8 +249,8 @@ def main_():
               call("GET", "/privacy.html").status_code, 302)
         h = call("GET", "/api/health")
         check("health is public and says ok", (h.status_code, h.json().get("ok")), (200, True))
-        check("auth state: set up, not signed in", call("GET", "/api/auth/state").json(),
-              {"needs_setup": False, "authed": False, "user": None})
+        check("auth state: set up, not signed in (the login page offers the demo)", call("GET", "/api/auth/state").json(),
+              {"needs_setup": False, "authed": False, "user": None, "demo": True})
         check("no API console (docs, openapi)", [call("GET", u, cookies=tvf).status_code
                                                  for u in ("/docs", "/openapi.json", "/redoc")], [404, 404, 404])
         for url in ("/.env", "/../.env", "/%2e%2e/.env", "/..%2f.env", "/.gmail_token.json", "/static/../../.env"):

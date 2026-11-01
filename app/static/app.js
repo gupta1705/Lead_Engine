@@ -2013,7 +2013,7 @@ function expectedRecipients(rows, ids) {
 }
 
 /* Who an email is copied to (owner, 2026-10-22: "add a feature to cc someone from the software itself. Make default
-   cc to the email amritanshv@lightscameraexperiment.com and obvio make a toggle to switch that off"; sql/39).
+   cc to the email [a colleague's address, in the project config] and obvio make a toggle to switch that off"; sql/39).
    A draft: each of the project's default addresses as a switch (on unless someone switched it off), anyone else
    added as a chip, and a box to add another; every change is saved at once. The list it is approved with is the
    one it goes out with. Any other email: the list it has, or nothing. */
@@ -3244,7 +3244,7 @@ function passwordFields(given) {
 }
 function profileFields(me) {
   return `<div class="footer-grid">
-      <div class="field"><label for="meName">Your name</label><input id="meName" type="text" maxlength="80" value="${esc(me.name || "")}" placeholder="e.g. Suhas C"></div>
+      <div class="field"><label for="meName">Your name</label><input id="meName" type="text" maxlength="80" value="${esc(me.name || "")}" placeholder="e.g. Asha Rao"></div>
       <div class="field"><label for="meTitle">Your title</label><input id="meTitle" type="text" maxlength="80" value="${esc(me.title || "")}" placeholder="e.g. Business Development"></div>
     </div>
     <div class="help">They sign every email you approve: it goes out from your own Gmail, with your name and title under it.</div>`;

@@ -91,6 +91,14 @@ Blueprint needs it set here by hand (2026-10-12): it is what tells the app it
 is the server, which holds the people's sealed sign-ins
 (docs/P25_unattended.md).
 
+**The public demo** (2026-11-01) is on unless `DEMO_ENABLED=0`: the login page
+offers *Try the demo*, which opens `/demo`, the app itself with made-up data
+answered in the browser (app/demo/mock.js, app/demo/data.json). Only those
+paths are public, and the demo page calls nothing on the server. After a change
+to what the screens show, regenerate the data with `python tools/demo_data.py`
+(it refuses to write anything that matches real data in the database) and
+commit app/demo/data.json; `python tools/test_demo.py` checks it.
+
 ### Limits worth knowing
 
 Free instances have 512 MB of RAM and a slice of one CPU: enough for the UI

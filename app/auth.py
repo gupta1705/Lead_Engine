@@ -139,7 +139,9 @@ def build_router(cursor):
     @r.get("/api/auth/state")
     def state(request: Request):
         user = getattr(request.state, "user", None)
-        out = {"needs_setup": user_count() == 0, "authed": user is not None, "user": user}
+        out = {"needs_setup": user_count() == 0, "authed": user is not None, "user": user,
+               # the login page offers the public demo (/demo, app/main.py) unless DEMO_ENABLED=0
+               "demo": os.environ.get("DEMO_ENABLED", "1") != "0"}
         if user:
             # who is signed in, as the page greets them and as their emails are signed (owner, 2026-09-26:
             # one account per person); a starting password handed out by the owner must be replaced first

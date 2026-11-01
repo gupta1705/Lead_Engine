@@ -82,6 +82,14 @@ button:disabled { opacity: .6; cursor: default; }
 .err { display: none; margin-top: 16px; padding: 12px 14px; border-radius: 10px;
   background: var(--danger-bg); color: var(--danger-text); font-size: 13.5px; }
 .err.show { display: block; }
+.demo { display: none; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); text-align: center; }
+.demo.show { display: block; }
+.demo a { display: flex; align-items: center; justify-content: center; height: 42px; border-radius: 10px;
+  border: 1px solid var(--border-input); color: var(--text); font: 600 14.5px/1 var(--font); text-decoration: none;
+  transition: background .15s, border-color .15s; }
+.demo a:hover { border-color: var(--subtlest); background: var(--canvas); }
+.demo a:focus-visible { outline: 2px solid var(--focused); outline-offset: 2px; }
+.demo p { color: var(--subtlest); font-size: 12.5px; margin: 8px 0 0; }
 .hint { color: var(--subtlest); font-size: 12.5px; margin: 16px 0 0; text-align: center; }
 .hint:empty { display: none; }
 .foot { margin-top: 28px; color: var(--subtlest); font-size: 12.5px; text-align: center; max-width: 36ch; }
@@ -105,6 +113,10 @@ button:disabled { opacity: .6; cursor: default; }
     <div class="err" id="err" role="alert"></div>
   </form>
   <p class="hint" id="hint"></p>
+  <div class="demo" id="demo">
+    <a href="/demo">Try the demo</a>
+    <p>See how it works with made-up data. Nothing there is real, saved or sent.</p>
+  </div>
 </div>
 <p class="foot">Internal tool. Access is by invitation from the workspace owner.</p>
 <script>
@@ -118,6 +130,7 @@ const NEXT = (() => {
   try {
     const s = await (await fetch("/api/auth/state")).json();
     if (s.authed) { location.href = NEXT; return; }
+    if (s.demo && !s.needs_setup) document.querySelector("#demo").className = "demo show";
     if (s.needs_setup) {
       mode = "setup";
       document.querySelector("#title").textContent = "Create the owner account";

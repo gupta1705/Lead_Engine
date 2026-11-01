@@ -64,8 +64,18 @@ AUTH_EXEMPT = ("/login", "/api/auth/state", "/api/auth/login", "/api/auth/setup"
                # and the page that asks the person (it checks the session itself and sends them to log in)
                "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
                "/.well-known/oauth-authorization-server", "/oauth/register", "/oauth/token", "/oauth/authorize")
+# The public demo (owner, 2026-11-01: "a demo login which doesnt display any data ... public access"): the app's own
+# page, script and styles, its Docs without addresses or the real projects, and app/demo's pretend /api (mock.js) with
+# made-up data (data.json, tools/demo_data.py). Exactly these paths, nothing under them: the demo page asks this server
+# for nothing else -- no session, no data. DEMO_ENABLED=0 turns it off (404, and the login page offers no demo).
+DEMO_ON = os.environ.get("DEMO_ENABLED", "1") != "0"
+DEMO_FILES = {"/demo/app.js": ("static/app.js", "application/javascript"),
+              "/demo/style.css": ("static/style.css", "text/css"),
+              "/demo/mock.js": ("demo/mock.js", "application/javascript"),
+              "/demo/data.json": ("demo/data.json", "application/json")}
+DEMO_PATHS = ("/demo", "/demo/docs.html") + tuple(DEMO_FILES)
 # what a person still on a starting password may call: the screen that replaces it
-MUST_CHANGE_OK = ("/api/auth/state", "/api/auth/password", "/api/auth/profile", "/api/auth/logout",
+MUST_CHANGE_OK =("/api/auth/state", "/api/auth/password", "/api/auth/profile", "/api/auth/logout",
                   "/api/health")
 
 
@@ -120,7 +130,7 @@ async def auth_wall(request, call_next):
     if request.state.user and request.state.must_change and path.startswith("/api/") and path not in MUST_CHANGE_OK:
         return JSONResponse({"detail": "Choose your own password first.", "must_change_password": True},
                             status_code=403)
-    if path in AUTH_EXEMPT or request.state.user:
+    if path in AUTH_EXEMPT or (DEMO_ON and path in DEMO_PATHS) or request.state.user:
         response = await call_next(request)
         for k, v in SECURITY_HEADERS.items():
             response.headers.setdefault(k, v)
@@ -2347,6 +2357,78 @@ def login_page():
     html = io.open(os.path.join(HERE, "static", "login.html"),
                    encoding="utf-8").read()
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+# ---------------------------------------------------------------- the demo (DEMO_PATHS, above)
+def _demo_version():
+    return str(int(max(os.path.getmtime(os.path.join(HERE, f)) for f, _ in DEMO_FILES.values())))
+
+
+@app.get("/demo")
+def demo_page():
+    """The app's own page, with the pretend /api in front of it: every call it makes is answered in the browser,
+    from made-up data. Nothing here reads the database, and no session is made."""
+    import json as _json
+    from fastapi.responses import HTMLResponse
+    if not DEMO_ON:
+        raise HTTPException(404, "not found")
+    v = _demo_version()
+    conf = {"demo": True, "fixtures": "/demo/data.json?v=" + v, "docs": "/demo/docs.html?v=" + v,
+            "badge": "Demo · made-up data · nothing is saved or sent", "signin": "/login"}
+    html = io.open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
+    html = (html.replace('href="style.css"', 'href="/demo/style.css?v=%s"' % v)
+                .replace('<script src="app.js"></script>',
+                         '<script>window.__MOCK__ = %s;</script>\n<script src="/demo/mock.js?v=%s"></script>\n'
+                         '<script src="/demo/app.js?v=%s"></script>' % (_json.dumps(conf), v, v)))
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/demo/app.js")
+@app.get("/demo/style.css")
+@app.get("/demo/mock.js")
+@app.get("/demo/data.json")
+def demo_file(request: Request):
+    if not DEMO_ON:
+        raise HTTPException(404, "not found")
+    rel, media = DEMO_FILES[request.scope["path"]]
+    return FileResponse(os.path.join(HERE, rel), media_type=media, headers={"Cache-Control": "public, max-age=3600"})
+
+
+_DEMO_PROJECTS = """<h2 id="projects">Projects</h2>
+<p>The demo has two made-up projects; the tool itself has one per kind of lead, each with its own email.</p>
+<table>
+  <thead><tr><th>Project</th><th>Who it finds</th><th>How the email is made</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Podcast Partnerships</strong></td><td>Podcasts and video shows with a back catalogue. The host is
+      the face of the lead.</td><td>Drafted from the project's templates, with a line of the show's own numbers. Batch
+      approval with a spot check.</td></tr>
+    <tr><td><strong>Company Search</strong></td><td>Anyone you search for on Apollo yourself (in the demo, a pretend
+      Apollo with made-up people).</td><td>You write the email (Write email), for the leads you pick.</td></tr>
+  </tbody>
+</table>
+
+"""
+# the real projects and the business, as the demo's Docs speak of them (longest first)
+_DEMO_WORDS = (("TVF, LCX or another domain", "any domain"), ("US Production Houses", "the production-company project"),
+               ("LCX Clipping", "Podcast Partnerships"), ("LCX Services'", "the services project's"),
+               ("LCX Services", "the services project"), ("Startup Acquisition Targets", "the startup project"),
+               ("The Viral Fever", "Demo Studio"), ("ReelForge", "the project's"), ("TVF's", "the studio's"),
+               ("LCX's", "the studio's"), ("TVF", "the studio"), ("LCX", "the studio"))
+
+
+@app.get("/demo/docs.html")
+def demo_docs():
+    """The Docs page for the demo: the projects it has, no names of the real ones, and no one's address."""
+    from fastapi.responses import HTMLResponse
+    if not DEMO_ON:
+        raise HTTPException(404, "not found")
+    html = io.open(os.path.join(HERE, "static", "docs.html"), encoding="utf-8").read()
+    html = re.sub(r'<h2 id="projects">.*?(?=<h2 )', lambda m: _DEMO_PROJECTS, html, count=1, flags=re.S)
+    for real, said in _DEMO_WORDS:
+        html = html.replace(real, said)
+    html = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+                  lambda m: m.group(0) if m.group(0).lower().endswith(".example") else "someone@example.com", html)
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=3600"})
 
 
 app.mount("/", StaticFiles(directory=os.path.join(HERE, "static"), html=True),
