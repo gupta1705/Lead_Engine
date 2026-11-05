@@ -1,8 +1,8 @@
-"""The owner's ReelForge clipping copy, with lead facts kept separate from offer claims."""
+"""The owner's LCX Clipping copy, with show facts kept separate from offer claims."""
 import hashlib
 import math
 
-VERSION = "reelforge-20261021"
+VERSION = "lcx-catalogue-20261105"
 URL = "https://reelforge-lcx.vercel.app"
 
 
@@ -29,7 +29,18 @@ def context(meta, company, seed=None, title=None, noun="episode"):
     opportunity = ('An %s such as "%s" is a starting point for standalone clips aimed at different audiences.'
                    % (noun, title)) if title else (
                        "Your long-form %ss could become standalone clips aimed at different audiences." % unit)
+    catalogue_opening = (
+        "The depth of the conversations on %s and the quality of your work stand out." % company
+        if meta.get("podcast_feed") else
+        "The quality and depth of the long-form work in %s's catalogue stand out." % company)
+    catalogue_opportunity = (
+        "Looking at your catalogue of at least %s episodes, we see an opportunity to turn more of these "
+        "conversations into reels and share them with new audiences." % format(count, ",")
+        if count else
+        "Looking at your long-form catalogue, we see an opportunity to turn more of your work into reels "
+        "and share it with new audiences.")
     return {
+        "catalogue_opening": catalogue_opening, "catalogue_opportunity": catalogue_opportunity,
         "reelforge_seed": str(seed or company), "reelforge_episode_count": count or 0,
         "archive_opportunity": archive, "archive_angle": archive_30,
         "archive_potential": format(count * 30, ",") if count else "More",
@@ -46,62 +57,43 @@ def pick(templates, ctx):
 
 
 def apply_config(outreach):
-    """Change copy only; mailbox routing, qualifications and sending limits stay in place."""
+    """Apply the owner's catalogue/distribution email; preserve sending and qualification settings."""
+    # Keep the existing version field: in-flight drafting checks it again before
+    # inserting, so a process using the superseded copy cannot reintroduce it.
     outreach["reelforge_templates"] = VERSION
     outreach["subject_max_words"] = 16
     outreach["subject_max_words_guidance"] = (
-        "Owner, 2026-10-21: the four ReelForge subjects supersede the earlier five-word rule for LCX Clipping alone. "
-        "Named shows and clips/48-hour subjects are allowed; a long show name uses the template's fallback.")
-    outreach["neutral_hook"] = "{{company}}'s long-form catalogue could support a larger short-form feed."
+        "LCX Clipping catalogue subjects may name the show; long names use the fallback subject.")
+    outreach["neutral_hook"] = "{{company}}'s long-form catalogue could reach new audiences through short clips."
     outreach["generated_hook"] = dict(outreach.get("generated_hook") or {}, enabled=False,
-        guidance="Owner's ReelForge templates, 2026-10-21. Deterministic lead facts only; no model calls or generated hooks.")
+        guidance="Owner's catalogue template, 2026-11-05. Recorded show facts only; no generated hooks or model calls.")
     outreach["footer"] = {
-        "text": "Regards,\n{{sender_name}}\nLCX | lightscameraexperiment.com",
-        "guidance": "Owner's 2026-10-21 sign-off, using each approver's own name under the existing sign_as setup."
+        "text": "Regards,\n{{sender_name}}",
+        "guidance": "Owner's 2026-11-05 sign-off, using the actual approver's name. Kartikeya is an example, not a shared identity."
     }
-    brand = "LCX (Lights Camera Experiment), TVF's exclusive AI partner"
     outreach["templates"] = [
-        {"key": "reelforge_archive_episode_v1", "subject": "500+ more shorts for {{company}}",
-         "subject_fallback": "500+ more shorts for your show",
-         "body": "Hi {{greeting_name}},\n\n{{archive_opportunity}}\n\n{{episode_opportunity}}\n\nAt " + brand + ", ReelForge handles this end to end:\n\n"
-                 "- Clipping: a pod of AI and human editors finds, cuts and captions the moments\n"
-                 "- Seeding: new pages built around your show\n"
-                 "- Distribution: third-party networks plus your own social channels\n\n"
-                 "We ship 500+ clips per episode within 48 hours, and nothing goes live without your approval. "
-                 "You can see how it works here: " + URL + "\n\n"
-                 "Can I send you a free clip set from {{sample_target}} this week?\n\n{{footer}}"},
-        {"key": "reelforge_volume_48h_v1", "subject": "500+ clips per episode in 48 hrs",
-         "subject_fallback": "500+ clips in 48 hrs",
-         "body": "Hi {{greeting_name}},\n\nMost in-house teams cut a handful of clips per episode. We cut 500+ in 48 hours.\n\n"
-                 "That's ReelForge, from " + brand + ". A pod of AI and human editors clips every episode, "
-                 "we seed it on new pages built around the show, and distribute it across third-party networks and your own channels. "
-                 "More on how it runs: " + URL + "\n\n"
-                 "For {{company}}, that means {{episode_reference}} can reach different feeds at once, well beyond your subscribers.\n\n"
-                 "Would a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"},
-        {"key": "reelforge_episode_potential_v1", "subject": "How many clips can {{company}} carry?",
-         "subject_fallback": "How many clips per episode?",
-         "body": "Hi {{greeting_name}},\n\nHow many clips did {{episode_reference}} get, and how many could it carry?\n\n"
-                 "A long-form conversation or video can hold moments for different audiences. Cutting at that volume by hand every week is where most teams stop.\n\n"
-                 "ReelForge, from " + brand + ", picks up from there: a pod of AI and human editors clips at volume, "
-                 "we seed on new pages built around the show, and distribute across third-party networks and your channels. "
-                 "500+ clips per episode in 48 hours, all approved by you. Here's how it works: " + URL + "\n\n"
-                 "Would a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"},
-        {"key": "reelforge_archive_feed_v1", "requires_archive_count": True,
-         "subject": "{{archive_potential}} shorts in {{company}}'s archive", "subject_fallback": "Your archive, as daily shorts",
-         "body": "Hi {{greeting_name}},\n\n{{archive_angle}}\n\n"
-                 "ReelForge, from " + brand + ", turns that archive into a daily feed. A pod of AI and human editors "
-                 "clips at volume, we seed it on new pages built around the show, and distribute across third-party networks and your own channels.\n\n"
-                 "500+ clips per episode, delivered within 48 hours, nothing live without your sign-off. More on how it runs: " + URL + "\n\n"
-                 "Would a free clip set from any archive episode be useful to see?\n\n{{footer}}"},
+        {"key": "lcx_catalogue_distribution_v1", "subject": "Turning viewers into fans for {{company}}",
+         "subject_fallback": "Turning your viewers into fans",
+         "body": "{{hello}}\n\nI trust you are doing well.\n\n"
+                 "{{catalogue_opening}} {{catalogue_opportunity}}\n\n"
+                 "That gap is exactly where we come in. In today's landscape, excellent content also needs visibility. "
+                 "We are LCX, a new-age media agency built to help your work reach the viewers it deserves. "
+                 "We combine clipping with distribution workflows across social platforms to help turn passive viewers into loyal fans.\n\n"
+                 "We would be glad to send across a few sample clips so you can judge the quality for yourself. "
+                 "If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\n"
+                 "Thank you for your time. I hope we can work together to turn your viewers into fans.\n\n{{footer}}"},
         {"key": "clipping_followup_1", "kind": "follow_up", "subject": "Re: {{opener_subject}}",
-         "body": "Hi {{greeting_name}},\n\nFollowing up on ReelForge for {{company}}: 500+ clips per episode within 48 hours. "
-                 "Our AI and human editors handle clipping, we seed on pages built around your show, and distribute across third-party networks and your own channels. "
-                 "Nothing goes live without your approval.\n\nMore on how it runs: " + URL + "\n\n"
-                 "Would a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"},
+         "body": "{{hello}}\n\nI hope you are doing well.\n\n"
+                 "Following up on my note about helping {{company}} reach new audiences through short clips and distribution across social platforms.\n\n"
+                 "We would be glad to send across a few sample clips so you can judge the quality for yourself. "
+                 "If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\n"
+                 "Thank you for your time.\n\n{{footer}}"},
     ]
     outreach["guidance"] = (
-        "Owner, 2026-10-21: rotate the four provided ReelForge opener approaches, with 500+ clips per episode within 48 hours. "
-        "Use only this lead's recorded episode count and a recent recorded title; never copy Figuring Out, FO518 or its guest to unrelated leads. "
-        "Archive arithmetic is hypothetical, not a claim of previously unseen footage. The free-clip question is authorized; no reply-yes offer and no em dashes. "
-        "Approver names and all existing approval, qualification, recipient, sender and scheduling rules remain in force.")
+        "Owner, 2026-11-05: use the supplied LCX media-agency catalogue/distribution template as the single opener. "
+        "Use each lead's own show name and recorded episode count, with a neutral catalogue sentence when the count is unknown. "
+        "Do not repeat Lex Fridman or a fixed 10,000-reel estimate on unrelated leads; a clip estimate requires supporting evidence. "
+        "The sample-clips invitation is authorized. No em dashes or reply-yes offers. Sign with the actual approver's name. "
+        "The existing one follow-up after four days stays enabled, with matching sample-clips copy. "
+        "Sending, qualification, contact selection and approval rules are preserved.")
     return outreach

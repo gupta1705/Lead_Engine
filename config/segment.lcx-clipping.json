@@ -919,7 +919,7 @@
     "sign_as": "approver",
     "sign_as_guidance": "Emails are signed by their approver and sent from that person's connected Gmail (send_from approver).",
     "subject_max_words": 16,
-    "subject_max_words_guidance": "Owner, 2026-10-21: the four ReelForge subjects supersede the earlier five-word rule for LCX Clipping alone. Named shows and clips/48-hour subjects are allowed; a long show name uses the template's fallback.",
+    "subject_max_words_guidance": "LCX Clipping catalogue subjects may name the show; long names use the fallback subject.",
     "send_window": {
       "enabled": true,
       "start": "10:00",
@@ -934,41 +934,22 @@
     },
     "daily_send_cap": 120,
     "hook_style": "clipping",
-    "neutral_hook": "{{company}}'s long-form catalogue could support a larger short-form feed.",
+    "neutral_hook": "{{company}}'s long-form catalogue could reach new audiences through short clips.",
     "templates": [
       {
-        "key": "reelforge_archive_episode_v1",
-        "subject": "500+ more shorts for {{company}}",
-        "subject_fallback": "500+ more shorts for your show",
-        "body": "Hi {{greeting_name}},\n\n{{archive_opportunity}}\n\n{{episode_opportunity}}\n\nAt LCX (Lights Camera Experiment), TVF's exclusive AI partner, ReelForge handles this end to end:\n\n- Clipping: a pod of AI and human editors finds, cuts and captions the moments\n- Seeding: new pages built around your show\n- Distribution: third-party networks plus your own social channels\n\nWe ship 500+ clips per episode within 48 hours, and nothing goes live without your approval. You can see how it works here: https://reelforge-lcx.vercel.app\n\nCan I send you a free clip set from {{sample_target}} this week?\n\n{{footer}}"
-      },
-      {
-        "key": "reelforge_volume_48h_v1",
-        "subject": "500+ clips per episode in 48 hrs",
-        "subject_fallback": "500+ clips in 48 hrs",
-        "body": "Hi {{greeting_name}},\n\nMost in-house teams cut a handful of clips per episode. We cut 500+ in 48 hours.\n\nThat's ReelForge, from LCX (Lights Camera Experiment), TVF's exclusive AI partner. A pod of AI and human editors clips every episode, we seed it on new pages built around the show, and distribute it across third-party networks and your own channels. More on how it runs: https://reelforge-lcx.vercel.app\n\nFor {{company}}, that means {{episode_reference}} can reach different feeds at once, well beyond your subscribers.\n\nWould a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"
-      },
-      {
-        "key": "reelforge_episode_potential_v1",
-        "subject": "How many clips can {{company}} carry?",
-        "subject_fallback": "How many clips per episode?",
-        "body": "Hi {{greeting_name}},\n\nHow many clips did {{episode_reference}} get, and how many could it carry?\n\nA long-form conversation or video can hold moments for different audiences. Cutting at that volume by hand every week is where most teams stop.\n\nReelForge, from LCX (Lights Camera Experiment), TVF's exclusive AI partner, picks up from there: a pod of AI and human editors clips at volume, we seed on new pages built around the show, and distribute across third-party networks and your channels. 500+ clips per episode in 48 hours, all approved by you. Here's how it works: https://reelforge-lcx.vercel.app\n\nWould a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"
-      },
-      {
-        "key": "reelforge_archive_feed_v1",
-        "requires_archive_count": true,
-        "subject": "{{archive_potential}} shorts in {{company}}'s archive",
-        "subject_fallback": "Your archive, as daily shorts",
-        "body": "Hi {{greeting_name}},\n\n{{archive_angle}}\n\nReelForge, from LCX (Lights Camera Experiment), TVF's exclusive AI partner, turns that archive into a daily feed. A pod of AI and human editors clips at volume, we seed it on new pages built around the show, and distribute across third-party networks and your own channels.\n\n500+ clips per episode, delivered within 48 hours, nothing live without your sign-off. More on how it runs: https://reelforge-lcx.vercel.app\n\nWould a free clip set from any archive episode be useful to see?\n\n{{footer}}"
+        "key": "lcx_catalogue_distribution_v1",
+        "subject": "Turning viewers into fans for {{company}}",
+        "subject_fallback": "Turning your viewers into fans",
+        "body": "{{hello}}\n\nI trust you are doing well.\n\n{{catalogue_opening}} {{catalogue_opportunity}}\n\nThat gap is exactly where we come in. In today's landscape, excellent content also needs visibility. We are LCX, a new-age media agency built to help your work reach the viewers it deserves. We combine clipping with distribution workflows across social platforms to help turn passive viewers into loyal fans.\n\nWe would be glad to send across a few sample clips so you can judge the quality for yourself. If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\nThank you for your time. I hope we can work together to turn your viewers into fans.\n\n{{footer}}"
       },
       {
         "key": "clipping_followup_1",
         "kind": "follow_up",
         "subject": "Re: {{opener_subject}}",
-        "body": "Hi {{greeting_name}},\n\nFollowing up on ReelForge for {{company}}: 500+ clips per episode within 48 hours. Our AI and human editors handle clipping, we seed on pages built around your show, and distribute across third-party networks and your own channels. Nothing goes live without your approval.\n\nMore on how it runs: https://reelforge-lcx.vercel.app\n\nWould a free clip set from {{sample_target}} be useful to see?\n\n{{footer}}"
+        "body": "{{hello}}\n\nI hope you are doing well.\n\nFollowing up on my note about helping {{company}} reach new audiences through short clips and distribution across social platforms.\n\nWe would be glad to send across a few sample clips so you can judge the quality for yourself. If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\nThank you for your time.\n\n{{footer}}"
       }
     ],
-    "guidance": "Owner, 2026-10-21: rotate the four provided ReelForge opener approaches, with 500+ clips per episode within 48 hours. Use only this lead's recorded episode count and a recent recorded title; never copy Figuring Out, FO518 or its guest to unrelated leads. Archive arithmetic is hypothetical, not a claim of previously unseen footage. The free-clip question is authorized; no reply-yes offer and no em dashes. Approver names and all existing approval, qualification, recipient, sender and scheduling rules remain in force.",
+    "guidance": "Owner, 2026-11-05: use the supplied LCX media-agency catalogue/distribution template as the single opener. Use each lead's own show name and recorded episode count, with a neutral catalogue sentence when the count is unknown. Do not repeat Lex Fridman or a fixed 10,000-reel estimate on unrelated leads; a clip estimate requires supporting evidence. The sample-clips invitation is authorized. No em dashes or reply-yes offers. Sign with the actual approver's name. The existing one follow-up after four days stays enabled, with matching sample-clips copy. Sending, qualification, contact selection and approval rules are preserved.",
     "greeting_fallback": "there",
     "follow_ups": {
       "enabled": true,
@@ -1025,8 +1006,8 @@
     ],
     "mailbox_guidance": "Legacy project-pool entries are retained for historical reply polling. New emails use the approving person's connected Gmail and that mailbox's cross-project daily cap.",
     "footer": {
-      "text": "Regards,\n{{sender_name}}\nLCX | lightscameraexperiment.com",
-      "guidance": "Owner's 2026-10-21 sign-off, using each approver's own name under the existing sign_as setup."
+      "text": "Regards,\n{{sender_name}}",
+      "guidance": "Owner's 2026-11-05 sign-off, using the actual approver's name. Kartikeya is an example, not a shared identity."
     },
     "default_cc": [
       "amritanshv@lightscameraexperiment.com"
@@ -1035,13 +1016,13 @@
     "generated_hook": {
       "model": "openai/gpt-oss-120b",
       "enabled": false,
-      "guidance": "Owner's ReelForge templates, 2026-10-21. Deterministic lead facts only; no model calls or generated hooks.",
+      "guidance": "Owner's catalogue template, 2026-11-05. Recorded show facts only; no generated hooks or model calls.",
       "provider": "groq",
       "max_words": 45,
       "max_calls_per_run": 200,
       "requests_per_minute": 25
     },
-    "reelforge_templates": "reelforge-20261021",
+    "reelforge_templates": "lcx-catalogue-20261105",
     "send_from": "approver",
     "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads.",
     "prioritize_fresh_leads": true

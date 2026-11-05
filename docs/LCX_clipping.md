@@ -465,6 +465,26 @@ first. Explicit subscriber/view/score/date sorts still work. Existing approved
 email sending times and the mailbox's 50-per-day cap remain in force.
 
 The Wednesday refresh automatically discovers, qualifies, enriches and drafts
-new leads with the four ReelForge templates. Its initial scoring pass defers
+new leads with the current catalogue and distribution template. Its initial scoring pass defers
 shortlisting until enrichment finishes and the final gates have run. No Apollo credits or model calls
 are used for clipping. An email still requires a person's approval before sending.
+
+## Catalogue and distribution email template 5 November 2026
+
+The owner's new template supersedes the four ReelForge opener variants. The single
+opener introduces LCX as a media agency, connects clipping with distribution across
+social platforms, and offers sample clips from an episode the recipient chooses.
+The greeting uses the selected contact and the sign-off uses the actual approver's
+name. The footer is now simply Regards followed by that name.
+
+Show names and recorded episode counts personalise the catalogue paragraph. When
+no episode count is known, use neutral catalogue wording. Do not repeat Lex Fridman
+or the example's 10000-reel estimate across unrelated leads. The current data does
+not establish a clip total, so the template does not invent one. Claims about having
+closely followed each show are also omitted. No em dashes or reply-yes offers.
+
+The existing one follow-up after four days keeps its timing and Gmail thread, with
+matching sample-clips copy. New copy is deterministic and uses no model calls.
+Existing unsent openers and follow-ups are rewritten; any affected approval returns
+to Drafts for review. Sent messages, inbound replies, recipients, attachments and
+all targeting, routing, scheduling and limit settings are preserved.
