@@ -566,6 +566,51 @@ def api():
               ((mine_row.get("name"), mine_row.get("sent"), mine_row.get("sent_today")),
                [(x["name"], x["approved"], x["sent"]) for x in by if x["account"] == kart_email]),
               (("Asha Rao", 1, 1), [("Kartikeya", 1, 0)]))
+
+        # Approval volume is independent of the mailbox's daily sending capacity.
+        # A legacy batch limit must not reject a larger human-reviewed selection.
+        import outreach_policy as pol
+        cfg["outreach"]["batch_approval"] = {"enabled": True, "sample_min": 3, "sample_fraction": 0.1, "max_batch": 50}
+        cur.execute("update segments set config=%s::jsonb where id=%s", (json.dumps(cfg), seg_id))
+        main._SEG_CACHE.update(at=0.0, rows=[])
+        bulk_ids = []
+        for _ in range(125):
+            be, bc = company()
+            cur.execute("update entities set metadata='{\"country\":\"US\",\"city\":\"New York\"}'::jsonb where id=%s", (be,))
+            cur.execute("insert into outreach (entity_id,contact_id,template_key,subject,body,status)"
+                        " values (%s,%s,'t','Fixture bulk approval',%s,'drafted') returning id", (be, bc, body))
+            bulk_ids.append(str(cur.fetchone()[0]))
+        sampled = call("POST", "/api/outreach/batch/sample", cookies=a, json={"ids": bulk_ids})
+        smp = sampled.json()
+        check("125 drafts can be sampled despite the old 50-item batch setting",
+              (sampled.status_code, len(smp.get("approvable", []))), (200, 125))
+        approved = call("POST", "/api/outreach/batch/approve", cookies=a,
+                        json={"ids": smp.get("approvable", []), "sample": smp.get("sample", []), "token": smp.get("token", "")})
+        check("all 125 can be approved at once, independently of today's remaining capacity",
+              (approved.status_code, approved.json().get("approved")), (200, 125))
+        cur.execute("select send_after::date,count(*) from outreach where id=any(%s::uuid[])"
+                    " and send_after is not null group by 1", (bulk_ids,))
+        per_day = cur.fetchall()
+        check("the queue spreads across later days and never schedules more than 50 per day",
+              (sum(r[1] for r in per_day), max([r[1] for r in per_day] or [0]) <= 50, len(per_day) >= 3), (125, True, True))
+        cur.execute("select daily_cap from user_mailboxes where lower(address)=%s", (a_gmail,))
+        check("unlimited approvals do not raise the sending cap", cur.fetchone()[0], 50)
+        full_e, full_c = company()
+        cur.execute("insert into outreach (entity_id,contact_id,template_key,subject,body,status)"
+                    " values (%s,%s,'t','Fixture full schedule',%s,'drafted') returning id", (full_e, full_c, body))
+        full_id = str(cur.fetchone()[0])
+        old_place = pol._Placer.place
+        def full_schedule(*args, **kwargs):
+            raise pol.NoSendSlot("no free sending minute in the next 60 days")
+        try:
+            pol._Placer.place = full_schedule
+            queued = call("POST", "/api/outreach/%s/decision" % full_id, cookies=a, json={"action": "approve"})
+        finally:
+            pol._Placer.place = old_place
+        cur.execute("select status,send_after,send_wait_why from outreach where id=%s", (full_id,))
+        waiting_row = cur.fetchone()
+        check("a full planning horizon keeps a single email approved and waiting",
+              (queued.status_code, waiting_row[0], waiting_row[1], bool(waiting_row[2])), (200, "approved", None, True))
     finally:
         conn.rollback()
         conn.close()

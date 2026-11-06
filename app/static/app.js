@@ -228,7 +228,7 @@ const state = {
   board: { filters: { q: "", min_score: REVIEW_THRESHOLD }, cols: {}, token: 0 },
   leads: { filters: { q: "", status: "all", source: "", contact: "" }, selected: new Map(),
            page: 0, perPage: 50, total: 0, rows: [], token: 0 },
-  outreach: { folder: "drafts", rows: [], counts: {}, category: "", service: "", sort: "default", direction: "desc", offset: 0, limit: 200, token: 0, busy: false, selected: new Set() },
+  outreach: { folder: "drafts", rows: [], counts: {}, category: "", service: "", sort: "default", direction: "desc", offset: 0, limit: 200, token: 0, busy: false, selected: new Set(), selectionRows: new Map() },
   ops: { timer: null },
   notif: { counts: null, at: 0 },
 };
@@ -1208,6 +1208,10 @@ function windowsText(ws) {
 function scheduledText(days) { return (days || []).map((d) => `${d.count} on ${d.label}`).join(", "); }
 async function loadOutreach() {
   const o = state.outreach, token = ++o.token;
+  const selectionScope = outreachSelectionScope();
+  if (o.selectionScope !== selectionScope) {
+    o.selected.clear(); o.selectionRows = new Map(); o.selectionScope = selectionScope;
+  }
   if (!$("#outreachBody").children.length) $("#outreachBody").innerHTML = skeletonRows(5, 8);
   let d;
   const query = new URLSearchParams({ folder: o.folder, category: o.category, service: o.service,
@@ -1224,6 +1228,7 @@ async function loadOutreach() {
   if (token !== o.token) return;
   o.rows = d.rows; o.counts = d.counts || {};
   const total = d.total ?? d.rows.length;
+  o.total = total;
   if (o.offset && o.offset >= total) {
     o.offset = total ? Math.floor((total - 1) / o.limit) * o.limit : 0;
     return loadOutreach();
@@ -1235,8 +1240,11 @@ async function loadOutreach() {
     o.folder = "outbox";
     return loadOutreach();
   }
-  const present = new Set(d.rows.filter((r) => !r.approval_blocked).map((r) => r.id));
-  o.selected = new Set([...(o.selected || [])].filter((id) => present.has(id)));
+  o.selectionRows ||= new Map();
+  for (const r of d.rows) {
+    if (r.approval_blocked) { o.selected.delete(r.id); o.selectionRows.delete(r.id); }
+    else if (o.selected.has(r.id)) o.selectionRows.set(r.id, r);
+  }
   const batch = batchOn() && REVIEW_FOLDERS.includes(o.folder) && d.rows.length > 0;
   $("#outreachTable").classList.toggle("batch", batch);
   $("#folderTabs").innerHTML = FOLDERS.filter(([key]) => (key !== "attention" || o.counts.attention || o.folder === "attention")
@@ -1245,7 +1253,7 @@ async function loadOutreach() {
     `<button class="tab ${key === o.folder ? "active" : ""}" role="tab" aria-selected="${key === o.folder}" data-f="${key}">${label}<span class="pts">${(d.filtered_counts || o.counts)[key] || 0}</span>${key === "conversation" && (d.filtered_counts || o.counts).waiting
       ? `<span class="pts wait" title="Waiting on us: nobody on our side has answered yet">${(d.filtered_counts || o.counts).waiting} waiting</span>` : ""}</button>`).join("");
   $$("#folderTabs .tab").forEach((b) => b.addEventListener("click", () => {
-    o.folder = b.dataset.f; o.offset = 0; o.selected.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
+    o.folder = b.dataset.f; o.offset = 0; o.selected.clear(); o.selectionRows.clear(); history.replaceState(null, "", "#outreach/" + o.folder); loadOutreach();
   }));
   const rowHtml = (r) => `
     <tr class="row-link" data-id="${esc(r.id)}" tabindex="0">
@@ -1295,7 +1303,8 @@ async function loadOutreach() {
   $("#outreachWhenCol").textContent = o.folder === "outbox" && sendWindow() ? "Goes out" : "When";
   delegateOpen("#outreachBody", (id) => { setNav("mail", state.outreach.rows.map((r) => String(r.id))); openMessage(id); }, ".sel-col");
   $$("#outreachBody [data-sel]").forEach((c) => c.addEventListener("change", () => {
-    if (c.checked) o.selected.add(c.dataset.sel); else o.selected.delete(c.dataset.sel);
+    if (c.checked) { o.selected.add(c.dataset.sel); o.selectionRows.set(c.dataset.sel, o.rows.find((r) => r.id === c.dataset.sel)); }
+    else { o.selected.delete(c.dataset.sel); o.selectionRows.delete(c.dataset.sel); }
     renderBatchBar();
   }));
   renderBatchBar();
@@ -1305,7 +1314,7 @@ async function loadOutreach() {
     <button class="btn compact" data-page="next" ${end < total ? "" : "disabled"}>Next</button>`;
   $$("#outreachPager [data-page]").forEach((b) => b.addEventListener("click", () => {
     o.offset = Math.max(0, o.offset + (b.dataset.page === "next" ? o.limit : -o.limit));
-    o.selected.clear(); loadOutreach();
+    loadOutreach();
   }));
   updateOutreachCount(o.counts);
 }
@@ -1331,7 +1340,7 @@ function renderOutreachFilters(d) {
     ${o.category || o.service || o.sort !== "default" ? '<button class="btn subtle compact" id="outreachReset">Reset</button>' : ""}
     ${["subscribers", "views"].includes(o.sort) ? '<span class="small muted">Unknown metrics appear last.</span>' : ""}
     <div class="pager" id="outreachPager" aria-label="Outreach pages"></div>`;
-  const change = () => { o.offset = 0; o.selected.clear(); loadOutreach(); };
+  const change = () => { o.offset = 0; o.selected.clear(); o.selectionRows.clear(); loadOutreach(); };
   $("#outreachCategory").addEventListener("change", (e) => { o.category = e.target.value; change(); });
   $("#outreachService")?.addEventListener("change", (e) => { o.service = e.target.value; change(); });
   $("#outreachSort").addEventListener("change", (e) => { [o.sort, o.direction] = e.target.value.split(":"); change(); });
@@ -1348,35 +1357,75 @@ function outreachMetric(row) {
 
 function renderBatchBar() {
   const o = state.outreach, bar = $("#batchBar");
-  const on = batchOn() && REVIEW_FOLDERS.includes(o.folder) && o.rows.length > 0;
+  const on = batchOn() && REVIEW_FOLDERS.includes(o.folder) && (o.rows.length > 0 || o.selected.size > 0);
   bar.hidden = !on;
   if (!on) return;
   const n = o.selected.size, pol = outreachPolicy().batch_approval;
   const k = n ? Math.min(n, Math.max(pol.sample_min, Math.ceil(n * pol.sample_fraction))) : 0;
   bar.innerHTML = `<span>${n ? `<strong>${n}</strong> selected` : "Select drafts to approve them together."}</span>
     ${n ? `<span class="small muted">You'll read a random ${k} of them before they're approved.</span>` : ""}
+    <span class="small muted">Approvals are unlimited. Sending stays within each account's daily limit.</span>
     <span class="grow"></span>
-    <button class="btn primary" id="batchGo" ${n ? "" : "disabled"}>${icon("check", 16)} Approve ${n || ""} selected</button>`;
-  const available = o.rows.filter((r) => !r.approval_blocked).length;
-  const all = $("#outreachSelAll"), cap = Math.min(available, pol.max_batch || available);
-  all.disabled = !cap;
-  all.checked = n > 0 && n >= cap;
-  all.indeterminate = n > 0 && n < cap;
-  all.setAttribute("aria-label", "Select the first " + cap + " drafts"); all.title = "Select the first " + cap + " drafts";
+    <button class="btn compact" id="batchSelectAll" ${o.selectingAll ? "disabled" : ""}>${o.selectingAll ? "Selecting drafts..." : "Select all matching drafts"}</button>
+    ${n ? `<button class="btn subtle compact" id="batchClear" ${o.selectingAll ? "disabled" : ""}>Clear selection</button>` : ""}
+    <button class="btn primary" id="batchGo" ${n && !o.selectingAll ? "" : "disabled"}>${icon("check", 16)} Approve ${n || ""} selected</button>`;
+  const available = o.rows.filter((r) => !r.approval_blocked);
+  const selectedHere = available.filter((r) => o.selected.has(r.id)).length;
+  const all = $("#outreachSelAll");
+  all.disabled = !available.length || !!o.selectingAll;
+  all.checked = !!available.length && selectedHere === available.length;
+  all.indeterminate = selectedHere > 0 && selectedHere < available.length;
+  all.setAttribute("aria-label", "Select all drafts on this page"); all.title = "Select all drafts on this page";
+  $$("#outreachBody [data-sel]").forEach((c) => {
+    c.checked = o.selected.has(c.dataset.sel);
+    c.disabled = !!o.selectingAll || !!o.rows.find((r) => r.id === c.dataset.sel)?.approval_blocked;
+  });
+  $("#batchSelectAll").addEventListener("click", selectAllMatchingDrafts);
+  $("#batchClear")?.addEventListener("click", () => { o.selected.clear(); o.selectionRows.clear(); renderBatchBar(); });
   $("#batchGo").addEventListener("click", startBatch);
+}
+
+function outreachSelectionScope() {
+  const o = state.outreach;
+  return JSON.stringify([state.segment?.slug, state.segment?.id, o.folder, o.category, o.service, o.sort, o.direction]);
+}
+
+async function selectAllMatchingDrafts() {
+  const o = state.outreach;
+  if (o.selectingAll || !REVIEW_FOLDERS.includes(o.folder)) return;
+  const scope = outreachSelectionScope;
+  const started = scope(), selected = new Map();
+  o.selectingAll = true; renderBatchBar();
+  try {
+    let total = Infinity;
+    for (let offset = 0; offset < total; offset += 200) {
+      const query = new URLSearchParams({ folder: o.folder, category: o.category, service: o.service,
+        sort: o.sort, direction: o.direction, limit: 200, offset });
+      const d = await api("/api/outreach?" + query);
+      if (started !== scope()) return;
+      if (offset === 0) total = d.total ?? d.rows.length;
+      for (const row of d.rows) if (!row.approval_blocked) selected.set(row.id, row);
+      if (!d.rows.length) break;
+    }
+    o.selectionRows = selected; o.selected = new Set(selected.keys());
+  } catch (e) { toast("Could not select all drafts: " + e.message, true); }
+  finally { o.selectingAll = false; renderBatchBar(); }
 }
 
 async function startBatch() {
   const o = state.outreach, ids = [...o.selected];
-  const expected = expectedRecipients(o.rows, ids);
+  const selectedRows = ids.map((id) => o.selectionRows?.get(id) || o.rows.find((r) => r.id === id)).filter(Boolean);
+  if (selectedRows.length !== ids.length) return toast("The selected drafts changed. Select them again before approval.", true);
+  const expected = expectedRecipients(selectedRows, ids);
   const btn = $("#batchGo");
   btn.classList.add("loading");
   let s;
   try { s = await post("/api/outreach/batch/sample", { ids, ...(expected ? { expected_recipients: expected } : {}) }); }
   catch (e) { btn.classList.remove("loading"); return toast(e.message, true); }
   btn.classList.remove("loading");
-  const byId = Object.fromEntries(o.rows.map((r) => [r.id, r]));
+  const byId = Object.fromEntries(selectedRows.map((r) => [r.id, r]));
   const sample = s.sample.map((id) => byId[id]).filter(Boolean);
+  if (sample.length !== s.sample.length) return toast("The review sample changed. Refresh your selection and try again.", true);
   const n = s.approvable.length;
   modal.open(`
     ${modalHead(`${icon("check", 16)}<span>Approve ${n} draft${n === 1 ? "" : "s"}</span>`)}
@@ -1419,6 +1468,7 @@ async function startBatch() {
       const r = await post("/api/outreach/batch/approve", { ids: s.approvable, sample: s.sample, token: s.token, ...guard });
       modal.close(true);
       o.selected.clear();
+      o.selectionRows.clear();
       // with a sending window: when they go, by their recipients' own days (owner, 2026-10-12). A paused project's
       // are held, and a held email is never promised a day, skipped drafts or not (second review, 2026-10-12)
       const held = "They wait in Approved: sending is paused for this project.";
@@ -2601,8 +2651,12 @@ function bindOps() {
   $("#logClose").addEventListener("click", () => { $("#logPanel").hidden = true; });
   $("#footerBtn").addEventListener("click", openFooter);
   $("#outreachSelAll").addEventListener("change", (e) => {
-    const o = state.outreach, max = (outreachPolicy().batch_approval || {}).max_batch || o.rows.length;
-    o.selected = new Set(e.target.checked ? o.rows.filter((r) => !r.approval_blocked).slice(0, max).map((r) => r.id) : []);
+    const o = state.outreach;
+    o.selectionRows ||= new Map();
+    for (const r of o.rows.filter((r) => !r.approval_blocked)) {
+      if (e.target.checked) { o.selected.add(r.id); o.selectionRows.set(r.id, r); }
+      else { o.selected.delete(r.id); o.selectionRows.delete(r.id); }
+    }
     $$("#outreachBody [data-sel]").forEach((c) => { c.checked = o.selected.has(c.dataset.sel); });
     renderBatchBar();
   });

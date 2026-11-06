@@ -729,9 +729,11 @@ config (`outreach.sending_paused`), so lifting it is a one-line change.
 Reading six hundred emails one at a time is not realistic, so the app has a
 second route that is still honest about what you read.
 
-1. Tick the checkbox on each draft you want, or the one in the header to take
-   one batch, the first 100 drafts. Untick the header box to clear the
-   selection.
+1. Tick individual drafts or the header checkbox for every draft on the current
+   page. Your selection stays selected across pages. **Select all matching drafts**
+   includes every draft under the current filters; **Clear selection** starts over.
+   Approval has no daily or batch-size cap. Sending remains limited to 50 per
+   Google account per day, with additional approvals queued for later days.
 2. A bar appears at the top. Press **Approve N selected**.
 3. The server picks a random sample from your selection and shows you those.
 

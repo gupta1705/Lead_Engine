@@ -202,9 +202,11 @@ fifteen-minute drafting and sending run when they fall due (since 2026-09-19;
 the separate daily follow-ups run went) and approved like any other email;
 approving sends them. The daily send cap counts them.
 
-**Batch approval.** In Drafts, tick the drafts (the header box takes the first
-`max_batch`, 100, and unticking it clears the selection) and press **Approve
-selected**. The server draws a random spot-check sample (at least three, or
+**Batch approval.** In Drafts, tick individual drafts or use the header checkbox
+for the current page. Selection persists across pages, and **Select all matching
+drafts** includes every draft under the active filters. Approval has no daily or
+batch-size limit; only sending is capped at 50 per Google account per day, with
+the rest queued. Press **Approve selected**. The server draws a random spot-check sample (at least three, or
 a tenth of the batch), and the approval stays locked until each sampled
 draft has been opened and ticked. The sample is signed with the batch, so it
 cannot be swapped for hand-picked drafts. Every draft is checked first (no

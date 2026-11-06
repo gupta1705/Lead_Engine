@@ -1453,12 +1453,9 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             raise HTTPException(400, "unknown action")
         if not cur.fetchone():
             raise HTTPException(409, "row is not in a state that allows " + action)
-        # Approving draws its own second in its recipient's next 10:00-10:30 (owner, 2026-10-12) and keeps
-        # it on the row; with no free minute in 60 days the approval is not made, and the page says why
-        try:
-            sched = pol.schedule_sends(cur, [oid], cfg, segment).get(oid)
-        except pol.NoSendSlot as e:
-            raise HTTPException(409, "cannot approve: %s" % e)
+        # Approval joins the queue even when all currently planned sending
+        # capacity is occupied. The sender and scheduler enforce daily limits.
+        sched = pol.schedule_sends(cur, [oid], cfg, segment).get(oid)
     # approved: it is sent now, not when someone next opens a terminal (app/scheduler.py) -- or, with a
     # sending window, at its own moment: the send loop is told it has a new one to wait for
     _scheduler.kick_outreach(segment, "manual")
@@ -1500,8 +1497,6 @@ def outreach_batch_sample(request: Request, body: dict = Body(...),
             raise HTTPException(403, "batch approval is off for this segment")
         if not ids:
             raise HTTPException(400, "select at least one draft")
-        if len(ids) > policy["max_batch"]:
-            raise HTTPException(400, "a batch is at most %d drafts" % policy["max_batch"])
         _check_expected_recipients(cur, ids, body, segment)
         unsigned = long_subjects(cur, ids, cfg)   # a subject over the cap is left out, saying why (2026-10-13)
         if signs_by_person(segment, cfg):

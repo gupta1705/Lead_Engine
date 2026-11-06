@@ -102,7 +102,9 @@ def batch_policy(outreach_cfg):
     frac = min(1.0, max(0.0, float(b.get("sample_fraction", 0.1))))
     return {"sample_min": max(1, int(b.get("sample_min", 3))),
             "sample_fraction": frac,
-            "max_batch": max(1, int(b.get("max_batch", 100))),
+            # Approval is an unlimited queue. Only the sender's daily capacity
+            # is capped; legacy max_batch settings no longer restrict approval.
+            "max_batch": None,
             # A spot check stands for a batch because every draft in it came
             # from one template. A sentence a model wrote for one lead can be
             # wrong on its own, so by default those are approved one at a time.
@@ -257,8 +259,6 @@ def draw_sample(ids, policy, secret, user, segment, has_generated=False, ttl=360
     ids = sorted({str(i) for i in ids})
     if not ids:
         raise ValueError("select at least one draft")
-    if len(ids) > policy["max_batch"]:
-        raise ValueError("a batch is at most %d drafts" % policy["max_batch"])
     k = required_sample(len(ids), policy, has_generated)
     sample = sorted(secrets.SystemRandom().sample(ids, k))
     exp = int(time.time()) + ttl
@@ -966,12 +966,13 @@ def _place_rows(cur, rows, w, cfg, segment, now=None, rng=None, why=None, strict
     return out
 
 
-def schedule_sends(cur, ids, cfg, segment, now=None, rng=None, strict=True):
+def schedule_sends(cur, ids, cfg, segment, now=None, rng=None, strict=False):
     """Give each approved email its own moment in its recipient's next window and store it, with the zone
     and why (sql/34). -> {id: schedule view}; {} where the project has no window. Every approval path calls
     it: one at a time and a batch (app/main.py), an email a person wrote (tools/outreach_compose.py).
-    strict: an email with no free minute in 60 days raises NoSendSlot, so a single approval says so and is
-    not made; otherwise it stays approved with no time and the reason, and settle_schedule tries again."""
+    Capacity never prevents approval by default: an email with no free minute
+    stays approved with its wait reason, and settle_schedule tries again.
+    Explicit strict callers may still request NoSendSlot for planning checks."""
     w = _sw().window_cfg(cfg)
     ids = [str(i) for i in ids or []]
     if not w or not ids:

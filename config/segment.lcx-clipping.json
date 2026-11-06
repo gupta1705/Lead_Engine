@@ -966,7 +966,6 @@
       "enabled": true,
       "sample_min": 3,
       "sample_fraction": 0.1,
-      "max_batch": 100,
       "guidance": "Owner decision 2026-09-10. Templated drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company). The approver's name, the batch and the sample are recorded.",
       "allow_generated": false,
       "generated_guidance": "A spot check stands for a batch because every draft in it came from one template. A model-written sentence can be wrong on its own, so those drafts are approved one at a time. Set allow_generated to true once you have read enough of them to trust it; batches containing them then draw generated_sample_fraction instead of sample_fraction.",

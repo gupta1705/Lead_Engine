@@ -3045,7 +3045,6 @@
       "enabled": true,
       "sample_min": 3,
       "sample_fraction": 0.1,
-      "max_batch": 100,
       "allow_generated": false,
       "generated_sample_fraction": 0.25,
       "guidance": "Drafts may be approved together: select them in Drafts, read the random sample the server draws (at least sample_min, or sample_fraction of the batch, whichever is more), tick each, approve. Every draft is checked first (no {{placeholder}}, no SET_ME, a valid address, a sendable company, the deck present). A v3 draft whose problem and solution lines a model wrote is approved one at a time (allow_generated false); one that uses service_copy's fixed lines (no model) can still go in a batch, since a sample of them stands for the rest."
