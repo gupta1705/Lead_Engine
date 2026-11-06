@@ -5,6 +5,8 @@
     GET    /api/mailboxes/connect      -> Google's own sign-in, for the person signed in here
     GET    /api/mailboxes/callback     <- Google sends them back: the address is linked to their login
     GET    /api/me/mailboxes           their addresses, with today's use of each one's limit
+    POST   /api/mailboxes/{id}/refresh-aliases  read verified From aliases through the parent account
+    POST   /api/mailboxes/{id}/sender   select the parent address or one of its current verified aliases
     DELETE /api/mailboxes/{id}         disconnect one of their own (Google's permission is withdrawn too)
     GET    /api/mailboxes/server-key   this server's public key (public): what `tools/users.py gmail` seals a
                                        sign-in with on the owner's laptop, so that only this server reads it
@@ -37,7 +39,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -154,6 +156,34 @@ def _back(kind, text):
                             status_code=302)
 
 
+def verified_aliases(box):
+    """Read the parent account's current aliases; never ask an alias to sign in.
+
+    The saved refresh credential remains server-only. A failed Google request
+    does not overwrite the cache or change the person's selected From address.
+    """
+    info = store.credentials(box)
+    if not info or not all(info.get(k) for k in ("refresh_token", "client_id", "client_secret")):
+        raise HTTPException(409, "Connect your parent Google account again in Your Gmail. Do not sign in with the LCX alias.")
+    try:
+        status, token = _post_form(TOKEN_URL, {
+            "grant_type": "refresh_token", "refresh_token": info["refresh_token"],
+            "client_id": info["client_id"], "client_secret": info["client_secret"]})
+        if status == 429 or status >= 500:
+            raise HTTPException(502, "Google is temporarily unavailable. Your sending address has not changed. Try again shortly.")
+        if status != 200 or not token.get("access_token"):
+            raise HTTPException(409, "Google could not renew this connection. Connect the parent TVF Google account again. If Google blocks it, ask IT to approve Sales Engine's Gmail access.")
+        status, profile = _get_json(PROFILE_URL, token["access_token"])
+        if status != 200 or str(profile.get("emailAddress") or "").lower() != box["address"].lower():
+            raise HTTPException(409, "Could not confirm the connected Google account. Connect the parent account again.")
+        status, data = _get_json(SEND_AS_URL, token["access_token"])
+        if status != 200:
+            raise HTTPException(502, "Google could not list this account's sending aliases. Try Refresh aliases again; if it persists, ask IT to check Gmail access.")
+        return store.aliases_from(data.get("sendAs"))
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        raise HTTPException(502, "Google could not be reached. Your sending address has not changed. Try again shortly.") from None
+
+
 def build_router(cursor):
     r = APIRouter()
 
@@ -162,6 +192,17 @@ def build_router(cursor):
         if not user:
             raise HTTPException(401, "not signed in")
         return user
+
+    def own_box(cur, mailbox_id, user, lock=False):
+        if not re.fullmatch(r"[0-9a-fA-F-]{32,36}", mailbox_id or ""):
+            raise HTTPException(404, "not one of your sending addresses")
+        cur.execute("select id, user_email, address, token_enc, send_as, from_address, enabled, last_error"
+                    " from user_mailboxes where id = %s and lower(user_email) = lower(%s)"
+                    + (" for update" if lock else ""), (mailbox_id, user))
+        rows = store._rows(cur)
+        if not rows:
+            raise HTTPException(404, "not one of your sending addresses")
+        return rows[0]
 
     @r.get(SERVER_KEY_PATH)
     def server_key():
@@ -177,7 +218,7 @@ def build_router(cursor):
                                   "'Web application' client to the server first.")
         params = {"client_id": client[0], "redirect_uri": redirect_uri(request), "response_type": "code",
                   "scope": store.GMAIL_SCOPE, "access_type": "offline", "prompt": "consent select_account",
-                  "include_granted_scopes": "true", "state": sign_state(user)}
+                  "include_granted_scopes": "true", "state": sign_state(user), "login_hint": user}
         return RedirectResponse(AUTH_URL + "?" + urllib.parse.urlencode(params), status_code=302)
 
     @r.get(CALLBACK_PATH)
@@ -228,13 +269,43 @@ def build_router(cursor):
         user = me(request)
         with cursor() as cur:
             rows = store.mailboxes(cur, user_email=user)
-        keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error", "send_as")
+        keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error", "send_as", "from_address")
         out = []
         for b in rows:
             row = {k: b.get(k) for k in keep}
             row["connected_at"] = b["connected_at"].isoformat() if b.get("connected_at") else None
             out.append(row)
         return {"mailboxes": out, "web_connect": bool(web_client())}
+
+    @r.post("/api/mailboxes/{mailbox_id}/refresh-aliases")
+    def refresh_aliases(mailbox_id: str, request: Request):
+        user = me(request)
+        with cursor() as cur:
+            box = own_box(cur, mailbox_id, user)
+        aliases = verified_aliases(box)
+        with cursor() as cur:
+            own_box(cur, mailbox_id, user, lock=True)
+            store.set_send_as(cur, mailbox_id, aliases)
+        return {"ok": True, "send_as": aliases}
+
+    @r.post("/api/mailboxes/{mailbox_id}/sender")
+    def choose_sender(mailbox_id: str, request: Request, body: dict = Body(...)):
+        user = me(request)
+        selected = str(body.get("address") or "").strip().lower()
+        with cursor() as cur:
+            box = own_box(cur, mailbox_id, user)
+        if not selected or len(selected) > 254:
+            raise HTTPException(400, "Choose your Google account or one of its verified aliases.")
+        # Validate with Google, not a browser-supplied alias or an old cached list.
+        aliases = verified_aliases(box)
+        if selected != box["address"].lower() and selected not in {a["address"] for a in aliases}:
+            raise HTTPException(400, "This address is not a verified sending alias of your Google account. Add it in Gmail Settings, Accounts, Send mail as, then refresh aliases.")
+        with cursor() as cur:
+            own_box(cur, mailbox_id, user, lock=True)
+            cur.execute("update user_mailboxes set send_as = %s::jsonb, from_address = %s, updated_at = now()"
+                        " where id = %s and lower(user_email) = lower(%s)",
+                        (json.dumps(aliases), None if selected == box["address"].lower() else selected, mailbox_id, user))
+        return {"ok": True, "address": box["address"], "sends_as": selected}
 
     @r.delete("/api/mailboxes/{mailbox_id}")
     def disconnect(mailbox_id: str, request: Request):

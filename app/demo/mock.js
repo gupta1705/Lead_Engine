@@ -158,6 +158,17 @@
     }
     // Your Gmail (app/mailbox_connect.py): the preview shows it switched on; Connect would leave for Google
     if (p === "/api/me/mailboxes") return json(Object.assign({ web_connect: true }, FX.me_mailboxes || { mailboxes: [] }));
+    const senderAction = method === "POST" && p.match(/^\/api\/mailboxes\/([^/]+)\/(sender|refresh-aliases)$/);
+    if (senderAction) {
+      const box = ((FX.me_mailboxes || {}).mailboxes || []).find((b) => b.id === senderAction[1]);
+      if (!box) return json({ detail: "not one of your sending addresses" }, 404);
+      if (senderAction[2] === "refresh-aliases") return json({ ok: true, send_as: box.send_as || [] });
+      const selected = String(body.address || "").toLowerCase();
+      if (selected !== box.address && !(box.send_as || []).some((a) => a.address === selected))
+        return json({ detail: "Choose the connected account or one of its verified aliases." }, 400);
+      box.from_address = selected === box.address ? null : selected;
+      return json({ ok: true, address: box.address, sends_as: selected });
+    }
     const drop = method === "DELETE" && p.match(/^\/api\/mailboxes\/([^/]+)$/);
     if (drop) {
       const box = ((FX.me_mailboxes || {}).mailboxes || []).find((b) => b.id === drop[1]);

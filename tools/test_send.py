@@ -258,6 +258,29 @@ def alias_mode(cur, gmail):
     cur.execute(store.OUT_TODAY_FOR_SQL, (cara_acct,))
     check("  the alias shares the account's daily limit: every one counted on the account", cur.fetchone()[0], 3)
 
+    # A personal From selection works on an unrestricted project too. The alias
+    # is verified live before sending; follow-ups retain their original identity.
+    cur.execute("update segments set config = config #- '{outreach,send_as_domain}' where id=%s", (seg_id,))
+    cur.execute("update user_mailboxes set from_address=%s where id=%s", (alias, cara_box))
+    preferred, preferred_eid, preferred_cid = approved_by(cara)
+    run_logged(args)
+    check("a chosen alias sends through its parent on a project with no domain restriction",
+          (row(preferred), header(gmail.sent[-1], "From")), (["sent", cara_acct, alias], "Cara at LCX <%s>" % alias))
+    cur.execute("update user_mailboxes set from_address=null where id=%s", (cara_box,))
+    direct = approved_by(cara)[0]
+    run_logged(args)
+    check("choosing the parent again restores its From address", row(direct), ["sent", cara_acct, None])
+    pinned = approved_by(cara, step=1, parent=preferred, eid=preferred_eid, cid=preferred_cid)[0]
+    run_logged(args)
+    check("a follow-up retains its alias after the person's sender preference changes", row(pinned), ["sent", cara_acct, alias])
+    cur.execute("update user_mailboxes set from_address=%s where id=%s", (alias, cara_box))
+    gmail.send_as = []
+    removed = approved_by(cara)[0]
+    sent_before = len(gmail.sent)
+    run_logged(args)
+    check("Gmail removed the selected alias: approval waits and does not fall back to the parent",
+          (row(removed)[0], len(gmail.sent) - sent_before), ("approved", 0))
+
 
 def cc_mode(cur, gmail):
     """Copying someone (owner, 2026-10-22: "Make default cc to the email amritanshv@lightscameraexperiment.com and

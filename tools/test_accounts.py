@@ -471,6 +471,42 @@ def api():
                   (sorted([a_gmail, a2]), False, False))
             check("  and the alias it also sends as", [m["send_as"] for m in mine if m["address"] == a2],
                   [[{"address": lcx, "name": "Asha at LCX"}]])
+            check("Google sign-in suggests the real login, without restricting account choice", q.get("login_hint"), a_email)
+            refresh = "/api/mailboxes/%s/refresh-aliases" % next(m["id"] for m in mine if m["address"] == a2)
+            sender = refresh.replace("refresh-aliases", "sender")
+            pending_alias = "pending.%s@zz-lcx.example" % tag
+            accepted = google["sendas"]
+            google["sendas"] = (200, {"sendAs": accepted[1]["sendAs"] + [
+                {"sendAsEmail": pending_alias, "verificationStatus": "pending"}]})
+            check("refresh reads the parent's verified aliases, without a separate alias login",
+                  call("POST", refresh, cookies=a).json().get("send_as"), [{"address": lcx, "name": "Asha at LCX"}])
+            before_posts = len(google["posts"])
+            check("another person cannot refresh or choose this mailbox's sender",
+                  [call("POST", url, cookies=k, json={"address": lcx}).status_code for url in (refresh, sender)], [404, 404])
+            check("ownership is checked before contacting Google", len(google["posts"]), before_posts)
+            check("signed out cannot change the sender", call("POST", sender, json={"address": lcx}).status_code, 401)
+            check("a verified alias can be chosen for any project, with no domain rule",
+                  call("POST", sender, cookies=a, json={"address": lcx.upper()}).json().get("sends_as"), lcx)
+            check("the parent stays the linked account and keeps its cap",
+                  [(m["address"], m["from_address"], m["daily_cap"]) for m in call("GET", "/api/me/mailboxes", cookies=a).json()["mailboxes"] if m["address"] == a2],
+                  [(a2, lcx, 50)])
+            for invalid in (pending_alias, "someone@other.example"):
+                check("a pending or arbitrary From is rejected: " + invalid,
+                      call("POST", sender, cookies=a, json={"address": invalid}).status_code, 400)
+            google["sendas"] = (503, {})
+            check("a Google outage cannot overwrite the selected sender", call("POST", refresh, cookies=a).status_code, 502)
+            cur.execute("select from_address,send_as from user_mailboxes where lower(address)=%s", (a2,))
+            check("the selection and verified cache survive a failed refresh", cur.fetchone(),
+                  (lcx, [{"address": lcx, "name": "Asha at LCX"}]))
+            google["sendas"] = (200, {"sendAs": []})
+            call("POST", refresh, cookies=a)
+            vanished = next(m for m in call("GET", "/api/mailboxes", cookies=a).json()["accounts"] if m["me"])
+            check("a removed selected alias is unavailable, with no silent parent fallback",
+                  [(m["sends_as"], m["usable"], bool(m.get("sender_issue"))) for m in vanished["mailboxes"] if m["address"] == a2],
+                  [(None, False, True)])
+            google["sendas"] = accepted
+            check("the person can explicitly return to the parent sender",
+                  call("POST", sender, cookies=a, json={"address": a2}).json().get("sends_as"), a2)
             # a project that writes as LCX (outreach.send_as_domain, LCX Services): Sending today and the approve
             # dialog name the From each account gives it
             cur.execute("update segments set config = jsonb_set(config, '{outreach,send_as_domain}', '\"zz-lcx.example\"')"

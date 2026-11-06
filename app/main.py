@@ -1764,14 +1764,14 @@ def _shown_sender(row):
 
 
 def _sends_as(box, cfg):
-    """The From address an approval of this project goes out as through `box`: its alias on the project's
-    send_as_domain (sql/36; LCX Services writes as LCX), the account itself where the project has none, the
-    account while its aliases are not read yet (the next send reads them), or None when it has no alias there."""
+    """The selected From alias or the parent account, respecting an explicit project domain rule.
+    An unavailable selection returns None; the sender verifies a chosen alias with Gmail before sending.
+    """
     store = _mailbox_store()
-    alias = store.alias_for(box, cfg.get("send_as_domain"))
+    alias = store.sender_for(box, cfg.get("send_as_domain"))
     if alias is None:
-        return None if cfg.get("send_as_domain") else box["address"]
-    return box["address"] if alias == store.UNREAD else alias["address"]
+        return None
+    return (box.get("from_address") or box["address"]) if alias == store.UNREAD else alias["address"]
 
 
 def _send_paused(segment):
@@ -2127,7 +2127,9 @@ def _approver_mailboxes(cur, cfg, segment, me):
             # on the project's domain cannot send for it, and says so (no_alias)
             row["sends_as"] = _sends_as(b, cfg)
             if row["sends_as"] is None:
-                row.update(usable=False, no_alias=cfg.get("send_as_domain"))
+                row.update(usable=False, sender_issue="The selected sending address is unavailable. Open Your Gmail and refresh aliases.")
+                if cfg.get("send_as_domain"):
+                    row["no_alias"] = cfg["send_as_domain"]
             elif cfg.get("send_as_domain") and store.alias_for(b, cfg["send_as_domain"]) == store.UNREAD:
                 row["alias_unread"] = cfg["send_as_domain"]      # looked up in that Gmail at its first send
             mine.append(row)

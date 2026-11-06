@@ -1258,10 +1258,12 @@ def cmd_send(args):
                 from_addr = r["parent_sent_as"].lower()
                 from_name = next((a.get("name") for a in (mbmap[mb_key].get("send_as") or [])
                                   if isinstance(a, dict) and a.get("address") == from_addr), None) or names.get(approver or "")
-            elif as_domain and step == 0:
+            elif approver_mode and step == 0:
                 box = mbmap[mb_key]
-                alias = store.alias_for(box, as_domain)
-                if alias == store.UNREAD:
+                alias = store.sender_for(box, as_domain)
+                # A chosen alias is checked against Gmail once per sender run. An alias
+                # removed in Google must not silently turn into mail from the parent.
+                if alias == store.UNREAD or (box.get("from_address") and not box.get("_from_checked")):
                     try:
                         got_as = store.read_send_as(svc)
                     except Exception as e:                  # noqa: BLE001 -- the email waits, saying why
@@ -1270,10 +1272,16 @@ def cmd_send(args):
                     if got_as is not None:
                         db.run(lambda cur, _b=box, _a=got_as: store.set_send_as(cur, _b["id"], _a))
                         box["send_as"] = got_as
-                        alias = store.alias_for(box, as_domain)
+                        box["_from_checked"] = True
+                        alias = store.sender_for(box, as_domain)
+                    else:
+                        alias = store.UNREAD
                 if not alias or alias == store.UNREAD:
                     unclaim()
-                    hold([oid], no_alias_why(approver) if alias is None
+                    missing = (no_alias_why(approver) if as_domain else
+                               "%s's selected sending address %s is not a verified Gmail alias; refresh aliases in Your Gmail"
+                               % (who(approver), box.get("from_address")))
+                    hold([oid], missing if alias is None
                          else "%s's Gmail aliases could not be read: it is tried again in its next window" % who(approver),
                          company)
                     continue

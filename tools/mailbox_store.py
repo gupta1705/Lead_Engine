@@ -153,7 +153,7 @@ def mailboxes(cur, user_email=None, with_token=False):
       sent_today, out_today, remaining, last_sent, usable, send_as}] -- usable: enabled and no sign-in error;
     send_as: its verified Gmail aliases (sql/36), or None when not read yet.
     with_token adds token_enc, for the sender; nothing that reaches a page ever carries it."""
-    sql = ("select id, user_email, address, daily_cap, enabled, connected_at, last_error, last_error_at, send_as"
+    sql = ("select id, user_email, address, daily_cap, enabled, connected_at, last_error, last_error_at, send_as, from_address"
            + (", token_enc" if with_token else "") + " from user_mailboxes"
            + (" where lower(user_email) = lower(%s)" if user_email else "") + " order by lower(user_email), connected_at")
     cur.execute(sql, (user_email,) if user_email else None)
@@ -270,6 +270,26 @@ def alias_for(box, domain):
     if send_as is None:
         return UNREAD
     return next((a for a in send_as if str(a.get("address", "")).lower().endswith(want)), None)
+
+
+def sender_for(box, domain=None):
+    """The verified From identity, while usage and reply access stay on the parent mailbox.
+
+    A project's explicit domain rule still wins. Otherwise the person can choose any
+    verified alias, without requiring that alias to have a separate Google login.
+    A missing selected alias never falls back silently to the parent address.
+    """
+    if domain:
+        return alias_for(box, domain)
+    selected = str(box.get("from_address") or box["address"]).strip().lower()
+    if selected == box["address"].lower():
+        return {"address": selected, "name": ""}
+    aliases = box.get("send_as")
+    if isinstance(aliases, str):
+        aliases = json.loads(aliases)
+    if aliases is None:
+        return UNREAD
+    return next((a for a in aliases if a.get("address", "").lower() == selected), None)
 
 
 def credentials(row):

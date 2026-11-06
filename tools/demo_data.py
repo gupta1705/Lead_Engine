@@ -574,7 +574,7 @@ def screens(conn, now):
         configs = {r["slug"]: r["config"] for r in cur.fetchall()}
         import mailbox_store as store
         mine = store.mailboxes(cur, user_email=me[0])
-    keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error", "send_as")
+    keep = ("id", "address", "daily_cap", "sent_today", "out_today", "remaining", "usable", "last_error", "send_as", "from_address")
     me_boxes = {"mailboxes": [dict({k: b.get(k) for k in keep}, connected_at=None) for b in mine]}
     projects = {}
     for slug in demo:

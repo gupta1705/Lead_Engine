@@ -2461,11 +2461,11 @@ function renderMailboxStrip(m) {
       const tone = !b.usable ? "warn" : b.remaining <= 0 ? "full" : "";
       // this project writes as another brand (sql/36): the account's alias on its domain is the From
       const via = b.sends_as && b.sends_as !== b.address ? ` (through ${b.address}, sharing its daily limit)` : "";
-      const tip = b.no_alias ? `${b.address} has no address on ${b.no_alias} to send as: add it in that Gmail (Settings, Accounts, Send mail as).`
+      const tip = b.sender_issue || (b.no_alias ? `${b.address} has no address on ${b.no_alias} to send as: add it in that Gmail (Settings, Accounts, Send mail as).`
         : !b.usable ? "Its sign-in stopped working: " + (a.me ? "connect it again (account menu, Your Gmail). " : a.name + " connects it again from Your Gmail. ") + (b.last_error || "")
-        : `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left${via}. The count starts again at ${resets}.`;
+        : `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left${via}. The count starts again at ${resets}.`);
       const used = b.daily_cap ? Math.min(100, Math.round(100 * b.out_today / b.daily_cap)) : 0;
-      return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.sends_as || b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">${b.no_alias ? "no " + esc(b.no_alias) + " address" : "reconnect"}</span>`}</span>`;
+      return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.sends_as || b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">${b.sender_issue ? "check sender" : b.no_alias ? "no " + esc(b.no_alias) + " address" : "reconnect"}</span>`}</span>`;
     }).join("") : `<span class="mbx none">${a.me ? "your Gmail is not connected (account menu, Your Gmail)" : "no Gmail connected yet"}</span>`;
     // with a sending window: their approvals by the day each goes (India's clock); otherwise how many wait
     const days = (a.scheduled || []).length && !m.paused ? scheduledText(a.scheduled) : "";
@@ -2490,6 +2490,8 @@ function approverNote(r, isDraft, win) {
     const me = (m.accounts || []).find((a) => a.me) || { mailboxes: [] };
     const ok = me.mailboxes.filter((b) => b.usable).sort((a, b) => b.remaining - a.remaining);
     const noAlias = me.mailboxes.find((b) => b.no_alias);
+    const senderIssue = me.mailboxes.find((b) => b.sender_issue);
+    if (!ok.length && senderIssue) return senderIssue.sender_issue + " Approved emails wait until it is available.";
     if (!ok.length && noAlias) return `Your Gmail has no address on ${noAlias.no_alias} to send as: approving keeps it in Approved until you add one in Gmail (Settings, Accounts, Send mail as).`;
     if (!ok.length) return "You have no Gmail connected yet: approving keeps it in Approved until you connect one (account menu, Your Gmail).";
     const from = ok[0].alias_unread ? `your ${ok[0].alias_unread} address (looked up in your Gmail at the first send)`
@@ -2501,6 +2503,8 @@ function approverNote(r, isDraft, win) {
   if (r.status === "approved") {
     const who = (m.accounts || []).find((a) => a.email.toLowerCase() === String(r.approved_by || "").toLowerCase());
     const name = who ? who.name : (r.approved_by_name || r.approved_by || "its approver");
+    if (who && !who.mailboxes.some((b) => b.usable) && who.mailboxes.some((b) => b.sender_issue))
+      return `Approved by ${name}. It waits here: ${who.mailboxes.find((b) => b.sender_issue).sender_issue}`;
     if (who && who.mailboxes.some((b) => b.no_alias) && !who.mailboxes.some((b) => b.usable))
       return `Approved by ${name}. It waits here until ${name}'s Gmail can send as an address on ${who.mailboxes.find((b) => b.no_alias).no_alias}.`;
     if (!(who && who.mailboxes.some((b) => b.usable))) return `Approved by ${name}. It waits here until ${name} connects a Gmail.`;
@@ -3329,36 +3333,67 @@ async function openSendingAddress(opts) {
   opts = opts || {};
   let d;
   try { d = await api("/api/me/mailboxes"); } catch (e) { return toast("Could not load your Gmail: " + e.message, true); }
+  if (opts.replacing && opts.replacing !== $("#modalRoot .modal")) return;
   const rows = d.mailboxes || [];
   if (opts.welcome && (rows.length || !d.web_connect)) {
     flag("You're all set", { desc: rows.length ? "The emails you approve are signed with your name and go out from " + rows[0].address + "."
                                                : "The emails you approve are signed with your name and title." });
     return;
   }
-  const list = rows.length ? `<ul class="mbx-list">${rows.map((b) => `<li>
+  const list = rows.length ? `<ul class="mbx-list">${rows.map((b) => {
+    const selected = b.from_address || b.address;
+    const choices = [{ address: b.address, name: "Google account" }, ...(b.send_as || [])];
+    const missing = !choices.some((a) => a.address === selected);
+    const options = choices.map((a) => `<option value="${esc(a.address)}" ${a.address === selected ? "selected" : ""}>${esc(a.address)}</option>`).join("");
+    return `<li style="flex-wrap:wrap">
       <span class="cell-person">${avatar(null, b.address)}<span><div>${esc(b.address)}</div>
         <div class="secondary">${b.usable ? `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left`
           : `<span style="color:var(--text-danger)">Its sign-in stopped working: connect it again</span>`}</div>
-        ${(b.send_as || []).length ? `<div class="secondary">Also sends as ${esc(b.send_as.map((x) => x.address).join(", "))}</div>` : ""}</span></span>
+        <div class="secondary">Connected Google account</div></span></span>
       <span class="grow"></span>
       ${b.usable || !d.web_connect ? "" : `<button class="btn compact" data-reconnect>Connect again</button>`}
-      <button class="btn subtle compact danger-text" data-drop="${esc(b.id)}" data-addr="${esc(b.address)}">Disconnect</button></li>`).join("")}</ul>`
+      <button class="btn subtle compact danger-text" data-drop="${esc(b.id)}" data-addr="${esc(b.address)}">Disconnect</button>
+      <div class="field" style="flex-basis:100%;margin-top:10px"><label for="sender-${esc(b.id)}">Send emails from</label>
+        <select id="sender-${esc(b.id)}" data-sender="${esc(b.id)}">${missing ? `<option selected disabled value="${esc(selected)}">${esc(selected)} (unavailable)</option>` : ""}${options}</select>
+        ${missing ? `<div class="small warn-text">This selected alias is unavailable. Emails wait until you refresh or choose another sender.</div>` : ""}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn compact" data-refresh-aliases="${esc(b.id)}">Refresh aliases</button>
+          <button class="btn primary compact" data-save-sender="${esc(b.id)}">Save sending address</button></div>
+        <div class="guidance">Missing your LCX address? Add it in your parent Gmail: Settings, Accounts, Send mail as. Then refresh aliases here.</div>
+      </div></li>`;
+  }).join("")}</ul>`
     : `<p class="muted">No Gmail connected yet. Until you connect one, the emails you approve wait in Approved.</p>`;
   const cap = String((rows[0] || {}).daily_cap || 50);
   modal.open(`
     ${modalHead(`${typeIcon("mail")}<span class="key">Your Gmail</span>`)}
     <div class="modal-body single"><div class="modal-main">
       ${opts.welcome ? `<h2 class="modal-title" style="font-size:20px;line-height:24px;margin-bottom:4px">One last step: your Gmail</h2>` : ""}
-      <p class="sub" style="margin-bottom:16px">The emails you approve go out from your own Gmail, signed with your name and title, up to ${esc(cap)} a day from each address${rows.length > 1 ? ", the one with the most room first" : ""}. Google shows you what is allowed (sending, and reading replies, for that address only), and you can take it back here or from your Google account at any time.</p>      ${list}
+      <p class="sub" style="margin-bottom:12px">Connect the Google account you can sign in to. For an LCX alias, sign in with your parent TVF account, then choose the LCX address below. The alias needs no separate login.</p>
+      <p class="small muted" style="margin-bottom:16px">Your Google account and all its aliases share the same ${esc(cap)}-email daily limit. Initial emails use the sender selected here; follow-ups keep their original sender. Replies are read through the connected Google account.</p>
+      <p class="small muted" style="margin-bottom:16px">If Google shows “This app is blocked”, TVF IT must approve Sales Engine's Gmail access before you reconnect.</p>${list}
       ${d.web_connect ? "" : `<div class="footer-problems" style="margin-top:12px">${icon("info", 16)}<div>Connecting from the app is not switched on yet: the owner adds a Google "Web application" client to the server first. Until then the owner can link an address for you.</div></div>`}
     </div></div>
     <div class="modal-foot">
       <button class="btn" data-close>${opts.welcome ? "Later" : "Close"}</button>
-      <button class="btn primary" id="gmailGo" ${d.web_connect ? "" : "disabled"}>${icon("mail", 16)} ${rows.length ? "Connect another address" : "Connect your Gmail"}</button>
+      <button class="btn primary" id="gmailGo" ${d.web_connect ? "" : "disabled"}>${icon("mail", 16)} ${rows.length ? "Connect another Google account" : "Connect Google account"}</button>
     </div>`, { label: "Your Gmail", narrow: true });
   const root = $("#modalRoot");
   $("#gmailGo", root).addEventListener("click", connectGmail);
   $$("[data-reconnect]", root).forEach((b) => b.addEventListener("click", connectGmail));
+  $$("[data-refresh-aliases], [data-save-sender]", root).forEach((b) => b.addEventListener("click", async () => {
+    const id = b.dataset.refreshAliases || b.dataset.saveSender;
+    const refresh = !!b.dataset.refreshAliases;
+    b.disabled = true;
+    try {
+      const body = refresh ? {} : { address: $("#sender-" + id, root).value };
+      const result = await post("/api/mailboxes/" + encodeURIComponent(id) + (refresh ? "/refresh-aliases" : "/sender"), body);
+      flag(refresh ? "Aliases refreshed" : "Sending address saved", { desc: refresh ? "Google's verified sending addresses are up to date. Choose your sender, then save it." : result.sends_as });
+      if (b.isConnected) await openSendingAddress({ replacing: b.closest(".modal") });
+      api("/api/mailboxes").then((m) => {
+        state.outreach.mbx = m; state.outreach.canSend = !!m.can_send;
+        if (m.mode === "approver") renderMailboxStrip(m);
+      }).catch(() => {});
+    } catch (e) { toast(e.message, true); b.disabled = false; }
+  }));
   $$("[data-drop]", root).forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Disconnect " + b.dataset.addr + "? The emails you approve stop going out from it.")) return;
     try {
