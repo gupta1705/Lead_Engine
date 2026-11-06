@@ -1,9 +1,38 @@
 """The owner's LCX Clipping copy, with show facts kept separate from offer claims."""
 import hashlib
+import html
 import math
+import re
+import unicodedata
 
-VERSION = "lcx-catalogue-20261105"
+VERSION = "lcx-catalogue-20261106"
 URL = "https://reelforge-lcx.vercel.app"
+# Words that say nothing about whose channel it is, when comparing a channel's name with a lead's
+_GENERIC_NAME_WORDS = {"the", "a", "an", "of", "and", "by", "with", "for", "on", "in",
+                       "podcast", "podcasts", "show", "channel", "official", "radio"}
+
+
+def _name_words(name):
+    words = re.findall(r"\w+", re.sub(r"['’]", "", name).casefold())
+    return {w for w in words if w not in _GENERIC_NAME_WORDS}
+
+
+def channel_name(meta, company):
+    """The name for the subject: the YouTube channel's own, when it is this lead's channel, else the lead's.
+
+    A recorded channel is not always theirs, because some were found through a link on the show's site or
+    feed (the Lex Fridman Podcast has Steve Brunton's channel recorded). So its name is used only when one
+    name's distinctive words all appear in the other. Emoji and stray HTML entities stay out of a subject,
+    and a name's own "|" tagline is left off, since the subject puts one right after it."""
+    company, title = _subject_name(company), _subject_name((meta.get("youtube_channel") or {}).get("title"))
+    ours, theirs = _name_words(company), _name_words(title)
+    return title if ours and theirs and (ours <= theirs or theirs <= ours) else company
+
+
+def _subject_name(name):
+    text = html.unescape(str(name or ""))
+    text = "".join(c for c in text if unicodedata.category(c) != "So" and c != "️")
+    return " ".join(text.split(" | ")[0].split())
 
 
 def episode_count(meta):
@@ -41,6 +70,7 @@ def context(meta, company, seed=None, title=None, noun="episode"):
         "and share it with new audiences.")
     return {
         "catalogue_opening": catalogue_opening, "catalogue_opportunity": catalogue_opportunity,
+        "channel_name": channel_name(meta, company),
         "reelforge_seed": str(seed or company), "reelforge_episode_count": count or 0,
         "archive_opportunity": archive, "archive_angle": archive_30,
         "archive_potential": format(count * 30, ",") if count else "More",
@@ -72,8 +102,8 @@ def apply_config(outreach):
         "guidance": "Owner's 2026-11-05 sign-off, using the actual approver's name. Kartikeya is an example, not a shared identity."
     }
     outreach["templates"] = [
-        {"key": "lcx_catalogue_distribution_v1", "subject": "Turning viewers into fans for {{company}}",
-         "subject_fallback": "Turning your viewers into fans",
+        {"key": "lcx_catalogue_distribution_v1", "subject": "{{channel_name}} | Clipping + Distribution",
+         "subject_fallback": "Your channel | Clipping + Distribution",
          "body": "{{hello}}\n\nI trust you are doing well.\n\n"
                  "{{catalogue_opening}} {{catalogue_opportunity}}\n\n"
                  "That gap is exactly where we come in. In today's landscape, excellent content also needs visibility. "

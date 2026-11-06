@@ -130,7 +130,7 @@ is at `/api/v1/openapi.json` (with a key).
 | `POST /api/v1/leads/{id}/decision` | `{"decision": "shortlist" or "reject", "reason": "..."}` |
 | `GET /api/v1/projects/{project}/emails?folder=drafts&limit=25&offset=0` | One Outreach folder. |
 | `GET /api/v1/emails/{id}` | One email in full. |
-| `PATCH /api/v1/emails/{id}` | `{"subject": ..., "body": ..., "cc": [...]}`. Drafts only. |
+| `PATCH /api/v1/emails/{id}` | `{"subject": ..., "body": ..., "cc": [...]}`. Drafts only. In `body`, `[words](https://address)` goes out as those words, clickable. |
 | `POST /api/v1/emails/{id}/approve` | Approve it. **It will be sent.** Only with a key that may approve. |
 | `POST /api/v1/emails/{id}/withdraw` | Take back a draft, or an approved email not yet gone. |
 

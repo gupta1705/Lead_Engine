@@ -1008,8 +1008,8 @@
     "templates": [
       {
         "key": "lcx_catalogue_distribution_v1",
-        "subject": "Turning viewers into fans for {{company}}",
-        "subject_fallback": "Turning your viewers into fans",
+        "subject": "{{channel_name}} | Clipping + Distribution",
+        "subject_fallback": "Your channel | Clipping + Distribution",
         "body": "{{hello}}\n\nI trust you are doing well.\n\n{{catalogue_opening}} {{catalogue_opportunity}}\n\nThat gap is exactly where we come in. In today's landscape, excellent content also needs visibility. We are LCX, a new-age media agency built to help your work reach the viewers it deserves. We combine clipping with distribution workflows across social platforms to help turn passive viewers into loyal fans.\n\nWe would be glad to send across a few sample clips so you can judge the quality for yourself. If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\nThank you for your time. I hope we can work together to turn your viewers into fans.\n\n{{footer}}"
       },
       {
@@ -1091,7 +1091,7 @@
       "max_calls_per_run": 200,
       "requests_per_minute": 25
     },
-    "reelforge_templates": "lcx-catalogue-20261105",
+    "reelforge_templates": "lcx-catalogue-20261106",
     "send_from": "approver",
     "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads.",
     "prioritize_fresh_leads": true

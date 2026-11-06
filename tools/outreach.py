@@ -439,15 +439,23 @@ def cmd_mailboxes(args):
 
 def _message(body, attachments=None):
     """The email as Gmail receives it: the text, and each attached file (outreach.attachments) as
-    itself -- application/pdf for the LCX Services deck -- named as it was approved."""
+    itself -- application/pdf for the LCX Services deck -- named as it was approved. Words written as
+    [words](https://address) go out as a link (tools/mail_links.py); without one it is plain text, as ever."""
+    import mail_links
+    from email.mime.multipart import MIMEMultipart
+    if mail_links.has_links(body):
+        text = MIMEMultipart("alternative")
+        text.attach(MIMEText(mail_links.to_plain(body)))
+        text.attach(MIMEText(mail_links.to_html(body), "html", "utf-8"))
+    else:
+        text = MIMEText(body)
     if not attachments:
-        return MIMEText(body)
+        return text
     import mimetypes
     import outreach_policy as pol
     from email.mime.application import MIMEApplication
-    from email.mime.multipart import MIMEMultipart
     msg = MIMEMultipart("mixed")
-    msg.attach(MIMEText(body))
+    msg.attach(text)
     for a in attachments:
         kind = (mimetypes.guess_type(a["name"])[0] or "application/octet-stream").split("/", 1)
         part = MIMEApplication(pol.attachment_bytes(a), _subtype=kind[1] if kind[0] == "application" else "octet-stream")

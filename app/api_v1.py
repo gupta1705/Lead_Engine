@@ -461,7 +461,7 @@ TOOLS = [
          "email": _s("string", "The address the email goes to."),
          "subject": _s("string", "The subject. {{first_name}} and {{company}} may be used."),
          "body": _s("string", "The text, without a sign-off (the sender's is added). {{first_name}} and "
-                              "{{company}} may be used."),
+                              "{{company}} may be used. [words](https://address) goes out as a clickable link."),
          "contact_name": _s("string", "The person's full name."), "role": _s("string", "The person's role."),
          "website": _s("string", "The lead's website."),
          "country": _s("string", "Where the lead is: it sets the time the email lands (10:00-10:30 there)."),
@@ -484,7 +484,8 @@ TOOLS = [
                      "openWorldHint": False}},
     {"name": "edit_draft", "title": "Edit a draft",
      "description": "Change a draft's subject, text or CC before a person approves it. Only drafts can change; the "
-                    "text is the whole email as get_email gives it, sign-off included.",
+                    "text is the whole email as get_email gives it, sign-off included. In the text, "
+                    "[words](https://address) goes out as those words, clickable.",
      "inputSchema": _s("object", required=["email_id"], properties={
          "email_id": _s("string"), "subject": _s("string"), "body": _s("string"),
          "cc": _s("array", "Who it is copied to; [] for nobody.", items={"type": "string"})}),

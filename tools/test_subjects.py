@@ -61,7 +61,8 @@ def live_openers(o):
 
 def sample_ctx(slug, o):
     """Every value a subject can take in this project: [(label, ctx)]."""
-    base = {"company": LONG_COMPANY, "subject_max_words": o.get("subject_max_words"), "archive_potential": ARCHIVE}
+    base = {"company": LONG_COMPANY, "channel_name": LONG_COMPANY, "subject_max_words": o.get("subject_max_words"),
+            "archive_potential": ARCHIVE}
     out = [("company", dict(base))]
     if any("{{archive_potential}}" in (t.get("subject") or "") for t in o.get("templates") or []):
         out.append(("archive count unknown", dict(base, archive_potential="More")))     # LCX Clipping
@@ -155,8 +156,8 @@ def main():
             check(tried > 0, "%s %s: %d subjects it can render, all %d words or fewer" % (slug, t["key"], tried, want))
         if slug != "lcx-services":
             for t in openers(o):
-                plain = dr.render(t["subject"], {"company": LONG_COMPANY, "theme": "Stories Built to Travel",
-                                                 "archive_potential": ARCHIVE})
+                plain = dr.render(t["subject"], {"company": LONG_COMPANY, "channel_name": LONG_COMPANY,
+                                                 "theme": "Stories Built to Travel", "archive_potential": ARCHIVE})
                 check(dr.subject_words(plain) <= want and (slug in NAMES_SHOW or "{{company}}" not in t["subject"]),
                       "%s %s: the subject itself fits%s" % (slug, t["key"], "" if slug in NAMES_SHOW
                                                             else " and names no company"), plain)

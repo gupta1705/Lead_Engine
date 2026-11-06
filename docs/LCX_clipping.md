@@ -509,3 +509,16 @@ matching sample-clips copy. New copy is deterministic and uses no model calls.
 Existing unsent openers and follow-ups are rewritten; any affected approval returns
 to Drafts for review. Sent messages, inbound replies, recipients, attachments and
 all targeting, routing, scheduling and limit settings are preserved.
+
+## Subject format and links, 6 November 2026
+
+From the LCX team: openers use the subject `<YouTube channel name> | Clipping + Distribution`.
+The recorded channel name is used only when it matches the lead (one name's distinctive words all
+appear in the other), because some recorded channels belong to someone else; otherwise the lead's
+own name is used. A name too long for the 16-word cap uses `Your channel | Clipping + Distribution`.
+Follow-ups keep `Re:` and their opener's subject, so they stay in the thread.
+
+Any email, in any project, can carry links: `[words](https://address)` in the text goes out as those
+words, clickable (`tools/mail_links.py`). The Add link button in the editor writes that form. An email
+with a link is sent with a plain-text part and an HTML part; every other email is still plain text
+only, unchanged. The HTML has no tracking and no styling of its own.

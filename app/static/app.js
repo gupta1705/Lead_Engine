@@ -17,6 +17,46 @@ const $ = (s, root) => (root || document).querySelector(s);
 const $$ = (s, root) => Array.from((root || document).querySelectorAll(s));
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+/* [words](https://address) in an email goes out as the words, clickable. Same pattern as tools/mail_links.py. */
+const MAIL_LINK = /\[([^\[\]\n]+)\]\(\s*((?:https?:\/\/|mailto:)[^\s()<>]+(?:\([^\s()<>]*\)[^\s()<>]*)*|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s()<>]*)?)\s*\)/gi;
+const mailHref = (target) => /^(?:https?:|mailto:)/i.test(target) ? target : "https://" + target;
+const mailAnchor = (words, target) => `<a href="${esc(mailHref(target))}" target="_blank" rel="noopener noreferrer" title="${esc(mailHref(target))}">${esc(words)}</a>`;
+/* An email's text for the screen, escaped, with its links showing as they will in the email. */
+function mailHtml(text) {
+  const s = String(text == null ? "" : text);
+  let out = "", at = 0;
+  for (const m of s.matchAll(MAIL_LINK)) {
+    out += esc(s.slice(at, m.index)) + mailAnchor(m[1], m[2]);
+    at = m.index + m[0].length;
+  }
+  return out + esc(s.slice(at));
+}
+/* The Add link button: select words in the text, give the address, and the words become a link. */
+function bindLinkTool(button, textarea, list, changed = () => {}) {
+  const show = () => {
+    if (!list) return;
+    const links = [...textarea.value.matchAll(MAIL_LINK)];
+    list.hidden = !links.length;
+    list.innerHTML = links.length ? `Goes out as ${links.length === 1 ? "a link" : "links"}: ` + links.map((m) => mailAnchor(m[1], m[2])).join(", ") : "";
+  };
+  button.addEventListener("click", () => {
+    const from = textarea.selectionStart, to = textarea.selectionEnd;
+    const words = textarea.value.slice(from, to);
+    if (!words.trim()) { toast("Select the words to link first.", true); textarea.focus(); return; }
+    if (/[\[\]\n]/.test(words)) { toast("Select words on one line, without brackets.", true); textarea.focus(); return; }
+    const address = (window.prompt(`Where should "${words}" lead?`, "https://") || "").trim();
+    if (!address || address === "https://") { textarea.focus(); return; }
+    const piece = `[${words}](${address})`;
+    if (![...piece.matchAll(MAIL_LINK)].some((m) => m[0] === piece)) { toast("That is not a web address.", true); textarea.focus(); return; }
+    textarea.focus();
+    textarea.setRangeText(piece, from, to, "select");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    changed();
+  });
+  textarea.addEventListener("input", show);
+  show();
+  return show;
+}
 let REVIEW_THRESHOLD = 25, PRIORITY_THRESHOLD = 45;
 
 function fmtDate(iso) {
@@ -1439,7 +1479,7 @@ async function startBatch() {
           <div class="primary-cell">${stepLozenge(r)}${esc(r.subject || "(no subject)")}</div>
           <div class="secondary">${esc(r.company)} · ${esc(r.contact_email || "")}${r.service ? " · pitches " + esc(r.service) : ""}</div></span></span>
           <button class="btn subtle compact" data-read="${i}">Read</button></div>
-        <div class="mail-body" data-body="${i}" hidden>${esc(r.body || "")}</div>${attachList(r)}
+        <div class="mail-body" data-body="${i}" hidden>${mailHtml(r.body || "")}</div>${attachList(r)}
         <label class="check" style="margin-top:8px"><input type="checkbox" data-ok="${i}" disabled><span>I read this and it's right to send</span></label>
       </div>`).join("")}
     </div></div>
@@ -1644,10 +1684,11 @@ async function openCompose(leads) {
         <div class="field"><div class="label-row"><label for="cBody">Email</label>
           <span class="insert"><span class="small muted">Insert</span>
             <button type="button" class="btn compact" data-insert="first_name">First name</button>
-            <button type="button" class="btn compact" data-insert="company">Company</button></span></div>
+            <button type="button" class="btn compact" data-insert="company">Company</button>
+            <button type="button" class="btn compact" id="cLink">${icon("link", 14)} Add link</button></span></div>
           <textarea id="cBody" class="compose-body${preset ? " long" : ""}">${esc(start)}</textarea>
           <div class="help">${preset ? "This project's email is already in: send it as it is, or change anything first."
-            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off goes under it.</div>
+            : "Write it once."} {{first_name}} and {{company}} become each person's own; your sign-off goes under it. To link words, select them and press Add link.</div>
           <div class="field-error" id="cErr" role="alert" hidden></div></div>
         ${rewritePanel()}
         <div class="compose-preview" id="cPreviewBox">
@@ -1700,7 +1741,7 @@ async function openCompose(leads) {
       $("#cPrev", root).hidden = $("#cNext", root).hidden = n < 2;
       $("#cPrev", root).disabled = c.at === 0; $("#cNext", root).disabled = c.at >= n - 1;
       $("#cPrevSubject", root).textContent = composeFill(subj.value.trim(), r) || "(no subject yet)";
-      $("#cPreview", root).textContent = composeFill(body.value.trim(), r) + "\n\n" + chk.footer;
+      $("#cPreview", root).innerHTML = mailHtml(composeFill(body.value.trim(), r) + "\n\n" + chk.footer);
     }
     const ok = n > 0 && subj.value.trim() && body.value.trim() && body.value.trim() !== GREETING.trim() && !bad.length;
     $("#cGo", root).disabled = !ok;
@@ -1723,6 +1764,7 @@ async function openCompose(leads) {
     body.setRangeText("{{" + b.dataset.insert + "}}", s, e, "end");
     body.focus(); paint();
   }));
+  bindLinkTool($("#cLink", root), body);       // the preview below shows the link; input repaints it
   $("#cPrev", root).addEventListener("click", () => { c.at = Math.max(0, c.at - 1); paint(); });
   $("#cNext", root).addEventListener("click", () => { c.at = Math.min(c.ready.length - 1, c.at + 1); paint(); });
   $("#cList", root).addEventListener("click", (e) => {
@@ -2132,10 +2174,13 @@ function openMessage(id, message) {
         ${isDraft
           ? `<div class="field" style="margin-bottom:14px"><label for="draftSubject">Subject</label><input id="draftSubject" type="text" value="${esc(r.subject || "")}"></div>
              ${rewritePanel()}
-             <div class="field" style="margin-top:16px"><label for="draftBody">Body</label><textarea id="draftBody" class="draft-body">${esc(r.body || "")}</textarea>
-             <div class="help">Save your edits as a draft, or approve when it is ready to send.</div></div>`
+             <div class="field" style="margin-top:16px"><div class="label-row"><label for="draftBody">Body</label>
+               <span class="insert"><button type="button" class="btn compact" id="draftLink">${icon("link", 14)} Add link</button></span></div>
+             <div class="help" id="draftLinks" style="margin-bottom:6px" hidden></div>
+             <textarea id="draftBody" class="draft-body">${esc(r.body || "")}</textarea>
+             <div class="help">To link words, select them and press Add link. Save your edits as a draft, or approve when it is ready to send.</div></div>`
           : `<h2 class="modal-title" style="font-size:20px;line-height:24px">${esc(r.subject || "(no subject)")}</h2>
-             <div class="mail-body">${esc(r.body || "")}</div>
+             <div class="mail-body">${mailHtml(r.body || "")}</div>
              ${r.triage_reason ? `<div class="section" style="margin-top:20px"><h3>${icon("sparkle", 16)} Triage note</h3><div class="body">${esc(r.triage_reason)}</div></div>` : ""}`}
       </div>
       <div class="modal-side">
@@ -2187,7 +2232,8 @@ function openMessage(id, message) {
   // the list stays in view beside the sheet, so a stray click could close it: an edited draft asks first
   if (isDraft) {
     const was = { s: r.subject || "", b: r.body || "" };
-    bindRewrite(root, $("#draftSubject", root), $("#draftBody", root), "/api/outreach/" + id + "/rewrite");
+    const showLinks = bindLinkTool($("#draftLink", root), $("#draftBody", root), $("#draftLinks", root));
+    bindRewrite(root, $("#draftSubject", root), $("#draftBody", root), "/api/outreach/" + id + "/rewrite", showLinks);
     $("#draftSave", root).addEventListener("click", async (event) => {
       if (o.busy) return;
       o.busy = true;

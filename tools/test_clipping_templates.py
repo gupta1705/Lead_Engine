@@ -70,8 +70,32 @@ class CatalogueTemplate(unittest.TestCase):
     def test_long_names_and_em_dashes_are_safe(self):
         _, _, (subject, body) = self.render(company='A Very Long Show '*20+'Name\u2014Studio')
         self.assertLessEqual(dr.subject_words(subject),self.cfg['subject_max_words'])
-        self.assertEqual(subject,'Turning your viewers into fans')
+        self.assertEqual(subject,'Your channel | Clipping + Distribution')
         self.assertFalse(has_forbidden_copy(subject + body))
+
+    def test_subject_is_the_channel_name_then_clipping_and_distribution(self):
+        yt=lambda title:{'youtube_channel':{'title':title}}
+        for company,meta,want in (
+            ('The Royal Family Channel',yt('The Royal Family Channel'),'The Royal Family Channel'),
+            ('The Angry Therapist Podcast',yt('The Angry Therapist'),'The Angry Therapist'),
+            ('LifeMinute Podcast: Health and Wellness',yt('LifeMinute'),'LifeMinute'),
+            ("THE MEN'S SELF HELP PODCAST",yt('Mens Self-Help Podcast'),'Mens Self-Help Podcast'),
+            ('VPROMS  Video Production',yt('VPROMS  Video Production'),'VPROMS Video Production'),
+            ('A Feed Only Show',{'podcast_feed':{'episode_count':9}},'A Feed Only Show'),
+            ("We Don't PLAY!™ Podcast",yt("We Don't PLAY Podcast Show \U0001f399️"),"We Don't PLAY Podcast Show"),
+            ('The Sagar Show | Motivational &amp; More',{},'The Sagar Show'),
+            ('Tips &amp; Tricks',{},'Tips & Tricks'),
+            ('Dean Hawk Leadership Podcast | AUDIO',yt('Dean Hawk Leadership Podcast'),'Dean Hawk Leadership Podcast'),
+            ('बातें शो',{},'बातें शो')):
+            subject=self.render(meta=meta,company=company)[2][0]
+            self.assertEqual(subject,want+' | Clipping + Distribution')
+
+    def test_a_channel_that_is_someone_elses_never_names_the_subject(self):
+        for company,title in (('Lex Fridman Podcast','Steve Brunton'),('Study Motivation by Motivation2Study','Bobby Maximus'),
+                              ('Magnetic by Design: A Human Design Podcast','Julie Reisler | Intuition on Demand'),
+                              ('Intermediate Portuguese Podcast','Portuguese With Leo'),('The Show','The Podcast')):
+            subject=self.render(meta={'youtube_channel':{'title':title}},company=company)[2][0]
+            self.assertEqual(subject,company+' | Clipping + Distribution')
 
     def test_signature_tracks_actual_sender_and_round_trips(self):
         _, _, (_, body) = self.render()

@@ -126,7 +126,7 @@ def main_():
         canon = dr.footer_for(ocfg)
         cap = int(ocfg["subject_max_words"])
         # the owner's four ReelForge subjects (2026-10-21), as they read for this show, and their fallbacks
-        reelforge = {dr.render(x, {"company": "ZZ Show", "archive_potential": a})
+        reelforge = {dr.render(x, {"company": "ZZ Show", "channel_name": "ZZ Show", "archive_potential": a})
                      for tp in ocfg["templates"] if tp.get("kind") != "follow_up"
                      for x in (tp["subject"], tp.get("subject_fallback") or tp["subject"]) for a in ("More", "6,000")}
         d1, s1, b1 = draft()
