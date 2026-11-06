@@ -70,10 +70,10 @@
     },
     {
       "key": "audience_band",
-      "label": "Audience in the band that can pay but has no in-house team (10k-1M subscribers)",
+      "label": "Established audience, with no upper subscriber limit",
       "points": 25,
       "input": "metadata.scoring_inputs.audience_band",
-      "guidance": "1.0 at 10k-1M subscribers, 0.5 at 3k-10k or 1M-3M, 0 outside. Below the band there is no budget; above it there is usually an editor on staff. Unassessed when no channel is known. RAISED 2026-09-09 from 15 to 25 after the first live run: catalogue and cadence alone let a 271-subscriber show outrank the band, and the audience is what decides whether there is a budget."
+      "guidance": "1.0 at 10k+ subscribers with no ceiling; 0.5 at 3k-10k; 0 below. Audience size alone never excludes a larger channel. Unknown remains unassessed."
     },
     {
       "key": "monetization_signals",
@@ -113,13 +113,6 @@
       "guidance": "1.0 when a YouTube channel with long-form uploads is confirmed. Video-native shows are the easiest to clip well and the quickest to see results."
     },
     {
-      "key": "oversized_audience",
-      "label": "PENALTY: audience between 2M and 5M subscribers, probably staffed",
-      "max_penalty": -20,
-      "input": "metadata.scoring_inputs.oversized_audience",
-      "guidance": "1.0 when subscribers are above 2M (the gate takes over above 5M). Keeps big-but-not-huge channels in the pool, ranked below the band where the pitch lands."
-    },
-    {
       "key": "us_priority",
       "label": "BONUS: based in the United States, the segment's first market",
       "max_bonus": 8,
@@ -144,10 +137,10 @@
     },
     {
       "key": "not_excluded_category",
-      "label": "Not children's content or music",
+      "label": "Not children's content or music-only performances",
       "input": "metadata.scoring_inputs.excluded_category_signal",
       "exclude_when": true,
-      "guidance": "Kids & Family (COPPA exposure, brand risk) and Music (licensing makes clips a liability) are out. Set from Apple genres or YouTube topic categories. Blank passes."
+      "guidance": "Children's content and music-only performance channels remain excluded. Music teaching, production tutorials, theory, business and original music discussion qualify. Genre alone does not exclude a music educator."
     },
     {
       "key": "usable_first_party_presence",
@@ -162,13 +155,6 @@
       "input": "metadata.scoring_inputs.major_network_signal",
       "exclude_when": true,
       "guidance": "Name match against major_networks. These are not customers for a clipping desk; they are the competition's customers or have their own. Blank passes."
-    },
-    {
-      "key": "not_oversized",
-      "label": "Exclude channels far beyond the band (over 5M subscribers)",
-      "input": "metadata.scoring_inputs.oversized_signal",
-      "exclude_when": true,
-      "guidance": "First live run (2026-09-09): a 40M-subscriber gaming channel scored 92 because audience_band only withholds 15 points. Channels that size have a post team and a procurement process; they are not clipping customers. Set from the channel's subscriber count. Blank passes."
     }
   ],
   "podcast_discovery": {
@@ -193,12 +179,8 @@
     "min_track_count": 40,
     "excluded_genres": [
       "Kids & Family",
-      "Music",
       "Stories for Kids",
-      "Education for Kids",
-      "Music Commentary",
-      "Music History",
-      "Music Interviews"
+      "Education for Kids"
     ],
     "queries": [
       {
@@ -526,6 +508,86 @@
     "long_min_seconds": 480,
     "queries": [
       {
+        "query": "filmmaking education online course",
+        "genre_hint": "filmmaking",
+        "offer_priority": true
+      },
+      {
+        "query": "cinematography lighting course",
+        "genre_hint": "filmmaking",
+        "offer_priority": true
+      },
+      {
+        "query": "video editing course filmmaker",
+        "genre_hint": "filmmaking",
+        "offer_priority": true
+      },
+      {
+        "query": "filmmaking tutorial Patreon",
+        "genre_hint": "filmmaking",
+        "offer_priority": true
+      },
+      {
+        "query": "music production online course",
+        "genre_hint": "music_education",
+        "offer_priority": true
+      },
+      {
+        "query": "music theory lessons membership",
+        "genre_hint": "music_education",
+        "offer_priority": true
+      },
+      {
+        "query": "guitar lessons Patreon",
+        "genre_hint": "music_education",
+        "offer_priority": true
+      },
+      {
+        "query": "piano teaching online course",
+        "genre_hint": "music_education",
+        "offer_priority": true
+      },
+      {
+        "query": "business education course creator",
+        "genre_hint": "business",
+        "offer_priority": true
+      },
+      {
+        "query": "entrepreneurship course newsletter",
+        "genre_hint": "business",
+        "offer_priority": true
+      },
+      {
+        "query": "marketing education paid community",
+        "genre_hint": "business",
+        "offer_priority": true
+      },
+      {
+        "query": "creator newsletter Substack",
+        "genre_hint": "education",
+        "offer_priority": true
+      },
+      {
+        "query": "educational YouTube channel Patreon",
+        "genre_hint": "education",
+        "offer_priority": true
+      },
+      {
+        "query": "personal finance education course",
+        "genre_hint": "finance",
+        "offer_priority": true
+      },
+      {
+        "query": "photography course creator",
+        "genre_hint": "education",
+        "offer_priority": true
+      },
+      {
+        "query": "coding tutorials paid course",
+        "genre_hint": "education",
+        "offer_priority": true
+      },
+      {
         "query": "podcast full episode",
         "genre_hint": "podcast"
       },
@@ -646,7 +708,8 @@
         "genre_hint": "b2b"
       }
     ],
-    "guidance": "A channel search costs 100 quota units, so a run does at most a few dozen searches; the channel statistics and the last 50 uploads cost 3 units per channel. The shorts gap, cadence and audience come straight from the API -- the pitch sentence is a fact. Long-form starts at eight minutes: a ten-minute explainer clips as well as an hour-long interview, and a twenty-minute floor threw away most education and commentary channels on the first live run (2026-09-09)."
+    "guidance": "A channel search costs 100 quota units, so a run does at most a few dozen searches; the channel statistics and the last 50 uploads cost 3 units per channel. The shorts gap, cadence and audience come straight from the API -- the pitch sentence is a fact. Long-form starts at eight minutes: a ten-minute explainer clips as well as an hour-long interview, and a twenty-minute floor threw away most education and commentary channels on the first live run (2026-09-09).",
+    "offer_query_fraction": 0.65
   },
   "hosting_providers": [
     "anchor.fm",
@@ -797,7 +860,9 @@
     "why_fit",
     "scoring_inputs",
     "host",
-    "kind"
+    "kind",
+    "creator_offers",
+    "category"
   ],
   "sources": [
     {
@@ -900,6 +965,11 @@
         "path": "metadata.youtube_channel.recent.avg_long_minutes",
         "label": "Average long video (min)",
         "format": "number"
+      },
+      {
+        "path": "metadata.creator_offers.summary",
+        "label": "Creator's own offer evidence",
+        "format": "text"
       }
     ],
     "lead_first": "person",
@@ -1080,5 +1150,13 @@
     "enabled": true,
     "days": 14,
     "keep_approved_and_conversations": true
+  },
+  "creator_targeting": {
+    "version": "creator-offers-20261106",
+    "offer_required": false,
+    "prioritise_owned_offers": true,
+    "no_subscriber_ceiling": true,
+    "allow_music_education": true,
+    "guidance": "Prioritise creators with first-party evidence of their own product, course, newsletter, membership or service. A podcast is not required. Sponsor or affiliate mentions do not prove an owned offer. Strong creators without an offer remain eligible. No upper subscriber limit or size-only penalty. Music education and original music discussion qualify; children's and music-only performance content remain excluded."
   }
 }

@@ -1326,7 +1326,7 @@ function renderOutreachFilters(d) {
   // where the default order is the date, newest first (Replies, owner 2026-10-28; Sent), it says so; In conversation
   // puts the ones waiting on us first, the longest wait at the top (2026-10-29)
   const byDate = ["inbox", "sent"].includes(o.folder);
-  const defaultLabel = o.folder === "drafts" && segUi().prioritize_fresh_leads ? "Priority: fresh + high score"
+  const defaultLabel = o.folder === "drafts" && segUi().prioritize_fresh_leads ? "Priority: creator offers, fresh + score"
     : o.folder === "conversation" ? "Waiting on us first"
     : byDate ? "Date: newest first" : "Default order";
   const sorts = [["default:desc", defaultLabel], ["subscribers:desc", "Subscriber count: high to low"],

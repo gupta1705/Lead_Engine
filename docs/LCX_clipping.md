@@ -8,9 +8,24 @@ cloud.
 
 ## Who it finds
 
-Creators and podcasters with a deep back catalogue and few or no shorts, in
-countries where cold business email is lawful. The tiers, from the planning
-conversation:
+Creators and podcasters with a deep back catalogue and few or no shorts.
+Since 6 November 2026, creators with evidence of their own course, product,
+newsletter, membership or service receive priority. An offer is not mandatory,
+and a podcast is not required. Filmmaking, music education and business education
+are explicit discovery areas, alongside the existing creator searches.
+
+There is no upper subscriber limit, size-only penalty or oversized-channel gate.
+The 3,000-subscriber discovery floor and catalogue, activity, contact, geography
+and other qualification rules still apply. Music teaching and original music
+discussion qualify; music-only performances and children's content remain out.
+
+Default priority combines fit, freshness and a 15-point preference for evidence
+of an owned offer. The offer evidence and its published source appear in the
+lead details. Sponsors, affiliate links and guest promotions do not establish an
+owned offer; a newsletter link does not establish that it is paid. Approximately
+65% of YouTube search slots target offers, within the existing API search budget.
+
+The original discovery tiers remain available:
 
 | Tier | Who | Found through |
 |---|---|---|
@@ -18,7 +33,11 @@ conversation:
 | 2 | Long-form YouTube creators: interviews, finance, education, commentary, sport | YouTube Data API channel search |
 | 3 | Coaching institutes, regional publishers, companies that run webinars | YouTube, same connector, different queries |
 
-Networks, broadcasters, children's content and music are gated out.
+Major networks and broadcasters remain excluded. Approved leads, sent emails and
+conversations are protected during targeting refreshes. Previously automatic
+size/category exclusions are reconsidered only while still inside the retention
+window and passing the remaining gates. Historical run tables below describe
+the rules in force on their stated dates.
 
 ## How it is wired
 
@@ -53,16 +72,16 @@ stopped there since 2026-09-16, and Operations → Automatic runs shows
 | Deep back catalogue (100+ long items) | 20 | feed or channel |
 | Weekly cadence, active in 90 days | 10 | feed or channel |
 | Shorts gap (under 10% of uploads are shorts) | 25 | channel only; unassessed for audio-only shows |
-| Audience 10k to 1M subscribers | 25 | channel only |
+| Audience 10k+ subscribers, no upper limit | 25 | channel only |
 | Budget signals (sponsors, Patreon, merch, courses) | 15 | feed or channel |
 | A business address to write to | 10 | engine |
 | Language LCX edits well | 5 | feed or channel |
 
-Modifiers: network-owned (penalty 20), audience above 2M (penalty 20),
-video-first (bonus 6, eight or more long uploads among the last fifty),
-US-based (bonus 8). Gates: country allowed, active, not kids or music, some
-reachable presence, not a major network, not oversized (above 5M
-subscribers). Thresholds: reviewable at 25, priority at 45, like TVF.
+Modifiers: network-owned (penalty 20), video-first (bonus 6, eight or more long
+uploads among the last fifty), US-based (bonus 8). Default priority adds 15 for
+owned-offer evidence alongside freshness and fit. Gates: country allowed,
+active, not kids or music-only performances, some reachable presence, and not
+a major network. Thresholds: reviewable at 25, priority at 45.
 
 ## Running it
 
@@ -131,7 +150,7 @@ YouTube: about 2,900 units of the daily 10,000.
 What the run taught, already folded back into the config: a twenty-minute
 floor for "long-form" threw away most education and commentary channels
 (now eight minutes); a 53-million-subscriber gaming channel scored 92 because
-audience only withheld points (now a gate above 5M and a penalty above 2M);
+audience only withheld points (size exclusions introduced then were removed on 6 November 2026);
 and catalogue plus cadence let a 271-subscriber show outrank the band (audience
 raised to 25 points, catalogue and cadence lowered). The next runs skip every
 feed and channel already known, so they only pay for new ground.

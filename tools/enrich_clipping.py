@@ -49,12 +49,12 @@ import personname
 import yt_api
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-clipping")
-ENRICH_VERSION = 4                              # 4: review fixes to the name rules, 2026-09-10
+ENRICH_VERSION = 5                              # creator offers, music education and no subscriber ceiling
 OPEN = ("discovered", "enriched", "scored", "ready_for_review", "shortlisted")
 YT_RE = re.compile(r"https?://(?:www\.|m\.)?youtube\.com/(@[\w.\-]+|channel/[\w\-]+|c/[\w.\-]+|user/[\w.\-]+)", re.I)
 LIFT = {"apple_podcasts": ("podcast_feed",), "youtube_api": ("youtube_channel",),
         "wikidata_channels": ("youtube_channel", "wikidata"), "tvf_pool": ("origin",)}
-COMMON = ("why_fit", "kind", "hq_city", "hq_state")
+COMMON = ("why_fit", "kind", "category", "hq_city", "hq_state")
 EMAIL_STATUSES = {"unverified", "valid", "invalid", "catch_all", "unknown"}
 CHANNEL_KEYS = ("shorts_gap", "audience_band", "video_first", "oversized_signal", "oversized_audience")
 STRONGER_KEYS = ("archive_size", "cadence", "monetization_signals", "reachable_contact")
@@ -233,6 +233,12 @@ def main():
                 si_new = yt_api.inputs_from_channel(yc, cfg, now)
             except Exception as e:
                 log("  channel inputs failed for %s: %r" % (name[:40], e))
+
+        import creator_offers
+        changed["creator_offers"] = creator_offers.from_metadata(dict(meta, podcast_feed=pf, youtube_channel=yc or {}))
+        if pf and not yc:
+            si_new["excluded_category_signal"] = creator_offers.excluded_content(
+                name, pf.get("description"), pf.get("categories"), cfg)
 
         # 3. host, after the channel so its description counts
         host = meta.get("host") or {}

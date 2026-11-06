@@ -157,6 +157,10 @@ def profile(item, uploads, cfg):
     website, domain = website_from(sn.get("description", ""), cfg.get("hosting_providers", ()))
     topics = [t.rsplit("/", 1)[-1].replace("_", " ") for t in item.get("topicDetails", {}).get("topicCategories", [])]
     custom = sn.get("customUrl") or ""
+    import creator_offers
+    offers = creator_offers.detect(
+        [(sn.get("description"), "https://www.youtube.com/channel/" + item["id"], "youtube_channel")]
+        + [(u.get("description"), "https://www.youtube.com/watch?v=" + u["id"] if u.get("id") else None, "youtube_video") for u in uploads[:20]])
     return {
         "channel_id": item["id"],
         "url": "https://www.youtube.com/" + (custom if custom.startswith("@") else "channel/" + item["id"]),
@@ -166,6 +170,7 @@ def profile(item, uploads, cfg):
         "view_count": int(st.get("viewCount") or 0), "topics": topics[:6],
         "description": (sn.get("description") or "")[:600], "website": website, "website_domain": domain,
         "email_in_description": email.lower() if email else None, "monetization_hits": hits,
+        "creator_offers": offers,
         "recent": {"sampled": len(uploads), "long_count": len(long_), "shorts_count": len(shorts),
                    "medium_count": len(durs) - len(long_) - len(shorts),
                    "shorts_share": round(len(shorts) / len(durs), 3) if durs else None,
@@ -212,9 +217,13 @@ def inputs_from_channel(yc, cfg, now):
     if r["uploads_per_month"] is not None:
         si["cadence"] = 1.0 if r["uploads_per_month"] >= 4 else 0.5 if r["uploads_per_month"] >= 2 else 0.0
     subs = yc["subscribers"]
-    si["audience_band"] = 1.0 if 10_000 <= subs <= 1_000_000 else 0.5 if 3_000 <= subs < 10_000 or 1_000_000 < subs <= 3_000_000 else 0.0
-    si["oversized_signal"] = subs > 5_000_000          # gate: not a clipping customer
-    si["oversized_audience"] = 1.0 if subs > 2_000_000 else 0.0   # penalty band below the gate
+    if (cfg.get("creator_targeting") or {}).get("no_subscriber_ceiling"):
+        si["audience_band"] = 1.0 if subs >= 10_000 else 0.5 if subs >= 3_000 else 0.0
+        si["oversized_signal"], si["oversized_audience"] = False, 0.0
+    else:
+        si["audience_band"] = 1.0 if 10_000 <= subs <= 1_000_000 else 0.5 if 3_000 <= subs < 10_000 or 1_000_000 < subs <= 3_000_000 else 0.0
+        si["oversized_signal"] = subs > 5_000_000
+        si["oversized_audience"] = 1.0 if subs > 2_000_000 else 0.0
     si["monetization_signals"] = 1.0 if len(yc["monetization_hits"]) >= 2 else 0.5 if yc["monetization_hits"] else 0.0
     if yc.get("email_in_description"):
         si["reachable_contact"] = 1.0
@@ -230,8 +239,8 @@ def inputs_from_channel(yc, cfg, now):
         si["language_match"] = 1.0 if lang in langs.get("full", []) else 0.5 if lang in langs.get("partial", []) else 0.0
     elif c == "IN":
         si["language_match"] = 1.0
-    topics = " ".join(yc.get("topics", [])).lower()
-    si["excluded_category_signal"] = bool(re.search(r"\bmusic\b|children", topics))
+    import creator_offers
+    si["excluded_category_signal"] = creator_offers.excluded_content(yc.get("title"), yc.get("description"), yc.get("topics"), cfg)
     si["has_reachable_presence"] = True
     title = (yc.get("title") or "").lower()
     major = any(re.search(r"\b" + re.escape(m) + r"\b", title) for m in majors)

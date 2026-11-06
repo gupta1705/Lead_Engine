@@ -41,6 +41,25 @@ def log(m):
     print(m, flush=True)
 
 
+def search_pairs(ycfg, priority_countries, seed, limit):
+    """Give owned-offer queries a majority share without growing the search budget."""
+    pairs = [(q, r) for q in ycfg.get("queries", []) for r in ycfg.get("regions", [{"code": "US", "language": "en"}])]
+    random.Random(seed).shuffle(pairs)
+    fraction = min(1.0, max(0.0, float(ycfg.get("offer_query_fraction", 0))))
+    def take(pool, n):
+        offers = [p for p in pool if p[0].get("offer_priority")]
+        other = [p for p in pool if not p[0].get("offer_priority")]
+        k = min(len(offers), int(round(n * fraction)))
+        chosen = offers[:k] + other[:n-k]
+        if len(chosen) < n:
+            chosen += offers[k:k+n-len(chosen)]
+        return chosen
+    first = [p for p in pairs if p[1]["code"] in priority_countries]
+    rest = [p for p in pairs if p[1]["code"] not in priority_countries]
+    n = min(len(first), int(round(limit * 0.6))) if rest else min(len(first), limit)
+    return (take(first, n) + take(rest, limit-n))[:limit]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-searches", type=int, default=15)
@@ -75,13 +94,8 @@ def main():
             "insert into source_runs (segment_id, source, status) values (%s,%s,'running') returning id",
             (seg_id, SOURCE)), cur.fetchone()[0])[1])
 
-    pairs = [(q, r) for q in ycfg.get("queries", []) for r in ycfg.get("regions", [{"code": "US", "language": "en"}])]
     prio = set(cfg.get("geography", {}).get("priority_countries") or ["US"])
-    random.Random(now.strftime("%Y-%m-%d")).shuffle(pairs)
-    first = [p for p in pairs if p[1]["code"] in prio]
-    rest = [p for p in pairs if p[1]["code"] not in prio]
-    k = min(len(first), int(round(args.max_searches * 0.6))) if rest else min(len(first), args.max_searches)
-    pairs = (first[:k] + rest[:args.max_searches - k])[:args.max_searches]
+    pairs = search_pairs(ycfg, prio, now.strftime("%Y-%m-%d"), args.max_searches)
 
     found = []
     try:
@@ -120,7 +134,8 @@ def main():
             why = yt_api.why_from_channel(yc)
             row = {"name": (yc["title"] or "")[:200], "domain": yc.get("website_domain"),
                    "source_url": "https://www.youtube.com/channel/" + yc["channel_id"],
-                   "raw": {"genre_hint": hints.get(item["id"], (None, None))[0], "region": hints.get(item["id"], (None, None))[1],
+                   "raw": {"genre_hint": hints.get(item["id"], (None, None))[0], "category": hints.get(item["id"], (None, None))[0],
+                           "region": hints.get(item["id"], (None, None))[1],
                            "youtube_channel": yc, "why_fit": why, "scoring_inputs": si,
                            "host": personname.extract_host(yc.get("title") or "", description=yc.get("description"))}}
             log("  %3d. %-36s subs=%-8s long=%-2d shorts=%-2d share=%-5s %s" % (

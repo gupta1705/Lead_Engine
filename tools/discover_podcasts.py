@@ -278,7 +278,8 @@ def shape(cand, feed, cfg, now):
         si.update(yt_api.country_inputs(region, geo))
     elif primary in INDIA_LANGS:
         si["country_signal"] = "allowed"
-    si["excluded_category_signal"] = False
+    import creator_offers
+    si["excluded_category_signal"] = creator_offers.excluded_content(feed["title"], feed["description"], feed["categories"], cfg)
     si["has_reachable_presence"] = bool(email_ or website or yt)
     si["major_network_signal"] = bool(major)
     si["network_owned"] = 1.0 if major else 0.0
@@ -303,11 +304,14 @@ def shape(cand, feed, cfg, now):
         "hosting_provider": provider, "monetization_hits": hits, "type": feed["type"] or None,
         "latest_title": items[0]["title"] if items else None,
         "description": feed["description"][:600],
+        "creator_offers": creator_offers.detect(
+            [(feed["description"], cand["feedUrl"], "podcast_feed")]
+            + [(i["desc"], i.get("link") or cand["feedUrl"], "podcast_episode") for i in items[:20]]),
     }
     raw = {"itunes_id": cand.get("collectionId"), "artist": cand.get("artistName"),
            "genres": cand.get("genres"), "track_count": cand.get("trackCount"),
            "country_hint": cand.get("_country"), "podcast_feed": podcast_feed,
-           "why_fit": why, "scoring_inputs": si}
+           "why_fit": why, "category": genre, "scoring_inputs": si}
     raw["host"] = personname.extract_host(feed["title"] or cand.get("collectionName") or "",
                                           author=feed["author"], owner_name=feed["owner_name"],
                                           description=feed["description"], artist=cand.get("artistName"))

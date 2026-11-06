@@ -21,7 +21,9 @@ def retention_days(config):
 def priority_order(alias="e"):
     # A fresh lead gets up to 28 extra points, fading to zero over 14 days.
     # Original discovery time is intentional: an enrichment must not rejuvenate it.
-    return (f"(coalesce({alias}.fit_score,0) + greatest(0,least(14,14 - "
+    from creator_offers import PRIORITY_BONUS
+    return (f"(coalesce({alias}.fit_score,0) + case when {alias}.metadata#>>'{{creator_offers,priority}}'='true'"
+            f" then {PRIORITY_BONUS} else 0 end + greatest(0,least(14,14 - "
             f"extract(epoch from (now()-{alias}.created_at))/86400.0))*2) desc,"
             f"{alias}.fit_score desc nulls last,{alias}.created_at desc,{alias}.id")
 
