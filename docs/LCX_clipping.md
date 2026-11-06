@@ -522,3 +522,8 @@ Any email, in any project, can carry links: `[words](https://address)` in the te
 words, clickable (`tools/mail_links.py`). The Add link button in the editor writes that form. An email
 with a link is sent with a plain-text part and an HTML part; every other email is still plain text
 only, unchanged. The HTML has no tracking and no styling of its own.
+
+The opener now also carries the LCX team's ReelForge paragraph, after the LCX paragraph, with ReelForge
+linked to https://reel--forge.vercel.app/#1. The rest of the 5 November copy is unchanged. Follow-ups do
+not carry it. Unsent openers still on the template's wording received the paragraph; drafts the team had
+rewritten were left alone.

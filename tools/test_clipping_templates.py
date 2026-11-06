@@ -8,6 +8,7 @@ from pathlib import Path
 import clipping_templates as ct
 import draft_render as dr
 import llm
+import mail_links
 from mail_copy import has_forbidden_copy
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,12 +36,21 @@ class CatalogueTemplate(unittest.TestCase):
             for text in ('I trust you are doing well.', 'Example Show', 'at least 525 episodes',
                          'We are LCX', 'distribution workflows across social platforms',
                          'passive viewers into loyal fans', 'a few sample clips',
-                         'particular episode', 'Thank you for your time.', 'Regards,'):
+                         'particular episode', 'Thank you for your time.', 'Regards,',
+                         '[ReelForge](https://reel--forge.vercel.app/#1), from LCX (Lights Camera Experiment)',
+                         'all approved by you.'):
                 self.assertIn(text, body)
-            for text in ('Lex Fridman', '10,000', '500+', '48 hours', 'ReelForge', ct.URL, '{{', '[Name]', '[X]'):
+            for text in ('Lex Fridman', '10,000', '500+', '48 hours', '{{', '[Name]', '[X]'):
                 self.assertNotIn(text, body)
             self.assertFalse(has_forbidden_copy(subject + body))
             self.assertIsNone(llm.make_generator(self.cfg))
+
+    def test_the_opener_goes_out_with_reelforge_as_a_clickable_word(self):
+        body = self.render()[2][1]
+        self.assertTrue(mail_links.has_links(body))
+        self.assertIn('<a href="https://reel--forge.vercel.app/#1">ReelForge</a>, from LCX', mail_links.to_html(body))
+        self.assertLess(body.index('loyal fans.'), body.index('[ReelForge]'))
+        self.assertLess(body.index('[ReelForge]'), body.index('a few sample clips'))
 
     def test_unknown_or_channel_upload_counts_do_not_become_episode_counts(self):
         for meta in ({}, {'youtube_channel': {'video_count': 525}},

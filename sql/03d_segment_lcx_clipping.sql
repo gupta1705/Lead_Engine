@@ -1019,7 +1019,7 @@ values (
         "key": "lcx_catalogue_distribution_v1",
         "subject": "{{channel_name}} | Clipping + Distribution",
         "subject_fallback": "Your channel | Clipping + Distribution",
-        "body": "{{hello}}\n\nI trust you are doing well.\n\n{{catalogue_opening}} {{catalogue_opportunity}}\n\nThat gap is exactly where we come in. In today''s landscape, excellent content also needs visibility. We are LCX, a new-age media agency built to help your work reach the viewers it deserves. We combine clipping with distribution workflows across social platforms to help turn passive viewers into loyal fans.\n\nWe would be glad to send across a few sample clips so you can judge the quality for yourself. If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\nThank you for your time. I hope we can work together to turn your viewers into fans.\n\n{{footer}}"
+        "body": "{{hello}}\n\nI trust you are doing well.\n\n{{catalogue_opening}} {{catalogue_opportunity}}\n\nThat gap is exactly where we come in. In today''s landscape, excellent content also needs visibility. We are LCX, a new-age media agency built to help your work reach the viewers it deserves. We combine clipping with distribution workflows across social platforms to help turn passive viewers into loyal fans.\n\n[ReelForge](https://reel--forge.vercel.app/#1), from LCX (Lights Camera Experiment), the studio behind one of India''s biggest digital entertainment companies, puts an army of editors on your long-form. They cut it into clips at volume, and we distribute them across new pages, third-party networks and your channels, all approved by you.\n\nWe would be glad to send across a few sample clips so you can judge the quality for yourself. If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\nThank you for your time. I hope we can work together to turn your viewers into fans.\n\n{{footer}}"
       },
       {
         "key": "clipping_followup_1",
@@ -1028,7 +1028,7 @@ values (
         "body": "{{hello}}\n\nI hope you are doing well.\n\nFollowing up on my note about helping {{company}} reach new audiences through short clips and distribution across social platforms.\n\nWe would be glad to send across a few sample clips so you can judge the quality for yourself. If there is a particular episode you have in mind, share the name and we will build the samples around it.\n\nThank you for your time.\n\n{{footer}}"
       }
     ],
-    "guidance": "Owner, 2026-11-05: use the supplied LCX media-agency catalogue/distribution template as the single opener. Use each lead''s own show name and recorded episode count, with a neutral catalogue sentence when the count is unknown. Do not repeat Lex Fridman or a fixed 10,000-reel estimate on unrelated leads; a clip estimate requires supporting evidence. The sample-clips invitation is authorized. No em dashes or reply-yes offers. Sign with the actual approver''s name. The existing one follow-up after four days stays enabled, with matching sample-clips copy. Sending, qualification, contact selection and approval rules are preserved.",
+    "guidance": "Owner, 2026-11-05: use the supplied LCX media-agency catalogue/distribution template as the single opener. Use each lead''s own show name and recorded episode count, with a neutral catalogue sentence when the count is unknown. Do not repeat Lex Fridman or a fixed 10,000-reel estimate on unrelated leads; a clip estimate requires supporting evidence. The sample-clips invitation is authorized. No em dashes or reply-yes offers. Sign with the actual approver''s name. The existing one follow-up after four days stays enabled, with matching sample-clips copy. Sending, qualification, contact selection and approval rules are preserved. Owner, 2026-11-06: the LCX team''s ReelForge paragraph and link follow the LCX paragraph in the opener.",
     "greeting_fallback": "there",
     "follow_ups": {
       "enabled": true,
@@ -1100,7 +1100,7 @@ values (
       "max_calls_per_run": 200,
       "requests_per_minute": 25
     },
-    "reelforge_templates": "lcx-catalogue-20261106",
+    "reelforge_templates": "lcx-catalogue-20261106-reelforge",
     "send_from": "approver",
     "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads.",
     "prioritize_fresh_leads": true
