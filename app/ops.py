@@ -80,6 +80,22 @@ JOBS = {
         "cmd": [PY, "tools/discover_podcasts.py", "--max-searches", "60", "--limit-feeds", "300"],
         "segments": ["lcx-clipping"],
     },
+    "discover_podcast_index": {
+        "label": "Harvest: podcasts (Podcast Index)",
+        "group": "Discover",
+        "desc": "The open podcast directory: trending shows plus the project's search terms, alive and recent only; "
+                "each new show's own feed read like the Apple harvest. Needs PODCASTINDEX_API_KEY and _SECRET.",
+        "cmd": [PY, "tools/discover_podcast_index.py", "--max-new", "400"],
+        "segments": ["lcx-clipping"],
+    },
+    "youtube_freshness": {
+        "label": "YouTube data: refresh or delete after 30 days",
+        "group": "Enrich",
+        "desc": "YouTube's policy: API data is kept at most 30 days. Live leads' channels are profiled again after 21 "
+                "days; anything older than 30 is cut to the channel's identity.",
+        "cmd": [PY, "tools/youtube_freshness.py", "--yt-budget", "2500"],
+        "segments": ["lcx-clipping"],
+    },
     "discover_youtube": {
         "label": "Harvest: YouTube channels (shorts gap)",
         "group": "Discover",

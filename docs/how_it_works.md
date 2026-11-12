@@ -47,8 +47,9 @@ The engine looks in public places where the right kind of company shows up:
 - **The AICP directory** of US commercial production companies: 247.
 - **Google News headlines** about format deals, co-productions and series
   orders: 143 production houses and all 319 startups.
-- **YouTube and Apple Podcasts:** channels and shows, with their audience size
-  and how often they post.
+- **YouTube, Apple Podcasts and Podcast Index:** channels and shows, with their
+  audience size and how often they post. YouTube data is refreshed or deleted
+  within 30 days, as YouTube's rules require.
 - **Apollo**, a paid business database of people and companies, when you
   search it yourself in the Universal project.
 
@@ -193,7 +194,7 @@ something. Each one needs a key, which is like a password for a program:
 
 - **Apollo:** people and companies, and verified work emails.
 - **Gmail:** sending the approved emails and collecting replies.
-- **YouTube, Apple Podcasts, Google News, Wikidata:** the public sources.
+- **YouTube, Apple Podcasts, Podcast Index, Google News, Wikidata:** the public sources.
 - **Groq:** an AI model that writes the one paragraph about each company. A
   person still reads and approves every email.
 

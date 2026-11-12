@@ -163,6 +163,8 @@ def cmd_draft(args):
           and not exists (select 1 from outreach o
                           where o.entity_id = e.id and o.direction = 'outbound'
                             and o.status not in ('cancelled','failed'))
+          -- the do-not-contact list (sql/48): no draft at all for an address or company on it
+          and do_not_contact(c.email, e.id) is null
         order by """ + order + """ limit %s
     """, (SEGMENT, args.limit)), cur.fetchall())[1])
 
@@ -1570,18 +1572,24 @@ def cmd_pull(args):
                 theirs.append((m["id"], _message_time(m)))
                 subj = headers.get("subject", "")
                 bounce = pol.is_bounce(frm, subj)
+                # an automatic reply, told by its headers (2026-11-12): not a reply, no model call, no alert; its
+                # follow-up resumes as for any neutral one
+                auto = None if bounce else pol.auto_reply_headers(headers)
                 mid = m["id"]
                 body = _plain_body(m.get("payload", {}))
 
-                def _ingest(cur, _t=tid, _e=eid, _c=cid, _m=mid, _s=subj, _b=body[:8000], _bn=bounce):
+                def _ingest(cur, _t=tid, _e=eid, _c=cid, _m=mid, _s=subj, _b=body[:8000], _bn=bounce, _au=auto):
                     cur.execute(
                         "insert into outreach (entity_id, contact_id, direction, subject, body, status,"
-                        " triage, triage_reason, gmail_message_id, gmail_thread_id)"
-                        " values (%s,%s,'inbound',%s,%s,%s,%s,%s,%s,%s)"
+                        " triage, triage_reason, gmail_message_id, gmail_thread_id, reply_kind)"
+                        " values (%s,%s,'inbound',%s,%s,%s,%s,%s,%s,%s,%s)"
                         " on conflict (gmail_message_id) where gmail_message_id"
                         " is not null do nothing returning id",
-                        (_e, _c, _s, _b, "triaged" if _bn else "received", "neutral" if _bn else None,
-                         "bounce: the address rejected the email" if _bn else None, _m, _t))
+                        (_e, _c, _s, _b, "triaged" if (_bn or _au) else "received",
+                         "neutral" if (_bn or _au) else None,
+                         "bounce: the address rejected the email" if _bn
+                         else ("auto-reply, by its mail headers (%s)" % _au) if _au else None, _m, _t,
+                         "auto_reply" if _au else None))
                     got = cur.fetchone()
                     if not got:
                         return None, 0
@@ -1598,7 +1606,8 @@ def cmd_pull(args):
                 else:
                     found += 1
                     paused += n
-                    log("  %s thread %s: new reply%s" % (mbk, tid, ("; %d pending follow-up(s) paused" % n) if n else ""))
+                    log("  %s thread %s: new %s%s" % (mbk, tid, ("auto-reply (%s)" % auto) if auto else "reply",
+                                                       ("; %d pending follow-up(s) paused" % n) if n else ""))
             answered += _note_answers(db, theirs, ours)
         if ub is not None:
             # the person whose Gmail this is hears of it: an alert in their inbox, and the daily reminder

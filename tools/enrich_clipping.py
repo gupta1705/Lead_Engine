@@ -54,7 +54,7 @@ SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-clipping")
 ENRICH_VERSION = 6
 OPEN = ("discovered", "enriched", "scored", "ready_for_review", "shortlisted")
 YT_RE = re.compile(r"https?://(?:www\.|m\.)?youtube\.com/(@[\w.\-]+|channel/[\w\-]+|c/[\w.\-]+|user/[\w.\-]+)", re.I)
-LIFT = {"apple_podcasts": ("podcast_feed",), "youtube_api": ("youtube_channel",),
+LIFT = {"apple_podcasts": ("podcast_feed",), "podcast_index": ("podcast_feed",), "youtube_api": ("youtube_channel",),
         "wikidata_channels": ("youtube_channel", "wikidata"), "tvf_pool": ("origin",),
         "publisher_group": ("network",)}
 COMMON = ("why_fit", "kind", "category", "hq_city", "hq_state")
@@ -172,7 +172,7 @@ def host_for(name, kind, pf, yc, raw, pool):
     return personname.extract_host(
         name, author=pf.get("author"), owner_name=pf.get("owner_name"),
         description=pf.get("description") or (yc or {}).get("description"),
-        artist=(raw.get("apple_podcasts") or {}).get("artist"))
+        artist=(raw.get("apple_podcasts") or raw.get("podcast_index") or {}).get("artist"))
 
 
 def main():
@@ -235,6 +235,9 @@ def main():
             lifted += 1
         pf = changed.get("podcast_feed") or meta.get("podcast_feed") or {}
         yc = changed.get("youtube_channel") or meta.get("youtube_channel")
+        expired_url = None
+        if yc and "recent" not in yc:               # past YouTube's 30 days, reduced to its identity: profile it again
+            expired_url, yc = yc.get("url"), None
         kind = changed.get("kind") or meta.get("kind")
         pool = raw.get("tvf_pool") or next((v for k, v in raw.items() if k.startswith("pool:")), None) or {}
 
@@ -242,7 +245,7 @@ def main():
         si_new, why_extra = {}, None
         yt_url = None
         if not yc:
-            yt_url = (pf.get("youtube_url") or (meta.get("site_youtube_lookup") or {}).get("url")
+            yt_url = (expired_url or pf.get("youtube_url") or (meta.get("site_youtube_lookup") or {}).get("url")
                       or (source_url if source_url and YT_RE.search(source_url) else None))
             can_lookup = (not yt_url and domain and not meta.get("site_youtube_lookup")
                           and stale(meta.get("site_youtube_error"), now)
@@ -350,10 +353,11 @@ def main():
             " order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain)"
             "          + contact_source_bonus(c.entity_id, c.source) desc, c.created_at limit 1", (_e,)), cur.fetchone())[1])
         si_new["person_reachable"] = person_reachable(best[0] if best else None, bool(host_name))
-        vs = video_source(pf, yc, dict(meta, **changed), domain, kind)
+        # an expired profile not yet refreshed is a channel we know of: not known yet, never "no video"
+        vs = None if (expired_url and not yc) else video_source(pf, yc, dict(meta, **changed), domain, kind)
         if vs is not None:
             si_new["video_source"] = vs
-        publisher = (pf.get("author") or (raw.get("apple_podcasts") or {}).get("artist") or "")
+        publisher = (pf.get("author") or (raw.get("apple_podcasts") or raw.get("podcast_index") or {}).get("artist") or "")
         if pf and kind not in ("production_house", "network") and ORG_RE.search(publisher):
             changed["company_run"] = publisher[:120]
             si_new["company_run"] = 1.0

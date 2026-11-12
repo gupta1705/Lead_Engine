@@ -46,6 +46,8 @@
 # Needed by particular projects:
 #   YOUTUBE_API_KEY   LCX's weekly refresh stops at its YouTube step without it
 #                     (Operations -> Automatic runs shows "Failed at discover_youtube").
+#   PODCASTINDEX_API_KEY, PODCASTINDEX_API_SECRET  free at api.podcastindex.org/signup;
+#                     without them LCX's Podcast Index step is skipped.
 #   GROQ_API_KEY      drafts get their model-written lines; without it they use
 #                     the plain template wording.
 #   APOLLO_API_KEY    the Universal project's Apollo search page.

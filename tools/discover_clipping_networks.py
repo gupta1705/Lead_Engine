@@ -60,8 +60,8 @@ def group_leads(rows, majors, min_shows):
     by = collections.defaultdict(list)
     names = {}
     for name, domain, status, meta in rows:
-        pf = meta.get("podcast_feed") or (meta.get("discovery_raw") or {}).get("apple_podcasts", {}).get("podcast_feed") or {}
-        pub = ((meta.get("discovery_raw") or {}).get("apple_podcasts") or {}).get("artist") or pf.get("author") or ""
+        pf = meta.get("podcast_feed") or ((meta.get("discovery_raw") or {}).get("apple_podcasts") or (meta.get("discovery_raw") or {}).get("podcast_index") or {}).get("podcast_feed") or {}
+        pub = ((meta.get("discovery_raw") or {}).get("apple_podcasts") or (meta.get("discovery_raw") or {}).get("podcast_index") or {}).get("artist") or pf.get("author") or ""
         key = re.sub(r"\s+", " ", pub).strip().lower()
         if len(key) < 4 or key in GENERIC or not re.search(r"[a-z]", key):
             continue
@@ -136,7 +136,7 @@ def main():
     seg_id, cfg = seg[0], seg[1] if isinstance(seg[1], dict) else json.loads(seg[1])
     majors = [m.lower() for m in cfg.get("major_networks", [])]
     rows = db.run(lambda cur: (cur.execute(
-        "select name, domain, status, metadata from entities where segment_id = %s and source = 'apple_podcasts'",
+        "select name, domain, status, metadata from entities where segment_id = %s and source in ('apple_podcasts', 'podcast_index')",
         (seg_id,)), cur.fetchall())[1])
     rows = [(n, d, s, m if isinstance(m, dict) else json.loads(m or "{}")) for n, d, s, m in rows]
     leads = group_leads(rows, majors, args.min_shows)

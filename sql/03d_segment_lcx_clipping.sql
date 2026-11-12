@@ -919,6 +919,13 @@ values (
       "detail": "tools/discover_podcasts.py -- keyless. Search terms x store countries -> feed URLs -> feed parsed for cadence, catalogue, monetization signals, YouTube link and the published contact."
     },
     {
+      "slug": "podcast_index",
+      "name": "Podcast Index (the open podcast directory) + the show''s own RSS feed",
+      "kind": "api",
+      "phase": 1,
+      "detail": "tools/discover_podcast_index.py -- needs PODCASTINDEX_API_KEY and PODCASTINDEX_API_SECRET (free). Trending shows plus the podcast_discovery terms; dead, small, dormant and kids shows left out; the feed then read exactly as the Apple harvest reads it."
+    },
+    {
       "slug": "youtube_api",
       "name": "YouTube Data API v3 (channel search + statistics + last 50 uploads)",
       "kind": "api",
@@ -1158,9 +1165,11 @@ values (
     "weekly_refresh": [
       "expire_leads",
       "discover_podcasts",
+      "discover_podcast_index",
       "discover_youtube",
       "discover_wikidata_channels",
       "discover_clipping_networks",
+      "youtube_freshness",
       "prepare_clipping_candidates",
       "enrich_clipping",
       "enrich_contacts",

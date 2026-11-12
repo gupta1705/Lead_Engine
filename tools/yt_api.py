@@ -177,7 +177,22 @@ def profile(item, uploads, cfg):
                    "avg_long_minutes": round(sum(u["duration_s"] for u in long_) / len(long_) / 60) if long_ else None,
                    "uploads_per_month": upm, "last_upload_at": dates[-1] if dates else None,
                    "latest_title": uploads[0]["title"] if uploads else None},
+        # YouTube's Developer Policies: API data is kept at most 30 days, then refreshed or deleted
+        # (tools/youtube_freshness.py reads this)
+        "fetched_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
+
+
+# What stays of a channel profile once its 30 days are up and it is not refreshed: the channel's identity only, so
+# the lead still knows which channel is its own and a later pass can profile it again.
+IDENTITY_KEYS = ("channel_id", "url", "handle", "title")
+
+
+def strip_profile(yc, now_iso):
+    """A channel profile reduced to its identity (YouTube's 30-day rule): statistics, descriptions and uploads gone."""
+    out = {k: yc.get(k) for k in IDENTITY_KEYS if yc.get(k)}
+    out["expired_at"] = now_iso
+    return out
 
 
 def country_inputs(iso, geo):

@@ -241,6 +241,11 @@ def auto_mark(cur, r, kind, note):
                     " where id = %s and triage is null", (reason.strip(), r["id"]))
         return label
     pol.mark_reply(cur, r["id"], r["entity_id"], label, reason.strip())
+    # the do-not-contact list (sql/48): an unsubscribe covers the address and its organisation; a "no", the address
+    if kind == "unsubscribe" and r.get("contact_email"):
+        pol.suppress(cur, r["contact_email"], "asked not to be emailed again", "unsubscribe", whole_domain=True)
+    elif kind == "not_interested" and r.get("contact_email"):
+        pol.suppress(cur, r["contact_email"], "replied: not interested", "not_interested")
     return label
 
 
@@ -256,6 +261,8 @@ def wrong_address(cur, r, note):
     cur.execute("update entities set metadata = metadata || jsonb_build_object('wrong_address_at', now()::text)"
                 " where id = %s", (r["entity_id"],))
     pol.stop_thread(cur, r["entity_id"], "stopped: the address is not read (%s)" % (r["contact_email"] or "reply"))
+    if r.get("contact_email"):
+        pol.suppress(cur, r["contact_email"], "the inbox is not read", "wrong_address")
 
 CLAIM_SQL = """
 update outreach set alert_claimed_at = now(), alert_attempts = alert_attempts + 1
