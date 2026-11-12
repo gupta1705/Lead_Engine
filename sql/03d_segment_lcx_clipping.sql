@@ -104,6 +104,13 @@ values (
       "points": 5,
       "input": "metadata.scoring_inputs.language_match",
       "guidance": "1.0 for English or Hindi, 0.5 for the partial list, 0 otherwise. Small weight on purpose: it shapes the order, it does not veto."
+    },
+    {
+      "key": "person_reachable",
+      "label": "Someone will read it: a person''s own address, ideally the host''s",
+      "points": 15,
+      "input": "metadata.scoring_inputs.person_reachable",
+      "guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): half of the replies so far were robots (a feed address nobody reads, support desks). tools/enrich_clipping.py person_reachable: 1.0 a person''s own mailbox with the host named; 0.5 a person''s mailbox, or an inbox meant for business (business@, partnerships@, bookings@); 0.25 a general shared inbox (info@, hello@); 0 an address nobody reads for this (feed@, rss@, support@, no-reply) or none. Read from the address the drafter will actually use."
     }
   ],
   "score_modifiers": [
@@ -127,6 +134,20 @@ values (
       "max_bonus": 8,
       "input": "metadata.scoring_inputs.us_priority",
       "guidance": "1.0 when the country is confirmed US (channel country, feed language region, Wikidata, or the TVF pool), 0 for any other confirmed country, absent when unknown. Eight points is enough to rank a US show above an otherwise identical one elsewhere, not enough to lift a weak lead into the band."
+    },
+    {
+      "key": "already_clips",
+      "label": "PENALTY: already posts mostly shorts",
+      "max_penalty": -15,
+      "input": "metadata.scoring_inputs.already_clips",
+      "guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): 1.0 when half or more of the last 50 uploads are shorts, 0.5 at 30-50%, 0 below. The subscriber ceiling stays gone (2026-11-06); this pushes down the channels that already have editors cutting clips, whatever their size. Of 32 channels over 1M subscribers emailed, none replied."
+    },
+    {
+      "key": "company_run",
+      "label": "BONUS: an organisation publishes it (one person decides a budget)",
+      "max_bonus": 6,
+      "input": "metadata.scoring_inputs.company_run",
+      "guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): 1.0 when the feed''s publisher reads as an organisation (Inc, LLC, Ltd, agency, university, bank...) and for a publisher''s network lead (tools/discover_clipping_networks.py)."
     }
   ],
   "gates": [
@@ -164,6 +185,13 @@ values (
       "input": "metadata.scoring_inputs.major_network_signal",
       "exclude_when": true,
       "guidance": "Name match against major_networks. These are not customers for a clipping desk; they are the competition''s customers or have their own. Blank passes."
+    },
+    {
+      "key": "has_video_source",
+      "label": "Must have video to clip: a YouTube channel on record",
+      "input": "metadata.scoring_inputs.video_source",
+      "exclude_when": "false",
+      "guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): an audio-only show has little to turn into reels. Fires only when every way of finding a channel has answered with none (the feed, the website, the channel lookup); a site still to read or a lookup to retry passes (Invariant 1). Network and production-house leads are never gated on it."
     }
   ],
   "podcast_discovery": {
@@ -441,7 +469,9 @@ values (
         "genre_hint": "arts"
       }
     ],
-    "guidance": "Apple''s public podcast search needs no key and returns up to 200 shows per term and store country, with the feed URL and the episode count. The feed itself carries what we score on and the business address the show published on purpose. Terms are broad on purpose: the rubric, not the query, decides who ranks."
+    "guidance": "Apple''s public podcast search needs no key and returns up to 200 shows per term and store country, with the feed URL and the episode count. The feed itself carries what we score on and the business address the show published on purpose. Terms are broad on purpose: the rubric, not the query, decides who ranks.",
+    "max_days_since_release": 180,
+    "max_days_since_release_guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): a show whose latest episode (Apple''s releaseDate) is older than this is skipped at search time, before its feed is read: 1,278 dormant shows were read and archived before."
   },
   "youtube_channel_discovery": {
     "regions": [
@@ -718,7 +748,9 @@ values (
       }
     ],
     "guidance": "A channel search costs 100 quota units, so a run does at most a few dozen searches; the channel statistics and the last 50 uploads cost 3 units per channel. The shorts gap, cadence and audience come straight from the API -- the pitch sentence is a fact. Long-form starts at eight minutes: a ten-minute explainer clips as well as an hour-long interview, and a twenty-minute floor threw away most education and commentary channels on the first live run (2026-09-09).",
-    "offer_query_fraction": 0.65
+    "offer_query_fraction": 0.65,
+    "require_business_contact": true,
+    "require_business_contact_guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): a channel is staged only with an address in its description and a website: 56 emailed, no reply, and 76% of those found had no address at all."
   },
   "hosting_providers": [
     "anchor.fm",
@@ -833,7 +865,12 @@ values (
     "star",
     "red fm",
     "radio mirchi",
-    "spotify"
+    "spotify",
+    "sky sports",
+    "yahoo sports",
+    "the atlantic",
+    "mediacorp",
+    "listnr"
   ],
   "monetization_patterns": [
     "patreon",
@@ -919,7 +956,9 @@ values (
     "provider": "feed_and_youtube",
     "contact_method": "feed_owner_email_then_site_scrape",
     "email_verifier": "none_yet",
-    "guidance": "The contact usually arrives with the discovery record (the feed''s owner address). tools/enrich_clipping.py lifts it into contacts, adds YouTube evidence for shows with a channel, and computes the scoring inputs. The site-scrape pass (enrich_contacts) still runs for shows with a website and no address."
+    "guidance": "The contact usually arrives with the discovery record (the feed''s owner address). tools/enrich_clipping.py lifts it into contacts, adds YouTube evidence for shows with a channel, and computes the scoring inputs. The site-scrape pass (enrich_contacts) still runs for shows with a website and no address.",
+    "prefer_site_contacts": true,
+    "prefer_site_contacts_guidance": "Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): an address the show''s own site publishes is preferred to the feed''s (hosts now hide or mask feed addresses against spam, and the replies show nobody reads many of them): the site pass reads shows whose only address came from the feed, and contact_source_bonus (sql/47) ranks the site''s first."
   },
   "ui": {
     "project_name": "LCX Clipping",
@@ -1121,6 +1160,7 @@ values (
       "discover_podcasts",
       "discover_youtube",
       "discover_wikidata_channels",
+      "discover_clipping_networks",
       "prepare_clipping_candidates",
       "enrich_clipping",
       "enrich_contacts",
@@ -1152,8 +1192,9 @@ values (
   "video_first_min_recent_long": 8,
   "auto_shortlist": {
     "enabled": true,
-    "guidance": "Owner decision 2026-09-14. Every ready_for_review lead with fit_score strictly above min_score is shortlisted by the last step of the promote chain (sql/14_auto_shortlist.sql) instead of by hand. Rejected, archived and contacted rows are never touched, and a lead a person moves back to review is never shortlisted again (metadata.auto_shortlisted_at). Shortlisting sends nothing: every draft still needs approval. Set enabled to false to go back to shortlisting by hand.",
-    "min_score": 20
+    "guidance": "Owner decision 2026-09-14. Every ready_for_review lead with fit_score strictly above min_score is shortlisted by the last step of the promote chain (sql/14_auto_shortlist.sql) instead of by hand. Rejected, archived and contacted rows are never touched, and a lead a person moves back to review is never shortlisted again (metadata.auto_shortlisted_at). Shortlisting sends nothing: every draft still needs approval. Set enabled to false to go back to shortlisting by hand. Owner, 2026-11-12 (the research on Clipping leads, ''Apply all these suggested changes''): the line moves from 20 to 45 and a lead needs an address the drafter will write to (require_contact): supply was six times what the team sends, and the weakest half added nothing.",
+    "min_score": 45,
+    "require_contact": true
   },
   "lead_retention": {
     "enabled": true,

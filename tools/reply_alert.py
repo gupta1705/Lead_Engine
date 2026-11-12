@@ -42,6 +42,7 @@ KINDS = {
     "not_interested": "Not interested",
     "unsubscribe": "Asks not to be emailed",
     "auto_reply": "Auto-reply",
+    "wrong_address": "Wrong address (nobody reads it)",
     "other": "Reply",
 }
 MAX_ATTEMPTS = 3
@@ -59,7 +60,9 @@ not_now         maybe later, busy now, come back in some weeks or months
 referral        not the right person: names, copies in or forwards to someone else
 not_interested  declines
 unsubscribe     asks not to be emailed again
-auto_reply      out of office, an automatic acknowledgement or ticket number, a "no longer here" notice
+auto_reply      out of office, away until a date: the person is there and will be back
+wrong_address   the address reaches nobody who will answer this: it says it is not read or not monitored, it only
+                serves a podcast feed, a support desk logged a ticket automatically, or the person is no longer there
 other           anything else
 
 Answer with JSON only: {"kind": "...", "summary": "..."}. The summary is in English, at most 25 words, and says only \
@@ -180,7 +183,9 @@ def alert_message(r, kind, summary, who):
     lines += ["Their reply:", ""] + ["  " + ln for ln in said.split("\n")] + [
         "",
         "Answer it from the thread in this Gmail: it is starred and labelled \"%s\"." % LABEL,
-        "Then mark it Positive or Negative in the Lead Engine (%s, Outreach, Replies): %s" % (project, link)]
+        ("The AI marked it %s. If it read it wrong, change the mark in the Lead Engine (%s, Outreach, Replies): %s"
+         % (pol.KIND_MARK.get(kind, "").capitalize(), project, link)) if pol.KIND_MARK.get(kind) in ("positive", "negative")
+        else "Mark it Positive or Negative in the Lead Engine (%s, Outreach, Replies): %s" % (project, link)]
     text = "\n".join(lines)
     html = ("<div style=\"font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#172b4d\">"
             "<p><b>%s</b> at <b>%s</b> replied to &ldquo;%s&rdquo; (%s).</p>"
@@ -192,13 +197,16 @@ def alert_message(r, kind, summary, who):
             "<blockquote style=\"margin:0;padding:8px 12px;border-left:3px solid #c1c7d0;color:#44546f;"
             "white-space:pre-wrap\">%s</blockquote>" % escape(said)
             + "<p>Answer it from the thread in this Gmail: it is starred and labelled &ldquo;%s&rdquo;.</p>" % LABEL
-            + "<p><a href=\"%s\">Mark it in the Lead Engine</a> (%s, Outreach, Replies).</p></div>"
-            % (escape(link), escape(project)))
+            + ("<p>The AI marked it <b>%s</b>. If it read it wrong, <a href=\"%s\">change the mark in the Lead Engine</a>"
+               " (%s, Outreach, Replies).</p></div>" % (escape(pol.KIND_MARK[kind].capitalize()), escape(link), escape(project))
+               if pol.KIND_MARK.get(kind) in ("positive", "negative") else
+               "<p><a href=\"%s\">Mark it in the Lead Engine</a> (%s, Outreach, Replies).</p></div>"
+               % (escape(link), escape(project))))
     return subject, text, html
 
 
 ALERT_SQL = """
-select i.id::text, i.gmail_message_id, i.gmail_thread_id, i.subject, i.body, e.name,
+select i.id::text, i.gmail_message_id, i.gmail_thread_id, i.subject, i.body, i.entity_id::text, i.contact_id::text, e.name,
        coalesce(nullif(s.config->'ui'->>'project_name', ''), s.name), c.full_name, c.email,
        (select o.subject from outreach o where o.entity_id = i.entity_id and o.direction = 'outbound'
            and o.status = 'sent' and o.gmail_thread_id = i.gmail_thread_id order by o.sent_at limit 1)
@@ -210,8 +218,44 @@ where i.direction = 'inbound' and i.alerted_at is null and i.gmail_thread_id = a
   and coalesce(i.triage, '') <> 'neutral'                -- a bounce notice, or a reply someone called an auto-reply
   and i.alert_attempts < %s
 order by i.created_at"""
-ALERT_COLS = ("id", "message_id", "thread_id", "subject", "body", "company", "project", "contact_name",
-              "contact_email", "opener_subject")
+ALERT_COLS = ("id", "message_id", "thread_id", "subject", "body", "entity_id", "contact_id", "company", "project",
+              "contact_name", "contact_email", "opener_subject")
+
+
+def auto_mark(cur, r, kind, note):
+    """The model's reading decides the mark (the owner, 2026-11-12: "no human is required to decide that"), exactly as
+    the sheet's buttons would (outreach_policy.mark_reply). An out-of-office is marked neutral: not a reply, so its
+    follow-up resumes. Only a reply nobody has marked: a person's mark is never overwritten. -> the mark or None."""
+    label = pol.KIND_MARK.get(kind)
+    if not label:
+        return None
+    cur.execute("select triage from outreach where id = %s", (r["id"],))
+    row = cur.fetchone()
+    if not row:
+        return None
+    if (row.get("triage") if isinstance(row, dict) else row[0]) is not None:
+        return None                                   # a person (or an earlier pass) marked it already
+    reason = "Marked %s by AI. %s" % (label, note or "")
+    if label == "neutral":
+        cur.execute("update outreach set triage = 'neutral', status = 'triaged', triage_reason = %s, updated_at = now()"
+                    " where id = %s and triage is null", (reason.strip(), r["id"]))
+        return label
+    pol.mark_reply(cur, r["id"], r["entity_id"], label, reason.strip())
+    return label
+
+
+def wrong_address(cur, r, note):
+    """A reply that says nobody reads the address (2026-11-12: of the Clipping replies, a feed address "NOT READ BY
+    ANYONE" and support-desk tickets): not a reply -- triaged neutral, so it is not counted or waited on --, the
+    address is never written to again, and the company's follow-ups stop. The lead and its history stay."""
+    cur.execute("update outreach set triage = 'neutral', status = 'triaged', triage_reason = %s, updated_at = now()"
+                " where id = %s and triage is null", (note, r["id"]))
+    if r["contact_id"]:
+        cur.execute("update contacts set email_status = 'invalid', verifier = 'wrong_address', updated_at = now()"
+                    " where id = %s", (r["contact_id"],))
+    cur.execute("update entities set metadata = metadata || jsonb_build_object('wrong_address_at', now()::text)"
+                " where id = %s", (r["entity_id"],))
+    pol.stop_thread(cur, r["entity_id"], "stopped: the address is not read (%s)" % (r["contact_email"] or "reply"))
 
 CLAIM_SQL = """
 update outreach set alert_claimed_at = now(), alert_attempts = alert_attempts + 1
@@ -233,8 +277,12 @@ def alert_new(db, svc, box, thread_ids, log=print, chat=None):
             continue                                  # another pull has it, or it is done
         kind, summary = read_reply(r["subject"], r["body"], chat=chat)
         note = ("AI's reading: %s%s" % (KINDS[kind], (": " + summary) if summary else "")) if kind else None
+        if kind == "wrong_address":
+            db.run(lambda cur, _r=r, _n=note: wrong_address(cur, _r, _n))
+        elif kind:
+            db.run(lambda cur, _r=r, _k=kind, _n=note: auto_mark(cur, _r, _k, _n))
         try:
-            if kind != "auto_reply":
+            if kind not in ("auto_reply", "wrong_address"):
                 try:
                     svc.users().messages().modify(userId="me", id=r["message_id"], body={
                         "addLabelIds": [_label_id(svc, cache), "STARRED", "IMPORTANT"]}).execute()
@@ -254,7 +302,9 @@ def alert_new(db, svc, box, thread_ids, log=print, chat=None):
             "update outreach set alerted_at = now(), alert_error = null, reply_kind = %s,"
             " triage_reason = coalesce(triage_reason, %s), updated_at = now() where id = %s", (_k, _n, _i)))
         log("  reply %s: %s" % (r["id"], ("alert put in %s's inbox (%s)" % (box["address"], KINDS.get(kind, "not read")))
-                                 if kind != "auto_reply" else "an auto-reply: no alert"))
+                                 if kind not in ("auto_reply", "wrong_address")
+                                 else "an auto-reply: no alert" if kind == "auto_reply"
+                                 else "nobody reads that address: not a reply, address retired, follow-ups stopped"))
     return done
 
 
@@ -289,7 +339,7 @@ def reminder_message(rows, now):
     replies, talking = base_url() + "/#outreach/replies", base_url() + "/#outreach/conversation"
     groups = ([], [])                                 # waiting for an answer; answered (or needing none), not marked
     for _id, at, company, project, contact, kind, note, waiting in rows:
-        reading = note[len("AI's reading: "):] if note and note.startswith("AI's reading: ") else (KINDS.get(kind) or "")
+        reading = note.split("AI's reading: ", 1)[1] if note and "AI's reading: " in note else (KINDS.get(kind) or "")
         groups[0 if waiting else 1].append(
             ("%s%s, %s, %s" % (company, (" (%s)" % contact) if contact else "", project, _ago(at, now)), reading))
     heads = ("Nobody on our side has answered these yet:", "Nobody has marked these Positive or Negative yet:")

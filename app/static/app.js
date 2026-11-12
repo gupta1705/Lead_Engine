@@ -192,7 +192,7 @@ function statusLozenge(status) {
 const SOURCES = {
   aicp_directory: "AICP", google_news_rss: "News", wikidata: "Wikidata", youtube_api: "YouTube",
   x_intent: "X", manual_p1: "Manual", manual: "Manual", wikidata_channels: "Wikidata", tvf_pool: "TVF pool",
-  apple_podcasts: "Podcast", startup_news: "News", apollo: "Apollo",
+  apple_podcasts: "Podcast", startup_news: "News", apollo: "Apollo", publisher_group: "Publisher network",
 };
 function sourceLabel(src) { return SOURCES[src] || String(src || "unknown").replace(/_/g, " "); }
 function sourceLozenge(src) {
@@ -2346,6 +2346,7 @@ async function loadReports() {
 
   // the team: each person's outreach over a span, and how it was answered (owner, 2026-10-27)
   loadTeam();
+  loadReplyMix();
 
   // by source: only where a project has more than one to compare
   const src = k.by_source || [];
@@ -2414,7 +2415,35 @@ async function loadTeam() {
     <tfoot><tr><td><strong>Everyone</strong><div class="secondary">${esc(d.label)}${TEAM.scope === "project" ? " · this project" : " · all projects"}</div></td>${cells(d.totals)}
       ${trend ? `<td>${teamSpark(d.totals.series, d.buckets, d.bucket)}</td>` : ""}</tr></tfoot>`;
 }
+/* ---------------------------------------------------------- who replies
+   2026-11-12 (the research on LCX Clipping's leads): this project's first emails and the replies a person wrote, by
+   source, kind, audience, address and score (app/team_report.py replies_by_lead). A rate shows from 30 emails on;
+   fewer say nothing yet. Hidden until the project has sent anything. */
+const MIX = { dim: "source", data: null, token: 0 };
+async function loadReplyMix() {
+  const token = ++MIX.token;
+  let d;
+  try { d = await api("/api/reports/replies"); } catch (e) { $("#replyMixPanel").hidden = true; return; }
+  if (token !== MIX.token) return;
+  MIX.data = d;
+  $("#replyMixPanel").hidden = !d.sent;
+  renderReplyMix();
+}
+function renderReplyMix() {
+  const d = MIX.data;
+  if (!d) return;
+  $$("#replyMixDim [data-dim]").forEach((b) => { const on = b.dataset.dim === MIX.dim; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
+  const rows = (d.dimensions || {})[MIX.dim] || [];
+  $("#replyMixTable").innerHTML = `<thead><tr><th>${esc($(`#replyMixDim [data-dim="${MIX.dim}"]`).textContent)}</th><th class="r">Sent</th><th class="r">Replied</th>
+      <th class="r" title="Shown from ${d.min_sent_for_rate} emails sent: fewer say nothing yet">Reply rate</th><th class="r">Positive</th><th class="r">Bounced</th></tr></thead>
+    <tbody>${rows.map((g) => `<tr><td>${esc(sourceLabel(g.value))}</td><td class="r num">${g.sent}</td><td class="r num">${g.replied}</td>
+      <td class="r num">${g.reply_rate == null ? `<span class="muted small">too few</span>` : `<strong>${g.reply_rate}%</strong>`}</td>
+      <td class="r num">${g.positive}</td><td class="r num">${g.bounced}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td><strong>All</strong></td><td class="r num">${d.sent}</td><td class="r num">${d.replied}</td>
+      <td class="r num">${d.sent >= d.min_sent_for_rate ? `<strong>${Math.round(1000 * d.replied / d.sent) / 10}%</strong>` : "—"}</td><td></td><td></td></tr></tfoot>`;
+}
 function bindTeam() {
+  $("#replyMixDim").addEventListener("click", (e) => { const b = e.target.closest("[data-dim]"); if (b) { MIX.dim = b.dataset.dim; renderReplyMix(); } });
   const pick = (k, v) => { TEAM[k] = v; try { localStorage.setItem("tvf_team", JSON.stringify({ period: TEAM.period, scope: TEAM.scope })); } catch (e) {} loadTeam(); };
   $("#teamPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-period]"); if (b) pick("period", b.dataset.period); });
   $("#teamScope").addEventListener("click", (e) => { const b = e.target.closest("[data-scope]"); if (b) pick("scope", b.dataset.scope); });

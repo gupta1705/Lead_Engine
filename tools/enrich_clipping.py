@@ -49,16 +49,65 @@ import personname
 import yt_api
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "lcx-clipping")
-ENRICH_VERSION = 5                              # creator offers, music education and no subscriber ceiling
+# 6 (2026-11-12): who reads the address (person_reachable), whether there is video to clip (video_source), whether
+# they already clip (already_clips), company-run shows, and the publishers' network leads
+ENRICH_VERSION = 6
 OPEN = ("discovered", "enriched", "scored", "ready_for_review", "shortlisted")
 YT_RE = re.compile(r"https?://(?:www\.|m\.)?youtube\.com/(@[\w.\-]+|channel/[\w\-]+|c/[\w.\-]+|user/[\w.\-]+)", re.I)
 LIFT = {"apple_podcasts": ("podcast_feed",), "youtube_api": ("youtube_channel",),
-        "wikidata_channels": ("youtube_channel", "wikidata"), "tvf_pool": ("origin",)}
+        "wikidata_channels": ("youtube_channel", "wikidata"), "tvf_pool": ("origin",),
+        "publisher_group": ("network",)}
 COMMON = ("why_fit", "kind", "category", "hq_city", "hq_state")
 EMAIL_STATUSES = {"unverified", "valid", "invalid", "catch_all", "unknown"}
-CHANNEL_KEYS = ("shorts_gap", "audience_band", "video_first", "oversized_signal", "oversized_audience")
+CHANNEL_KEYS = ("shorts_gap", "audience_band", "video_first", "oversized_signal", "oversized_audience", "already_clips")
 STRONGER_KEYS = ("archive_size", "cadence", "monetization_signals", "reachable_contact")
 RETRY_AFTER_DAYS = 7
+
+# Who reads an address (2026-11-12): of the Clipping replies so far, half were robots -- a feed address that says
+# nobody reads it, support-desk acknowledgements. An address nobody reads for a partnership scores 0; a shared inbox
+# a little; a person's own mailbox most, and most of all with the host named.
+UNREAD_LOCAL = re.compile(r"^(feeds?|rss|podcast-?feed|no-?reply|donotreply|support|help|helpdesk|admin|webmaster|"
+                          r"postmaster|billing|accounts?|abuse|privacy|legal|unsubscribe|listeners?|feedback|comments?|"
+                          r"submissions?|guests?|pitch(es)?)$")
+SHARED_LOCAL = re.compile(r"^(info|hello|hi|hey|contact|contactus|team|office|mail|studio|show|podcast|general|"
+                          r"inquiries|enquiries|questions|business|partnerships?|collabs?|bookings?|work|sponsors?|"
+                          r"sponsorships?|advertis\w*|press|media|pr)$")
+# A show an organisation publishes: one person there decides for a budget
+ORG_RE = re.compile(r"\b(inc|llc|l\.l\.c|ltd|limited|corp|corporation|gmbh|plc|pty|co\.|company|bank|university|"
+                    r"institute|foundation|association|agency|partners|group|holdings|consulting|solutions|"
+                    r"technologies|software|labs)\b", re.I)
+
+
+def person_reachable(email, host_named):
+    """-> 1.0 a person's own mailbox with the host named; 0.5 a person's mailbox, or an inbox meant for business;
+    0.25 a general shared inbox; 0.0 an address nobody reads for this, or none."""
+    if not email or "@" not in email:
+        return 0.0
+    local = email.split("@")[0].lower()
+    if UNREAD_LOCAL.match(local):
+        return 0.0
+    if SHARED_LOCAL.match(local):
+        return 0.5 if re.match(r"^(business|partnerships?|collabs?|bookings?|work|sponsors?|sponsorships?)$", local) else 0.25
+    return 1.0 if host_named else 0.5
+
+
+def video_source(pf, yc, meta, domain, kind):
+    """True: a channel is on record. False: every way of finding one has answered, and none was found. None: not
+    known yet (a site still to read, a lookup to retry) -- unknown never excludes (Invariant 1)."""
+    if kind in ("production_house", "network"):
+        return None                                 # a company's catalogue is clipped from wherever it lives
+    if yc:
+        return True
+    lookup = meta.get("youtube_lookup") or {}
+    if lookup.get("result") == "not found":
+        return False
+    if pf.get("youtube_url") or (meta.get("site_youtube_lookup") or {}).get("url"):
+        return None                                 # a link to profile, not yet profiled
+    if meta.get("youtube_lookup_error") or (domain and meta.get("site_youtube_error")):
+        return None                                 # a lookup failed; it is retried
+    if domain and not meta.get("site_youtube_lookup"):
+        return None                                 # the site is still to read
+    return False
 
 
 if hasattr(sys.stdout, "reconfigure"):          # Windows consoles default to cp1252
@@ -112,7 +161,7 @@ def stale(stamp, now):
 
 def host_for(name, kind, pf, yc, raw, pool):
     """The person behind the show. A company name is never mined."""
-    if kind == "production_house" or pool:
+    if kind in ("production_house", "network") or pool:
         for c in sorted(pool.get("contacts") or [], key=lambda c: not c.get("is_primary")):
             fn = (c.get("full_name") or "").strip()
             if fn and personname.looks_like_person(fn):
@@ -254,7 +303,10 @@ def main():
 
         # 4. contacts: published address, channel email, or carried-over pool contacts
         wanted = []                                 # (email, who, role, source, status)
-        if pf.get("owner_email"):
+        net = changed.get("network") or meta.get("network") or {}
+        if net.get("contact_email"):                # a publisher's network lead: the address its shows publish
+            wanted.append((net["contact_email"].lower(), None, "Publisher", "podcast_rss", "unverified"))
+        elif pf.get("owner_email"):
             wanted.append((pf["owner_email"].lower(), host_name, "Host", "podcast_rss", "unverified"))
         elif (yc or {}).get("email_in_description"):
             wanted.append((yc["email_in_description"].lower(), host_name, "Host / producer", "youtube_description", "unverified"))
@@ -291,6 +343,22 @@ def main():
         if re.fullmatch(r"[a-z]{2}", region) and (si.get("us_priority") is None or "us_priority" in unverified):
             for k, v in yt_api.country_inputs(region, geo).items():
                 si_new.setdefault(k, v)
+        # who reads the address the drafter will use (its best-ranked contact), and whether there is video
+        best = db.run(lambda cur, _e=eid: (cur.execute(
+            "select c.email from contacts c join entities e on e.id = c.entity_id where c.entity_id = %s"
+            " and c.email is not null and contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) > -500"
+            " order by contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain)"
+            "          + contact_source_bonus(c.entity_id, c.source) desc, c.created_at limit 1", (_e,)), cur.fetchone())[1])
+        si_new["person_reachable"] = person_reachable(best[0] if best else None, bool(host_name))
+        vs = video_source(pf, yc, dict(meta, **changed), domain, kind)
+        if vs is not None:
+            si_new["video_source"] = vs
+        publisher = (pf.get("author") or (raw.get("apple_podcasts") or {}).get("artist") or "")
+        if pf and kind not in ("production_house", "network") and ORG_RE.search(publisher):
+            changed["company_run"] = publisher[:120]
+            si_new["company_run"] = 1.0
+        elif pf:
+            si_new.setdefault("company_run", 0.0)
         for k, v in si_new.items():
             cur_v = si.get(k)
             take = (k in CHANNEL_KEYS or cur_v is None or k in unverified

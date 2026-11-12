@@ -234,7 +234,7 @@ def main_():
         check("  one message starred: the reply itself", [m[2] for m in mods], [["IMPORTANT", "Label_9", "STARRED"]])
         a = row(r1)
         check("the reading is kept on the reply", (a["alerted"], a["reply_kind"], a["triage_reason"]),
-              (True, "interested", "AI's reading: Interested: Wants a call on Thursday."))
+              (True, "interested", "Marked positive by AI. AI's reading: Interested: Wants a call on Thursday."))
         o = row(ooo)
         check("the auto-reply: no alert, its reading kept", (o["alerted"], o["reply_kind"]), (True, "auto_reply"))
         check("the bounce notice: left alone", row(bounce)["alerted"], False)

@@ -228,11 +228,40 @@ def pause_on_reply(cur, entity_id):
     return cur.rowcount
 
 
+def mark_reply(cur, reply_id, entity_id, label, reason=None):
+    """A reply marked positive or negative -- by a person (the sheet's buttons) or by the model's reading (the owner,
+    2026-11-12: "why arent they being marked as positive or negative yourself no human is required to decide that").
+    Either way the thread stops. Positive moves the company to in_conversation; negative walks that back unless
+    another reply of the company still stands positive. -> (marked, promoted): promoted is None for negative."""
+    cur.execute("update outreach set triage=%s, status='triaged', triage_reason=coalesce(%s, triage_reason),"
+                " updated_at=now() where id=%s and direction='inbound' returning entity_id", (label, reason, reply_id))
+    if not cur.fetchone():
+        return False, None
+    stop_thread(cur, entity_id, "reply: %s" % label)
+    if label == "positive":
+        cur.execute("update entities set status='in_conversation', status_changed_at=now() where id=%s"
+                    " and status in ('contacted','shortlisted') returning id", (entity_id,))
+        return True, cur.fetchone() is not None
+    cur.execute("select 1 from outreach where entity_id=%s and direction='inbound' and triage='positive'"
+                " and id <> %s limit 1", (entity_id, reply_id))
+    if cur.fetchone() is None:
+        cur.execute("update entities set status='contacted', status_changed_at=now() where id=%s"
+                    " and status='in_conversation'", (entity_id,))
+    return True, None
+
+
+# The model's reading of a reply -> its mark (reply_alert.KINDS). A reply that is neither yes nor no is marked
+# positive: a person wrote back, and it stays in front of the team (In conversation) until someone says otherwise.
+KIND_MARK = {"interested": "positive", "question": "positive", "referral": "positive", "other": "positive",
+             "not_interested": "negative", "unsubscribe": "negative", "not_now": "negative",
+             "auto_reply": "neutral", "wrong_address": "neutral"}
+
+
 # Waiting on us (sql/46; the owner, 2026-10-29: build 6 of the outreach research): a real reply that nobody on our
 # side has answered yet, in its thread (the pull sees it) or another way (marked in its sheet). An auto-reply or a
 # bounce notice (triaged neutral), a reply marked Negative, and one the model read as an auto-reply, a no or an
 # unsubscribe wait for no answer -- unless a person marked it Positive.
-NO_ANSWER_KINDS = ("auto_reply", "not_interested", "unsubscribe")
+NO_ANSWER_KINDS = ("auto_reply", "not_interested", "unsubscribe", "wrong_address")
 
 
 def unanswered(a="r"):

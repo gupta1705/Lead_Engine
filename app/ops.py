@@ -104,6 +104,14 @@ JOBS = {
         "cmd": [PY, "tools/discover_wikidata_channels.py", "--limit-channels", "300"],
         "segments": ["lcx-clipping"],
     },
+    "discover_clipping_networks": {
+        "label": "Find networks: publishers of several shows",
+        "group": "Discover",
+        "desc": "Publishers behind two or more shows the podcast harvest found, as leads of their own (one agreement "
+                "covers every show). No new requests; major networks excluded.",
+        "cmd": [PY, "tools/discover_clipping_networks.py"],
+        "segments": ["lcx-clipping"],
+    },
     "discover_startup_news": {
         "label": "Harvest: startup news (distress + funding)",
         "group": "Discover",

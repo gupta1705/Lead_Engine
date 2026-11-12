@@ -221,7 +221,9 @@ def main_():
         dbconn.Db = db
         outreach.SEGMENT = slug
         outreach.user_gmail_service = lambda _db, _box: g
-        ra.read_reply = lambda subject, body, chat=None: ("interested", "Wants to know more.")
+        # no model: the replies stay unmarked, as this suite is about answering them (the AI's own marks are in
+        # tools/test_clipping_leads.py)
+        ra.read_reply = lambda subject, body, chat=None: (None, None)
         ours = "Ann <%s>" % box_addr
 
         def lead(key, theirs, sent_hours=72):

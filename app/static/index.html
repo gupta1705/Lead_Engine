@@ -306,6 +306,19 @@
         <div class="panel-head"><div><h2>By source</h2><p class="sub">Which harvests find leads worth shortlisting.</p></div></div>
         <div class="table-wrap"><table class="tbl" id="sourceTable"></table></div>
       </div>
+      <div class="panel" id="replyMixPanel" hidden>
+        <div class="panel-head team-head"><div><h2>Who replies</h2><p class="sub" id="replyMixSub">This project's first emails and the replies a person wrote, by the kind of lead. Auto-replies and inboxes nobody reads are not replies.</p></div>
+          <div class="team-controls">
+            <div class="tabs segmented" id="replyMixDim" role="tablist" aria-label="Split by">
+              <button class="tab active" role="tab" aria-selected="true" data-dim="source">Source</button>
+              <button class="tab" role="tab" data-dim="kind">Kind</button>
+              <button class="tab" role="tab" data-dim="audience">Audience</button>
+              <button class="tab" role="tab" data-dim="address">Address</button>
+              <button class="tab" role="tab" data-dim="score">Score</button>
+            </div>
+          </div></div>
+        <div class="table-wrap"><table class="tbl" id="replyMixTable"></table></div>
+      </div>
     </section>
 
     <!-- OPERATIONS -->

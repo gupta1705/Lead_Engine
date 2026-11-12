@@ -1423,31 +1423,13 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             return {"ok": True, "answered": n}
         elif action in ("mark_positive", "mark_negative"):
             label = "positive" if action == "mark_positive" else "negative"
-            cur.execute("update outreach set triage=%s, status='triaged',"
-                        " updated_at=now() where id=%s and direction='inbound'"
-                        " returning entity_id", (label, oid))
-            row = cur.fetchone()
-            if not row:
+            # the same marking the model's reading applies (outreach_policy.mark_reply): the thread stops; positive
+            # promotes the company (and says honestly when it could not), negative walks that back
+            marked, promoted = pol.mark_reply(cur, oid, eid, label)
+            if not marked:
                 raise HTTPException(409, "not an inbound reply")
-            pol.stop_thread(cur, eid, "reply: %s" % label)
             if label == "positive":
-                # promote; report honestly if the entity was in a state the
-                # promotion could not apply to (review finding: silent no-op)
-                cur.execute("update entities set status='in_conversation',"
-                            " status_changed_at=now() where id=%s"
-                            " and status in ('contacted','shortlisted')"
-                            " returning id", (eid,))
-                promoted = cur.fetchone() is not None
                 return {"ok": True, "entity_promoted": promoted}
-            # a correction must be able to walk the promotion back -- but only
-            # when no OTHER reply still stands positive for this company
-            cur.execute("select 1 from outreach where entity_id=%s"
-                        " and direction='inbound' and triage='positive'"
-                        " and id <> %s limit 1", (eid, oid))
-            if cur.fetchone() is None:
-                cur.execute("update entities set status='contacted',"
-                            " status_changed_at=now() where id=%s"
-                            " and status='in_conversation'", (eid,))
             return {"ok": True}
         else:
             raise HTTPException(400, "unknown action")

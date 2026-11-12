@@ -14,8 +14,11 @@
 -- always passes (Invariant 1: absence is not evidence). Rows that fire become
 -- `archived` with a reason naming the gate. Archived is the engine ruling a
 -- row out of scope: reversible, and it blocks re-import exactly as rejected
--- does. Shortlisted / rejected / contacted rows are never touched -- a human
--- decision stands; the ones the evidence argues with are listed at the end.
+-- does. Rejected rows, and rows a person shortlisted, are never touched -- a
+-- human decision stands; the ones the evidence argues with are listed at the
+-- end. Since 2026-11-12 a row the ENGINE shortlisted (auto-shortlist) is
+-- re-gated, and its unsent emails cancelled; a contacted row loses only its
+-- unsent follow-up.
 --
 -- The segment comes from the session setting tvf.segment, which
 -- tools/run_sql.py sets from SEGMENT_SLUG (default us-production-houses), so
@@ -61,6 +64,36 @@ begin
     get diagnostics n = row_count;
     total := total + n;
     raise notice 'gate % archived % row(s)', key, n;
+
+    -- Evidence that arrives after the engine shortlisted a lead (2026-11-12: a channel's country found by the
+    -- enrichment pass AFTER auto-shortlist let emails to Austria and Germany be drafted and approved). A lead the
+    -- engine shortlisted itself (metadata.auto_shortlisted_at) is the engine's decision, so the gate overrules it:
+    -- archived, and its unsent emails (drafted or approved) cancelled. A lead a person shortlisted by hand stands
+    -- and is listed at the end, as before. Contacted leads keep their status and sent history; only an unsent
+    -- follow-up to one is cancelled.
+    update outreach o
+       set status = 'cancelled', updated_at = now(),
+           stopped_reason = left('withdrawn: gate ' || key || ' (' || coalesce(e.metadata #>> input_path, '?') || ')', 200)
+      from entities e
+     where o.entity_id = e.id and e.segment_id = seg
+       and o.direction = 'outbound' and o.status in ('drafted', 'approved')
+       and (e.status = 'contacted' or (e.status = 'shortlisted' and e.metadata ? 'auto_shortlisted_at'))
+       and e.metadata #>> input_path is not null
+       and lower(e.metadata #>> input_path) = lower(exclude_when);
+    get diagnostics n = row_count;
+    if n > 0 then raise notice 'gate % withdrew % unsent email(s)', key, n; end if;
+    update entities e
+       set status = 'archived',
+           status_reason = 'Gate ' || key || ' (after shortlisting): ' || coalesce(g->>'label', 'confirmed failing evidence')
+                           || ' (' || coalesce(e.metadata #>> input_path, '?') || ')',
+           status_changed_at = now(), updated_at = now()
+     where e.segment_id = seg
+       and e.status = 'shortlisted' and e.metadata ? 'auto_shortlisted_at'
+       and e.metadata #>> input_path is not null
+       and lower(e.metadata #>> input_path) = lower(exclude_when);
+    get diagnostics n = row_count;
+    total := total + n;
+    if n > 0 then raise notice 'gate % archived % auto-shortlisted row(s)', key, n; end if;
   end loop;
 
   raise notice 'gates archived % row(s) in total for %', total, slug;
@@ -77,5 +110,6 @@ select e.name, e.status, e.status_reason as human_decision,
 from entities e
 join cfg on cfg.seg = e.segment_id
 where e.status in ('shortlisted','contacted','in_conversation')
+  and not (e.status = 'shortlisted' and e.metadata ? 'auto_shortlisted_at')
   and lower(e.metadata #>> string_to_array(regexp_replace(cfg.g->>'input', '^metadata\.', ''), '.'))
       = lower(cfg.g->>'exclude_when');

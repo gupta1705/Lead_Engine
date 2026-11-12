@@ -130,6 +130,14 @@ def main():
                 skipped += 1
                 log("  %3d. %-36s skipped: %d long among last %d" % (n, (yc["title"] or "")[:36], yc["recent"]["long_count"], yc["recent"]["sampled"]))
                 continue
+            # 2026-11-12: a channel with no address in its description, or no website, is not staged (56 emailed,
+            # no reply; three in four found had no address at all) -- config require_business_contact
+            if ycfg.get("require_business_contact") and not (yc.get("email_in_description") and yc.get("website")):
+                skipped += 1
+                log("  %3d. %-36s skipped: %s" % (n, (yc["title"] or "")[:36],
+                                                  "no address in its description" if not yc.get("email_in_description")
+                                                  else "no website"))
+                continue
             si = yt_api.inputs_from_channel(yc, cfg, now)
             why = yt_api.why_from_channel(yc)
             row = {"name": (yc["title"] or "")[:200], "domain": yc.get("website_domain"),

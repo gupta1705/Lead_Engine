@@ -223,8 +223,83 @@ def report(cur, period, slug=None, names=None, now=None):
             "people": people_out, "totals": totals}
 
 
+REPLIES_BY_LEAD = """
+select e.source, e.fit_score, e.metadata->>'kind' as kind,
+       (e.metadata->'youtube_channel'->>'subscribers') as subscribers,
+       c.email,
+       coalesce(o.stopped_reason, '') like 'bounced%%' as bounced,
+       exists (select 1 from outreach r where r.entity_id = e.id and r.direction = 'inbound'
+                 and r.triage is distinct from 'neutral'
+                 and coalesce(r.reply_kind, '') not in ('auto_reply', 'wrong_address')) as replied,
+       exists (select 1 from outreach r where r.entity_id = e.id and r.direction = 'inbound'
+                 and r.triage = 'positive') as positive
+from outreach o join entities e on e.id = o.entity_id join segments s on s.id = e.segment_id
+left join contacts c on c.id = o.contact_id
+where s.slug = %(slug)s and o.direction = 'outbound' and coalesce(o.sequence_step, 0) = 0 and o.status = 'sent'
+"""
+MIN_SENT_FOR_RATE = 30
+FREE_MAIL = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "me.com", "aol.com",
+             "protonmail.com", "proton.me", "live.com", "msn.com", "ymail.com"}
+
+
+def lead_dimensions(row):
+    """The ways a first email's lead can be told apart, for Reports, Who replies."""
+    def band(v, cuts, labels):
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return "Unknown"
+        for cut, lab in zip(cuts, labels):
+            if v < cut:
+                return lab
+        return labels[-1]
+    _policy()                                         # puts tools/ on the path
+    import enrich_clipping as ec                      # the same reading of an address the Clipping score uses
+    email = (row.get("email") or "").lower()
+    local, dom = (email.split("@") + [""])[:2] if email else ("", "")
+    address = ("No address" if not email else "Nobody reads it (feed, support)" if ec.UNREAD_LOCAL.match(local)
+               else "Shared inbox (info@, hello@)" if ec.SHARED_LOCAL.match(local)
+               else "Free mailbox (gmail etc.)" if dom in FREE_MAIL else "A person's address")
+    return {"source": row.get("source") or "Unknown",
+            "kind": (row.get("kind") or "show").replace("_", " ").capitalize(),
+            "audience": band(row.get("subscribers"), [10_000, 100_000, 1_000_000],
+                             ["Under 10k subscribers", "10k to 100k", "100k to 1M", "1M and over"]),
+            "address": address,
+            "score": band(row.get("fit_score"), [45, 60, 75], ["Under 45", "45 to 59", "60 to 74", "75 and over"])}
+
+
+def replies_by_lead(cur, slug):
+    cur.execute(REPLIES_BY_LEAD, {"slug": slug})
+    rows = [dict(r) for r in cur.fetchall()]
+    dims = {}
+    for row in rows:
+        for dim, value in lead_dimensions(row).items():
+            g = dims.setdefault(dim, {}).setdefault(value, {"value": value, "sent": 0, "replied": 0, "positive": 0,
+                                                            "bounced": 0})
+            g["sent"] += 1
+            g["replied"] += int(bool(row["replied"]))
+            g["positive"] += int(bool(row["positive"]))
+            g["bounced"] += int(bool(row["bounced"]))
+    out = {}
+    for dim, groups in dims.items():
+        lst = sorted(groups.values(), key=lambda g: -g["sent"])
+        for g in lst:
+            # a rate from a handful of emails says nothing: shown from MIN_SENT_FOR_RATE on
+            g["reply_rate"] = rate(g["replied"], g["sent"]) if g["sent"] >= MIN_SENT_FOR_RATE else None
+        out[dim] = lst
+    return {"project": slug, "sent": len(rows), "replied": sum(int(bool(r["replied"])) for r in rows),
+            "min_sent_for_rate": MIN_SENT_FOR_RATE, "dimensions": out}
+
+
 def build_router(cursor, current_segment, project_names):
     r = APIRouter()
+
+    @r.get("/api/reports/replies")
+    def who_replies(request: Request):
+        """Reports, Who replies (2026-11-12): this project's first emails and the human replies to them, by the kind
+        of lead -- so what the research could only hint at can be read as the numbers grow."""
+        with cursor() as cur:
+            return replies_by_lead(cur, current_segment(request))
 
     @r.get("/api/reports/team")
     def team(request: Request, period: str = "7d", scope: str = "all"):

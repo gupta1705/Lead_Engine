@@ -212,6 +212,9 @@ def inputs_from_channel(yc, cfg, now):
         si["archive_size"] = 1.0 if est_long >= 100 else 0.5 if est_long >= 40 else 0.0
         if r["shorts_share"] is not None:
             si["shorts_gap"] = 1.0 if r["shorts_share"] < 0.10 else 0.5 if r["shorts_share"] < 0.30 else 0.0
+            # they already clip (2026-11-12): the score's already_clips penalty, so a big channel posting mostly
+            # shorts ranks under one with the gap, whatever its size
+            si["already_clips"] = 1.0 if r["shorts_share"] >= 0.50 else 0.5 if r["shorts_share"] >= 0.30 else 0.0
         # the modifier has its own floor: a connector's admission floor is not a verdict on video-first
         si["video_first"] = 1.0 if r["long_count"] >= int(cfg.get("video_first_min_recent_long", ycfg.get("min_recent_long", 10))) else 0.0
     if r["uploads_per_month"] is not None:

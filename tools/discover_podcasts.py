@@ -343,6 +343,10 @@ def main():
     countries = (args.countries.split(",") if args.countries else pd.get("countries", ["US"]))
     excluded = {g.lower() for g in pd.get("excluded_genres", [])}
     min_tracks = int(pd.get("min_track_count", 40))
+    # a dormant show is skipped here, on Apple's own date for its latest episode, before its feed is read
+    # (2026-11-12: 1,278 dormant shows had been read, scored and archived)
+    max_age = pd.get("max_days_since_release")
+    dormant = 0
 
     known = set(db.run(lambda cur: (cur.execute(
         "select source_url from staging_candidates where segment_id=%s and source_url is not null"
@@ -378,6 +382,10 @@ def main():
             genres = {g.lower() for g in (r.get("genres") or [])}
             if genres & excluded or (r.get("trackCount") or 0) < min_tracks:
                 continue
+            released = parse_date(r.get("releaseDate"))
+            if max_age and released and (now - released).days > int(max_age):
+                dormant += 1
+                continue
             nm = (r.get("collectionName") or "").strip().lower()
             if not nm or nm in seen_names:
                 continue
@@ -389,7 +397,7 @@ def main():
         log("  search %2d/%d  %-32s %s  -> %3d results, %3d new" % (i, len(pairs), q["term"][:32], country, len(res), fresh))
         time.sleep(3.2)
 
-    log("\n%d candidate feeds after Apple; reading up to %d" % (len(cands), args.limit_feeds))
+    log("\n%d candidate feeds after Apple (%d dormant skipped); reading up to %d" % (len(cands), dormant, args.limit_feeds))
     staged = errors = skipped = 0
     for n, cand in enumerate(list(cands.values())[:args.limit_feeds], 1):
         try:

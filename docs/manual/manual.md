@@ -377,9 +377,9 @@ Four columns, left to right. A lead only ever moves forward.
 
 **To review** — the engine found it and scored it. Nobody has decided yet. This
 is your inbox. It starts at the project's review line, 25 points; leads below
-the line are still in Leads. In LCX Clipping everything above 20 is shortlisted
-already, so To review shows every lead that is left, whatever its score, for
-you to pick by hand. In US Production Houses everything above 30 is shortlisted
+the line are still in Leads. In LCX Clipping everything above 45 with an
+address to write to is shortlisted already, so To review holds the leads between
+25 and 45, and stronger ones still waiting for an address, for you to pick by hand. In US Production Houses everything above 30 is shortlisted
 already, so To review holds the leads between 25 and 30.
 
 **Shortlisted** — you said yes, or it scored above the project's automatic line
@@ -544,8 +544,8 @@ Then press one of two buttons at the bottom:
 
 **Shortlist** — its email is drafted straight away and appears in Outreach,
 under Drafts, within minutes, waiting for your approval. Above a project's
-automatic line you will rarely need it: every lead scoring above 20 in LCX
-Clipping, and above 30 in US Production Houses, is shortlisted automatically
+automatic line you will rarely need it: every lead scoring above 45 in LCX
+Clipping (with an address), and above 30 in US Production Houses, is shortlisted automatically
 after each refresh, and its decision note says so. If you send one back to
 review with **Undo decision**, that stands; the rule never shortlists it again.
 
