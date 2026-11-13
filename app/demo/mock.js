@@ -214,7 +214,8 @@
     if (p === "/api/leads") {
       const st = q.get("status") || "open", qq = (q.get("q") || "").toLowerCase(), src = q.get("source") || "";
       const min = +(q.get("min_score") || 0);
-      let rows = FX.leads.filter((r) => st === "all" ? true : st === "open" ? OPEN.has(r.status) : r.status === st);
+      let rows = FX.leads.filter((r) => st === "all" ? true : st === "open" ? OPEN.has(r.status)
+        : st === "to_approve" ? r.status === "shortlisted" && r.email_status === "drafted" : r.status === st);
       if (qq) rows = rows.filter((r) => (r.name || "").toLowerCase().includes(qq) || (r.domain || "").toLowerCase().includes(qq));
       if (src) rows = rows.filter((r) => r.source === src);
       if (min) rows = rows.filter((r) => (+r.fit_score || 0) >= min);

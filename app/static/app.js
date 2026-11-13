@@ -752,7 +752,8 @@ async function loadLeads() {
       <td>${(() => { const t = leadTitle(r);
         const parts = [t.sub || (personFirst() ? (r.domain || "") : "no website yet"), r.kind ? String(r.kind).replace(/_/g, " ") : "",
           // the service its email pitches (LCX Services), when the All tab is on
-          r.service && !state.service ? (SERVICE_BUCKET[r.service] || "selling " + r.service) : ""].filter(Boolean);
+          r.service && !state.service ? (SERVICE_BUCKET[r.service] || "selling " + r.service) : "",
+          r.status === "shortlisted" && r.email_status === "approved" ? "email approved" : ""].filter(Boolean);
         return `<div class="cell-company">${monoTile(t.title, r.domain || r.id, "sm")}<span><div class="primary-cell">${esc(t.title)}</div><div class="secondary">${esc(parts.join(" · "))}</div></span></div>`; })()}</td>
       <td class="col-status">${statusLozenge(r.status)}${r.reached_by_name ? `<div class="secondary" title="Reached out by ${esc(r.reached_by || "")}">by ${esc(r.reached_by_name)}</div>` : ""}</td>
       <td class="col-score">${scoreCell(r.fit_score)}</td>
@@ -1136,6 +1137,8 @@ async function openLeadEmail(leadId, emailId, button) {
       state.outreach.paused = mailboxes.paused || null;
       state.outreach.mbx = mailboxes;
     }
+    // approving it from here goes on to the next lead in the list with an email to approve (owner, 2026-11-13)
+    state.approveFrom = currentView() === "leads" ? { leadId: String(leadId), rows: state.leads.rows || [] } : null;
     leaveLeadRoute();
     openMessage(emailId, email);
   } catch (e) {
@@ -1143,6 +1146,13 @@ async function openLeadEmail(leadId, emailId, button) {
   } finally {
     if (button.isConnected) { button.disabled = false; button.classList.remove("loading"); }
   }
+}
+
+/* The lead after this one in the list whose first email still waits for approval; wraps to the top. */
+function nextToApprove(rows, leadId) {
+  const i = rows.findIndex((x) => String(x.id) === leadId);
+  const order = i < 0 ? rows : rows.slice(i + 1).concat(rows.slice(0, i));
+  return order.find((x) => String(x.id) !== leadId && x.email_status === "drafted") || null;
 }
 
 async function decide(id, decision, reason) {
@@ -2292,10 +2302,15 @@ function openMessage(id, message) {
         : b.dataset.act === "stop_sequence"
         ? (res.cancelled ? res.cancelled + " pending follow-up" + (res.cancelled === 1 ? "" : "s") + " cancelled." : "No further follow-ups will be drafted.")
         : res.entity_promoted === false ? "Reply recorded; the company was not in a state that could be promoted." : r.company;
-      flag(msg, { desc, ms: res.schedule ? 7000 : undefined });
+      const from_ = state.approveFrom;
+      state.approveFrom = null;
+      const next = b.dataset.act === "approve" && from_ && from_.leadId === String(r.entity_id) && currentView() === "leads"
+        ? nextToApprove(from_.rows, from_.leadId) : null;
+      flag(msg, { desc: next ? desc + " Next: " + leadTitle(next).title + "." : desc, ms: res.schedule ? 7000 : undefined });
       modal.close(true);
       if (currentView() === "outreach") await loadOutreach();
       else { refreshCurrentView(); refreshOutreachCount(true); }
+      if (next) go("lead/" + next.id);
     } catch (e) { toast(e.message, true); controls.forEach(([x, disabled]) => { if (x.isConnected) x.disabled = disabled; }); b.classList.remove("loading"); }
     finally { o.busy = false; }
   }));

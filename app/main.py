@@ -490,6 +490,11 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
 
     if status == "open":
         where.append("e.status in " + OPEN_STATUSES)
+    elif status == "to_approve":
+        # shortlisted with a first email still waiting for a person's approval (owner's video, 2026-11-13:
+        # approved leads kept showing under Shortlisted)
+        where.append("e.status = 'shortlisted' and exists (select 1 from outreach o where o.entity_id = e.id"
+                     " and o.direction = 'outbound' and o.status = 'drafted' and coalesce(o.sequence_step, 0) = 0)")
     elif status and status != "all":
         where.append("e.status = %s")
         params.append(status)
@@ -547,7 +552,11 @@ def leads(q: str = "", source: str = "", status: str = "open", contact: str = ""
             " (select picked.full_name from (" + CONTACT_SELECTION_SQL + ") picked) as contact_name,"
             # who reached out to it: the approver of its latest first email that went out (2026-09-26)
             " (select o.approved_by from outreach o where o.entity_id = e.id and o.direction = 'outbound'"
-            "   and o.status = 'sent' and coalesce(o.sequence_step, 0) = 0 order by o.sent_at desc limit 1) as reached_by"
+            "   and o.status = 'sent' and coalesce(o.sequence_step, 0) = 0 order by o.sent_at desc limit 1) as reached_by,"
+            # where its first email stands: drafted (to approve), approved, sent... -- the list's "Email approved"
+            # and the next lead to approve after one is approved
+            " (select o.status from outreach o where o.entity_id = e.id and o.direction = 'outbound'"
+            "   and coalesce(o.sequence_step, 0) = 0 order by o.created_at desc limit 1) as email_status"
             " from entities e where " + rows_clause +
             " order by " + order + " limit %s offset %s",
             params + svc_params + [limit, offset])
