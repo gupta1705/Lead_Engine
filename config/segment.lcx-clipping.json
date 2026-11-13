@@ -1039,14 +1039,14 @@
     "send_window": {
       "enabled": true,
       "start": "10:00",
-      "end": "10:30",
+      "end": "11:00",
       "timezone_of": "recipient",
       "sender_timezone": "Asia/Kolkata",
       "fallback_timezone": "America/New_York",
       "weekdays_only": true,
       "min_gap_seconds": 45,
       "min_lead_seconds": 120,
-      "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender's time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT's clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person's own Apollo record, the company's state or city, a phone's area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient's clock (weekdays_only): an approval after today's window, or at a weekend, takes the next weekday's. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender's clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". Sending is paused for this project (sending_paused); the window applies from the day it is lifted. A show that names no place goes at New York's 10:00 (fallback_timezone)."
+      "guidance": "Owner, 2026-10-12: \"I want you to send mails to the sender's time region between 10 to 10:30AM and that must be randmized not like all mail going at 10:15 some must be going at 10:17 some at 10:13 and so on after approval implement it\". Each approved email goes out at its own random second between start and end on its RECIPIENT's clock (10:00 in Mumbai is 05:30 in London, too early to be read), drawn when it is approved and shown in Approved as \"Goes out\", with the time in India beside it. Where the recipient is comes from what the lead holds -- the person's own Apollo record, the company's state or city, a phone's area code, its country -- and the reason is kept on the email (tools/send_window.py). Monday to Friday on the recipient's clock (weekdays_only): an approval after today's window, or at a weekend, takes the next weekday's. An email whose window passes unsent (the server down, its address at its daily limit) moves to the next window at a new random time, never later the same day. Never two emails from one address closer than min_gap_seconds; never one sooner than min_lead_seconds after its approval. To send on the sender's clock instead (every email 10:00-10:30 India time) set timezone_of to \"sender\"; to switch the window off set enabled to false -- the stored times are cleared and approvals go out as soon as they can, as before. docs/runbook.md, \"Goes out\". Sending is paused for this project (sending_paused); the window applies from the day it is lifted. A show that names no place goes at New York's 10:00 (fallback_timezone). Owner, 2026-11-13: 10:00-10:30 fit only about 29 emails per time zone a day (the USA); widened to 10:00-11:00."
     },
     "daily_send_cap": 120,
     "hook_style": "clipping",
@@ -1140,7 +1140,9 @@
     "reelforge_templates": "lcx-catalogue-20261106-reelforge",
     "send_from": "approver",
     "send_from_guidance": "Owner, 2026-10-21: use the Gmail connected to the person who approves the email, as other projects do. LCX Clipping must not wait for an unconfigured server pool. Each real mailbox keeps its own shared daily limit across projects; legacy pool settings remain only for historical reply reads.",
-    "prioritize_fresh_leads": true
+    "prioritize_fresh_leads": true,
+    "send_as_domain": "lightscameraexperiment.com",
+    "send_as_domain_guidance": "Owner, 2026-11-13 (Kartikeya: 'Can new emails send from the LCX inbox, and follow ups always reply from the same inbox as the original?'): new emails go out from the approver's Gmail with its Send-mail-as alias on lightscameraexperiment.com in the From line; an approver without that alias waits, saying so, and never sends LCX mail from a TVF address. A follow-up always keeps its thread's mailbox and From, so threads that began from a TVF address continue from it."
   },
   "schedule": [
     {
