@@ -258,7 +258,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-13** Outreach strip wording: `N/50 sent today`, "approved, going out", and "there is no approval limit" (it read like an approval cap).
+* **2026-11-13** `6f407e7` Outreach strip wording: `N/50 sent today`, "approved, going out", and "there is no approval limit" (it read like an approval cap).
 * **2026-11-13** `c73b9a0` This file and `CLAUDE.md` created.
 * **2026-11-13** `46af6b1` Replies are positive or negative only; every negative (incl. out-of-office,
   bounce, unread inbox, unclear) is suppressed. `NOT_A_REPLY_KINDS` / `real_reply()` keep reply counts
