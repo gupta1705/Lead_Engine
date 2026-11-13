@@ -215,7 +215,7 @@ join entities e on e.id = i.entity_id
 join segments s on s.id = e.segment_id
 left join contacts c on c.id = i.contact_id
 where i.direction = 'inbound' and i.alerted_at is null and i.gmail_thread_id = any(%s)
-  and coalesce(i.triage, '') <> 'neutral'                -- a bounce notice, or a reply someone called an auto-reply
+  and """ + pol.real_reply("i") + """                    -- not a bounce notice or an automatic answer
   and i.alert_attempts < %s
 order by i.created_at"""
 ALERT_COLS = ("id", "message_id", "thread_id", "subject", "body", "entity_id", "contact_id", "company", "project",
@@ -236,16 +236,16 @@ def auto_mark(cur, r, kind, note):
     if (row.get("triage") if isinstance(row, dict) else row[0]) is not None:
         return None                                   # a person (or an earlier pass) marked it already
     reason = "Marked %s by AI. %s" % (label, note or "")
-    if label == "neutral":
-        cur.execute("update outreach set triage = 'neutral', status = 'triaged', triage_reason = %s, updated_at = now()"
-                    " where id = %s and triage is null", (reason.strip(), r["id"]))
-        return label
+    if kind in pol.NOT_A_REPLY_KINDS:
+        cur.execute("update outreach set reply_kind = %s where id = %s", (kind, r["id"]))
     pol.mark_reply(cur, r["id"], r["entity_id"], label, reason.strip())
-    # the do-not-contact list (sql/48): an unsubscribe covers the address and its organisation; a "no", the address
-    if kind == "unsubscribe" and r.get("contact_email"):
-        pol.suppress(cur, r["contact_email"], "asked not to be emailed again", "unsubscribe", whole_domain=True)
-    elif kind == "not_interested" and r.get("contact_email"):
-        pol.suppress(cur, r["contact_email"], "replied: not interested", "not_interested")
+    # the do-not-contact list (sql/48): every negative (the owner, 2026-11-13); an unsubscribe covers the
+    # organisation's domain too
+    if label == "negative" and r.get("contact_email"):
+        why = {"unsubscribe": "asked not to be emailed again", "not_interested": "replied: not interested",
+               "not_now": "replied: not now", "auto_reply": "automatic answer only",
+               "wrong_address": "the inbox is not read"}.get(kind, "replied without interest")
+        pol.suppress(cur, r["contact_email"], why, kind or "negative", whole_domain=(kind == "unsubscribe"))
     return label
 
 
@@ -253,8 +253,8 @@ def wrong_address(cur, r, note):
     """A reply that says nobody reads the address (2026-11-12: of the Clipping replies, a feed address "NOT READ BY
     ANYONE" and support-desk tickets): not a reply -- triaged neutral, so it is not counted or waited on --, the
     address is never written to again, and the company's follow-ups stop. The lead and its history stay."""
-    cur.execute("update outreach set triage = 'neutral', status = 'triaged', triage_reason = %s, updated_at = now()"
-                " where id = %s and triage is null", (note, r["id"]))
+    cur.execute("update outreach set triage = 'negative', status = 'triaged', triage_reason = %s,"
+                " reply_kind = 'wrong_address', updated_at = now() where id = %s and triage is null", (note, r["id"]))
     if r["contact_id"]:
         cur.execute("update contacts set email_status = 'invalid', verifier = 'wrong_address', updated_at = now()"
                     " where id = %s", (r["contact_id"],))

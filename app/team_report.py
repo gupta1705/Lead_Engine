@@ -55,7 +55,7 @@ replies as (
          bool_or(r.triage = 'positive') as pos, bool_or(r.triage = 'negative') as neg
   from openers op
   join outreach r on r.entity_id = op.entity_id and r.direction = 'inbound'
-   and r.triage is distinct from 'neutral' and r.created_at >= op.sent_at
+   and __REAL__ and r.created_at >= op.sent_at
   group by op.id
 )
 select op.who, (op.who is null) as total,
@@ -167,7 +167,7 @@ def report(cur, period, slug=None, names=None, now=None):
     since, bucket, label = span(period, now)
     p = {"since": since, "slug": slug, "bucket": bucket}
     pol = _policy()
-    cur.execute(PER_PERSON.replace("__RECEIVED__", pol.received("r")), p)
+    cur.execute(PER_PERSON.replace("__RECEIVED__", pol.received("r")).replace("__REAL__", pol.real_reply("r")), p)
     rows = [dict(r) for r in cur.fetchall()]
     total = next((r for r in rows if r["total"]), None)
     per = {r["who"]: r for r in rows if not r["total"]}
@@ -229,8 +229,7 @@ select e.source, e.fit_score, e.metadata->>'kind' as kind,
        c.email,
        coalesce(o.stopped_reason, '') like 'bounced%%' as bounced,
        exists (select 1 from outreach r where r.entity_id = e.id and r.direction = 'inbound'
-                 and r.triage is distinct from 'neutral'
-                 and coalesce(r.reply_kind, '') not in ('auto_reply', 'wrong_address')) as replied,
+                 and __REAL__) as replied,
        exists (select 1 from outreach r where r.entity_id = e.id and r.direction = 'inbound'
                  and r.triage = 'positive') as positive
 from outreach o join entities e on e.id = o.entity_id join segments s on s.id = e.segment_id
@@ -269,7 +268,7 @@ def lead_dimensions(row):
 
 
 def replies_by_lead(cur, slug):
-    cur.execute(REPLIES_BY_LEAD, {"slug": slug})
+    cur.execute(REPLIES_BY_LEAD.replace("__REAL__", _policy().real_reply("r")), {"slug": slug})
     rows = [dict(r) for r in cur.fetchall()]
     dims = {}
     for row in rows:

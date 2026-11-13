@@ -250,11 +250,26 @@ def mark_reply(cur, reply_id, entity_id, label, reason=None):
     return True, None
 
 
-# The model's reading of a reply -> its mark (reply_alert.KINDS). A reply that is neither yes nor no is marked
-# positive: a person wrote back, and it stays in front of the team (In conversation) until someone says otherwise.
-KIND_MARK = {"interested": "positive", "question": "positive", "referral": "positive", "other": "positive",
+# The model's reading of a reply -> its mark (reply_alert.KINDS). The owner, 2026-11-13: "i dont want neutral replies
+# i want positive or negative. Anything which isnt marked for more samples or want to communicate further mark it
+# negative and add to no contact list". Positive: wants samples, asks something, or points us to the right person.
+# Everything else -- a no, not now, an out-of-office, an inbox nobody reads, anything unclear -- is negative, and its
+# address goes on the do-not-contact list (reply_alert.auto_mark).
+KIND_MARK = {"interested": "positive", "question": "positive", "referral": "positive", "other": "negative",
              "not_interested": "negative", "unsubscribe": "negative", "not_now": "negative",
-             "auto_reply": "neutral", "wrong_address": "neutral"}
+             "auto_reply": "negative", "wrong_address": "negative"}
+
+# Marked negative, but not a reply a person wrote: a bounce notice, an automatic answer, an inbox nobody reads. Reply
+# counts (the team report, In conversation, alerts) leave them out, as they once left out 'neutral'.
+NOT_A_REPLY_KINDS = ("bounce", "auto_reply", "wrong_address")
+
+
+def real_reply(a="r", view=False):
+    """SQL: the inbound row `a` is a reply a person wrote (not a bounce, an automatic answer or an unread inbox).
+    view: `a` is a row of the outreach_folders view, which does not carry reply_kind."""
+    kind = "(select x.reply_kind from outreach x where x.id = {a}.id)" if view else "{a}.reply_kind"
+    return ("({a}.triage is distinct from 'neutral' and coalesce(" + kind + ", '') not in ({k}))").format(
+        a=a, k=", ".join("'%s'" % k for k in NOT_A_REPLY_KINDS))
 
 
 # Waiting on us (sql/46; the owner, 2026-10-29: build 6 of the outreach research): a real reply that nobody on our

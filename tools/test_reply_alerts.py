@@ -319,9 +319,11 @@ def main_():
         check("the list: not the Negative one", (r5 in ids, r1 in ids), (False, True))
         check("  newest first", [r["id"] for r in d["rows"]] == [r["id"] for r in sorted(
             d["rows"], key=lambda r: r["created_at"], reverse=True)], True)
-        check("  the Negative one apart, for the section at the bottom", [r["id"] for r in d["negative_rows"]], [r5])
+        # the out-of-office is Negative too (the owner, 2026-11-13: no neutral marks)
+        check("  the Negative ones apart, for the section at the bottom", sorted(r["id"] for r in d["negative_rows"]),
+              sorted([r5, ooo]))
         check("  the list's count leaves it out; the tab still counts every reply",
-              (d["total"], d["counts"]["inbox"]), (len(d["rows"]), len(d["rows"]) + 1))
+              (d["total"], d["counts"]["inbox"]), (len(d["rows"]), len(d["rows"]) + 2))
         from api_v1 import Ops
         got = Ops(main).list_emails(person, {"project": slug, "folder": "replies"})
         check("the API: every reply in one list", r5 in [x["id"] for x in got["rows"]], True)

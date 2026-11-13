@@ -217,7 +217,7 @@ def database():
         cur.execute("select triage, reply_kind from outreach where id = %s", (rid,))
         r = cur.fetchone()
         check("not a reply (triaged neutral), read as a wrong address, no alert", (r["triage"], r["reply_kind"], n, len(imports)),
-              ("neutral", "wrong_address", 0, 0))
+              ("negative", "wrong_address", 0, 0))
         cur.execute("select email_status, verifier from contacts where id = %s", (c3,))
         check("  the address is never written to again", dict(cur.fetchone()), {"email_status": "invalid", "verifier": "wrong_address"})
         cur.execute("select stopped_reason from outreach where id = %s", (opener,))
@@ -255,7 +255,7 @@ def database():
         away, _, away_r, away_t = replied("Away", "Out of office until Monday.")
         ra.alert_new(TxDb(conn), G(), box, [away_t], log=lambda m: None, chat=read_as("auto_reply"))
         cur.execute("select triage from outreach where id = %s", (away_r,))
-        check("an out-of-office: not a reply (neutral)", cur.fetchone()["triage"], "neutral")
+        check("an out-of-office: negative (no neutral marks)", cur.fetchone()["triage"], "negative")
         kept, _, kept_r, kept_t = replied("Kept", "Not now.", triage="positive")
         cur.execute("update outreach set alerted_at = null where id = %s", (kept_r,))
         ra.alert_new(TxDb(conn), G(), box, [kept_t], log=lambda m: None, chat=read_as("not_interested"))

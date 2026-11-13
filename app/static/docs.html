@@ -165,15 +165,17 @@
     unsubscribe wait for no answer, unless you marked them Positive.</li>
   <li><strong>A daily reminder</strong> (weekdays, from 10:00 India time) lists the replies to your emails that have
     waited over a day for an answer, and apart from them, the ones nobody has marked Positive or Negative.</li>
-  <li><strong>Marking a reply:</strong> the AI marks each reply itself as it arrives: interested, a question or a
-    referral (or anything else a person wrote) is Positive and moves the company to In conversation; not interested,
-    unsubscribe or not now is Negative and moves the reply to the Negative section at the bottom of Replies; an
-    out-of-office or an inbox nobody reads is not counted as a reply. The note on the reply says "Marked by AI". If it
+  <li><strong>Marking a reply:</strong> the AI marks each reply itself as it arrives, Positive or Negative, never
+    anything in between. Positive: they want samples, ask something, or point us to the right person; the company
+    moves to In conversation. Everything else is Negative: not interested, not now, unsubscribe, an out-of-office, a
+    bounce, an inbox nobody reads, anything unclear. A Negative reply goes to the Negative section at the bottom of
+    Replies and its address goes on the do-not-contact list. Bounces and automatic answers are not counted as replies
+    in the reports. The note on the reply says "Marked by AI". If it
     read one wrong, change the mark with the buttons: a person's mark always stands.</li>
   <li><strong>Auto-replies</strong> are recognised by their mail headers (the ones mail systems add to automatic
-    answers), before the AI reads them, and never count as a reply.</li>
+    answers), before the AI reads them: marked Negative, not counted as a reply.</li>
   <li><strong>Bounces:</strong> a bounced address is marked invalid and never written to again.</li>
-  <li><strong>The do-not-contact list:</strong> an address that bounced, wrote "not interested" or reaches nobody,
+  <li><strong>The do-not-contact list:</strong> every address whose reply was marked Negative or that bounced,
     and the whole company of anyone who asked to unsubscribe, gets no new email from any project, even after the lead
     is gone. No draft is written for them, and approving or sending one is refused.</li>
   <li><strong>Stop follow-ups</strong> on a sent email ends its thread by hand.</li>

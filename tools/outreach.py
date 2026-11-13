@@ -613,8 +613,9 @@ def thread_unread(db, svc, thread_id, own):
             theirs.append(m["id"])
         if not theirs:
             return False, None
+        import outreach_policy as pol
         known = db.run(lambda cur: (cur.execute(
-            "select gmail_message_id from outreach where direction = 'inbound' and triage = 'neutral'"
+            "select gmail_message_id from outreach r where direction = 'inbound' and not " + pol.real_reply("r") +
             " and gmail_message_id = any(%s)", (theirs,)), [r[0] for r in cur.fetchall()])[1])
         return bool(set(theirs) - set(known)), None
     except Exception as e:                                      # noqa: BLE001 -- the caller says what it means
@@ -1586,15 +1587,25 @@ def cmd_pull(args):
                         " on conflict (gmail_message_id) where gmail_message_id"
                         " is not null do nothing returning id",
                         (_e, _c, _s, _b, "triaged" if (_bn or _au) else "received",
-                         "neutral" if (_bn or _au) else None,
+                         "negative" if (_bn or _au) else None,
                          "bounce: the address rejected the email" if _bn
                          else ("auto-reply, by its mail headers (%s)" % _au) if _au else None, _m, _t,
-                         "auto_reply" if _au else None))
+                         "bounce" if _bn else "auto_reply" if _au else None))
                     got = cur.fetchone()
                     if not got:
                         return None, 0
                     if _bn:
                         return got, pol.mark_bounce(cur, _e, _c)
+                    if _au:
+                        # an automatic answer is negative and its address goes on the do-not-contact list (the owner,
+                        # 2026-11-13: no neutral; anything not asking for samples or to talk further)
+                        pol.stop_thread(cur, _e, "reply: negative (automatic answer)")
+                        cur.execute("select email from contacts where id = %s", (_c,))
+                        ce = cur.fetchone()
+                        ce = (ce.get("email") if isinstance(ce, dict) else ce[0]) if ce else None
+                        if ce:
+                            pol.suppress(cur, ce, "automatic answer only", "auto_reply")
+                        return got, 0
                     return got, pol.pause_on_reply(cur, _e)
 
                 inserted, n = db.run(_ingest)

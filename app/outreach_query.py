@@ -1,4 +1,11 @@
 """Fixed SQL expressions for outreach filters and ordering, before pagination."""
+import os as _os
+import sys as _sys
+
+_TOOLS = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "tools")
+if _TOOLS not in _sys.path:
+    _sys.path.insert(0, _TOOLS)
+import outreach_policy as _pol  # noqa: E402
 
 CATEGORY = "coalesce(nullif(e.metadata->>'kind',''),nullif(e.metadata->>'category',''),'uncategorized')"
 
@@ -17,10 +24,10 @@ SORTS = {"subscribers": SUBSCRIBERS, "views": VIEWS, "score": "e.fit_score", "da
 # one row per company that wrote back with a real reply, its latest one. An auto-reply or a bounce notice (triaged
 # 'neutral') is not a conversation, as follow-ups count it; a company whose latest reply was marked Not interested,
 # or that was rejected or archived since, is out of it.
-CONVERSATION = ("f.direction = 'inbound' and f.triage is distinct from 'neutral' and f.triage is distinct from 'negative'"
+CONVERSATION = ("f.direction = 'inbound' and " + _pol.real_reply("f", view=True) + " and f.triage is distinct from 'negative'"
                 " and e.status not in ('rejected', 'archived')"
                 " and f.id = (select r.id from outreach r where r.entity_id = f.entity_id and r.direction = 'inbound'"
-                " and r.triage is distinct from 'neutral' order by r.created_at desc, r.id desc limit 1)")
+                " and " + _pol.real_reply("r") + " order by r.created_at desc, r.id desc limit 1)")
 
 
 def waiting_since(entity="f.entity_id"):
