@@ -343,8 +343,8 @@ def api():
             check("the owner links Asha's sending address", run_users("gmail", a_email), 0)
             cur.execute("select user_email, address, token_enc, daily_cap from user_mailboxes where lower(address) = %s", (a_gmail,))
             row = cur.fetchone()
-            check("  kept for Asha, address in lower case, 50 a day (the owner's limit, 2026-10-23)", (row[0], row[1], row[3]),
-                  (a_email, a_gmail, 50))
+            check("  kept for Asha, address in lower case, 80 a day (the owner's limit, 2026-11-13)", (row[0], row[1], row[3]),
+                  (a_email, a_gmail, store.DEFAULT_CAP))
             check("  sealed for the server: not readable as stored, readable with the server's secret",
                   ("1//zz-asha" in row[2], row[2].startswith(store.SEALED), (store.decrypt(row[2]) or {}).get("refresh_token")),
                   (False, True, "1//zz-asha"))
@@ -456,8 +456,8 @@ def api():
                         (a2,))
             row = cur.fetchone()
             creds = store.decrypt(row[2]) if row else {}
-            check("Asha connects a second Gmail herself: linked to her, at 50, the address as Google says it",
-                  (back(r)[0], back(r)[1].startswith(a2), row[:2] if row else None), ("connected", True, (a_email, 50)))
+            check("Asha connects a second Gmail herself: linked to her, at the default limit, the address as Google says it",
+                  (back(r)[0], back(r)[1].startswith(a2), row[:2] if row else None), ("connected", True, (a_email, store.DEFAULT_CAP)))
             check("  its LCX alias read at once (an LCX address cannot be signed in to: it lives in this account)",
                   (row[3], ("also sends as " + lcx) in back(r)[1]),
                   ([{"address": lcx, "name": "Asha at LCX"}], True))
@@ -489,7 +489,7 @@ def api():
                   call("POST", sender, cookies=a, json={"address": lcx.upper()}).json().get("sends_as"), lcx)
             check("the parent stays the linked account and keeps its cap",
                   [(m["address"], m["from_address"], m["daily_cap"]) for m in call("GET", "/api/me/mailboxes", cookies=a).json()["mailboxes"] if m["address"] == a2],
-                  [(a2, lcx, 50)])
+                  [(a2, lcx, store.DEFAULT_CAP)])
             for invalid in (pending_alias, "someone@other.example"):
                 check("a pending or arbitrary From is rejected: " + invalid,
                       call("POST", sender, cookies=a, json={"address": invalid}).status_code, 400)

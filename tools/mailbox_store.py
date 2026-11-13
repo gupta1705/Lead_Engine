@@ -2,7 +2,7 @@
 """mailbox_store.py -- the Gmail addresses people connect in the app (owner, 2026-09-26).
 
 One login per person, each linked to one or more Gmail addresses, each address with its own
-daily limit (50 since 2026-10-23; it was 35). The owner links them -- "I will manually connect the email id they will use to
+daily limit (80 since 2026-11-13; 50 from 2026-10-23, 35 before). The owner links them -- "I will manually connect the email id they will use to
 send" -- on the laptop: `python tools/users.py gmail <person>` runs Google's own sign-in in a
 browser, and the lasting sign-in Google hands back is kept here, one row per address in
 user_mailboxes (sql/30).
@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
-DEFAULT_CAP = 50                    # the owner, 2026-10-23: "our limit is 50" (it was 35)
+DEFAULT_CAP = 80                    # the owner, 2026-11-13: 80 (50 since 2026-10-23, 35 before)
 
 
 def _secret():

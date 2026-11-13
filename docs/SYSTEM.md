@@ -151,7 +151,7 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
 * **A person approves every email.** Batch approval exists (with a signed spot-check). The API/MCP can
   approve only where a key has `can_approve`, always through `main.outreach_decide`.
 * **From whose Gmail:** `outreach.send_from = "approver"`: the approver's own connected Gmail
-  (`user_mailboxes`), 50 emails a day per address, a minimum gap between sends, advisory lock.
+  (`user_mailboxes`), 80 emails a day per address (sql/49; was 50), a minimum gap between sends, advisory lock.
   An approver with no connected Gmail: the email waits in Approved, saying so.
 * **From which address:** `outreach.send_as_domain`. LCX projects (`lcx-clipping`, `lcx-services`) =
   `lightscameraexperiment.com`: the From line is the approver's Gmail "Send mail as" alias on that domain
@@ -161,8 +161,8 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
   weekdays only. Clipping 10:00-11:00 (widened 2026-11-13; ~29/day fitted in 30 min for the US); others
   10:00-10:30. A missed window moves to the next one.
 * **CC:** `outreach.default_cc` (amritanshv@lightscameraexperiment.com), switch per email, frozen at approval.
-* **No approval limit.** The 50/day is a *sending* limit per address. The Outreach "Sending today" strip shows
-  `N/50 sent today` per address and "approved, going out: X on <day>" for the queue spread over the next days.
+* **No approval limit.** The 80/day is a *sending* limit per address. The Outreach "Sending today" strip shows
+  `N/80 sent today` per address and "approved, going out: X on <day>" for the queue spread over the next days.
 * **Checks at approval and at send** (`outreach_policy.ANSWERED_SQL`): already replied, bounced, or on
   the do-not-contact list -> refused.
 * Leads page: "Status: Email to approve" lists shortlisted leads whose first email still waits; approving
@@ -258,6 +258,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-13** Daily sending limit per address 50 -> 80 (owner's choice; sql/49, `mailbox_store.DEFAULT_CAP`).
 * **2026-11-13** `6f407e7` Outreach strip wording: `N/50 sent today`, "approved, going out", and "there is no approval limit" (it read like an approval cap).
 * **2026-11-13** `c73b9a0` This file and `CLAUDE.md` created.
 * **2026-11-13** `46af6b1` Replies are positive or negative only; every negative (incl. out-of-office,
