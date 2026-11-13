@@ -2605,18 +2605,18 @@ function renderMailboxStrip(m) {
         : !b.usable ? "Its sign-in stopped working: " + (a.me ? "connect it again (account menu, Your Gmail). " : a.name + " connects it again from Your Gmail. ") + (b.last_error || "")
         : `${b.out_today} of ${b.daily_cap} sent today, ${b.remaining} left${via}. The count starts again at ${resets}.`);
       const used = b.daily_cap ? Math.min(100, Math.round(100 * b.out_today / b.daily_cap)) : 0;
-      return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.sends_as || b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap}</span></span>${b.usable ? "" : `<span class="warn-text">${b.sender_issue ? "check sender" : b.no_alias ? "no " + esc(b.no_alias) + " address" : "reconnect"}</span>`}</span>`;
+      return `<span class="mbx ${tone}" title="${esc(tip)}"><span class="addr">${esc(b.sends_as || b.address)}</span><span class="meter ${tone || "hi"}" aria-hidden="true"><i style="width:${used}%"></i></span><span class="cnt"><b>${b.out_today}</b><span class="of">/${b.daily_cap} sent today</span></span>${b.usable ? "" : `<span class="warn-text">${b.sender_issue ? "check sender" : b.no_alias ? "no " + esc(b.no_alias) + " address" : "reconnect"}</span>`}</span>`;
     }).join("") : `<span class="mbx none">${a.me ? "your Gmail is not connected (account menu, Your Gmail)" : "no Gmail connected yet"}</span>`;
     // with a sending window: their approvals by the day each goes (India's clock); otherwise how many wait
     const days = (a.scheduled || []).length && !m.paused ? scheduledText(a.scheduled) : "";
-    const waiting = days ? `<span class="muted small" title="${esc(`Approved, each going out at its own minute in ${itsWindow()} (days on India's clock)`)}">approved: ${esc(days)}</span>`
+    const waiting = days ? `<span class="muted small" title="${esc(`Approved, each going out at its own minute in ${itsWindow()} (days on India's clock). Approving has no limit; only sending is limited per address per day.`)}">approved, going out: ${esc(days)}</span>`
       : a.approved_waiting ? `<span class="muted small">${a.approved_waiting} approved waiting</span>` : "";
     return `<div class="mbx-person ${a.me ? "me" : ""}"><span class="who">${avatar(a.name, a.email, "xs")}${esc(a.name)}${a.me ? " (you)" : ""}</span>${boxes}${waiting}</div>`;
   }).join("");
   el.innerHTML = `<div class="mbx-head"><strong>Sending today</strong>
       <span class="muted small">${m.paused ? "Sending is paused for this project."
-        : sendWindow() ? `Each person's approvals go out from their own sending address, each at its own minute between ${esc(windowSpan())} on ${esc(itsClock())}, up to the address's daily limit. Counts start again at ${esc(resets)}.`
-        : `Each person's approvals go out from their own sending address, up to its daily limit. Counts start again at ${esc(resets)}.`}</span></div>
+        : sendWindow() ? `Approve as many as you like: there is no approval limit. Each person's approvals go out from their own sending address, each at its own minute between ${esc(windowSpan())} on ${esc(itsClock())}, up to the address's daily sending limit; the rest go on the next days. Counts start again at ${esc(resets)}.`
+        : `Approve as many as you like: there is no approval limit. Each person's approvals go out from their own sending address, up to its daily sending limit; the rest go on the next days. Counts start again at ${esc(resets)}.`}</span></div>
     <div class="mbx-people">${people}</div>`;
   el.hidden = false;
 }

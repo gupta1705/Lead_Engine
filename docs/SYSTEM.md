@@ -161,6 +161,8 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
   weekdays only. Clipping 10:00-11:00 (widened 2026-11-13; ~29/day fitted in 30 min for the US); others
   10:00-10:30. A missed window moves to the next one.
 * **CC:** `outreach.default_cc` (amritanshv@lightscameraexperiment.com), switch per email, frozen at approval.
+* **No approval limit.** The 50/day is a *sending* limit per address. The Outreach "Sending today" strip shows
+  `N/50 sent today` per address and "approved, going out: X on <day>" for the queue spread over the next days.
 * **Checks at approval and at send** (`outreach_policy.ANSWERED_SQL`): already replied, bounced, or on
   the do-not-contact list -> refused.
 * Leads page: "Status: Email to approve" lists shortlisted leads whose first email still waits; approving
@@ -256,6 +258,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-13** Outreach strip wording: `N/50 sent today`, "approved, going out", and "there is no approval limit" (it read like an approval cap).
 * **2026-11-13** `c73b9a0` This file and `CLAUDE.md` created.
 * **2026-11-13** `46af6b1` Replies are positive or negative only; every negative (incl. out-of-office,
   bounce, unread inbox, unclear) is suppressed. `NOT_A_REPLY_KINDS` / `real_reply()` keep reply counts
