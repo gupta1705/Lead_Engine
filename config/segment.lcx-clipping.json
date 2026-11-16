@@ -1217,8 +1217,8 @@
   },
   "clipping_apollo": {
     "enabled": false,
-    "credits_per_run": 0,
-    "credits_per_week": 0,
+    "credits_per_run": 50,
+    "credits_per_week": 50,
     "keep_in_reserve": 700,
     "score_over": 45,
     "max_lead_age_days": 14,
@@ -1242,6 +1242,6 @@
         "Head of Audience Development"
       ]
     },
-    "guidance": "Owner, 16 November 2026: add Apollo verified work contacts after existing Clipping qualification. Keep all existing lead sources, public contacts and recipient selection. Match the creator's actual business, never a guest, sponsor or unrelated distributor. Prioritise fresh high-scoring creators with their own offer. One suitable contact per lead; uncertain identity stays unresolved. Do not modify chosen recipients or approved/conversation history. Spending OFF: no Apollo requests until the owner authorises a new budget and matching is explicitly enabled."
+    "guidance": "Owner, 16 November 2026: add Apollo verified work contacts after existing Clipping qualification. Keep all existing lead sources, public contacts and recipient selection. Match the creator's actual business, never a guest, sponsor or unrelated distributor. Prioritise fresh high-scoring creators with their own offer. One suitable contact per lead; uncertain identity stays unresolved. Do not modify chosen recipients or approved/conversation history. Spending OFF: no Apollo requests until the owner authorises a new budget and matching is explicitly enabled. Owner, 16 November 2026: capped pilot authorised, maximum 100 credits total split 50 Clipping and 50 Startup; preserve at least 700 balance. Remain disabled until current balance is verified; this is not recurring spending authorisation."
   }
 }

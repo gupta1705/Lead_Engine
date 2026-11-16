@@ -90,6 +90,8 @@ title and headquarters constraints. Negative ranges and scalar locks are handled
 `tools/startup_apollo.py --apply-live` patches configs only, snapshots prior settings, never calls Apollo
 or touches leads/outreach; `--pause-only` applies the spending stop without changing targeting.
 
+**Capped pilot, 16 November 2026:** Owner subsequently authorised checking the balance and spending some credits on high-score Clipping contacts and Startup discovery. Prepared a maximum 100-credit pilot, split 50/50, minimum account reserve 700. Live and canonical run/week ceilings are 50 for each; switches remain disabled pending a verified balance. This is a one-time pilot, not recurring authorisation. The local key balance request returned HTTP 403 with Apollo reporting a payment issue; no paid calls were made. The Render key still needs checking through the signed-in app. Other Apollo projects stay paused.
+
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
 then apply it with `python tools/run_sql.py sql/03x_...sql`. Commit both files. Config validation
@@ -316,6 +318,8 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Capped Apollo pilot prepared: maximum 100 credits total (50 Clipping, 50 Startup), reserve 700; disabled until balance verification. Local balance check blocked by Apollo payment error; no paid searches/reveals, leads, email changes or sends. Existing sources, qualification and recipient selection retained.
 
 * **2026-11-16** `176c4de` Optional LCX Clipping Apollo contact matching: preserved
   existing discovery and recipient-selection flow, added qualified business/contact matching,
