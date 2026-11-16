@@ -226,7 +226,7 @@ class Ops:
                        parent_id=str(r["parent_id"]) if r.get("parent_id") else None,
                        sender=r.get("sender_address") or r.get("planned_sender"),
                        sending_account=r.get("sending_account"),
-                       sender_rule="original_thread" if int(r.get("sequence_step") or 0)>0 else "current_sender_preference",
+                       sender_rule=("original_thread" if int(r.get("sequence_step") or 0)>0 else "current_sender_preference") if r.get("direction")=="outbound" else None,
                        stopped_reason=r.get("stopped_reason"),
                        reply_reason=r.get("triage_reason") if r.get("direction") == "inbound" else None,
                        attachments=[a.get("name") for a in (r.get("attachments") or []) if isinstance(a, dict)])

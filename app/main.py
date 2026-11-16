@@ -968,8 +968,10 @@ def _outreach_select():
         # a follow-up's thread owner: the opener's approver, whose Gmail it goes out from and who signs it
         " case when coalesce(f.sequence_step, 0) > 0 and f.status = 'drafted' then"
         "  (select p.approved_by from outreach p where p.id = f.parent_id) end as thread_owner,"
-        " (select coalesce(p.sent_as,p.sender_address) from outreach p where p.id=f.parent_id) as planned_sender,"
-        " (select p.sender_address from outreach p where p.id=f.parent_id) as sending_account,"
+        " case when f.direction='outbound' and coalesce(f.sequence_step,0)>0 then"
+        " (select coalesce(p.sent_as,p.sender_address) from outreach p where p.id=f.parent_id) end as planned_sender,"
+        " case when f.direction='outbound' and coalesce(f.sequence_step,0)>0 then"
+        " (select p.sender_address from outreach p where p.id=f.parent_id) end as sending_account,"
         " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
         " (e.status in ('shortlisted','contacted') and exists(select 1 from (" + CONTACT_SELECTION_SQL
         + ") available)) as can_link_contact"

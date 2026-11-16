@@ -179,6 +179,7 @@ Approval responses (UI, API/MCP and batches) report the original thread's sender
 not the LCX alias configured for new first emails. Email details expose the planned
 From and parent sending account before delivery. Missing original mailbox/thread
 details hold the follow-up; no alternative sender is used.
+Planned sender fields apply only to outbound follow-ups, never received replies.
 Any reply (positive or negative) stops the thread. A follow-up timed for its window reads its thread first.
 
 ---
