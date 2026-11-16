@@ -281,13 +281,14 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Startup acquisition targeting: full company purchases only, Andheri West proximity,
+* **2026-11-16** `dee426a` Startup acquisition targeting: full company purchases only, Andheri West proximity,
   India-wide Mumbai-first searches, media/creator/consumer plus software/AI, 100-point evidence
   rubric, strict below-INR-1-crore asking-price check and sourced research form. Paused Startup
   Apollo spending live (enabled false, run/week 0), reassessed existing open leads without changing
   decisions/history. Shared manual/automatic reveal eligibility; zero-month distress dates fixed.
   No credits or sends. Validation: acquisition acceptance tests, rolled-back API/score/pause fixtures,
-  existing Apollo policy/routing and headline regressions, browser form checks. Revision added below.
+  existing Apollo policy/routing and headline regressions, browser form checks. Live refresh assessed
+  151 open records: zero currently contact-research-ready and zero confirmed asking prices.
 
 * **2026-11-16** `f5f9021` Follow-up sender reporting fixed: approvals and API/MCP details use
   the opener's actual From/mailbox, including TVF originals under an LCX-only opener
