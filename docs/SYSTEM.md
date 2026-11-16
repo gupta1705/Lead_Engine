@@ -262,7 +262,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Follow-up sender reporting fixed: approvals and API/MCP details use
+* **2026-11-16** `f5f9021` Follow-up sender reporting fixed: approvals and API/MCP details use
   the opener's actual From/mailbox, including TVF originals under an LCX-only opener
   policy. Sender explicitly preserves the original identity and holds missing routing
   details. No new approvals or changes to sending limits, windows or email wording.
