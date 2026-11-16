@@ -59,6 +59,24 @@ Each project is one row in `segments` whose `config` JSON is generated from
 | `lcx-services` | all 18 LCX services in one email + PDF deck to corporates | Apollo only | Fri 02:00 |
 | `universal` | anything; a person searches Apollo and writes the email | Apollo search page | none |
 
+**Startup acquisitions (16 November 2026):** `startup_acquisitions.configure` patches targeting and
+qualification settings, preserving the live outreach configuration. Reference office: Fortune Terraces,
+Andheri West 400053 (full owner-provided address in config). India-wide candidates, Mumbai-first
+Apollo searches, teams 1-50; prioritise media/creator/consumer and software/AI. Score out of 100:
+current distress 30, sector/TVF fit 15, salvage evidence 10, documented affordability 20, proximity 20,
+verified decision-maker 5; existing distress/funding/activity penalties remain. **Full company
+acquisitions only**, with upfront purchase price **below INR 10,000,000**; no funding/revenue/headcount
+to price inference. Asset-only purchases, acqui-hires, minority equity and revenue share are excluded.
+Unknown/stale price is unconfirmed and earns zero affordability points. Neighbourhood bands are
+not measured distances. `metadata.startup_review` keeps dated, sourced reviewer claims; the lead
+sheet's Acquisition evidence form saves through `/api/leads/{id}/acquisition-evidence`, refreshes
+assessment/score, and preserves decisions/emails. Both automatic and manual paid contact reveals
+require the same recent assessment (within seven days), current distress, salvage evidence, India
+and no known price/size/acquisition/activity exclusion. Unknown-price prospects may qualify for
+founder research, never as confirmed affordable deals. **Apollo spending is OFF, run/week budgets 0**;
+disabled discovery exits before Apollo calls. A key alone does not authorise spending.
+See `docs/startups.md`.
+
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
 then apply it with `python tools/run_sql.py sql/03x_...sql`. Commit both files. Config validation
@@ -262,6 +280,14 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Startup acquisition targeting: full company purchases only, Andheri West proximity,
+  India-wide Mumbai-first searches, media/creator/consumer plus software/AI, 100-point evidence
+  rubric, strict below-INR-1-crore asking-price check and sourced research form. Paused Startup
+  Apollo spending live (enabled false, run/week 0), reassessed existing open leads without changing
+  decisions/history. Shared manual/automatic reveal eligibility; zero-month distress dates fixed.
+  No credits or sends. Validation: acquisition acceptance tests, rolled-back API/score/pause fixtures,
+  existing Apollo policy/routing and headline regressions, browser form checks. Revision added below.
 
 * **2026-11-16** `f5f9021` Follow-up sender reporting fixed: approvals and API/MCP details use
   the opener's actual From/mailbox, including TVF originals under an LCX-only opener

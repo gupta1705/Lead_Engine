@@ -94,6 +94,9 @@ def _qualified(cur, seg_id, candidate, cfg):
     if block["reveal_countries"]:
         sql += " and upper(trim(coalesce(e.metadata->>'hq_country','')))=any(%s)"
         args.append(ea.country_forms(block["reveal_countries"]))
+    import startup_acquisitions
+    if startup_acquisitions.enabled(cfg):
+        sql += startup_acquisitions.CONTACT_SQL
     cur.execute(sql, args)
     rows = cur.fetchall()
     return rows[0] if len(rows) == 1 else None
@@ -187,7 +190,8 @@ def build_router(cursor, allowed=None):
                 "type": "window", "group": "Project", "options": [[s["key"], auds.get(s.get("audience"), s["key"].replace("_", " ")) +
                     (" · " + s["signal"] if s.get("signal") else "")] for s in policy.searches(cfg)],
                 "help": "Project geography, size, industry and contact rules apply to every search. Save companies first for qualification."})
-        return {"apollo": status(),
+        spending = not policy.strict(cfg) or (cfg.get("enrichment") or {}).get("enabled") is True
+        return {"apollo": status(), "spending_enabled": spending,
                 "max_reveal_per_save": min(int(a.get("max_reveal_per_save") or 100),
                     int((cfg.get("enrichment") or {}).get("credits_per_run") or 100)) if policy.strict(cfg) else int(a.get("max_reveal_per_save") or 100),
                 "endpoints": a.get("endpoints") or [],

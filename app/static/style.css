@@ -486,6 +486,8 @@ input[type="number"], input[type="date"], select, textarea, .input {
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 input.compact, select.compact, .input.compact { height: 34px; padding: 6px 10px; font-size: 13.5px; }
+#acquisitionEvidence { display: grid; gap: 12px; margin-top: 16px; }
+#acquisitionEvidence label { display: grid; gap: 5px; }
 input:hover, select:hover, textarea:hover { border-color: var(--border-bold); }
 input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--border-focused); box-shadow: var(--focus-ring); }
 input::placeholder, textarea::placeholder { color: var(--text-disabled); }

@@ -676,6 +676,15 @@ def lcx_risks(lead, crit):
 # ----------------------------------------------------- startup acquisitions
 def startup_criterion(key, lead):
     m, v = lead.meta, (lead.v(key) or 0)
+    assessment = m.get("startup_acquisition") or {}
+    fields = {"distress_current":"distress_summary", "affordability":"price_summary",
+              "office_proximity":"proximity_summary", "salvage_value":"asset_summary"}
+    if assessment and key in fields:
+        why = assessment.get(fields[key]) or "Evidence not recorded."
+        state = FOUND if v > 0 else UNCHECKED if key in ("affordability","salvage_value","office_proximity") else NONE
+        return state, why, []
+    if assessment and key == "tvf_fit":
+        return (FOUND if v > 0 else NONE), "Sector match from the company's Apollo record, website and coverage; commercial viability still needs review.", []
     enriched = bool(m.get("startup_enriched_at"))
     events = [e for e in (m.get("press_events") or []) if isinstance(e, dict)]
     distress = [e for e in events if e.get("track") == "distress"]
@@ -774,7 +783,10 @@ def startup_risks(lead, crit):
     if lead.si.get("acquired_signal") is True:
         risks.append({"level": "blocker", "title": "Already sold", "detail": "A headline says another company acquired it."})
     # a recent round and a long-closed company are score modifiers: they reach the risk list from there
-    if lead.si.get("mumbai_confirmed") is not None and (lead.v("mumbai_confirmed") or 0) == 0:
+    assessment = m.get("startup_acquisition") or {}
+    if assessment:
+        risks.append({"level":"warning", "title":assessment["status"], "detail":assessment["gaps"]})
+    elif lead.si.get("mumbai_confirmed") is not None and (lead.v("mumbai_confirmed") or 0) == 0:
         risks.append({"level": "warning", "title": "City not known",
                       "detail": "Nothing on record says where it is based (its headlines name no city%s). Check the "
                                 "founders' profiles or its registered address before treating it as a Mumbai startup."

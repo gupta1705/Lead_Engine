@@ -51,7 +51,7 @@ import resolve_domains as rd  # noqa: E402            is_third_party()
 from discover_startup_news import rss, allowed  # noqa: E402
 
 SEGMENT = os.environ.get("SEGMENT_SLUG", "startup-acquisitions")
-VERSION = "v1"
+VERSION = "v2-acquisitions-20261116"
 RSS_DELAY = 2.2
 SITE_DELAY = 2.0
 
@@ -313,7 +313,7 @@ def rescore(db, seg_id, cfg, reopen, dry_run):
     rows = db.run(lambda cur: (cur.execute("""
         select id, name, status, status_reason, metadata from entities
         where segment_id = %s
-          and (status in ('discovered', 'enriched', 'scored', 'ready_for_review')
+          and (status in ('discovered', 'enriched', 'scored', 'ready_for_review', 'shortlisted')
                or (%s and status = 'archived' and status_reason like 'Gate %%'))""", (seg_id, reopen)), cur.fetchall())[1])
     changed = reopened = 0
     for rid, name, status, reason, meta in rows:
@@ -333,7 +333,10 @@ def rescore(db, seg_id, cfg, reopen, dry_run):
         scoring.update(si)
         new_meta["scoring_inputs"] = scoring
         new_meta["unverified_inputs"] = [k for k in (meta.get("unverified_inputs") or []) if k not in si]
-        back = status == "archived" and not gates_fire(scoring, cfg)
+        import startup_acquisitions
+        if startup_acquisitions.enabled(cfg):
+            new_meta = startup_acquisitions.refresh(new_meta, cfg, now)
+        back = status == "archived" and not gates_fire(new_meta["scoring_inputs"], cfg)
         if back:
             new_meta["gate_reopened"] = {"at": now.isoformat(), "was": reason}
             reopened += 1
@@ -409,7 +412,7 @@ def main():
         select e.id, e.name, e.domain, e.metadata
         from entities e
         where e.segment_id = %s
-          and e.status in ('discovered', 'enriched', 'scored', 'ready_for_review')
+          and e.status in ('discovered', 'enriched', 'scored', 'ready_for_review', 'shortlisted')
           and """ + where + """
         order by (e.metadata ? 'startup_enriched_at'), e.created_at
         limit %s""", params), cur.fetchall())[1])
@@ -486,6 +489,9 @@ def write_row(db, row, domain, site, app, cfg, now, held, dry_run):
     scoring.update(si)
     new_meta["scoring_inputs"] = scoring
     new_meta["unverified_inputs"] = [k for k in (meta.get("unverified_inputs") or []) if k not in si]
+    import startup_acquisitions
+    if startup_acquisitions.enabled(cfg):
+        new_meta = startup_acquisitions.refresh(new_meta, cfg, now)
     new_meta["startup_enriched_at"] = now.isoformat()
     new_meta["startup_enrich_version"] = VERSION
     if dry_run:

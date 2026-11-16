@@ -528,6 +528,11 @@ def _parse(stamp):
     return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
 
 
+def within_months(stamp, now, months):
+    date = _parse(stamp)
+    return date is not None and date <= now and _months(date, now) <= months
+
+
 def site_status_of(site):
     """The site's state as evidence. A 401, 403, 429 or 503 is a site refusing a robot, which says
     nothing about whether the business is alive, so it reads as unread -- not as dead."""
@@ -555,7 +560,7 @@ def score_inputs(name, events, geo, site, app, cfg, now):
     events = sorted(events or [], key=lambda e: e.get("published_at") or "", reverse=True)
     distress = [e for e in events if e.get("track") == "distress"]
     funding = [e for e in events if e.get("track") == "funding" or e.get("amount_usd")]
-    recent = [e for e in distress if (_months(_parse(e.get("published_at")), now) or 99) <= 24]
+    recent = [e for e in distress if within_months(e.get("published_at"), now, 24)]
 
     # ---- distress
     strength = max([e.get("strength", 0) for e in recent] or [0.0])
@@ -635,7 +640,7 @@ def score_inputs(name, events, geo, site, app, cfg, now):
                  or any(BIG.search(e.get("title") or "") and mentions(e.get("title"), name) for e in events))
     si["major_or_oversized_signal"] = bool(oversized)
     si["acquired_signal"] = any(acquired_in(e.get("title"), name) for e in events
-                                if (_months(_parse(e.get("published_at")), now) or 99) <= 24)
+                                if within_months(e.get("published_at"), now, 24))
 
     # ---- fit
     words = " ".join([e.get("descriptor") or "" for e in events] + [e.get("title") or "" for e in events]
@@ -656,7 +661,7 @@ def score_inputs(name, events, geo, site, app, cfg, now):
 
     # ---- modifiers
     ordinary = [e for e in funding if e.get("track") == "funding" and e.get("round") not in ("bridge",)
-                and (_months(_parse(e.get("published_at")), now) or 99) <= 12]
+                and within_months(e.get("published_at"), now, 12)]
     si["recently_funded"] = 1.0 if ordinary and not (newest and (newest.get("published_at") or "") > (ordinary[0].get("published_at") or "")) else 0.0
     shut = [e for e in distress if e.get("kind") == "shutdown"]
     si["long_dead"] = 1.0 if shut and (_months(_parse(shut[0].get("published_at")), now) or 0) > 12 else 0.0

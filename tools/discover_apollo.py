@@ -80,11 +80,12 @@ def main():
         acfg = cfg.get("apollo_discovery") or {}
         if not acfg.get("searches") or not acfg.get("countries"):
             raise RuntimeError("No automatic Apollo searches configured; use this project's Apollo search page.")
-        if not apollo.key_is_set():
-            raise RuntimeError("Apollo is required: configure APOLLO_API_KEY before running discovery.")
         block = cfg.get("enrichment") or {}
         if block.get("provider") != "apollo" or block.get("enabled") is not True:
-            raise RuntimeError("Apollo spending is disabled for this project.")
+            print("Apollo spending is disabled for this project; no calls or credits used.", flush=True)
+            return 0
+        if not apollo.key_is_set():
+            raise RuntimeError("Apollo is required: configure APOLLO_API_KEY before running discovery.")
         want = args.pages if args.pages is not None else int(acfg.get("pages_per_run", 5))
         if want <= 0 or args.max_minutes <= 0:
             raise ValueError("Pages and maximum minutes must be positive.")

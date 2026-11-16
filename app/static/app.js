@@ -1059,6 +1059,7 @@ async function openLead(id, opts) {
         ${(d.explain && !(d.explain.criteria || []).length) || handAdded ? "" : `<div class="section"><h3>${icon("chart", 16)} Score breakdown</h3>
           <div class="body">${d.explain ? renderCoverage(d.explain) + renderCriteria(d.explain) : ""}</div></div>`}
 
+        ${renderAcquisitionEvidence(d)}
         ${research.ownership || research.caveats ? `<div class="section"><h3>${icon("book", 16)} Research notes</h3><div class="body">
           ${m.why_fit ? `<p><strong>Why it could fit.</strong> ${esc(m.why_fit)}</p>` : ""}
           ${research.ownership ? `<p><strong>Ownership.</strong> ${esc(research.ownership)}</p>` : ""}
@@ -1116,6 +1117,46 @@ async function openLead(id, opts) {
   if (email) email.addEventListener("click", () => openLeadEmail(id, d.outreach.id, email));
   bindRecipientSelection(root, d, id);
   bindLeadService(root, d, id);
+  bindAcquisitionEvidence(root, d, id);
+}
+
+function renderAcquisitionEvidence(d) {
+  if (!d.metadata?.startup_acquisition) return "";
+  const r = d.metadata.startup_review || {};
+  const field = (key, label, type = "text") => `<label>${esc(label)}<input class="input" data-acquisition="${key}" type="${type}" ${type === "number" ? 'min="0" step="1"' : ""} value="${esc(r[key] == null ? "" : r[key])}"></label>`;
+  return `<div class="section"><h3>${icon("book", 16)} Acquisition evidence</h3><div class="body">
+    <p class="help">Upfront purchase price must be below ₹1 crore. Leave it blank when unknown. Add a source link or founder conversation reference for every claim. This saves research and updates the score.</p>
+    <details><summary>Record or update acquisition evidence</summary><form id="acquisitionEvidence">
+      ${field("asking_price_inr", "Upfront asking price in rupees (0 is allowed)", "number")}
+      ${field("price_source", "Price source / founder quote reference")}
+      ${field("asset_summary", "Product, users, code, IP or team worth preserving")}
+      ${field("asset_source", "Asset evidence source")}
+      ${field("distress_summary", "Current distress evidence")}
+      ${field("distress_source", "Distress evidence source")}
+      ${field("address", "Confirmed operating address")}
+      ${field("address_source", "Address evidence source")}
+      ${field("checked_at", "Evidence checked on", "date")}
+      <label>Price scope (full company acquisitions only)<select class="input" data-acquisition="deal_type">${[["unknown","Not confirmed yet"],["full_company_acquisition","Full company acquisition"]].map(([key,label]) => `<option value="${key}" ${key === (r.deal_type || "unknown") ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <button class="btn" type="submit">Save acquisition evidence</button>
+      <p class="help" id="acquisitionEvidenceStatus" role="status"></p>
+    </form></details></div></div>`;
+}
+
+function bindAcquisitionEvidence(root, d, id) {
+  const form = $("#acquisitionEvidence", root);
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = $("button", form), status = $("#acquisitionEvidenceStatus", form);
+    button.disabled = true;
+    const data = Object.fromEntries($$("[data-acquisition]", form).map(input => [input.dataset.acquisition, input.value]));
+    try {
+      await post("/api/leads/" + encodeURIComponent(id) + "/acquisition-evidence", data);
+      toast("Acquisition evidence saved");
+      if (modal.current?.kind === "lead" && modal.current.id === id) await openLead(id, {quiet:true});
+    } catch (error) { status.textContent = error.message; }
+    finally { button.disabled = false; }
+  });
 }
 
 async function openLeadEmail(leadId, emailId, button) {
@@ -2794,7 +2835,7 @@ function uniConnected() { const s = state.uni.status; return !!(s && s.key_set &
    (connected: null -- busy, timed out); no only when the key is missing or Apollo refused it. The
    Search button used to stay off until the ~3 s status check answered, and for good when Apollo was
    busy: typing and pressing Search did nothing (owner, 2026-09-21: "universal section is not working"). */
-function uniUsable() { const s = state.uni.status; return !s || (!!s.key_set && s.connected !== false); }
+function uniUsable() { const u = state.uni, s = u.status; return !(u.kind === "companies" && u.spendingEnabled === false) && (!s || (!!s.key_set && s.connected !== false)); }
 
 async function loadUniversal() {
   const u = state.uni;
@@ -2807,6 +2848,7 @@ async function uniLoadStatus() {
   try {
     const d = await api(uniPath("/api/universal/status"));
     u.status = d.apollo; u.schema = d.filters || []; u.projectConstraints = !!d.project_constraints;
+    u.spendingEnabled = d.spending_enabled !== false;
     u.maxReveal = d.max_reveal_per_save || 100; u.endpoints = d.endpoints || [];
     const target = u.schema.find((f) => f.key === "_project_search");
     if (target) ["people", "companies"].forEach((kind) => {
@@ -2844,6 +2886,7 @@ function renderUniStatus() {
   } else {
     setup.innerHTML = "";
   }
+  if (u.spendingEnabled === false) setup.innerHTML = `<div class="section-msg"><div><div class="title">Apollo spending paused for this project</div><div class="text">Company searches and contact reveals are disabled until a new credit budget is set. Existing leads and acquisition evidence remain available.</div></div></div>` + setup.innerHTML;
   $("#uniGo").disabled = !uniUsable();
 }
 function renderUniTabs() {
@@ -2859,6 +2902,7 @@ function renderUniTabs() {
     + (u.readAs && u.readAsKind === u.kind ? `<span class="uni-readas">Searched ${esc(u.readAs)}.${
       u.kind === "people" && u.decisionMakers && !u.projectConstraints ? ` <a href="#" data-everyone>Search everyone instead</a>` : ""}</span>` : "");
   $("#uniGo").textContent = u.kind === "people" ? "Search" : "Search · 1 credit";
+  $("#uniGo").disabled = !uniUsable();
 }
 
 /* ---- the filter panel ---- */
@@ -2955,6 +2999,7 @@ function uniCurrentFilters() {
 }
 async function uniSearch(page, asTyped) {
   const u = state.uni;
+  if (u.kind === "companies" && u.spendingEnabled === false) return toast("Apollo spending is paused for this project. Set a credit budget before searching companies.", true);
   if (!uniUsable()) return toast("Connect Apollo first: the steps are at the top of this page.", true);
   u.q[u.kind] = $("#uniQuery").value.trim();
   const filters = uniCurrentFilters();

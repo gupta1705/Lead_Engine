@@ -835,6 +835,32 @@ def decide(lead_id: str, body: dict = Body(...)):
     return row
 
 
+@app.post("/api/leads/{lead_id}/acquisition-evidence")
+def acquisition_evidence(lead_id: str, request: Request, body: dict = Body(...)):
+    """Save sourced acquisition research; never approve mail or change review decisions."""
+    import startup_acquisitions as startup
+    lead_id = _id(lead_id)
+    user = getattr(request.state, "user", None) or "unknown"
+    try:
+        review = startup.valid_review(body, user)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    with cursor() as cur:
+        cur.execute("select e.metadata,s.config,s.slug from entities e join segments s on s.id=e.segment_id"
+                    " where e.id=%s for update of e", (lead_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "no such lead")
+        if row["slug"] != "startup-acquisitions" or not startup.enabled(row["config"]):
+            raise HTTPException(409, "Acquisition evidence is available in the Startup project.")
+        meta = dict(row["metadata"] or {}, startup_review=review)
+        meta = startup.refresh(meta, row["config"])
+        cur.execute("update entities set metadata=%s,updated_at=now() where id=%s",
+                    (psycopg2.extras.Json(meta), lead_id))
+        cur.execute("select score_entity(%s)", (lead_id,))
+    return {"ok": True, "assessment": meta["startup_acquisition"]}
+
+
 # ------------------------------------------------------------ lead service
 def lead_service_view(cfg, row, people=None):
     """The lead sheet's Lead service box (LCX Services): the one service its email pitches and why (the rule, its

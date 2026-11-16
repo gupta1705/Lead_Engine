@@ -1,4 +1,68 @@
-# Segment 2: struggling Mumbai startups
+# Startup acquisition research
+
+## Current rules (16 November 2026)
+
+This section supersedes the historical implementation below. Discovery results are research
+candidates, not confirmed acquisition opportunities.
+
+- **Full company acquisitions only**, at an upfront purchase price strictly **below INR 1 crore**
+  (INR 10,000,000). Asset-only purchases, acqui-hires, minority equity and revenue share are excluded.
+- Prioritise media, creator and consumer businesses, plus software and AI products.
+- Reference office: **Contagious Online Media Network Pvt Ltd., 702, 7th Floor, A Wing, Fortune
+  Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053**.
+  Other Indian cities remain eligible; proximity ranks them rather than excluding them.
+- **Apollo spending is paused**, with enrichment disabled and run/week budgets zero. Adding a key
+  does not authorise expenditure; a new explicit budget is required.
+
+| Metric | Maximum | Evidence |
+|---|---:|---|
+| Current distress | 30 | Dated reports or sourced founder confirmation. Recency weight: full up to 6 months, 75% at 6-12 months, 25% at 12-24 months. |
+| TVF fit | 15 | Company/site descriptions matching priority sectors. Not proof of viability. |
+| Salvage value | 10 | Dated, sourced product, users, code, IP or team evidence. A recently updated app with 1,000+ ratings earns half credit pending diligence. A live homepage earns none. |
+| Affordability | 20 | Sourced, dated price for the full company purchase, checked within 90 days and below the ceiling. Zero upfront is valid. Funding/revenue/headcount never establish acquisition price. |
+| Office proximity | 20 | Andheri West/Oshiwara/Lokhandwala/Versova 100%; adjacent western suburbs 80%; other Mumbai 60%; Thane/Navi Mumbai 40%; other India 10%; unknown 0. |
+| Decision-maker reachability | 5 | Apollo-verified founder/CEO/director; no points for an old shared or unverified inbox. |
+
+The rubric totals 100, with existing penalties for recent ordinary funding, long closure or absence
+of struggle. Review threshold 35; priority 65. These are research rankings, not valuations. Unknown
+inputs earn zero. Proximity is a neighbourhood band, **not kilometres or travel time**. City-only
+Mumbai evidence cannot earn Andheri points; contradictory structured HQ locations earn no
+neighbourhood bonus.
+
+New companies and automatic contacts come only from Apollo. Saved searches cover Mumbai first,
+then India, each split into media/creator/consumer and software/AI, with teams of 1-50. News
+headlines, the startup's own website (robots respected) and a linked App Store listing qualify
+already-known companies. They do not discover new ones. Existing scraping restrictions still apply.
+
+Confirmed foreign HQ, a documented price at/above the ceiling, existing major-company/acquisition
+exclusions and long dormancy remain exclusions. Both manual and automatic paid contact reveals
+require the same assessment within seven days, Indian HQ, current sourced distress, salvage evidence
+and no known exclusion. A price-unknown prospect may be researched with its founder to discover
+the price; it is never labelled a confirmed budget-fit deal. An unavailable website or funding gap
+alone does not prove current distress.
+
+Open a Startup lead and expand **Acquisition evidence → Record or update acquisition evidence**.
+Record the price, assets, distress and operating address with individual source links or founder
+conversation references and a check date within 90 days. Leave unknown prices blank. Any price
+must be confirmed to cover the full company purchase. Saving updates the assessment and score;
+it does not change shortlist/rejection decisions, approve, rewrite or send emails. Claims keep the
+signed-in reviewer and save time. Ownership, liabilities, transferability and deal terms remain
+diligence gaps.
+
+`tools/startup_acquisitions.py` regenerates targeting config; then run
+`tools/gen_segment_sql.py startup-acquisitions`. Its `--preview-live` / `--apply-live` options patch
+live targeting while preserving unrelated settings/outreach and reassess open leads without
+restoring rejected or archived leads. A prior-config snapshot is kept in gitignored logs. Full seed
+SQL is for deliberate full-config replacement only. Disabled discovery exits before key/balance/
+search calls; manual paid searches/reveals refuse. Free people searches and status checks remain
+available. Other projects' budgets and Clipping are unaffected.
+
+Tests: `test_startup_acquisitions.py` (no external calls), `test_startup_acquisitions_api.py`
+(one rollback transaction; no external calls), and `test_startup_signals.py` (headline regressions).
+
+## Historical implementation (superseded)
+
+The following records the September build and first-list findings, not today's targeting rules.
 
 Rebuilt 2026-09-17. The owner's brief: *"find a list of startups that are
 currently struggling based out of bombay which we can acquire for little to no

@@ -405,12 +405,14 @@ def candidates(db, unnamed, limit, stale_days, recheck, score_over=None, by_name
     Shortlisted first, then a buying signal, then best score."""
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=stale_days)).replace(microsecond=0).isoformat()
     named_for = [k for k in (named_for or []) if k] if not unnamed else []
+    import startup_acquisitions
+    startup_sql = startup_acquisitions.CONTACT_SQL if SEGMENT == "startup-acquisitions" else ""
     sql = """
         select e.id, e.name, e.domain, e.status, e.fit_score, e.metadata->>'kind',
                e.metadata->'apollo'->>'id', upper(e.metadata->>'hq_country')
         from entities e join segments s on s.id = e.segment_id
         where s.slug = %s and e.status = any(%s)
-    """ + ("" if (by_name and not unnamed) else "  and e.domain is not null\n") + (
+    """ + startup_sql + ("" if (by_name and not unnamed) else "  and e.domain is not null\n") + (
         UNNAMED_SQL if unnamed else NO_NAMED_SQL if named_for else NO_EMAIL_SQL) + (
         SITE_READ_SQL if site_read else "") + ("" if recheck else """
           and coalesce(e.metadata->>'apollo_checked_at', '') < %s""") + ("" if score_over is None else """

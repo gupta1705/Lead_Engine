@@ -11,9 +11,9 @@ values (
   "entity_type": "startup",
   "weekly_target": 10,
   "batch_size": 20,
-  "score_threshold_review": 25,
-  "score_threshold_priority": 45,
-  "brief": "Owner, 2026-09-17: find startups based in Mumbai that are currently struggling, which TVF could acquire for little to no resources or back with its support. Every lead is a startup with public evidence of trouble, confirmed to be in the Mumbai region, small enough to be cheap, ranked by how much TVF''s content, audience and distribution could change its trajectory. Sector is not a filter: it is the tvf_fit criterion, so narrowing to media-only later is a weight or a gate in this file, not a new harvest.",
+  "score_threshold_review": 35,
+  "score_threshold_priority": 65,
+  "brief": "Find struggling Indian startups TVF can salvage, prioritising media, creators, consumer businesses, software and AI products and physical proximity to the Andheri West office. Upfront purchase price must be strictly below INR 1 crore. Unknown price requires review; funding, revenue and headcount never establish purchase price. Apollo spending is paused.",
   "target_contact_roles": [
     "Founder",
     "Co-Founder",
@@ -22,58 +22,51 @@ values (
     "Managing Director"
   ],
   "geography": {
-    "home_region": "Mumbai Metropolitan Region",
-    "guidance": "Mumbai, Navi Mumbai and Thane, which is how Indian startup coverage uses ''Mumbai-based''. A lead is placed in Mumbai by, in order of trust: an address or a 400xxx/401xxx PIN on its own website; a headline that says ''Mumbai-based X'' or ''Mumbai''s X''; its news coverage placing it in Mumbai more often than anywhere else. Placed elsewhere on the same evidence, the mumbai_region gate archives it. Unplaced passes the gate (Invariant 1) but earns nothing on mumbai_confirmed, so it sinks below the review band until something places it."
+    "home_region": "India, prioritising Andheri West and Mumbai",
+    "guidance": "Mumbai proximity ranks candidates; another Indian city is not excluded. A confirmed foreign headquarters is excluded. Unconfirmed location remains a research gap."
   },
   "rubric": [
     {
-      "key": "distress_evidence",
-      "label": "Public evidence the startup is struggling",
+      "key": "distress_current",
+      "label": "Evidence of current distress",
       "points": 30,
-      "input": "metadata.scoring_inputs.distress_evidence",
-      "guidance": "1.0: a headline that the company itself shut down, laid people off, delayed salaries, went into insolvency, raised a down or rescue round, or sold in a distress sale, or its own website saying it has closed. 0.5: a softer sign -- a bridge round, sale talks, a founder exit, a pivot, closing one unit -- or the quiet version: a small round two and a half years ago, nothing since, and its website going dark. 0: checked, nothing."
-    },
-    {
-      "key": "distress_recency",
-      "label": "How recent that evidence is",
-      "points": 10,
-      "input": "metadata.scoring_inputs.distress_recency",
-      "guidance": "1.0 within six months, 0.5 within twelve, 0 older. ''Currently struggling'' is the brief; a 2024 layoff at a company that has since recovered is history."
-    },
-    {
-      "key": "mumbai_confirmed",
-      "label": "Confirmed to be based in Mumbai",
-      "points": 15,
-      "input": "metadata.scoring_inputs.mumbai_confirmed",
-      "guidance": "1.0 when its own website carries a Mumbai-region address or PIN, or a headline says it is Mumbai-based; 0.5 when its coverage places it in Mumbai but also elsewhere; 0 when nothing places it."
-    },
-    {
-      "key": "small_deal",
-      "label": "Small enough to acquire or back for little",
-      "points": 15,
-      "input": "metadata.scoring_inputs.small_deal",
-      "guidance": "From the largest round its headlines state: up to $5M is 1.0, up to $20M is 0.5, beyond that 0. No stated round is not assessed; the zero-unverified rule then scores it 0 and records that nobody knows."
+      "input": "metadata.scoring_inputs.distress_current",
+      "guidance": "Public distress evidence weighted by recency: up to 6 months full, 6-12 months 75%, 12-24 months 25%. Funding silence or a failed website alone is not confirmed distress."
     },
     {
       "key": "tvf_fit",
-      "label": "TVF''s content, audience or distribution would change its trajectory",
-      "points": 20,
+      "label": "TVF fit: media, creators, consumer, software and AI",
+      "points": 15,
       "input": "metadata.scoring_inputs.tvf_fit",
-      "guidance": "From the words its coverage and its own site use to describe it, against startup_discovery.sector_tiers: media, content, entertainment, gaming, audio, edtech, community and youth products 1.0; consumer brands and consumer apps TVF''s reach helps sell 0.5; fintech, SaaS, logistics, health and other businesses TVF''s audience does not move 0."
+      "guidance": "Sector words from the company and its coverage. Fit is a research priority, not proof that TVF can revive the business."
     },
     {
-      "key": "something_to_keep",
-      "label": "Something worth having: a live product, an app people use, a brand",
+      "key": "salvage_value",
+      "label": "A product, users, team or assets worth preserving",
       "points": 10,
-      "input": "metadata.scoring_inputs.something_to_keep",
-      "guidance": "1.0 when its website is up or its App Store app carries at least 1,000 ratings; 0.5 when the site is gone but an app or a body of coverage remains; 0 when nothing does."
+      "input": "metadata.scoring_inputs.salvage_value",
+      "guidance": "Dated, sourced asset evidence from a reviewer, or an app with recent updates and at least 1,000 ratings. A working homepage alone earns no salvage points."
+    },
+    {
+      "key": "affordability",
+      "label": "Documented upfront price below INR 1 crore",
+      "points": 20,
+      "input": "metadata.scoring_inputs.affordability",
+      "guidance": "Full points only for a dated asking price or founder quote with its source, checked within 90 days. Exactly INR 1 crore fails. Funding and revenue are not acquisition prices. Unknown price scores zero and stays unconfirmed."
+    },
+    {
+      "key": "office_proximity",
+      "label": "Proximity to TVF''s Andheri West office",
+      "points": 20,
+      "input": "metadata.scoring_inputs.office_proximity",
+      "guidance": "Andheri West/Oshiwara/Lokhandwala/Versova 100%; adjacent western suburbs 80%; other Mumbai 60%; Thane/Navi Mumbai 40%; other India 10%; unknown 0. Address evidence required for neighbourhood points. These are bands, not measured distances."
     },
     {
       "key": "reachable_decision_maker",
-      "label": "A founder or director we can write to",
-      "points": 10,
+      "label": "Verified founder or decision-maker contact",
+      "points": 5,
       "input": "metadata.scoring_inputs.reachable_decision_maker",
-      "guidance": "Set by the site-scrape pass (Find contacts on sites): 1.0 a named person''s own address, 0.5 a role inbox, 0 nothing."
+      "guidance": "Apollo-verified current founder/decision-maker contact; existing contact policy remains in force."
     }
   ],
   "score_modifiers": [
@@ -101,13 +94,6 @@ values (
   ],
   "gates": [
     {
-      "key": "mumbai_region",
-      "label": "Based in the Mumbai region",
-      "input": "metadata.scoring_inputs.geography_signal",
-      "exclude_when": "outside_mumbai",
-      "guidance": "Fires only when the evidence places the company somewhere else. Unplaced passes."
-    },
-    {
       "key": "not_oversized",
       "label": "Not a unicorn, a listed company or a big group''s unit",
       "input": "metadata.scoring_inputs.major_or_oversized_signal",
@@ -127,6 +113,24 @@ values (
       "input": "metadata.scoring_inputs.activity_signal",
       "exclude_when": "confirmed_dormant",
       "guidance": "Fires when the newest sign of life -- a headline, a working website -- is more than three years old."
+    },
+    {
+      "key": "india_based",
+      "label": "Not confirmed outside India",
+      "input": "metadata.scoring_inputs.acquisition_country_blocked",
+      "exclude_when": true
+    },
+    {
+      "key": "under_purchase_ceiling",
+      "label": "Upfront purchase price strictly below INR 1 crore",
+      "input": "metadata.scoring_inputs.acquisition_price_blocked",
+      "exclude_when": true
+    },
+    {
+      "key": "full_company_only",
+      "label": "Full company acquisitions only",
+      "input": "metadata.scoring_inputs.acquisition_deal_blocked",
+      "exclude_when": true
     }
   ],
   "startup_discovery": {
@@ -254,7 +258,7 @@ values (
     ],
     "sector_tiers": {
       "1": {
-        "label": "Media, content and consumer attention",
+        "label": "Media, creator, consumer, software or AI business",
         "words": [
           "media",
           "content",
@@ -310,7 +314,72 @@ values (
           "creator economy",
           "live streaming",
           "quiz",
-          "trivia"
+          "trivia",
+          "d2c",
+          "dtc",
+          "consumer",
+          "brand",
+          "beauty",
+          "cosmetics",
+          "skincare",
+          "personal care",
+          "fashion",
+          "apparel",
+          "jeans",
+          "footwear",
+          "jewellery",
+          "food",
+          "beverage",
+          "beverages",
+          "snacks",
+          "ice cream",
+          "coffee",
+          "tea",
+          "nutrition",
+          "fitness",
+          "wellness",
+          "travel",
+          "hospitality",
+          "lifestyle",
+          "home decor",
+          "furniture",
+          "quick commerce",
+          "e-commerce",
+          "ecommerce",
+          "marketplace",
+          "food delivery",
+          "restaurant",
+          "cloud kitchen",
+          "pet",
+          "grooming",
+          "toys",
+          "gifting",
+          "social commerce",
+          "house-help",
+          "home services",
+          "grocery",
+          "e-grocery",
+          "luggage",
+          "eyewear",
+          "sleep",
+          "mattress",
+          "perfume",
+          "fragrance",
+          "haircare",
+          "ayurvedic",
+          "wedding",
+          "rental",
+          "coworking",
+          "coliving",
+          "salon",
+          "consumer app",
+          "software",
+          "saas",
+          "artificial intelligence",
+          "ai",
+          "machine learning",
+          "automation",
+          "analytics"
         ]
       },
       "0.5": {
@@ -388,7 +457,6 @@ values (
           "payments",
           "wealth",
           "investment",
-          "saas",
           "b2b",
           "enterprise",
           "logistics",
@@ -425,13 +493,11 @@ values (
           "banking",
           "accounting",
           "compliance",
-          "automation",
           "robotics",
           "iot",
           "telecom",
           "cloud",
-          "data centre",
-          "analytics"
+          "data centre"
         ]
       }
     },
@@ -623,7 +689,9 @@ values (
     "app",
     "distress_summary",
     "why_fit",
-    "scoring_inputs"
+    "scoring_inputs",
+    "startup_acquisition",
+    "startup_review"
   ],
   "sources": [
     {
@@ -651,21 +719,25 @@ values (
     "provider": "apollo",
     "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
-    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence.",
-    "enabled": true,
+    "guidance": "Spending paused by owner, 16 November 2026. Enable only after an explicit new budget. Both manual and automatic reveals require current distress, salvage evidence and Indian headquarters. Unknown acquisition price stays a research gap.",
+    "enabled": false,
     "fallback_enabled": false,
-    "credits_per_run": 50,
+    "credits_per_run": 0,
     "verified_only": true,
     "recheck_after_days": 30,
     "current_employer_check": true,
     "find_website_by_name": false,
-    "credits_per_week": 50,
+    "credits_per_week": 0,
     "keep_in_reserve": 700,
-    "score_over": 15
+    "score_over": 34,
+    "require_fitting_role": true,
+    "reveal_countries": [
+      "IN"
+    ]
   },
   "ui": {
     "key_prefix": "STA",
-    "board_title": "Struggling Mumbai startups",
+    "board_title": "Startup acquisition research",
     "list_title": "Startups",
     "entity_label": "startup",
     "entity_plural": "startups",
@@ -689,11 +761,37 @@ values (
     ],
     "details": [
       {
-        "path": "metadata.city",
-        "label": "Based in",
+        "path": "metadata.startup_acquisition.status",
+        "label": "Acquisition assessment",
+        "format": "text"
+      },
+      {
+        "path": "metadata.startup_acquisition.price_summary",
+        "label": "Upfront price",
+        "format": "text"
+      },
+      {
+        "path": "metadata.startup_acquisition.proximity_summary",
+        "label": "Office proximity",
+        "format": "text"
+      },
+      {
+        "path": "metadata.startup_acquisition.asset_summary",
+        "label": "Salvage evidence",
+        "format": "text"
+      },
+      {
+        "path": "metadata.startup_acquisition.distress_summary",
+        "label": "Current distress",
+        "format": "text"
+      },
+      {
+        "path": "metadata.startup_acquisition.gaps",
+        "label": "Still to verify",
         "format": "text"
       }
-    ]
+    ],
+    "search_page": "apollo"
   },
   "outreach": {
     "sender": {
@@ -796,7 +894,7 @@ values (
     ],
     "searches": [
       {
-        "key": "mumbai_media",
+        "key": "mumbai_media_creator_consumer",
         "filters": {
           "organization_locations": [
             "Mumbai, India",
@@ -807,20 +905,20 @@ values (
             "media",
             "entertainment",
             "gaming",
-            "digital media",
-            "education"
+            "creator",
+            "education",
+            "consumer",
+            "e-commerce"
           ],
           "organization_num_employees_ranges": [
             "1,10",
             "11,20",
-            "21,50",
-            "51,100",
-            "101,200"
+            "21,50"
           ]
         }
       },
       {
-        "key": "mumbai_consumer",
+        "key": "mumbai_software_ai",
         "filters": {
           "organization_locations": [
             "Mumbai, India",
@@ -828,22 +926,72 @@ values (
             "Thane, India"
           ],
           "q_organization_keyword_tags": [
-            "consumer",
-            "consumer apps",
-            "e-commerce",
-            "consumer goods"
+            "software",
+            "artificial intelligence",
+            "saas",
+            "machine learning"
           ],
           "organization_num_employees_ranges": [
             "1,10",
             "11,20",
-            "21,50",
-            "51,100",
-            "101,200"
+            "21,50"
+          ]
+        }
+      },
+      {
+        "key": "india_media_creator_consumer",
+        "filters": {
+          "organization_locations": [
+            "India"
+          ],
+          "q_organization_keyword_tags": [
+            "media",
+            "entertainment",
+            "gaming",
+            "creator",
+            "education",
+            "consumer",
+            "e-commerce"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ]
+        }
+      },
+      {
+        "key": "india_software_ai",
+        "filters": {
+          "organization_locations": [
+            "India"
+          ],
+          "q_organization_keyword_tags": [
+            "software",
+            "artificial intelligence",
+            "saas",
+            "machine learning"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
           ]
         }
       }
     ],
-    "guidance": "Mumbai Metropolitan Region and TVF-relevant small businesses. Apollo results are candidates: existing named-company news/site checks must establish distress, recency, deal size and acquisition status."
+    "guidance": "Mumbai-first discovery, then other Indian cities; teams of 1-50. These filters find research candidates, not proven distressed or affordable acquisitions. No pages are purchased while spending is paused."
+  },
+  "startup_acquisition": {
+    "version": "acquisitions-20261116",
+    "office_address": "Contagious Online Media Network Pvt Ltd., 702, 7th Floor, A Wing, Fortune Terraces, Opp. Citi Mall, New Link Rd, Andheri West, Mumbai, Maharashtra 400053",
+    "max_upfront_inr_exclusive": 10000000,
+    "evidence_valid_days": 90,
+    "allowed_deal_types": [
+      "full_company_acquisition"
+    ],
+    "deal_types": "Full company acquisitions only. Exclude asset-only purchases, acqui-hires, minority equity and revenue share.",
+    "proximity_method": "Address/neighbourhood bands, not measured kilometres or travel time. City-only evidence earns only city-level points."
   }
 }'::jsonb
 )
