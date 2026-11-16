@@ -321,7 +321,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Added a durable server-side capped Apollo pilot runner to use Render's key without exporting it or requiring a browser login. Five offline guards verify per-segment/total caps, endpoint restrictions, the balance reserve and uncertain-request accounting. Pilot results and server-reported balance are recorded in segment config; no new public endpoint or access grants.
+* **2026-11-16** `17aaba7` Added a durable server-side capped Apollo pilot runner to use Render's key without exporting it or requiring a browser login. Five offline guards verify per-segment/total caps, endpoint restrictions, the balance reserve and uncertain-request accounting. Pilot results and server-reported balance are recorded in segment config; no new public endpoint or access grants.
 
 * **2026-11-16** `aa9f6af` Capped Apollo pilot prepared: maximum 100 credits total (50 Clipping, 50 Startup), reserve 700; disabled until balance verification. Local balance check blocked by Apollo payment error; no paid searches/reveals, leads, email changes or sends. Existing sources, qualification and recipient selection retained.
 
