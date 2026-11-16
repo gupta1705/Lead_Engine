@@ -204,16 +204,17 @@ values (
   },
   "enrichment": {
     "provider": "apollo",
-    "enabled": true,
+    "enabled": false,
     "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
     "fallback_enabled": false,
-    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence.",
-    "credits_per_run": 50,
+    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence. Owner, 16 November 2026: do not use any Apollo credits. All paid sourcing is paused until a new explicit budget is authorised.",
+    "credits_per_run": 0,
     "verified_only": true,
     "recheck_after_days": 30,
     "current_employer_check": true,
-    "find_website_by_name": false
+    "find_website_by_name": false,
+    "credits_per_week": 0
   }
 }'::jsonb
 )

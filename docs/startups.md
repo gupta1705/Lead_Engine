@@ -30,9 +30,44 @@ Mumbai evidence cannot earn Andheri points; contradictory structured HQ location
 neighbourhood bonus.
 
 New companies and automatic contacts come only from Apollo. Saved searches cover Mumbai first,
-then India, each split into media/creator/consumer and software/AI, with teams of 1-50. News
+then Navi Mumbai/Thane, then India, with teams of 1-50. News
 headlines, the startup's own website (robots respected) and a linked App Store listing qualify
 already-known companies. They do not discover new ones. Existing scraping restrictions still apply.
+
+### Apollo parameters researched on 16 November 2026
+
+Twelve saved presets pair each of three HQ areas with two sector groups and two research modes.
+The normal least-run rotation starts with Mumbai presets, then nearby cities, then India; local
+address evidence remains the basis for Andheri priority. Existing deduplication prevents duplicate leads.
+
+| Parameter | Setting and reason |
+|---|---|
+| `organization_locations` | Separate Mumbai; Navi Mumbai/Thane; India presets. This is company HQ, not where a contact lives. |
+| `organization_num_employees_ranges` | `1,10`, `11,20`, `21,50`: retain the agreed small-team screen. This is not a valuation estimate. |
+| `q_organization_keyword_tags` | Media/creator/consumer keywords, or software/AI keywords. Keywords can match incidental descriptions; qualification still checks fit. |
+| `organization_headcount_growth_past_n_months` | `12`, used only with the decline range. |
+| `organization_headcount_growth_range` | `min=-100`, `max=-10`: at least 10% contraction in twelve months. A research heuristic, not proof of financial distress. Parallel broad presets omit both growth fields so missing-history or stable-team companies remain eligible. |
+| `organization_ids` | Use the saved Apollo company ID for contact discovery when available; domain fallback still checks the current employer. |
+| `person_titles` | Founder, Co-Founder, CEO, Chief Executive Officer, Owner, Managing Director. |
+| `include_similar_titles` | `false`; no broad senior-person fallback for Startup searches. |
+| `contact_email_status` | `verified`; returned email and current employer are checked again after any future authorised enrichment. |
+
+Not imposed: funding/revenue ceilings or funding-stage filters, founding-year cutoffs, zero open jobs,
+or Indian postcode/radius searches. Unknown funding is not zero funding; an old funding round or
+headcount decline alone proves neither distress nor willingness to sell. None of these values establishes
+the full-company asking price. Apollo's documented location filters support postal codes in the US,
+Germany and UK, not India. Proximity to Fortune Terraces therefore stays a local evidence-based rank.
+
+Sources: [Apollo Organization Search](https://docs.apollo.io/reference/organization-search) and
+[People API Search](https://docs.apollo.io/reference/people-api-search). Organization Search is paid;
+People Search does not return email addresses or phone numbers. This update read public documentation
+only and made **no Apollo API calls**. The new key does not activate sourcing. All four Apollo projects
+have spending disabled and run/week budgets zero until the owner supplies a new explicit budget.
+
+`tools/startup_apollo.py` updates canonical search/pause settings, followed by the existing SQL generator.
+Its `--apply-live` option changes only relevant config fields and snapshots prior config; it never
+searches, enriches, changes leads or modifies outreach. `startup_acquisitions.configure` uses the same
+presets, preventing the previous four presets from returning during later config regeneration.
 
 Confirmed foreign HQ, a documented price at/above the ceiling, existing major-company/acquisition
 exclusions and long dormancy remain exclusions. Both manual and automatic paid contact reveals

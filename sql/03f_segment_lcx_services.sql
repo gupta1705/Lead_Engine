@@ -2714,12 +2714,12 @@ values (
     "guidance": "The word lists tools/lcx_judge.py reads to set the inputs above from what is stored on each lead: its name and domain, its discovery record (Wikidata, Apollo, the FDIC register, OpenStreetMap) and the site pass''s home-page title, description and About text. Change a word here, then run tools/gen_segment_sql.py lcx-services and apply sql/03f; the next chain run judges every lead again. Each entry is a word or phrase, matched as a whole word in upper or lower case; brackets and | work as in a regular expression for variants (''universit(y|ies)''), except several_locations, which matches anywhere. The *_names lists match the whole company name once Inc, Ltd, LLC, Group, plc, Corp, Co or Holdings is taken off, so ''Beacon Hill School'' is not the staffing firm Beacon Hill and ''Kforce Inc'' is. wrong_buyer rules: where ''any'' scores the value wherever the words appear (plain self-descriptions such as ''a non-profit'' or ''venture capital''); ''nt'' scores it in the name or page title and at most half in the description or About text; ''title'' counts only in the name or title (so ''university'' in a biotech description is not evidence). exempt audiences skip a rule, only audiences are the ones it applies to (a lead not yet placed in an audience is checked by every rule), per_audience changes its value. software: full in the name or title for every audience but studios and agencies; in the description full for mid-size companies (half for the bare word ''software'') and half for the rest; banks only on bank_words, at half. majors: each group''s own domains (the name before .com or .co.uk) and its named brands, a stop-gap until the Wikidata and Apollo parent fields are fetched for every lead. too_big and not_major hold the size lines in people and US dollars. retired_inputs are removed from every lead''s scoring inputs on each run. Set enabled to false to stop the judge (the chain then scores whatever inputs are stored). ADDED 2026-10-07 (scoring v4): the lists tested that day on the 2,402 live leads. 2026-10-08 (review): majors domains with a dot are a full registered domain (paramount.com), for names that are also common words; a bare name matches any ending. A name that only reads like a major''s brand is too_big''s -50, not the not_major gate, and a fund owning a stake never archives. Credit unions are not associations, so banks are out of the .org rule. unsafe_classes ''tobacco'' skips Wikidata''s standard retail class ''food, beverages or tobacco predominating'', which every supermarket carries (Elvi, 2026-10-08)."
   },
   "enrichment": {
-    "enabled": true,
+    "enabled": false,
     "provider": "apollo",
     "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
-    "credits_per_run": 110,
-    "credits_per_week": 120,
+    "credits_per_run": 0,
+    "credits_per_week": 0,
     "keep_in_reserve": 700,
     "score_over": 60,
     "require_site_read": true,
@@ -2734,7 +2734,7 @@ values (
     ],
     "current_employer_check": true,
     "senior_titles": "(founder|owner|ceo|chief executive|chief marketing|chief commercial|chief operating|chief people|(?<!vice )president|managing director|general manager|principal|head of school|head teacher|headmaster|headmistress)",
-    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence.",
+    "guidance": "Apollo supplies new contacts in the target roles. Existing score, geographic and site-verification restrictions and credit caps apply. Websites are read only for qualification evidence. Owner, 16 November 2026: do not use any Apollo credits. All paid sourcing is paused until a new explicit budget is authorised.",
     "require_fitting_role": true,
     "skip_revealed_elsewhere": true,
     "fallback_enabled": false

@@ -61,22 +61,14 @@ def configure(original):
     cfg["enrichment"].update(enabled=False, credits_per_run=0, credits_per_week=0,
         require_fitting_role=True, reveal_countries=["IN"], score_over=34,
         guidance="Spending paused by owner, 16 November 2026. Enable only after an explicit new budget. Both manual and automatic reveals require current distress, salvage evidence and Indian headquarters. Unknown acquisition price stays a research gap.")
-    bands = ["1,10", "11,20", "21,50"]
-    groups = [("media_creator_consumer", ["media", "entertainment", "gaming", "creator", "education", "consumer", "e-commerce"]),
-              ("software_ai", ["software", "artificial intelligence", "saas", "machine learning"])]
-    cfg["apollo_discovery"]["searches"] = [
-        {"key":area+"_"+key, "filters":{"organization_locations":locations,
-          "q_organization_keyword_tags":words, "organization_num_employees_ranges":bands}}
-        for area,locations in [("mumbai",["Mumbai, India", "Navi Mumbai, India", "Thane, India"]), ("india",["India"])]
-        for key,words in groups]
-    cfg["apollo_discovery"]["guidance"] = "Mumbai-first discovery, then other Indian cities; teams of 1-50. These filters find research candidates, not proven distressed or affordable acquisitions. No pages are purchased while spending is paused."
     cfg["ui"].update(search_page="apollo", board_title="Startup acquisition research")
     details = [("status", "Acquisition assessment"), ("price_summary", "Upfront price"),
                ("proximity_summary", "Office proximity"), ("asset_summary", "Salvage evidence"),
                ("distress_summary", "Current distress"), ("gaps", "Still to verify")]
     cfg["ui"]["details"] = [{"path":"metadata.startup_acquisition."+k,"label":l,"format":"text"} for k,l in details]
     cfg["metadata_fields"] = list(dict.fromkeys(cfg.get("metadata_fields",[]) + ["startup_acquisition", "startup_review"]))
-    return cfg
+    from startup_apollo import configure as configure_apollo
+    return configure_apollo(cfg)
 
 
 def fresh(stamp, now, days):

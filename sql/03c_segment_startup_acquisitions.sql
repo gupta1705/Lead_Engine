@@ -18,7 +18,8 @@ values (
     "Founder",
     "Co-Founder",
     "CEO",
-    "Director",
+    "Chief Executive Officer",
+    "Owner",
     "Managing Director"
   ],
   "geography": {
@@ -719,7 +720,7 @@ values (
     "provider": "apollo",
     "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
-    "guidance": "Spending paused by owner, 16 November 2026. Enable only after an explicit new budget. Both manual and automatic reveals require current distress, salvage evidence and Indian headquarters. Unknown acquisition price stays a research gap.",
+    "guidance": "Spending paused by owner, 16 November 2026. Enable only after an explicit new budget. Both manual and automatic reveals require current distress, salvage evidence and Indian headquarters. Unknown acquisition price stays a research gap. Owner, 16 November 2026: do not use any Apollo credits. All paid sourcing is paused until a new explicit budget is authorised.",
     "enabled": false,
     "fallback_enabled": false,
     "credits_per_run": 0,
@@ -733,7 +734,8 @@ values (
     "require_fitting_role": true,
     "reveal_countries": [
       "IN"
-    ]
+    ],
+    "include_similar_titles": false
   },
   "ui": {
     "key_prefix": "STA",
@@ -895,93 +897,317 @@ values (
     ],
     "searches": [
       {
-        "key": "mumbai_media_creator_consumer",
+        "key": "mumbai_media_creator_consumer_decline_12m",
         "filters": {
           "organization_locations": [
-            "Mumbai, India",
-            "Navi Mumbai, India",
-            "Thane, India"
+            "Mumbai, India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
           ],
           "q_organization_keyword_tags": [
             "media",
             "entertainment",
+            "film production",
+            "video production",
+            "digital content",
+            "creator economy",
             "gaming",
-            "creator",
             "education",
             "consumer",
-            "e-commerce"
+            "e-commerce",
+            "d2c"
+          ],
+          "organization_headcount_growth_past_n_months": 12,
+          "organization_headcount_growth_range": {
+            "min": -100,
+            "max": -10
+          }
+        }
+      },
+      {
+        "key": "mumbai_software_ai_decline_12m",
+        "filters": {
+          "organization_locations": [
+            "Mumbai, India"
           ],
           "organization_num_employees_ranges": [
             "1,10",
             "11,20",
             "21,50"
-          ]
-        }
-      },
-      {
-        "key": "mumbai_software_ai",
-        "filters": {
-          "organization_locations": [
-            "Mumbai, India",
-            "Navi Mumbai, India",
-            "Thane, India"
           ],
           "q_organization_keyword_tags": [
             "software",
-            "artificial intelligence",
             "saas",
-            "machine learning"
+            "artificial intelligence",
+            "machine learning",
+            "automation"
+          ],
+          "organization_headcount_growth_past_n_months": 12,
+          "organization_headcount_growth_range": {
+            "min": -100,
+            "max": -10
+          }
+        }
+      },
+      {
+        "key": "mumbai_media_creator_consumer_research",
+        "filters": {
+          "organization_locations": [
+            "Mumbai, India"
           ],
           "organization_num_employees_ranges": [
             "1,10",
             "11,20",
             "21,50"
-          ]
-        }
-      },
-      {
-        "key": "india_media_creator_consumer",
-        "filters": {
-          "organization_locations": [
-            "India"
           ],
           "q_organization_keyword_tags": [
             "media",
             "entertainment",
+            "film production",
+            "video production",
+            "digital content",
+            "creator economy",
             "gaming",
-            "creator",
             "education",
             "consumer",
-            "e-commerce"
-          ],
-          "organization_num_employees_ranges": [
-            "1,10",
-            "11,20",
-            "21,50"
+            "e-commerce",
+            "d2c"
           ]
         }
       },
       {
-        "key": "india_software_ai",
+        "key": "mumbai_software_ai_research",
         "filters": {
           "organization_locations": [
-            "India"
-          ],
-          "q_organization_keyword_tags": [
-            "software",
-            "artificial intelligence",
-            "saas",
-            "machine learning"
+            "Mumbai, India"
           ],
           "organization_num_employees_ranges": [
             "1,10",
             "11,20",
             "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "software",
+            "saas",
+            "artificial intelligence",
+            "machine learning",
+            "automation"
+          ]
+        }
+      },
+      {
+        "key": "nearby_mumbai_media_creator_consumer_decline_12m",
+        "filters": {
+          "organization_locations": [
+            "Navi Mumbai, India",
+            "Thane, India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "media",
+            "entertainment",
+            "film production",
+            "video production",
+            "digital content",
+            "creator economy",
+            "gaming",
+            "education",
+            "consumer",
+            "e-commerce",
+            "d2c"
+          ],
+          "organization_headcount_growth_past_n_months": 12,
+          "organization_headcount_growth_range": {
+            "min": -100,
+            "max": -10
+          }
+        }
+      },
+      {
+        "key": "nearby_mumbai_software_ai_decline_12m",
+        "filters": {
+          "organization_locations": [
+            "Navi Mumbai, India",
+            "Thane, India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "software",
+            "saas",
+            "artificial intelligence",
+            "machine learning",
+            "automation"
+          ],
+          "organization_headcount_growth_past_n_months": 12,
+          "organization_headcount_growth_range": {
+            "min": -100,
+            "max": -10
+          }
+        }
+      },
+      {
+        "key": "nearby_mumbai_media_creator_consumer_research",
+        "filters": {
+          "organization_locations": [
+            "Navi Mumbai, India",
+            "Thane, India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "media",
+            "entertainment",
+            "film production",
+            "video production",
+            "digital content",
+            "creator economy",
+            "gaming",
+            "education",
+            "consumer",
+            "e-commerce",
+            "d2c"
+          ]
+        }
+      },
+      {
+        "key": "nearby_mumbai_software_ai_research",
+        "filters": {
+          "organization_locations": [
+            "Navi Mumbai, India",
+            "Thane, India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "software",
+            "saas",
+            "artificial intelligence",
+            "machine learning",
+            "automation"
+          ]
+        }
+      },
+      {
+        "key": "india_media_creator_consumer_decline_12m",
+        "filters": {
+          "organization_locations": [
+            "India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "media",
+            "entertainment",
+            "film production",
+            "video production",
+            "digital content",
+            "creator economy",
+            "gaming",
+            "education",
+            "consumer",
+            "e-commerce",
+            "d2c"
+          ],
+          "organization_headcount_growth_past_n_months": 12,
+          "organization_headcount_growth_range": {
+            "min": -100,
+            "max": -10
+          }
+        }
+      },
+      {
+        "key": "india_software_ai_decline_12m",
+        "filters": {
+          "organization_locations": [
+            "India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "software",
+            "saas",
+            "artificial intelligence",
+            "machine learning",
+            "automation"
+          ],
+          "organization_headcount_growth_past_n_months": 12,
+          "organization_headcount_growth_range": {
+            "min": -100,
+            "max": -10
+          }
+        }
+      },
+      {
+        "key": "india_media_creator_consumer_research",
+        "filters": {
+          "organization_locations": [
+            "India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "media",
+            "entertainment",
+            "film production",
+            "video production",
+            "digital content",
+            "creator economy",
+            "gaming",
+            "education",
+            "consumer",
+            "e-commerce",
+            "d2c"
+          ]
+        }
+      },
+      {
+        "key": "india_software_ai_research",
+        "filters": {
+          "organization_locations": [
+            "India"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_keyword_tags": [
+            "software",
+            "saas",
+            "artificial intelligence",
+            "machine learning",
+            "automation"
           ]
         }
       }
     ],
-    "guidance": "Mumbai-first discovery, then other Indian cities; teams of 1-50. These filters find research candidates, not proven distressed or affordable acquisitions. No pages are purchased while spending is paused."
+    "guidance": "Researched against Apollo''s Organization Search documentation, 16 November 2026. Within each search rotation: Mumbai first, then Navi Mumbai/Thane, then India; teams 1-50. Each area has media/creator/consumer and software/AI searches, prioritising at least 10% headcount decline over 12 months, plus searches without that requirement for missing history. Decline is a screening hint, never proof of distress or acquisition price. No Indian postcode or radius filter: use sourced office addresses for Andheri proximity scoring. No revenue, funding or founding-year cutoff; no inference that these establish an asking price. Full company availability and price below INR 1 crore require dated evidence. Owner, 16 November 2026: do not use any Apollo credits. All paid sourcing is paused until a new explicit budget is authorised."
   },
   "startup_acquisition": {
     "version": "acquisitions-20261116",

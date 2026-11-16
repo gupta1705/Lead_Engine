@@ -85,10 +85,24 @@ def constrained_filters(cfg, kind, filters, today=None):
         roles = roles_for(cfg, audience(cfg, selected).get("key"))
         if roles:
             locked["person_titles"] = roles
+            if "include_similar_titles" in (cfg.get("enrichment") or {}):
+                locked["include_similar_titles"] = cfg["enrichment"]["include_similar_titles"]
         locked["contact_email_status"] = ["verified"]
         reveal = (cfg.get("enrichment") or {}).get("reveal_countries") or []
         if reveal:
-            locked["organization_locations"] = [COUNTRIES.get(c, c) for c in reveal]
+            locations = locked.get("organization_locations") or []
+            if locations:
+                # A reveal country is an outer boundary, not a reason to replace
+                # a saved Mumbai-only search with every company in India.
+                allowed = {iso(c) for c in reveal}
+                locations = [loc for loc in locations
+                             if iso(str(loc).split(",")[-1]) in allowed
+                             or iso(str(loc).split(",")[-1]) is None]
+                if not locations:
+                    raise ValueError("This targeting group is outside the project's contact countries.")
+                locked["organization_locations"] = locations
+            else:
+                locked["organization_locations"] = [COUNTRIES.get(c, c) for c in reveal]
         # Apollo has no negative HQ filter on people. The reveal uses current HQ as
         # a second gate. Funding-only presets must be searched as companies first.
         for key in list(locked):
@@ -116,15 +130,41 @@ def constrained_filters(cfg, kind, filters, today=None):
             out[key] = ["%d,%d" % pair for pair in sorted(set(bands))]
         elif isinstance(required, dict):
             given = given or {}
-            merged = {"min": max(str(required.get("min") or ""), str(given.get("min") or "")),
-                      "max": min(str(required.get("max") or "9999"), str(given.get("max") or "9999"))}
-            if key.endswith("_range") and "date" not in key and "posted" not in key:
-                merged = {"min": max(float(required.get("min", 0)), float(given.get("min", 0))),
-                          "max": min(float(required.get("max", float("inf"))), float(given.get("max", float("inf"))))}
-                merged = {k: v for k, v in merged.items() if v != float("inf")}
+            if not isinstance(given, dict):
+                raise ValueError("A range must contain a minimum and/or maximum.")
+            definition = apollo.FILTER_BY_KEY[key]
+            merged = {}
+            for bound, combine in (("min", max), ("max", min)):
+                values = [value[bound] for value in (required, given)
+                          if value.get(bound) not in (None, "")]
+                if values:
+                    # An absent lower bound is unbounded, not zero. Zero would
+                    # contradict every negative headcount-growth upper bound.
+                    if definition["type"] == "range":
+                        values = [apollo._num(v, definition.get("signed")) for v in values]
+                    else:
+                        values = [str(v) for v in values]
+                    merged[bound] = combine(values)
             if "min" in merged and "max" in merged and merged["min"] > merged["max"]:
                 raise ValueError("That range is outside this project's targeting group.")
             out[key] = merged
+        elif not isinstance(required, (list, tuple)):
+            definition = apollo.FILTER_BY_KEY[key]
+            if given not in (None, ""):
+                if definition["type"] == "bool":
+                    def boolean(value):
+                        if value in (True, "true", "1", 1):
+                            return True
+                        if value in (False, "false", "0", 0):
+                            return False
+                        raise ValueError("Choose true or false for %s." % definition["label"])
+                    matches = boolean(given) == boolean(required)
+                else:
+                    matches = str(given).strip().casefold() == str(required).strip().casefold()
+                if not matches:
+                    raise ValueError("%s must stay at the selected project value: %s." %
+                                     (definition["label"], required))
+            out[key] = required
         elif given:
             norm = lambda v: str(v).strip().casefold()
             allowed = {norm(x) for x in required}

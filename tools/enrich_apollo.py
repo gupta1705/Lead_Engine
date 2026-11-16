@@ -171,6 +171,7 @@ def enrich_block(cfg):
             "reveal_countries": countries,
             "employer_check": b.get("current_employer_check") is True,
             "strict_roles": b.get("require_fitting_role") is True,
+            "similar_titles": b.get("include_similar_titles") is not False,
             "skip_known_elsewhere": b.get("skip_revealed_elsewhere") is True,
             "site_read": b.get("require_site_read") is True,
             "named_for": named_for,
@@ -467,7 +468,7 @@ def stamp(db, eid, outcome, person=None, credits=0.0, via=None):
     return db.run(write)
 
 
-def search(domain, roles, verified_only, org_id=None, senior=None):
+def search(domain, roles, verified_only, org_id=None, senior=None, similar_titles=True):
     """Free. Narrowest first: target roles, then senior candidates; every pass stays verified-only when required.
     A pass that finds people but nobody with an address does not end the search -- Imaginary Forces had
     two executive producers with no address and a senior person with one, and the first build stopped at
@@ -477,16 +478,17 @@ def search(domain, roles, verified_only, org_id=None, senior=None):
     passes = []
     if roles:
         if verified_only:
-            passes.append(dict(base, person_titles=roles, contact_email_status=["verified"]))
+            passes.append(dict(base, person_titles=roles, include_similar_titles=similar_titles, contact_email_status=["verified"]))
         if not verified_only:
-            passes.append(dict(base, person_titles=roles))
-    passes.append(dict(base, contact_email_status=["verified"]) if verified_only else dict(base))
+            passes.append(dict(base, person_titles=roles, include_similar_titles=similar_titles))
+    if similar_titles or not roles:
+        passes.append(dict(base, contact_email_status=["verified"]) if verified_only else dict(base))
     fallback = None
     for i, filters in enumerate(passes):
         out = apollo.search_people(filters, 1, 10)
         people = out["people"]
         # the widest pass is anyone at the company: only a senior title is worth a credit there
-        if i == len(passes) - 1 and roles:
+        if i == len(passes) - 1 and roles and "person_titles" not in filters:
             people = [p for p in people if (senior or SENIOR_RE).search(p.get("title") or "")]
         if not people:
             continue
@@ -679,7 +681,8 @@ def main():
                 log("\n  budget reached -- %d lead(s) left for the next run" % stats["left"])
                 break
         try:
-            people, total = search(domain, lead_roles, block["verified_only"], org_id=org_id, senior=block["senior"])
+            people, total = search(domain, lead_roles, block["verified_only"], org_id=org_id, senior=block["senior"],
+                                   similar_titles=block["similar_titles"])
         except apollo.ApolloError as e:
             if e.status in (401, 403):
                 log("  %-34s %s" % (name[:34], e))
@@ -690,7 +693,7 @@ def main():
                 time.sleep(wait)
                 try:
                     people, total = search(domain, lead_roles, block["verified_only"], org_id=org_id,
-                                           senior=block["senior"])
+                                           senior=block["senior"], similar_titles=block["similar_titles"])
                 except apollo.ApolloError as e2:
                     log("  %-34s stopped: %s" % (name[:34], e2))
                     break
@@ -725,7 +728,7 @@ def main():
             if org and alt and alt != domain:
                 try:
                     people, total = search(domain, lead_roles, block["verified_only"], org_id=org["id"],
-                                           senior=block["senior"])
+                                           senior=block["senior"], similar_titles=block["similar_titles"])
                 except apollo.ApolloError:
                     people = []
                 if people:

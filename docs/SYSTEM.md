@@ -77,6 +77,19 @@ founder research, never as confirmed affordable deals. **Apollo spending is OFF,
 disabled discovery exits before Apollo calls. A key alone does not authorise spending.
 See `docs/startups.md`.
 
+**Apollo parameters and spending pause (16 November 2026):** Owner added a new key but explicitly
+authorised **zero credits**. `startup_apollo.pause` disables paid Apollo sourcing in all four Apollo
+projects with run/week budgets zero; Clipping, existing leads and sending are unchanged. Startup
+has twelve documented-API presets: Mumbai, then Navi Mumbai/Thane, then India, each with two sector
+groups and both a 12-month headcount-decline screen (at least 10%) and a broad research search.
+Teams remain 1-50. Decline is only a screening hint, not distress or price evidence. No Indian postcode,
+radius, revenue, funding, founded-year or acquisition-price filter is invented. Founder/owner/CEO/
+managing-director searches require verified status and disable similar-title and broad senior fallback;
+existing current-employer/qualification checks remain. Manual presets retain the same range/window,
+title and headquarters constraints. Negative ranges and scalar locks are handled explicitly.
+`tools/startup_apollo.py --apply-live` patches configs only, snapshots prior settings, never calls Apollo
+or touches leads/outreach; `--pause-only` applies the spending stop without changing targeting.
+
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
 then apply it with `python tools/run_sql.py sql/03x_...sql`. Commit both files. Config validation
@@ -285,6 +298,13 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Startup Apollo parameter research and implementation (revision recorded below):
+  twelve Mumbai-first sector/decline/broad presets, strict founder/owner/CEO/MD contact searches,
+  signed-range/scalar manual-filter fixes and preserved Mumbai HQ constraints. Owner's no-credit
+  directive applied live to all four Apollo projects: disabled, run/week zero. No Apollo requests,
+  searches, reveals, lead changes or email changes. Official API sources and limits in `docs/startups.md`.
+  Validated with offline payload, no-spend guard, contact fallback and acquisition-rubric regressions.
 
 * **2026-11-16** `3e15335` Sending pace increased to two per minute per connected account: 30-second gap and
   zero extra planning padding across five projects. Existing one-hour Clipping window and other
