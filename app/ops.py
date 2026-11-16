@@ -40,6 +40,14 @@ LOGDIR = REPO / "logs" / "ops"
 PY = "python"
 
 JOBS = {
+    "apollo_pilot": {
+        "label": "Run authorised Apollo pilot",
+        "group": "Enrich",
+        "desc": "One durably claimed 50/50 pilot; checks the server balance and pauses spending afterwards.",
+        "cmd": [PY, "tools/apollo_pilot.py"],
+        "segments": ["lcx-clipping"],
+        "hidden": True,
+    },
     "expire_leads": {
         "label": "Clear expired leads",
         "group": "Process",

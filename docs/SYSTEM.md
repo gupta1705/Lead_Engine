@@ -92,6 +92,8 @@ or touches leads/outreach; `--pause-only` applies the spending stop without chan
 
 **Capped pilot, 16 November 2026:** Owner subsequently authorised checking the balance and spending some credits on high-score Clipping contacts and Startup discovery. Prepared a maximum 100-credit pilot, split 50/50, minimum account reserve 700. Live and canonical run/week ceilings are 50 for each; switches remain disabled pending a verified balance. This is a one-time pilot, not recurring authorisation. The local key balance request returned HTTP 403 with Apollo reporting a payment issue; no paid calls were made. The Render key still needs checking through the signed-in app. Other Apollo projects stay paused.
 
+**Server Apollo pilot:** `tools/apollo_pilot.py`, scheduled through the existing Operations runner, claims one explicitly queued `apollo_pilot` config record once. It checks Apollo balance on Render, grants at most 50 paid attempts per segment (100 total), reserves before each request, retains uncertain charges, enforces the 700 reserve, disallows other paid endpoints and disables both segment switches in `finally`. Original sources, recipient selection and acquisition qualification remain. Startup discovery is four pages followed by existing evidence/qualification/contact passes; no approval or sending step is included. A stopped/crashed claim never retries automatically. The one-time schedule is removed after observation.
+
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
 then apply it with `python tools/run_sql.py sql/03x_...sql`. Commit both files. Config validation
@@ -318,6 +320,8 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Added a durable server-side capped Apollo pilot runner to use Render's key without exporting it or requiring a browser login. Five offline guards verify per-segment/total caps, endpoint restrictions, the balance reserve and uncertain-request accounting. Pilot results and server-reported balance are recorded in segment config; no new public endpoint or access grants.
 
 * **2026-11-16** `aa9f6af` Capped Apollo pilot prepared: maximum 100 credits total (50 Clipping, 50 Startup), reserve 700; disabled until balance verification. Local balance check blocked by Apollo payment error; no paid searches/reveals, leads, email changes or sends. Existing sources, qualification and recipient selection retained.
 
