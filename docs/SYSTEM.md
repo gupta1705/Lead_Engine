@@ -286,12 +286,13 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Sending pace increased to two per minute per connected account: 30-second gap and
+* **2026-11-16** `3e15335` Sending pace increased to two per minute per connected account: 30-second gap and
   zero extra planning padding across five projects. Existing one-hour Clipping window and other
   project windows retained, as are mailbox daily caps. Pacing changes invalidate stored plan keys
   so already-approved emails use the new cadence. Validation: 221 window regressions and four
   pacing acceptance tests, including 80 approved emails fitting a one-hour window and the 81st
-  respecting the next-day cap. No approvals or test emails sent. Revision recorded after commit.
+  respecting the next-day cap. The broader database sender regression was stopped and rolled back
+  because running pipeline entries were present; no test emails sent and no approvals changed.
 
 * **2026-11-16** `dee426a` Startup acquisition targeting: full company purchases only, Andheri West proximity,
   India-wide Mumbai-first searches, media/creator/consumer plus software/AI, 100-point evidence
