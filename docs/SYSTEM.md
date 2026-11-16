@@ -175,6 +175,10 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
 Exactly **one** follow-up, **4 days** after the first email, every project (`outreach.sequence` step 1).
 Same thread, subject "Re: ...", **same mailbox and same From address as the first email** (even if that
 was a TVF address), signed by the thread's owner. Shown in the Follow-ups tab; still needs approval.
+Approval responses (UI, API/MCP and batches) report the original thread's sender,
+not the LCX alias configured for new first emails. Email details expose the planned
+From and parent sending account before delivery. Missing original mailbox/thread
+details hold the follow-up; no alternative sender is used.
 Any reply (positive or negative) stops the thread. A follow-up timed for its window reads its thread first.
 
 ---
@@ -257,6 +261,11 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Follow-up sender reporting fixed: approvals and API/MCP details use
+  the opener's actual From/mailbox, including TVF originals under an LCX-only opener
+  policy. Sender explicitly preserves the original identity and holds missing routing
+  details. No new approvals or changes to sending limits, windows or email wording.
 
 * **2026-11-13** Daily sending limit per address 50 -> 80 (owner's choice; sql/49, `mailbox_store.DEFAULT_CAP`).
 * **2026-11-13** `6f407e7` Outreach strip wording: `N/50 sent today`, "approved, going out", and "there is no approval limit" (it read like an approval cap).

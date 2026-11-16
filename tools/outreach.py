@@ -490,7 +490,7 @@ select o.id, o.entity_id, o.subject, o.body,
        exists (select 1 from outreach r where r.entity_id = o.entity_id
                 and r.direction = 'inbound' and r.triage is distinct from 'neutral') as replied,
        p.sender_mailbox as parent_mailbox, lower(o.approved_by) as approver, o.attachments,
-       o.send_after, o.send_before, o.send_tz, p.sent_as as parent_sent_as,
+       o.send_after, o.send_before, o.send_tz, p.sent_as as parent_sent_as, p.sender_address as parent_sender_address,
        -- who it is copied to (sql/39): as approved; a row approved before that file gets the project's default
        coalesce(o.cc, array(select lower(btrim(x)) from jsonb_array_elements_text(
                 coalesce(s.config #> '{outreach,default_cc}', '[]'::jsonb)) as x where btrim(x) <> '')) as cc
@@ -1089,6 +1089,9 @@ def cmd_send(args):
 
             # 1. the addresses it may leave from, best first
             if step > 0:
+                if approver_mode and (not r.get("parent_mailbox") or not r.get("parent_sender_address") or not thread_id):
+                    hold([oid], "the original thread's mailbox or Gmail thread is missing; no fallback sender is used", company)
+                    continue
                 mb_key = r["parent_mailbox"] or order[0]
                 if mb_key in refused:
                     hold([oid], refused[mb_key], company)
@@ -1265,8 +1268,8 @@ def cmd_send(args):
             # who the From line says (sql/36): the account itself, or its alias on the project's domain. A
             # follow-up keeps its thread's From; an opener reads the account's aliases the first time it needs them
             from_addr, from_name = sender_addr, None
-            if approver_mode and step > 0 and r.get("parent_sent_as"):
-                from_addr = r["parent_sent_as"].lower()
+            if approver_mode and step > 0:
+                from_addr = (r.get("parent_sent_as") or r["parent_sender_address"]).lower()
                 from_name = next((a.get("name") for a in (mbmap[mb_key].get("send_as") or [])
                                   if isinstance(a, dict) and a.get("address") == from_addr), None) or names.get(approver or "")
             elif approver_mode and step == 0:

@@ -2626,6 +2626,10 @@ function renderMailboxStrip(m) {
 function approverNote(r, isDraft, win) {
   const m = state.outreach.mbx;
   if (!m || m.mode !== "approver" || m.paused) return null;
+  if (Number(r.sequence_step || 0) > 0) {
+    if (!r.planned_sender) return "The original sender is unavailable. This follow-up waits; it will not switch to another sending address.";
+    return `${isDraft ? "Approving sends this follow-up" : "This follow-up goes"} from ${r.planned_sender}, through ${r.sending_account || r.planned_sender}, in the original Gmail thread. Your current sender preference does not change it.`;
+  }
   if (isDraft) {
     const me = (m.accounts || []).find((a) => a.me) || { mailboxes: [] };
     const ok = me.mailboxes.filter((b) => b.usable).sort((a, b) => b.remaining - a.remaining);

@@ -280,6 +280,13 @@ def alias_mode(cur, gmail):
     run_logged(args)
     check("Gmail removed the selected alias: approval waits and does not fall back to the parent",
           (row(removed)[0], len(gmail.sent) - sent_before), ("approved", 0))
+    cur.execute("update segments set config=jsonb_set(config,'{outreach,send_as_domain}','\"zz-lcx.example\"') where id=%s", (seg_id,))
+    cur.execute("select entity_id,contact_id from outreach where id=%s", (second,))
+    tvf_eid,tvf_cid=cur.fetchone()
+    tvf_follow=approved_by(cara,step=1,parent=second,eid=tvf_eid,cid=tvf_cid)[0]
+    run_logged(args)
+    check("a TVF original stays TVF in its thread even with an LCX-only opener rule and no LCX alias",
+          (row(tvf_follow),header(gmail.sent[-1],"From")), (["sent",cara_acct,None],cara_acct))
 
 
 def cc_mode(cur, gmail):

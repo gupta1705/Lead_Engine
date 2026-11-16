@@ -224,7 +224,10 @@ class Ops:
         if full:
             out.update(body=r.get("body"), cc=r.get("cc") or [], service=r.get("service"),
                        parent_id=str(r["parent_id"]) if r.get("parent_id") else None,
-                       sender=r.get("sender_address"), stopped_reason=r.get("stopped_reason"),
+                       sender=r.get("sender_address") or r.get("planned_sender"),
+                       sending_account=r.get("sending_account"),
+                       sender_rule="original_thread" if int(r.get("sequence_step") or 0)>0 else "current_sender_preference",
+                       stopped_reason=r.get("stopped_reason"),
                        reply_reason=r.get("triage_reason") if r.get("direction") == "inbound" else None,
                        attachments=[a.get("name") for a in (r.get("attachments") or []) if isinstance(a, dict)])
         else:
@@ -388,6 +391,8 @@ class Ops:
                 "sends_from": r.get("sends_from") or [], "can_send": bool(r.get("can_send")),
                 "paused": r.get("paused"),
                 "next": ("Sending is paused for this project: it waits in Approved." if r.get("paused") else
+                         "It follows the original email's From address, mailbox and Gmail thread." if r.get("follow_up") and r.get("can_send") else
+                         "It waits in Approved until the original thread's Google account is connected and available." if r.get("follow_up") else
                          "It goes out from your Gmail at its time." if r.get("can_send") else
                          "It waits in Approved until you connect your Gmail (account menu, Your Gmail).")}
 

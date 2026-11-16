@@ -968,6 +968,8 @@ def _outreach_select():
         # a follow-up's thread owner: the opener's approver, whose Gmail it goes out from and who signs it
         " case when coalesce(f.sequence_step, 0) > 0 and f.status = 'drafted' then"
         "  (select p.approved_by from outreach p where p.id = f.parent_id) end as thread_owner,"
+        " (select coalesce(p.sent_as,p.sender_address) from outreach p where p.id=f.parent_id) as planned_sender,"
+        " (select p.sender_address from outreach p where p.id=f.parent_id) as sending_account,"
         " e.status as lead_status,c.email_status,contact_allowed(e.id,c.source,c.verifier,c.email_status) as contact_verified,"
         " (e.status in ('shortlisted','contacted') and exists(select 1 from (" + CONTACT_SELECTION_SQL
         + ") available)) as can_link_contact"
@@ -1451,8 +1453,9 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
     # sending window, at its own moment: the send loop is told it has a new one to wait for
     _scheduler.kick_outreach(segment, "manual")
     _scheduler.wake_sender()
-    return {"ok": True, "can_send": _can_send(segment, user), "paused": _send_paused(segment),
-            "sends_from": _sends_from(segment, user), "schedule": sched}
+    return {"ok": True, "can_send": _can_send(segment, user, oid), "paused": _send_paused(segment),
+            "sends_from": _sends_from(segment, user, oid), "schedule": sched,
+            "follow_up": int(msg.get("sequence_step") or 0) > 0}
 
 
 @app.get("/api/outreach/{oid}/window")
@@ -1586,7 +1589,7 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
     # times drawn now move on at each missed window until the pause is lifted, so none is promised
     paused = _send_paused(segment)
     return {"batch_id": batch_id, "approved": approved, "skipped": skipped, "can_send": _can_send(segment, user),
-            "paused": paused, "sends_from": _sends_from(segment, user),
+            "paused": paused, "sends_from": _sends_from(segment, user, ok),
             "windows": [] if paused else pol.window_summary(schedule)}
 
 
@@ -1703,12 +1706,15 @@ def manual_lead_add(request: Request, body: dict = Body(...)):
     return out
 
 
-def _can_send(segment, user=None):
+def _can_send(segment, user=None, oid=None):
     """Can an approval go out, and is sending not paused? Where emails go out from the approver's own
     Gmail: does this person have one connected and working? The page words an approval by it:
     "sending now", "sends as soon as a mailbox is connected", or "waits: sending is paused"."""
     try:
         with cursor() as cur:
+            route = _thread_route(cur, oid, segment) if oid else None
+            if route is not None:
+                return bool(route["ready"]) and not _policy().sending_paused(_policy().outreach_config(cur, segment))
             cfg = _policy().outreach_config(cur, segment)
             if _policy().sending_paused(cfg):
                 return False
@@ -1720,16 +1726,45 @@ def _can_send(segment, user=None):
         return False
 
 
-def _sends_from(segment, user):
+def _thread_route(cur, oid, segment):
+    """A follow-up inherits its opener, independently of current sender preferences."""
+    cur.execute("select p.sender_address,p.sender_mailbox,p.sent_as,p.gmail_thread_id,p.status from outreach f"
+                " join entities e on e.id=f.entity_id left join outreach p on p.id=f.parent_id"
+                " where f.id=%s and coalesce(f.sequence_step,0)>0"
+                " and e.segment_id=(select id from segments where slug=%s)", (oid,segment))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    address = row.get("sent_as") or row.get("sender_address")
+    boxes = _mailbox_store().mailboxes(cur)
+    ready = row.get("status") == "sent" and bool(row.get("gmail_thread_id")) and bool(row.get("sender_mailbox")) and any(
+        b["usable"] and b["address"].lower() == str(row.get("sender_address") or "").lower() for b in boxes)
+    return {"address": address, "account": row.get("sender_address"), "ready": ready}
+
+
+def _sends_from(segment, user, oid=None):
     """The approver's own addresses an approval of theirs goes out from (the one with most room first),
     or [] where the project sends from its own mailboxes."""
     try:
         with cursor() as cur:
+            inherited = []
+            if isinstance(oid, list):
+                cur.execute("select f.sequence_step,coalesce(p.sent_as,p.sender_address) as address from outreach f"
+                            " join entities e on e.id=f.entity_id left join outreach p on p.id=f.parent_id"
+                            " where f.id=any(%s::uuid[]) and e.segment_id=(select id from segments where slug=%s)", (oid,segment))
+                routes = cur.fetchall()
+                inherited = list(dict.fromkeys(r["address"] for r in routes if int(r["sequence_step"] or 0)>0 and r["address"]))
+                if not any(int(r["sequence_step"] or 0)==0 for r in routes):
+                    return inherited
+                oid = None
+            route = _thread_route(cur, oid, segment) if oid else None
+            if route is not None:
+                return [route["address"]] if route["address"] else []
             cfg = _policy().outreach_config(cur, segment)
             if cfg.get("send_from") != "approver":
                 return []
             boxes = [b for b in _mailbox_store().mailboxes(cur, user_email=user or "") if b["usable"]]
-        out = []
+        out = inherited
         for b in sorted(boxes, key=lambda b: -b["remaining"]):
             shown = _sends_as(b, cfg)
             if shown is not None:
