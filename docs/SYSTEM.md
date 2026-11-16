@@ -319,7 +319,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Capped Apollo pilot prepared: maximum 100 credits total (50 Clipping, 50 Startup), reserve 700; disabled until balance verification. Local balance check blocked by Apollo payment error; no paid searches/reveals, leads, email changes or sends. Existing sources, qualification and recipient selection retained.
+* **2026-11-16** `aa9f6af` Capped Apollo pilot prepared: maximum 100 credits total (50 Clipping, 50 Startup), reserve 700; disabled until balance verification. Local balance check blocked by Apollo payment error; no paid searches/reveals, leads, email changes or sends. Existing sources, qualification and recipient selection retained.
 
 * **2026-11-16** `176c4de` Optional LCX Clipping Apollo contact matching: preserved
   existing discovery and recipient-selection flow, added qualified business/contact matching,
