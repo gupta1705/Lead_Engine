@@ -299,12 +299,13 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Startup Apollo parameter research and implementation (revision recorded below):
+* **2026-11-16** `580c30e` Startup Apollo parameter research and implementation:
   twelve Mumbai-first sector/decline/broad presets, strict founder/owner/CEO/MD contact searches,
   signed-range/scalar manual-filter fixes and preserved Mumbai HQ constraints. Owner's no-credit
   directive applied live to all four Apollo projects: disabled, run/week zero. No Apollo requests,
   searches, reveals, lead changes or email changes. Official API sources and limits in `docs/startups.md`.
-  Validated with offline payload, no-spend guard, contact fallback and acquisition-rubric regressions.
+  Validated with 40 offline payload, no-spend guard, contact fallback, shared-policy and acquisition-rubric
+  tests; repository/config/SQL self-check GREEN. No live Apollo request was used for validation.
 
 * **2026-11-16** `3e15335` Sending pace increased to two per minute per connected account: 30-second gap and
   zero extra planning padding across five projects. Existing one-hour Clipping window and other
