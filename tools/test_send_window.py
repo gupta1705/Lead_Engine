@@ -105,7 +105,8 @@ def config():
     check("plan_key changes with timezone_of", sw.plan_key(SENDER) != k, True)
     check("plan_key changes with the window's hours", sw.plan_key(dict(W, end="10:45")) != k, True)
     check("plan_key changes with a project's country zone", sw.plan_key(PH) != sw.plan_key(LCXS), True)
-    check("plan_key ignores the gap (it shapes the draw, not the window)", sw.plan_key(dict(W, min_gap_seconds=60)), k)
+    check("plan_key follows the gap so approved emails use the new rate", sw.plan_key(dict(W, min_gap_seconds=60)) != k, True)
+    check("plan_key follows the planning padding", sw.plan_key(dict(W, schedule_padding_seconds=0)) != k, True)
     check("self_check passes (tzdata is installed and readable)", sw.self_check(), True)
 
 

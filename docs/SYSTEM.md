@@ -170,6 +170,11 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
   approve only where a key has `can_approve`, always through `main.outreach_decide`.
 * **From whose Gmail:** `outreach.send_from = "approver"`: the approver's own connected Gmail
   (`user_mailboxes`), 80 emails a day per address (sql/49; was 50), a minimum gap between sends, advisory lock.
+  Owner, 16 November 2026: up to **two emails per minute**, with a **30-second minimum gap** per
+  connected sending account. `min_gap_seconds=30`, `schedule_padding_seconds=0`: planning uses
+  the same 30 seconds; the send-time lock checks actual last delivery/in-flight times across projects.
+  Pacing is part of the plan fingerprint, so existing approved queues are replanned automatically.
+  Daily caps, recipient time zones, window hours and approvals are unchanged.
   An approver with no connected Gmail: the email waits in Approved, saying so.
 * **From which address:** `outreach.send_as_domain`. LCX projects (`lcx-clipping`, `lcx-services`) =
   `lightscameraexperiment.com`: the From line is the approver's Gmail "Send mail as" alias on that domain
@@ -280,6 +285,13 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Sending pace increased to two per minute per connected account: 30-second gap and
+  zero extra planning padding across five projects. Existing one-hour Clipping window and other
+  project windows retained, as are mailbox daily caps. Pacing changes invalidate stored plan keys
+  so already-approved emails use the new cadence. Validation: 221 window regressions and four
+  pacing acceptance tests, including 80 approved emails fitting a one-hour window and the 81st
+  respecting the next-day cap. No approvals or test emails sent. Revision recorded after commit.
 
 * **2026-11-16** `dee426a` Startup acquisition targeting: full company purchases only, Andheri West proximity,
   India-wide Mumbai-first searches, media/creator/consumer plus software/AI, 100-point evidence

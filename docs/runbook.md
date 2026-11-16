@@ -121,11 +121,13 @@ in its config (config/segment.<slug>.json) that does this:
   Saturday and Sunday in this rule too; nothing in the pool needs otherwise
   yet (one UAE lead).
 - **Never a burst.** Two emails from one address are never closer than
-  `min_gap_seconds` (45). A 30-minute window holds **about 24 per address per
-  window** once their minutes are drawn at random (31 is only the ceiling if
-  they were packed end to end); the rest of a big batch to one place go the
-  next weekday.
-- **The daily limit is still a UTC day** — "50 a day" counts from 00:00 UTC
+  `min_gap_seconds` (30 seconds, up to two per minute; owner, 16 November 2026).
+  `schedule_padding_seconds` is zero, so the planner uses that same gap rather
+  than adding another ten seconds. The sender checks the actual gap under its
+  account lock. Capacity still depends on free space and the daily account
+  limit; the rest move to the next eligible window. A change in pace also
+  replans existing approved emails. Window hours and recipient time zones stay the same.
+- **The daily limit is still a UTC day** — the current 80 per account counts from 00:00 UTC
   (05:30 in India), on every counter and in every check. A window is counted
   on the UTC day it falls in.
 

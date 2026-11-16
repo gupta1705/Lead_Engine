@@ -16,8 +16,8 @@ WHAT EACH PART DOES
   windows(zone, ...)         each eligible day's window in UTC: Monday to Friday in THAT zone, wall times
                              through the zone's own DST rules
   pick_moment(lo, hi, ...)   one whole second, uniform over the seconds still free: never two sends from
-                             one address closer than the spacing (min_gap_seconds + 10, so the sender's
-                             1-5 s of jitter cannot break the 45 s gap)
+                             one address closer than min_gap_seconds + schedule_padding_seconds.
+                             Active projects use a 30-second gap and zero padding (two per minute).
   send_label / window_label  the words every page shows: "Tue 14 Oct, 10:17 New York time (19:47 IST)"
   plan_key(wcfg)             a fingerprint of the settings a time was drawn under: a stored time whose
                              fingerprint differs is placed again (tools/outreach_policy.settle_schedule)
@@ -74,14 +74,14 @@ DEFAULTS = {
     "country_zones": {},                  # {ISO2: IANA zone}: this project's zone for a country with several
     "weekdays_only": True,                # Monday to Friday in the recipient's zone
     "min_gap_seconds": 45,                # never two sends from one address closer than this
+    "schedule_padding_seconds": 10,       # extra room in planned times; 0 for the owner's 30-second cadence
     "min_lead_seconds": 120,              # an approval is never placed sooner than this
     "guidance": None,
 }
 TAIL_S = 60            # no moment in a window's last minute: a send that starts at 10:29:59 can finish late
-JITTER_ROOM_S = 10     # spacing_s = min_gap_seconds + this: the sender's 1-5 s of jitter never breaks the gap
 LEAD_LEFT_S = 120      # next_window: a window with less than this left after the lead time is passed over
 PLAN_KEYS = ("timezone_of", "start", "end", "sender_timezone", "fallback_timezone", "assumed_country",
-             "country_zones", "weekdays_only")
+             "country_zones", "weekdays_only", "min_gap_seconds", "schedule_padding_seconds")
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -174,13 +174,13 @@ def config_problems(outreach_cfg):
                 out.append("send_window.country_zones[%s]: %r is not a time zone" % (k, v))
     if not isinstance(w["weekdays_only"], bool):
         out.append("send_window.weekdays_only must be true or false")
-    for k in ("min_gap_seconds", "min_lead_seconds"):
+    for k in ("min_gap_seconds", "min_lead_seconds", "schedule_padding_seconds"):
         v = w[k]
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or v > 3600:
             out.append("send_window.%s must be a number of seconds from 0 to 3600 (got %r)" % (k, v))
     if not out and a and z:
         span = (z[0] * 60 + z[1] - a[0] * 60 - a[1]) * 60
-        if span - TAIL_S < w["min_gap_seconds"] + JITTER_ROOM_S:
+        if span - TAIL_S < w["min_gap_seconds"] + w["schedule_padding_seconds"]:
             out.append("send_window %s-%s is too short to hold one email (its last minute is never used)"
                        % (w["start"], w["end"]))
     if w["guidance"] is not None and not isinstance(w["guidance"], str):
@@ -205,13 +205,13 @@ def window_cfg(outreach_cfg):
     w["end"] = "%02d:%02d" % _hhmm(w["end"])
     w["assumed_country"] = str(w["assumed_country"]).upper() if w["assumed_country"] else None
     w["country_zones"] = {str(k).upper(): v for k, v in (w["country_zones"] or {}).items()}
-    w["spacing_s"] = w["min_gap_seconds"] + JITTER_ROOM_S
+    w["spacing_s"] = w["min_gap_seconds"] + w["schedule_padding_seconds"]
     w["tail_s"] = TAIL_S
     return w
 
 
 def plan_key(wcfg):
-    """The fingerprint of what decides a stored time (not the gap or lead time, which only shape the draw)."""
+    """The fingerprint of the window and pacing; a rate change replans already-approved emails."""
     w = wcfg or {}
     basis = {k: w.get(k, DEFAULTS.get(k)) for k in PLAN_KEYS}
     return hashlib.sha1(json.dumps(basis, sort_keys=True).encode("utf-8")).hexdigest()[:12]
@@ -577,7 +577,8 @@ def slots_per_window(span_s, wcfg):
     30-minute window (22 to 27 over 200 seeded fills, 2026-10-12) -- and pick_moment then answers None, so
     the next window is tried."""
     w = wcfg or {}
-    spacing = w.get("spacing_s") or (w.get("min_gap_seconds", DEFAULTS["min_gap_seconds"]) + JITTER_ROOM_S)
+    spacing = w.get("spacing_s") or (w.get("min_gap_seconds", DEFAULTS["min_gap_seconds"])
+                                   + w.get("schedule_padding_seconds", DEFAULTS["schedule_padding_seconds"]))
     tail = w.get("tail_s", TAIL_S)
     return max(0, int((float(span_s) - tail) // spacing))
 
