@@ -94,6 +94,8 @@ or touches leads/outreach; `--pause-only` applies the spending stop without chan
 
 **Server Apollo pilot:** `tools/apollo_pilot.py`, scheduled through the existing Operations runner, claims one explicitly queued `apollo_pilot` config record once. It checks Apollo balance on Render, grants at most 50 paid attempts per segment (100 total), reserves before each request, retains uncertain charges, enforces the 700 reserve, disallows other paid endpoints and disables both segment switches in `finally`. Original sources, recipient selection and acquisition qualification remain. Startup discovery is four pages followed by existing evidence/qualification/contact passes; no approval or sending step is included. A stopped/crashed claim never retries automatically. The one-time schedule is removed after observation.
 
+**Pilot result, 16 November 2026:** The Render key is valid; the earlier payment error applied only to the local key. Server balance was 2,520; four company pages cost four credits, leaving 2,516 (cycle ends 16 December). Startup intake staged/promoted 294 new research candidates from 400 results; evidence checked on 50 startups. No new record has confirmed distress/affordability qualification (new candidates remain score 0 pending evidence), and no Apollo contacts were added. Clipping checked eight eligible records, searched six confidently identified businesses and revealed none because none passed matching. Pilot finished successfully; both switches are disabled, run/week ceilings remain 50 each, the one-time schedule/pipeline were removed. No approvals or sends were performed by the pilot. Existing approved-mail sending continues independently.
+
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
 then apply it with `python tools/run_sql.py sql/03x_...sql`. Commit both files. Config validation
@@ -320,6 +322,8 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Executed `17aaba7` server Apollo pilot under owner's 50/50 grant: Render balance verified at 2,520, four credits used, 2,516 left. 294 startup research candidates added, 50 evidence checks, zero qualifying new contact reveals; six Clipping business searches yielded no confident contacts. Confirmed both spending switches disabled and removed the one-time schedule; pipeline completed OK. Candidate counts are not confirmed acquisition opportunities. No pilot approvals/sends.
 
 * **2026-11-16** `17aaba7` Added a durable server-side capped Apollo pilot runner to use Render's key without exporting it or requiring a browser login. Five offline guards verify per-segment/total caps, endpoint restrictions, the balance reserve and uncertain-request accounting. Pilot results and server-reported balance are recorded in segment config; no new public endpoint or access grants.
 
