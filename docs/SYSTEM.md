@@ -317,7 +317,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-16** Optional LCX Clipping Apollo contact matching (revision recorded below): preserved
+* **2026-11-16** `176c4de` Optional LCX Clipping Apollo contact matching: preserved
   existing discovery and recipient-selection flow, added qualified business/contact matching,
   verification provenance and a paused-state notice. Separate spending switch stays OFF with zero
   run/week budgets. No Apollo calls, credits, lead/contact changes, approvals or sends during release.
