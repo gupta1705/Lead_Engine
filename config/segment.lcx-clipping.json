@@ -899,7 +899,8 @@
     "host",
     "kind",
     "creator_offers",
-    "category"
+    "category",
+    "clipping_apollo"
   ],
   "sources": [
     {
@@ -1168,6 +1169,8 @@
       "enrich_clipping",
       "enrich_contacts",
       "promote_chain",
+      "enrich_clipping_apollo",
+      "promote_chain",
       "draft_outreach"
     ]
   },
@@ -1211,5 +1214,34 @@
     "no_subscriber_ceiling": true,
     "allow_music_education": true,
     "guidance": "Prioritise creators with first-party evidence of their own product, course, newsletter, membership or service. A podcast is not required. Sponsor or affiliate mentions do not prove an owned offer. Strong creators without an offer remain eligible. No upper subscriber limit or size-only penalty. Music education and original music discussion qualify; children's and music-only performance content remain excluded."
+  },
+  "clipping_apollo": {
+    "enabled": false,
+    "credits_per_run": 0,
+    "credits_per_week": 0,
+    "keep_in_reserve": 700,
+    "score_over": 45,
+    "max_lead_age_days": 14,
+    "recheck_after_days": 30,
+    "max_contacts_per_lead": 1,
+    "roles": {
+      "creator": [
+        "Founder",
+        "Co-Founder",
+        "Creator",
+        "Host",
+        "Manager",
+        "Talent Manager"
+      ],
+      "business": [
+        "Founder",
+        "Owner",
+        "Executive Producer",
+        "Producer",
+        "Head of Content",
+        "Head of Audience Development"
+      ]
+    },
+    "guidance": "Owner, 16 November 2026: add Apollo verified work contacts after existing Clipping qualification. Keep all existing lead sources, public contacts and recipient selection. Match the creator's actual business, never a guest, sponsor or unrelated distributor. Prioritise fresh high-scoring creators with their own offer. One suitable contact per lead; uncertain identity stays unresolved. Do not modify chosen recipients or approved/conversation history. Spending OFF: no Apollo requests until the owner authorises a new budget and matching is explicitly enabled."
   }
 }

@@ -639,7 +639,7 @@ def lead(lead_id: str, segment: str = Depends(current_segment)):
         # every address, best first: the order the draft step uses (contact_rank, sql/28)
         cur.execute(
             "select c.id, c.full_name, c.role_title, c.email, c.email_status, c.is_primary, c.source, c.notes,"
-            " c.linkedin_url, contact_allowed(c.entity_id,c.source,c.verifier,c.email_status) as contact_allowed,"
+            " c.linkedin_url, c.verifier, c.email_verified_at, contact_allowed(c.entity_id,c.source,c.verifier,c.email_status) as contact_allowed,"
             " case when contact_allowed(c.entity_id,c.source,c.verifier,c.email_status)"
             " then contact_rank(c.full_name, c.email, c.role_title, c.email_status, e.domain) else -1000 end as rank"
             " from contacts c join entities e on e.id = c.entity_id"
@@ -700,6 +700,14 @@ def lead(lead_id: str, segment: str = Depends(current_segment)):
     import explain
     cfg = row.pop("segment_config") or {}
     slug = row.pop("segment_slug")
+    if slug == "lcx-clipping":
+        from clipping_apollo import spending_allowed
+        permitted = spending_allowed(cfg)
+        row["apollo_contact_matching"] = {"enabled": permitted, "spending_enabled": permitted}
+        for contact in contacts:
+            note = str(contact.get("notes") or "")
+            if note.startswith("apollo:") and len(note) == 31 and all(c in "0123456789abcdef" for c in note[7:]):
+                contact["apollo_person_id"] = note[7:]
     ranked = explain.rank_contacts(contacts, row.get("domain"))
     for c in ranked:
         c["drafts_use"] = c["id"] == actual_id

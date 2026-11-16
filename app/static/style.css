@@ -932,6 +932,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--bg-brand-bold)
 .contact-row.retired .who, .contact-row.retired .mail { color: var(--text-subtlest); }
 .contact-row .lozenge { margin-left: 4px; }
 .contact-row .contact-recipient { margin-top: 7px; }
+.contact-provenance { margin-top: 5px; }
+.contact-provenance .contact-verified { color: var(--text-success); }
+.apollo-contact-pause { margin: 10px 0; }
 .recipient-help { margin-top: 10px; }
 .evidence-list.routes { margin-top: 10px; font-size: 13px; line-height: 19px; }
 .evidence-list.routes li span { min-width: 0; overflow-wrap: anywhere; }

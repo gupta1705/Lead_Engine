@@ -860,6 +860,37 @@ function renderAnalysis(ex) {
     <div class="analysis-grid"><div><h4 class="sub-h">Strengths</h4>${list(a.strengths)}</div><div><h4 class="sub-h">Gaps</h4>${list(a.gaps)}</div></div>
     <h4 class="sub-h">Risks</h4>${risks}`;
 }
+/* Apollo verifies an address; its association with the show is separate evidence. */
+function renderContactProvenance(c, d) {
+  const stamp = (d.metadata || {}).clipping_apollo;
+  const clipping = !!d.apollo_contact_matching || !!stamp
+    || (typeof state !== "undefined" && (state.segment || {}).slug === "lcx-clipping");
+  if (!clipping || !c.email) return "";
+  const fromApollo = c.verifier === "apollo";
+  const verified = fromApollo && c.email_status === "valid";
+  // The API exposes only the parsed identifier: raw contact notes are private.
+  const matched = stamp && (stamp.contact_id
+    ? String(stamp.contact_id) === String(c.id)
+    : stamp.person_id && c.apollo_person_id && String(stamp.person_id) === String(c.apollo_person_id));
+  const match = matched ? stamp.match || {} : {};
+  const checked = c.email_verified_at || (matched ? stamp.checked_at : null);
+  const checkedAt = checked && !isNaN(new Date(checked)) ? fmtDate(checked) : "";
+  const sources = { apollo: "Apollo", manual: "Added by team", website: "Website", site: "Website",
+    rss: "Podcast feed", podcast_rss: "Podcast feed", podcast_index: "Podcast Index",
+    apple_podcasts: "Apple Podcasts", youtube: "YouTube", public_web: "Website" };
+  const source = sources[c.source] || String(c.source || "Not recorded").replace(/_/g, " ");
+  const label = verified ? "Apollo-verified work email" : fromApollo ? "Apollo email: not verified"
+    : "Source: " + source + " · Not Apollo-verified";
+  const business = match.business_name || match.domain;
+  const sourceUrl = safeUrl(match.source_url);
+  return `<div class="contact-provenance">
+    <div class="role${verified ? " contact-verified" : ""}">${esc(label)}${fromApollo && checkedAt ? ` · Checked ${esc(checkedAt)}` : ""}</div>
+    ${business ? `<div class="role">Matched business: ${esc(business)}${match.domain && match.domain !== business ? ` (${esc(match.domain)})` : ""}</div>` : ""}
+    ${match.reason ? `<div class="role">${esc(match.reason)}</div>` : ""}
+    ${sourceUrl ? `<div class="role"><a href="${esc(sourceUrl)}" target="_blank" rel="noopener">Business match source ${icon("external", 12)}</a></div>` : ""}
+  </div>`;
+}
+
 /* Contacts include the actual email recipient and the eligible alternatives a reviewer can choose. */
 function renderContacts(d) {
   const cr = (d.explain || {}).contact_routes || { routes: [], tried: [] };
@@ -873,6 +904,7 @@ function renderContacts(d) {
       <div class="contact-main"><div class="who">${esc(c.full_name || "No name published")}${badge ? ` <span class="lozenge success">${badge}</span>` : ""}</div>
         ${c.role_title ? `<div class="role">${esc(c.role_title)}</div>` : ""}
         <div class="mail">${c.usable ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : c.email ? `<s>${esc(c.email)}</s>` : `<span class="muted">No email on record</span>`}${c.kind === "shared" ? " · shared inbox" : c.kind === "low_value" ? ` · <span class="warn-text">rarely read for partnerships</span>` : ""}</div>
+        ${renderContactProvenance(c, d)}
         ${!c.usable && c.email ? `<div class="role warn-text">Not used: ${esc(c.unusable_reason)}</div>` : ""}
         ${safeUrl(c.linkedin_url) ? `<div class="role"><a href="${esc(safeUrl(c.linkedin_url))}" target="_blank" rel="noopener">LinkedIn ${icon("external", 12)}</a></div>` : ""}
         ${!locked && c.can_select_recipient && !chosen ? `<button type="button" class="btn compact contact-recipient" data-recipient="${esc(c.id)}">${draft ? "Use for draft" : "Use for future drafts"}</button>` : ""}
@@ -888,6 +920,7 @@ function renderContacts(d) {
     return `<li>${icon(glyphs[r.kind] || "link", 14)}<span><span class="muted">${esc(r.label)}:</span> ${body}</span></li>`;
   }).join("");
   return `${people || `<p class="muted small" style="margin:0 0 8px">No email address on record.</p>`}
+    ${d.apollo_contact_matching && d.apollo_contact_matching.enabled === false ? `<p class="help apollo-contact-pause">Apollo contact matching is paused. Existing contacts remain available.</p>` : ""}
     ${people ? `<p class="help recipient-help" id="recipientHelp" role="status">${esc(locked || (d.recipient_selection_stale ? "Your selected contact is no longer eligible. Choose another contact before drafting or approving." : "Choose a contact to set who receives this lead's email."))}</p>` : ""}
     ${routes ? `<ul class="evidence-list routes">${routes}</ul>` : ""}
     ${(cr.tried || []).length ? `<p class="tried small muted">${cr.tried.map(esc).join(" ")}</p>` : ""}`;

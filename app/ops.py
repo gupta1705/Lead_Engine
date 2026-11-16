@@ -112,6 +112,13 @@ JOBS = {
         "cmd": [PY, "tools/enrich_clipping.py", "--limit", "300"],
         "segments": ["lcx-clipping"],
     },
+    "enrich_clipping_apollo": {
+        "label": "Match verified Clipping contacts",
+        "group": "Enrich",
+        "desc": "Optional Apollo contacts for qualified creators and studios; skips all requests while spending is paused.",
+        "cmd": [PY, "tools/clipping_apollo.py", "--limit", "100"],
+        "segments": ["lcx-clipping"],
+    },
     "discover_wikidata_channels": {
         "label": "Harvest: production companies with a YouTube channel (Wikidata)",
         "group": "Discover",

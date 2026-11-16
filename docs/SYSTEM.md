@@ -135,7 +135,8 @@ manual "draft" or "send" buttons, no terminal steps between shortlist and send.
 
 **LCX Clipping weekly refresh, in order:** `expire_leads, discover_podcasts, discover_podcast_index,
 discover_youtube, discover_wikidata_channels, discover_clipping_networks, youtube_freshness,
-prepare_clipping_candidates, enrich_clipping, enrich_contacts, promote_chain, draft_outreach`.
+prepare_clipping_candidates, enrich_clipping, enrich_contacts, promote_chain, enrich_clipping_apollo,
+promote_chain, draft_outreach`. The optional Apollo step returns without any API calls while paused.
 
 ---
 
@@ -156,6 +157,23 @@ prepare_clipping_candidates, enrich_clipping, enrich_contacts, promote_chain, dr
 * Geography: everywhere except CA, DE, AT, IT (no cold email there); US bonus.
 * The lead is the show, the face is the person (`metadata.host`, `tools/personname.py`, guarded by
   `tools/test_personname.py`). Greetings never use a show name.
+
+**Optional Apollo contacts (16 November 2026):** `tools/clipping_apollo.py` adds verified work-email
+contacts to existing qualified Clipping leads. Discovery, public contacts, creator-offer priority,
+scores, templates and recipient selection remain intact. Its separate `clipping_apollo` config is
+disabled with run/week budgets zero; a key or weekly refresh cannot activate it. The early stop
+precedes all Apollo calls, including free searches and balance checks. Once explicitly budgeted,
+the worker prioritises fresh, high-scoring leads using the existing offer/freshness ranking and
+excludes protected approvals/conversations, expired leads, rejections and suppressions.
+
+Identity needs a supported official-business relationship and matching company name before a
+reveal, then matching current employer domain/ID, relevant role and Apollo-verified work email.
+A guest, sponsor or first website in a YouTube description is not sufficient evidence. One suitable
+contact per lead; ambiguous results remain unresolved. Original public contacts and all selected
+recipients/outreach history are preserved. The lead contact panel exposes verification, check time,
+matched business and its source, plus a paused notice. Verification is not proof of authority or a
+delivery guarantee. `tools/configure_clipping_apollo.py --apply-live` patches only this project's
+configuration and snapshots the previous value; it makes no Apollo calls or lead/contact writes.
 
 **YouTube's 30-day rule** (`tools/youtube_freshness.py`, weekly): API data may be stored at most 30
 days. Live leads' channel profiles are fetched again after 21 days; anything else older than 30 days is
@@ -298,6 +316,15 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-16** Optional LCX Clipping Apollo contact matching (revision recorded below): preserved
+  existing discovery and recipient-selection flow, added qualified business/contact matching,
+  verification provenance and a paused-state notice. Separate spending switch stays OFF with zero
+  run/week budgets. No Apollo calls, credits, lead/contact changes, approvals or sends during release.
+  Validation: 16 offline matching/budget/history tests, six configuration/API payload tests, 13 creator
+  targeting tests and six recipient helpers; Clipping browser fixture and all 12 recipient browser
+  regressions passed, with mobile layout inspected. Repo/config/SQL self-check GREEN. Database fixture
+  tests were not run against production; no live Apollo requests were used for validation.
 
 * **2026-11-16** `580c30e` Startup Apollo parameter research and implementation:
   twelve Mumbai-first sector/decline/broad presets, strict founder/owner/CEO/MD contact searches,
