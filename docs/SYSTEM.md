@@ -326,7 +326,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-17** Owner-requested Clipping refresh started using existing sources, 14-day retention and protected approvals/conversations; Apollo remains disabled. Initial server Apple pass staged no candidates after eight minutes. Added graceful stop after repeated Apple throttling so other sources can proceed; prior candidates are retained and the source run records the refusal. Three offline throttle/success/empty-result tests passed.
+* **2026-11-17** `2ceaf38` Owner-requested Clipping refresh started using existing sources, 14-day retention and protected approvals/conversations; Apollo remains disabled. Initial server Apple pass staged no candidates after eight minutes. Added graceful stop after repeated Apple throttling so other sources can proceed; prior candidates are retained and the source run records the refusal. Three offline throttle/success/empty-result tests passed.
 
 * **2026-11-16** Executed `17aaba7` server Apollo pilot under owner's 50/50 grant: Render balance verified at 2,520, four credits used, 2,516 left. 294 startup research candidates added, 50 evidence checks, zero qualifying new contact reveals; six Clipping business searches yielded no confident contacts. Confirmed both spending switches disabled and removed the one-time schedule; pipeline completed OK. Candidate counts are not confirmed acquisition opportunities. No pilot approvals/sends.
 
