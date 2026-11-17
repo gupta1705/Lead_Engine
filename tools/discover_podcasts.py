@@ -73,6 +73,10 @@ def http_get(url, timeout=20, max_bytes=3_500_000):
         return r.read(max_bytes + 1)
 
 
+class AppleThrottled(Exception):
+    """Stop this harvest politely after repeated provider refusals."""
+
+
 def apple_search(term, country, genre_id=None):
     q = {"media": "podcast", "entity": "podcast", "term": term, "country": country, "limit": 200}
     if genre_id:
@@ -85,15 +89,17 @@ def apple_search(term, country, genre_id=None):
         except urllib.error.HTTPError as e:
             if e.code in (403, 429, 503):
                 wait = 30 * (attempt + 1)
-                log("    apple search throttled (%d), waiting %ds" % (e.code, wait))
-                time.sleep(wait)
+                log("    apple search throttled (%d)" % e.code)
+                if attempt < 2:
+                    log("    waiting %ds before retry" % wait)
+                    time.sleep(wait)
                 continue
             log("    apple search failed: %s" % e)
             return []
         except Exception as e:
             log("    apple search failed: %r" % e)
             return []
-    return []
+    raise AppleThrottled('Apple search repeatedly throttled; continuing with other lead sources')
 
 
 # --------------------------------------------------------------- feed parse
@@ -372,8 +378,15 @@ def main():
     pairs = (first[:k] + rest[:args.max_searches - k])[:args.max_searches]
 
     cands, seen_names = {}, set()
+    throttle_note = ''
+    i = 0
     for i, (q, country) in enumerate(pairs, 1):
-        res = apple_search(q["term"], country, q.get("genre_id"))
+        try:
+            res = apple_search(q["term"], country, q.get("genre_id"))
+        except AppleThrottled as exc:
+            throttle_note = str(exc)
+            log(throttle_note)
+            break
         fresh = 0
         for r in res:
             fu = r.get("feedUrl")
@@ -438,7 +451,7 @@ def main():
         db.run(lambda cur: cur.execute(
             "update source_runs set finished_at=now(), status='succeeded', candidates_found=%s,"
             " candidates_new=%s, notes=%s where id=%s",
-            (len(cands), staged, "searches=%d errors=%d skipped=%d" % (len(pairs), errors, skipped), run_id)))
+            (len(cands), staged, "searches=%d errors=%d skipped=%d %s" % (i, errors, skipped, throttle_note), run_id)))
     db.close()
     log("\nstaged %d new show(s); %d fetch errors, %d skipped. Next: promote chain for %s" % (staged, errors, skipped, SEGMENT))
     return 0

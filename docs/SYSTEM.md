@@ -150,6 +150,9 @@ promote_chain, draft_outreach`. The optional Apollo step returns without any API
 
 * **Apple Podcasts** (`discover_podcasts.py`, keyless): search terms x store countries, then each show's
   RSS feed (cadence, catalogue, published email, YouTube link). Shows dormant >180 days skipped.
+  Repeated Apple 403/429/503 refusals end the search pass after three polite attempts, retaining
+  candidates already found and recording a throttle note; other sources continue instead of
+  repeating the same refusal across all sixty search combinations.
 * **Podcast Index** (`discover_podcast_index.py`): trending shows + the same search terms; drops dead
   feeds, <40 episodes, dormant >180 days, kids-only. Feed parsed by the Apple harvest's own
   `parse_feed`/`shape`. Source `podcast_index`. Needs the two PODCASTINDEX keys (signup refuses free
@@ -322,6 +325,8 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 ---
 
 ## 14. Change log (newest first; add every change here)
+
+* **2026-11-17** Owner-requested Clipping refresh started using existing sources, 14-day retention and protected approvals/conversations; Apollo remains disabled. Initial server Apple pass staged no candidates after eight minutes. Added graceful stop after repeated Apple throttling so other sources can proceed; prior candidates are retained and the source run records the refusal. Three offline throttle/success/empty-result tests passed.
 
 * **2026-11-16** Executed `17aaba7` server Apollo pilot under owner's 50/50 grant: Render balance verified at 2,520, four credits used, 2,516 left. 294 startup research candidates added, 50 evidence checks, zero qualifying new contact reveals; six Clipping business searches yielded no confident contacts. Confirmed both spending switches disabled and removed the one-time schedule; pipeline completed OK. Candidate counts are not confirmed acquisition opportunities. No pilot approvals/sends.
 
