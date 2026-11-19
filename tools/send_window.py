@@ -76,12 +76,20 @@ DEFAULTS = {
     "min_gap_seconds": 45,                # never two sends from one address closer than this
     "schedule_padding_seconds": 10,       # extra room in planned times; 0 for the owner's 30-second cadence
     "min_lead_seconds": 120,              # an approval is never placed sooner than this
+    # follow-ups on their own day (owner, 2026-11-13: "on Saturdays we can send 50 follow-ups ... Saturday will
+    # be the day only for follow-ups"): with a day named here, a follow-up goes only on that day of the
+    # recipient's week (weekdays_only does not apply to it) and a first email never does; at most
+    # followup_daily_cap follow-ups per sending address that day (null: the address's own daily limit)
+    "followup_day": None,                 # "saturday", or any day name; None: follow-ups go on any sending day
+    "followup_daily_cap": None,
     "guidance": None,
 }
+DAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 TAIL_S = 60            # no moment in a window's last minute: a send that starts at 10:29:59 can finish late
 LEAD_LEFT_S = 120      # next_window: a window with less than this left after the lead time is passed over
 PLAN_KEYS = ("timezone_of", "start", "end", "sender_timezone", "fallback_timezone", "assumed_country",
-             "country_zones", "weekdays_only", "min_gap_seconds", "schedule_padding_seconds")
+             "country_zones", "weekdays_only", "min_gap_seconds", "schedule_padding_seconds",
+             "followup_day", "followup_daily_cap")
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -183,6 +191,11 @@ def config_problems(outreach_cfg):
         if span - TAIL_S < w["min_gap_seconds"] + w["schedule_padding_seconds"]:
             out.append("send_window %s-%s is too short to hold one email (its last minute is never used)"
                        % (w["start"], w["end"]))
+    if w["followup_day"] is not None and str(w["followup_day"]).lower() not in DAY_NAMES:
+        out.append("send_window.followup_day must be a day name such as \"saturday\" (got %r)" % (w["followup_day"],))
+    fc = w["followup_daily_cap"]
+    if fc is not None and (isinstance(fc, bool) or not isinstance(fc, int) or fc < 1 or fc > 2000):
+        out.append("send_window.followup_daily_cap must be a whole number from 1 to 2000 (got %r)" % (fc,))
     if w["guidance"] is not None and not isinstance(w["guidance"], str):
         out.append("send_window.guidance must be text")
     return out
@@ -205,6 +218,7 @@ def window_cfg(outreach_cfg):
     w["end"] = "%02d:%02d" % _hhmm(w["end"])
     w["assumed_country"] = str(w["assumed_country"]).upper() if w["assumed_country"] else None
     w["country_zones"] = {str(k).upper(): v for k, v in (w["country_zones"] or {}).items()}
+    w["followup_day"] = str(w["followup_day"]).lower() if w["followup_day"] else None
     w["spacing_s"] = w["min_gap_seconds"] + w["schedule_padding_seconds"]
     w["tail_s"] = TAIL_S
     return w
@@ -506,16 +520,24 @@ def _wall_to_utc(day, hhmm, tz):
     raise ValueError("no real minute within 3 hours of %s %s in %s" % (day, hhmm, tz))
 
 
-def windows(zone, wcfg, after_utc, days=60):
+def windows(zone, wcfg, after_utc, days=60, followup=False):
     """Yield (window start UTC, window end UTC, local date) for each eligible day in `zone`, from the local
-    date of after_utc, for `days` calendar days; a window already over by after_utc is passed over."""
+    date of after_utc, for `days` calendar days; a window already over by after_utc is passed over.
+    followup: the email is a follow-up -- with followup_day set it goes only on that day of the week, and a
+    first email never goes on it."""
     w = wcfg or DEFAULTS
     tz = ZoneInfo(zone)
     after = _utc(after_utc)
     d0 = after.astimezone(tz).date()
+    fday = DAY_NAMES.index(w["followup_day"]) if w.get("followup_day") else None
     for i in range(days):
         day = d0 + dt.timedelta(days=i)                               # a date, not a time: no zone involved
-        if w.get("weekdays_only", True) and day.weekday() >= 5:
+        if fday is not None and followup:
+            if day.weekday() != fday:
+                continue
+        elif fday is not None and day.weekday() == fday:
+            continue
+        elif w.get("weekdays_only", True) and day.weekday() >= 5:
             continue
         ws, we = _wall_to_utc(day, w["start"], tz), _wall_to_utc(day, w["end"], tz)
         if we <= ws or we <= after:
@@ -523,13 +545,13 @@ def windows(zone, wcfg, after_utc, days=60):
         yield ws, we, day
 
 
-def next_window(zone, wcfg, now_utc):
+def next_window(zone, wcfg, now_utc, followup=False):
     """(start, end) of the first window an approval made now could still go out in -- at least two minutes
     of it left after the lead time -- or None. A draft's page names this window, never a minute."""
     w = wcfg or DEFAULTS
     now = _utc(now_utc)
     earliest = now + dt.timedelta(seconds=w.get("min_lead_seconds", DEFAULTS["min_lead_seconds"]))
-    for ws, we, _day in windows(zone, w, now):
+    for ws, we, _day in windows(zone, w, now, followup=followup):
         if (we - max(ws, earliest)).total_seconds() >= LEAD_LEFT_S:
             return ws, we
     return None

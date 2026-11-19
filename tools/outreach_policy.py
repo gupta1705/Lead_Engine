@@ -1012,7 +1012,10 @@ class _Placer:
         pad, tail = dt.timedelta(seconds=spacing), dt.timedelta(seconds=w["tail_s"])
         start = max(self.now, sw._utc(after)) if after else self.now
         lead = self.now + dt.timedelta(seconds=w["min_lead_seconds"])
-        for ws, we, _day in sw.windows(zone, w, start):
+        followup = int(row.get("sequence_step") or 0) > 0
+        # follow-ups on their own day (send_window.followup_day): at most followup_daily_cap per address there
+        fcap = st["n"] * int(w["followup_daily_cap"]) if followup and w.get("followup_day") and w.get("followup_daily_cap") else None
+        for ws, we, _day in sw.windows(zone, w, start, followup=followup):
             lo, hi = max(ws, lead, start), we - tail
             if (hi - lo).total_seconds() < 60:
                 continue
@@ -1020,7 +1023,7 @@ class _Placer:
                 continue
             day = ws.date()                                   # ws is UTC: the day the cap counts it on
             used = sum(1 for t in others if t.date() == day) + sum(1 for t in sent if t.date() == day)
-            if used >= st["daily_for"](day):
+            if used >= (min(st["daily_for"](day), fcap) if fcap else st["daily_for"](day)):
                 continue
             taken = [t for t in others + sent if ws - pad <= t < we + pad]
             m = sw.pick_moment(lo, hi, taken, spacing / n, self.rng)
@@ -1239,7 +1242,7 @@ def draft_window(cur, oid, cfg):
     if not rows:
         return {"enabled": False}
     zone, reason = _zone_for(rows[0], w)
-    nw = sw.next_window(zone, w, db_now(cur))
+    nw = sw.next_window(zone, w, db_now(cur), followup=int(rows[0].get("sequence_step") or 0) > 0)
     return {"enabled": True, "send_tz": zone, "send_tz_reason": reason,
             "window_label": sw.window_label(nw[0], nw[1], zone, w) if nw else None}
 

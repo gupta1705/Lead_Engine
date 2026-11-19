@@ -89,6 +89,31 @@ def main():
     check("candidate shape", (c["feedUrl"], c["collectionName"], c["trackCount"], c["collectionId"]),
           ("https://f.example/rss", "Show", 120, "pi-77"))
 
+    # 5. follow-ups only on Saturday, up to 50 per address (owner, 2026-11-13)
+    import send_window as sw
+    import outreach_policy as op
+    w = sw.window_cfg({"send_window": {"start": "10:00", "end": "11:00", "followup_day": "saturday",
+                                       "followup_daily_cap": 2}})
+    fri = dt.datetime(2026, 11, 13, 12, 0, tzinfo=dt.timezone.utc)
+    ny = "America/New_York"
+    check("follow-ups: Saturdays only", [d.weekday() for _, _, d in sw.windows(ny, w, fri, days=15, followup=True)], [5, 5])
+    check("first emails: never Saturday or Sunday",
+          sorted({d.weekday() for _, _, d in sw.windows(ny, w, fri, days=15)}), [0, 1, 2, 3, 4])
+    check("a bad day name is refused", bool(sw.config_problems({"send_window": {"followup_day": "sat"}})), True)
+    check("the day is part of the plan (approved emails move when it changes)", "followup_day" in sw.PLAN_KEYS, True)
+
+    class _Cur:
+        def execute(self, *a, **k):
+            pass
+
+    pl = op._Placer(_Cur(), w, {"send_from": "approver"}, "zz", fri)
+    pl.keys["approver:zz@x"] = {"n": 1, "daily_for": lambda d: 80, "placed": {}, "sent": []}
+    got = [pl.place({"id": str(i), "approver": "zz@x", "sequence_step": 1}, ny)[0] for i in range(3)]
+    check("the follow-up cap per address per Saturday: 2, the third goes the next Saturday",
+          [g.astimezone(dt.timezone.utc).date().isoformat() for g in got], ["2026-11-14", "2026-11-14", "2026-11-21"])
+    first = pl.place({"id": "x", "approver": "zz@x", "sequence_step": 0}, ny)[0]
+    check("a first email still goes on a weekday (Friday here), never in the Saturday slots", first.astimezone(dt.timezone.utc).date().isoformat(), "2026-11-13")
+
     bad = RESULTS.count(False)
     print("\n%d passed, %d failed" % (len(RESULTS) - bad, bad))
     return 1 if bad else 0

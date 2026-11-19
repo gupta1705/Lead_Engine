@@ -65,6 +65,7 @@ def main():
     parser.add_argument("--pages", type=int, default=None)
     parser.add_argument("--max-minutes", type=float, default=40)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--searches", default="", help="only the searches whose key starts with this (e.g. startups_)")
     args = parser.parse_args()
     db = Db()
     run_id = None
@@ -78,6 +79,8 @@ def main():
         if SEGMENT == "lcx-clipping" or (cfg.get("sourcing") or {}).get("provider") != "apollo":
             raise RuntimeError("Apollo-only discovery is not enabled for this project.")
         acfg = cfg.get("apollo_discovery") or {}
+        if args.searches:
+            acfg["searches"] = [s for s in acfg.get("searches") or [] if s["key"].startswith(args.searches)]
         if not acfg.get("searches") or not acfg.get("countries"):
             raise RuntimeError("No automatic Apollo searches configured; use this project's Apollo search page.")
         block = cfg.get("enrichment") or {}

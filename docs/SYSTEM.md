@@ -247,6 +247,12 @@ Any reply (positive or negative) stops the thread. A follow-up timed for its win
 
 ---
 
+**Saturday only (owner, 2026-11-13, switched on 2026-11-19):** `send_window.followup_day: "saturday"` and
+`followup_daily_cap: 50` in every project. A follow-up is placed only on Saturday in the recipient's time zone, at
+most 50 per sending address that Saturday (more wait for the next Saturday); first emails go Monday to Friday and
+never on that day (`send_window.windows(..., followup=...)`, `outreach_policy._Placer.place`). Both keys are in
+`PLAN_KEYS`, so approved follow-ups move to Saturday at the next settle.
+
 ## 10. Replies
 
 * **Pull:** `tools/outreach.py pull` (hourly full, every 5 min `--recent`) reads each sender's Gmail
@@ -326,6 +332,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-19** Follow-ups on Saturdays only, up to 50 per address (`followup_day`, `followup_daily_cap`); live config patched with jsonb_set (only those keys). `tools/discover_apollo.py --searches <prefix>` runs only matching searches.
 * **2026-11-17** Completed owner-requested Clipping refresh on Render after `2ceaf38`: all fourteen steps OK. Staged 404 candidates (398 Podcast Index, three YouTube, one Wikidata and two publisher groups); promotion/dedupe created 332 records. Final gates archived 248, leaving 84 new open leads (50 shortlisted, 34 ready for review); 62 have usable, allowed, unsuppressed contact addresses under contact ranking. Twenty new template drafts created. Apple returned repeated throttling; the new guard stopped that source after three attempts and allowed others to finish. No Apollo credits, approvals or sends from the refresh; optional Apollo switch stayed disabled. Approved/conversation retention safeguards retained; temporary schedules/pipeline aliases removed. Raw staged/address counts reported during the run were provisional, before final qualification.
 
 * **2026-11-17** `2ceaf38` Owner-requested Clipping refresh started using existing sources, 14-day retention and protected approvals/conversations; Apollo remains disabled. Initial server Apple pass staged no candidates after eight minutes. Added graceful stop after repeated Apple throttling so other sources can proceed; prior candidates are retained and the source run records the refusal. Three offline throttle/success/empty-result tests passed.
