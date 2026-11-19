@@ -57,6 +57,7 @@ Each project is one row in `segments` whose `config` JSON is generated from
 | `lcx-clipping` | LCX's clipping service (long video -> shorts) to podcasters, YouTubers, studios worldwide (US first) | Apple Podcasts, Podcast Index, YouTube API, Wikidata, publisher networks | Wed 02:00 |
 | `startup-acquisitions` | acquisition of distressed startups | Apollo only (+ news for evidence) | Thu 02:00 |
 | `lcx-services` | all 18 LCX services in one email + PDF deck to corporates | Apollo only | Fri 02:00 |
+| `lcx-startups` | the whole LCX catalogue as one **Startup Package** to startups (11-200 people; raised money in the last 6 months or hiring for marketing/content now; US, UK, India, UAE first) | Apollo only, one-off grant of 50 credits | Fri 03:00 |
 | `universal` | anything; a person searches Apollo and writes the email | Apollo search page | none |
 
 **Startup acquisitions (16 November 2026):** `startup_acquisitions.configure` patches targeting and
@@ -95,6 +96,16 @@ or touches leads/outreach; `--pause-only` applies the spending stop without chan
 **Server Apollo pilot:** `tools/apollo_pilot.py`, scheduled through the existing Operations runner, claims one explicitly queued `apollo_pilot` config record once. It checks Apollo balance on Render, grants at most 50 paid attempts per segment (100 total), reserves before each request, retains uncertain charges, enforces the 700 reserve, disallows other paid endpoints and disables both segment switches in `finally`. Original sources, recipient selection and acquisition qualification remain. Startup discovery is four pages followed by existing evidence/qualification/contact passes; no approval or sending step is included. A stopped/crashed claim never retries automatically. The one-time schedule is removed after observation.
 
 **Pilot result, 16 November 2026:** The Render key is valid; the earlier payment error applied only to the local key. Server balance was 2,520; four company pages cost four credits, leaving 2,516 (cycle ends 16 December). Startup intake staged/promoted 294 new research candidates from 400 results; evidence checked on 50 startups. No new record has confirmed distress/affordability qualification (new candidates remain score 0 pending evidence), and no Apollo contacts were added. Clipping checked eight eligible records, searched six confidently identified businesses and revealed none because none passed matching. Pilot finished successfully; both switches are disabled, run/week ceilings remain 50 each, the one-time schedule/pipeline were removed. No approvals or sends were performed by the pilot. Existing approved-mail sending continues independently.
+
+**LCX for Startups (19 November 2026):** separate project `lcx-startups`, config copied from LCX Services
+(same judge, rubric, gates, email template `lcx_services_problem_v3`, deck, LCX address, CC, follow-ups) with one
+audience `startups` and a new service `Startup Package` (rule `startup_package` first, so every startup is pitched the
+package; its subject/problem/solution were drafted by Claude for the owner to approve). Two Apollo searches only:
+`startups_recently_funded` (funded within 180 days) and `startups_hiring_marketing` (marketing/content job posted within
+30 days), keyword tags SaaS/software/AI/consumer internet/e-commerce/fintech/edtech/health tech/D2C, 11-200 people.
+Budget: `enrichment.credits_total: 50` is the whole grant, ever (`apollo_budget.allowance` reads all-time spend);
+about 10 search pages then up to 40 founder emails. Wired in `gen_segment_sql.py` (sql/03h), `app/explain.py`,
+`app/ops.py` (discover_apollo). Only the server's Apollo key works (the laptop key has a payment error).
 
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
@@ -332,6 +343,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-19** New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.
 * **2026-11-19** Follow-ups on Saturdays only, up to 50 per address (`followup_day`, `followup_daily_cap`); live config patched with jsonb_set (only those keys). `tools/discover_apollo.py --searches <prefix>` runs only matching searches.
 * **2026-11-17** Completed owner-requested Clipping refresh on Render after `2ceaf38`: all fourteen steps OK. Staged 404 candidates (398 Podcast Index, three YouTube, one Wikidata and two publisher groups); promotion/dedupe created 332 records. Final gates archived 248, leaving 84 new open leads (50 shortlisted, 34 ready for review); 62 have usable, allowed, unsuppressed contact addresses under contact ranking. Twenty new template drafts created. Apple returned repeated throttling; the new guard stopped that source after three attempts and allowed others to finish. No Apollo credits, approvals or sends from the refresh; optional Apollo switch stayed disabled. Approved/conversation retention safeguards retained; temporary schedules/pipeline aliases removed. Raw staged/address counts reported during the run were provisional, before final qualification.
 

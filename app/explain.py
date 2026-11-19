@@ -894,6 +894,7 @@ SEGMENTS = {
     "lcx-clipping": (lcx_criterion, LCX_HOW, lcx_risks),
     "startup-acquisitions": (startup_criterion, STARTUP_HOW, startup_risks),
     "lcx-services": (lcxs_criterion, {}, None),
+    "lcx-startups": (lcxs_criterion, {}, None),
 }
 
 

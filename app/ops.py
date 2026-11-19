@@ -60,7 +60,7 @@ JOBS = {
         "group": "Discover",
         "desc": "Apollo company searches using this project's constraints, saved search cursors and credit budget.",
         "cmd": [PY, "tools/discover_apollo.py"],
-        "segments": ["us-production-houses", "startup-acquisitions", "lcx-services"],
+        "segments": ["us-production-houses", "startup-acquisitions", "lcx-services", "lcx-startups"],
     },
     "prepare_apollo": {
         "label": "Read Apollo company records",

@@ -114,6 +114,22 @@ def main():
     first = pl.place({"id": "x", "approver": "zz@x", "sequence_step": 0}, ny)[0]
     check("a first email still goes on a weekday (Friday here), never in the Saturday slots", first.astimezone(dt.timezone.utc).date().isoformat(), "2026-11-13")
 
+    # 6. a one-off Apollo grant (credits_total, LCX for Startups: "Max 50 credits", owner 2026-11-19)
+    import apollo_budget as ab
+
+    class _Spent:
+        def __init__(self, v):
+            self.v = v
+
+        def execute(self, *a, **k):
+            pass
+
+        def fetchone(self):
+            return (self.v,)
+
+    check("the grant leaves what is not spent", ab.allowance(_Spent(30), "x", {"credits_total": 50}, 1000, 100)[0], 20)
+    check("a spent grant allows nothing, whatever the week", ab.allowance(_Spent(50), "x", {"credits_total": 50}, 1000, 100)[0], 0)
+
     bad = RESULTS.count(False)
     print("\n%d passed, %d failed" % (len(RESULTS) - bad, bad))
     return 1 if bad else 0
