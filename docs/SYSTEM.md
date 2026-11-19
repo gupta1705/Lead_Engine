@@ -343,7 +343,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-19** New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.
+* **2026-11-19** `fc50871` New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.
 * **2026-11-19** Follow-ups on Saturdays only, up to 50 per address (`followup_day`, `followup_daily_cap`); live config patched with jsonb_set (only those keys). `tools/discover_apollo.py --searches <prefix>` runs only matching searches.
 * **2026-11-17** Completed owner-requested Clipping refresh on Render after `2ceaf38`: all fourteen steps OK. Staged 404 candidates (398 Podcast Index, three YouTube, one Wikidata and two publisher groups); promotion/dedupe created 332 records. Final gates archived 248, leaving 84 new open leads (50 shortlisted, 34 ready for review); 62 have usable, allowed, unsuppressed contact addresses under contact ranking. Twenty new template drafts created. Apple returned repeated throttling; the new guard stopped that source after three attempts and allowed others to finish. No Apollo credits, approvals or sends from the refresh; optional Apollo switch stayed disabled. Approved/conversation retention safeguards retained; temporary schedules/pipeline aliases removed. Raw staged/address counts reported during the run were provisional, before final qualification.
 
