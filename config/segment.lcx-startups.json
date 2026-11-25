@@ -1482,11 +1482,11 @@
     ],
     "current_employer_check": true,
     "senior_titles": "(founder|owner|ceo|chief executive|chief marketing|chief commercial|chief operating|chief people|(?<!vice )president|managing director|general manager|principal|head of school|head teacher|headmaster|headmistress)",
-    "guidance": "Owner, 2026-11-19: a separate project selling the LCX catalogue to startups as one package (\"startups are more agile\"), at most 50 Apollo credits. Targeting picked for the best chance of a reply: raised money in the last 6 months, or hiring for marketing/content now; 11-200 people; US, UK, India, UAE first. credits_total 50 is the whole grant, ever (tools/apollo_budget.allowance): about 10 search pages, then up to 40 founder emails.",
+    "guidance": "Owner, 2026-11-19: a separate project selling the LCX catalogue to startups as one package (\"startups are more agile\"), at most 50 Apollo credits. Targeting picked for the best chance of a reply: raised money in the last 6 months, or hiring for marketing/content now; 11-200 people; US, UK, India, UAE first. credits_total 50 is the whole grant, ever (tools/apollo_budget.allowance): about 10 search pages, then up to 40 founder emails. Owner, 2026-11-25: \"Use 50 more credits, run it now\": credits_total 50 -> 100 (50 more, ever).",
     "require_fitting_role": true,
     "skip_revealed_elsewhere": true,
     "fallback_enabled": false,
-    "credits_total": 50
+    "credits_total": 100
   },
   "sources": [
     {

@@ -120,7 +120,7 @@ Social Distribution, Content and Brand Marketing, YouTube and Social Advertising
 with Claude-drafted copy for the owner to approve. Lead sheet: `ui.show_profile` adds a **Startup** box at the top of
 the right column (`main.lead_profile`, `renderProfile`): About (site About text, or Apollo's description), Based in,
 Founded, Founder (name, title, Apollo headline, location, LinkedIn; "Not looked up yet" before a reveal).
-New Apollo spending needs a new `credits_total` (the first 50 are spent). A startups-only wrong-buyer rule, "investor, not a startup"
+`credits_total` is 100 since 25 November (owner: "Use 50 more credits"). A startups-only wrong-buyer rule, "investor, not a startup"
 (judge.wrong_buyer, -50), catches venture capital firms the funded searches return (Elevation Capital had scored 100).
 
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
@@ -359,6 +359,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-25** LCX for Startups: owner granted 50 more Apollo credits (`credits_total` 100) and asked to run now: a one-time live schedule entry (Wed 13:40 UTC) ran the weekly refresh on the server, then was removed.
 * **2026-11-25** `a99fd6f` LCX for Startups: "investor, not a startup" wrong-buyer rule; founder headline/city matched by name; UK shown as United Kingdom.
 * **2026-11-25** `1d983d4` LCX for Startups: India-first early-stage searches (`countries`, `weight`), India full market bonus (`geography.priority_countries`, +8), early-stage size band, 4 deck services, Startup profile box on the lead sheet.
 * **2026-11-19** `fc50871` New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.
