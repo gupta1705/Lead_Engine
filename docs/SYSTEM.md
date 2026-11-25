@@ -359,7 +359,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-25** LCX for Startups: "investor, not a startup" wrong-buyer rule; founder headline/city matched by name; UK shown as United Kingdom.
+* **2026-11-25** `a99fd6f` LCX for Startups: "investor, not a startup" wrong-buyer rule; founder headline/city matched by name; UK shown as United Kingdom.
 * **2026-11-25** `1d983d4` LCX for Startups: India-first early-stage searches (`countries`, `weight`), India full market bonus (`geography.priority_countries`, +8), early-stage size band, 4 deck services, Startup profile box on the lead sheet.
 * **2026-11-19** `fc50871` New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.
 * **2026-11-19** `4721af0` Follow-ups on Saturdays only, up to 50 per address (`followup_day`, `followup_daily_cap`); live config patched with jsonb_set (only those keys). `tools/discover_apollo.py --searches <prefix>` runs only matching searches.
