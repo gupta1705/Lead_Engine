@@ -623,6 +623,31 @@ def _recipient_greeting(body, old_contact, contact, entity, ocfg, preference):
     return body
 
 
+def lead_profile(meta, contacts):
+    """What the company does, where it is based, and who founded it (LCX for Startups; ui.show_profile), from what
+    the lead already holds: its own site's About text, Apollo's company record and the founder Apollo revealed."""
+    _swm = _sw()
+    about = meta.get("site_about") if isinstance(meta.get("site_about"), dict) else {}
+    apollo_org = meta.get("apollo") if isinstance(meta.get("apollo"), dict) else {}
+    desc = (apollo_org.get("short_description") or about.get("description") or about.get("about") or "").strip()
+    iso = str(meta.get("hq_country") or "").strip().upper()
+    country = _swm.tp.ISO_NAME.get(iso, iso) if iso else None
+    people = meta.get("apollo_people") if isinstance(meta.get("apollo_people"), dict) else {}
+    founder = None
+    for c in contacts:                            # best-ranked first: the one the email goes to leads
+        if not c.get("full_name"):
+            continue
+        note = str(c.get("notes") or "")
+        p = people.get(note[7:]) if note.startswith("apollo:") else None
+        p = p if isinstance(p, dict) else {}
+        founder = {"name": c["full_name"], "title": c.get("role_title") or p.get("title"),
+                   "headline": p.get("headline"), "linkedin": c.get("linkedin_url") or p.get("linkedin_url"),
+                   "location": ", ".join(x for x in (p.get("city"), p.get("country")) if x) or None}
+        break
+    return {"description": desc[:600] or None, "country": country, "city": meta.get("hq_city"),
+            "founded": apollo_org.get("founded_year"), "founder": founder}
+
+
 @app.get("/api/leads/{lead_id}")
 def lead(lead_id: str, segment: str = Depends(current_segment)):
     from recipient_selection import select_contact
@@ -738,6 +763,8 @@ def lead(lead_id: str, segment: str = Depends(current_segment)):
     if sells:
         # the one service its email pitches, why, and the 18 a person may pick from instead (LCX Services)
         row["lead_service"] = lead_service_view(cfg, row)
+    if (cfg.get("ui") or {}).get("show_profile"):
+        row["profile"] = lead_profile(row.get("metadata") or {}, ranked)
     meta = row.get("metadata") or {}
     h = meta.get("host") or {}
     row["host_name"] = h.get("name") if h.get("confidence") in ("high", "medium") else None

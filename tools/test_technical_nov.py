@@ -8,6 +8,7 @@ Podcast Index source.
 The database half runs inside ONE transaction that is rolled back; no network. Exit code 1 on any failure.
 """
 import datetime as dt
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -129,6 +130,38 @@ def main():
 
     check("the grant leaves what is not spent", ab.allowance(_Spent(30), "x", {"credits_total": 50}, 1000, 100)[0], 20)
     check("a spent grant allows nothing, whatever the week", ab.allowance(_Spent(50), "x", {"credits_total": 50}, 1000, 100)[0], 0)
+
+    # 7. LCX for Startups, India first (owner and Kartikeya, 2026-11-25)
+    import json as _json
+    import discover_lcx_services as dls
+    import lcx_judge as lj
+    root = Path(__file__).resolve().parent.parent
+    cfg = _json.loads((root / "config" / "segment.lcx-startups.json").read_text(encoding="utf-8"))
+    slices = dls.apollo_slices(cfg)
+    check("India-only searches run only in India", sorted({s["country"]["iso"] for s in slices
+                                                           if s["search"]["key"].startswith("startups_india")}), ["IN"])
+    check("the international searches skip India", "IN" in {s["country"]["iso"] for s in slices
+                                                             if not s["search"]["key"].startswith("startups_india")}, False)
+    ran = {s["key"]: {"runs": 2} for s in slices}
+    first = dls.slice_order(slices, ran)[0]["search"]["key"]
+    check("weight 3: after two runs each, India still goes first", first.startswith("startups_india"), True)
+    J = lj.Lists(cfg)
+    if J is not None:
+        f_in, f_us = type("F", (), {"iso": "IN"})(), type("F", (), {"iso": "US"})()
+        check("priority_market: India full, the US half", (lj.priority_market(f_in, J)[0], lj.priority_market(f_us, J)[0]),
+              (1.0, 0.5))
+    sys.path.insert(0, str(root))
+    sys.path.insert(0, str(root / "app"))
+    os.environ.setdefault("SCHEDULER_ENABLED", "0")
+    import main as app_main
+    prof = app_main.lead_profile(
+        {"hq_country": "IN", "site_about": {"about": "We build robots."}, "apollo": {"founded_year": 2021},
+         "apollo_people": {"p1": {"headline": "Builder", "city": "Chennai", "country": "India"}}},
+        [{"full_name": "A Founder", "role_title": "CEO", "notes": "apollo:p1", "linkedin_url": "https://linkedin.com/in/a"}])
+    check("the profile: about, country, founded, founder",
+          (prof["description"], prof["country"], prof["founded"], prof["founder"]["name"], prof["founder"]["location"]),
+          ("We build robots.", "India", 2021, "A Founder", "Chennai, India"))
+    check("no founder yet: None", app_main.lead_profile({}, [])["founder"], None)
 
     bad = RESULTS.count(False)
     print("\n%d passed, %d failed" % (len(RESULTS) - bad, bad))

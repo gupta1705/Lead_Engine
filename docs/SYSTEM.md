@@ -107,6 +107,21 @@ Budget: `enrichment.credits_total: 50` is the whole grant, ever (`apollo_budget.
 about 10 search pages then up to 40 founder emails. Wired in `gen_segment_sql.py` (sql/03h), `app/explain.py`,
 `app/ops.py` (discover_apollo). Only the server's Apollo key works (the laptop key has a payment error).
 
+**LCX for Startups, India first (25 November 2026, owner and Kartikeya):** "more early-stage Indian startups,
+international kept". Searches: `startups_india_seed_funded` (funded in the last 12 months, total funding at most
+USD 5M, 1-50 people), `startups_india_hiring_marketing` (marketing/content job in the last 30 days, 1-50 people),
+`startups_india_early` (1-50 people, no signal), all `countries: ["IN"]`, `weight: 3`; the two international
+searches now run only in the US, UK and UAE (`countries`). `apollo_slices` honours a search's `countries`;
+`slice_order` divides a slice's runs by its search's `weight`, so India gets about three pages for each other one.
+Scoring: `geography.priority_countries: ["IN"]` (read by `lcx_judge.Lists.priority`, else reveal_countries as
+before) gives India the full `priority_market` bonus, now +8; English markets +4. Audience size: 2-50 people full
+credit, 1 and 51-200 half. Catalogue: the four deck services missing from the 18 (AI Content Generation, YouTube and
+Social Distribution, Content and Brand Marketing, YouTube and Social Advertising; deck https://lcx-services.vercel.app)
+with Claude-drafted copy for the owner to approve. Lead sheet: `ui.show_profile` adds a **Startup** box at the top of
+the right column (`main.lead_profile`, `renderProfile`): About (site About text, or Apollo's description), Based in,
+Founded, Founder (name, title, Apollo headline, location, LinkedIn; "Not looked up yet" before a reveal).
+New Apollo spending needs a new `credits_total` (the first 50 are spent).
+
 **Changing a config:** edit `config/segment.<slug>.json` (keep it `json.dumps(indent=2,
 ensure_ascii=False) + "\n"`), run `python tools/gen_segment_sql.py <slug>` (writes `sql/03x_...sql`),
 then apply it with `python tools/run_sql.py sql/03x_...sql`. Commit both files. Config validation
@@ -343,6 +358,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-25** LCX for Startups: India-first early-stage searches (`countries`, `weight`), India full market bonus (`geography.priority_countries`, +8), early-stage size band, 4 deck services, Startup profile box on the lead sheet.
 * **2026-11-19** `fc50871` New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.
 * **2026-11-19** `4721af0` Follow-ups on Saturdays only, up to 50 per address (`followup_day`, `followup_daily_cap`); live config patched with jsonb_set (only those keys). `tools/discover_apollo.py --searches <prefix>` runs only matching searches.
 * **2026-11-17** Completed owner-requested Clipping refresh on Render after `2ceaf38`: all fourteen steps OK. Staged 404 candidates (398 Podcast Index, three YouTube, one Wikidata and two publisher groups); promotion/dedupe created 332 records. Final gates archived 248, leaving 84 new open leads (50 shortlisted, 34 ready for review); 62 have usable, allowed, unsuppressed contact addresses under contact ranking. Twenty new template drafts created. Apple returned repeated throttling; the new guard stopped that source after three attempts and allowed others to finish. No Apollo credits, approvals or sends from the refresh; optional Apollo switch stayed disabled. Approved/conversation retention safeguards retained; temporary schedules/pipeline aliases removed. Raw staged/address counts reported during the run were provisional, before final qualification.

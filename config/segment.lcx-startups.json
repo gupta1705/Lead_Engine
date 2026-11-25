@@ -15,7 +15,9 @@
   ],
   "geography": {
     "allowed_countries": [],
-    "priority_countries": [],
+    "priority_countries": [
+      "IN"
+    ],
     "disallowed_countries": [
       "CA",
       "DE",
@@ -53,7 +55,7 @@
       "BH",
       "OM"
     ],
-    "guidance": "The owner, 2026-10-06: \"Everywhere allowed\" -- every country except those whose law needs consent before a cold business email: Canada (CASL), Germany and Austria (UWG), Italy, the same set as LCX Clipping. A company is left out only on evidence: Wikidata says its only country is one of them, or the city it was found in is. english_markets earns half the priority_market bonus (the US, the UK, India and the UAE, enrichment.reveal_countries, earn all of it) because the email and the deck are in English; it never leaves anyone out. unpayable_countries (2026-10-07, the owner's decision that day): sanctioned countries LCX cannot invoice, left out by the payable_country gate: Russia, Belarus, Iran, North Korea, Syria and Cuba."
+    "guidance": "The owner, 2026-10-06: \"Everywhere allowed\" -- every country except those whose law needs consent before a cold business email: Canada (CASL), Germany and Austria (UWG), Italy, the same set as LCX Clipping. A company is left out only on evidence: Wikidata says its only country is one of them, or the city it was found in is. english_markets earns half the priority_market bonus (the US, the UK, India and the UAE, enrichment.reveal_countries, earn all of it) because the email and the deck are in English; it never leaves anyone out. unpayable_countries (2026-10-07, the owner's decision that day): sanctioned countries LCX cannot invoice, left out by the payable_country gate: Russia, Belarus, Iran, North Korea, Syria and Cuba. Owner and Kartikeya, 2026-11-25: more early-stage Indian startups, international kept; targeting set to the LCX deck (https://lcx-services.vercel.app, 22 services: content, distribution on the 55M network, marketing, ads, AI assets, tools). India-only searches run first; Indian startups get the full market bonus. priority_countries ['IN']: the full priority_market bonus (tools/lcx_judge.py); US, UK, UAE and the other English markets get half."
   },
   "audiences": [
     {
@@ -77,39 +79,41 @@
       ],
       "size_bands": {
         "employees": [
-          11,
-          200
+          2,
+          50
         ],
         "employees_half": [
           [
-            2,
-            10
+            1,
+            1
           ],
           [
-            201,
-            500
+            51,
+            200
           ]
         ],
         "revenue": [
-          500000,
-          50000000
+          50000,
+          5000000
         ],
         "revenue_half": [
           [
-            100000,
-            500000
+            1,
+            50000
           ],
           [
-            50000000,
-            100000000
+            5000000,
+            50000000
           ]
         ]
       },
       "services": [
         "Startup Package",
+        "AI Content Generation",
+        "YouTube and Social Distribution",
+        "Content and Brand Marketing",
         "Explainer Videos",
-        "AI Video for Brands",
-        "AI UGC Product Videos"
+        "AI Video for Brands"
       ],
       "contact_roles": [
         "Founder",
@@ -120,7 +124,8 @@
         "Head of Growth",
         "Growth Marketing Manager",
         "Brand Manager"
-      ]
+      ],
+      "guidance": "Owner and Kartikeya, 2026-11-25: more early-stage Indian startups, international kept; targeting set to the LCX deck (https://lcx-services.vercel.app, 22 services: content, distribution on the 55M network, marketing, ads, AI assets, tools). India-only searches run first; Indian startups get the full market bonus."
     }
   ],
   "audiences_guidance": "Owner, 2026-11-19: a separate project selling the LCX catalogue to startups as one package (\"startups are more agile\"), at most 50 Apollo credits. Targeting picked for the best chance of a reply: raised money in the last 6 months, or hiring for marketing/content now; 11-200 people; US, UK, India, UAE first.",
@@ -215,10 +220,10 @@
     },
     {
       "key": "priority_market",
-      "label": "BONUS: LCX's own markets (US, UK, India, UAE), half for other English-speaking markets",
-      "max_bonus": 4,
+      "label": "BONUS: an Indian startup (full), or one in another English-speaking market (half)",
+      "max_bonus": 8,
       "input": "metadata.scoring_inputs.priority_market",
-      "guidance": "Full credit for a business based in the US, the UK, India or the UAE (enrichment.reveal_countries), LCX's first markets and the only countries Apollo reveals are paid for. Half credit in another English-speaking business market (geography.english_markets). No credit in any other allowed country; absent when the country is unknown. Small and additive, like india_diaspora_affinity for the production houses: it orders equal leads and never shortlists one on its own. REPLACES english_market (+4) 2026-10-07: the same size, but full credit now goes only to the four markets LCX sells to first."
+      "guidance": "Owner and Kartikeya, 2026-11-25: more early-stage Indian startups, international kept; targeting set to the LCX deck (https://lcx-services.vercel.app, 22 services: content, distribution on the 55M network, marketing, ads, AI assets, tools). India-only searches run first; Indian startups get the full market bonus. +8 for India, +4 for the US, UK, UAE and other English markets."
     },
     {
       "key": "wrong_buyer",
@@ -1550,8 +1555,8 @@
       "requests_per_minute": 3,
       "default_pitch": [
         "Startup Package",
-        "Explainer Videos",
-        "AI Video for Brands"
+        "AI Content Generation",
+        "YouTube and Social Distribution"
       ],
       "all_services": [
         "Reel Forge",
@@ -1572,7 +1577,11 @@
         "AI Simulations for Training",
         "AI Fashion Stylist",
         "AI Onboarding Employee",
-        "Startup Package"
+        "Startup Package",
+        "AI Content Generation",
+        "YouTube and Social Distribution",
+        "Content and Brand Marketing",
+        "YouTube and Social Advertising"
       ],
       "service_lines": {
         "Reel Forge": "Long form videos cut into reels and distributed across 5 to 10 Instagram pages.",
@@ -1593,7 +1602,11 @@
         "AI Simulations for Training": "Real world scenarios that test and score sales and customer facing teams.",
         "AI Fashion Stylist": "An AI mirror near changing rooms that completes the look from store stock.",
         "AI Onboarding Employee": "A digital trainer that teaches, tests and scores new hires across 10 to 15 parameters.",
-        "Startup Package": "Every LCX service as one package for a young team: launch and product videos, explainers, social content and AI tools."
+        "Startup Package": "Every LCX service as one package for a young team: launch and product videos, explainers, social content and AI tools.",
+        "AI Content Generation": "Posts, videos, images and copy created at volume with AI tools.",
+        "YouTube and Social Distribution": "Published across our YouTube channels and social pages, with a combined audience of 55 million.",
+        "Content and Brand Marketing": "Positioning, identity and campaigns that market both the content and the brand behind it.",
+        "YouTube and Social Advertising": "Paid campaigns planned, run and optimised on YouTube and social platforms."
       },
       "service_copy": {
         "Reel Forge": {
@@ -1707,6 +1720,30 @@
           "problem": "A startup needs launch videos, product explainers and a steady flow of social content, and hiring for each of those takes time and money an early team rarely has.",
           "solution": "With the LCX Startup Package, every LCX service comes as one package, from product and explainer videos to reels and AI tools, so one partner covers the content a growing startup needs.",
           "guidance": "Owner, 2026-11-19: a separate project selling the LCX catalogue to startups as one package (\"startups are more agile\"), at most 50 Apollo credits. Targeting picked for the best chance of a reply: raised money in the last 6 months, or hiring for marketing/content now; 11-200 people; US, UK, India, UAE first. Wording drafted by Claude for the owner to approve or change."
+        },
+        "AI Content Generation": {
+          "subject": "Content at volume, with AI",
+          "problem": "A young brand needs fresh posts, videos and images every week, and making each one by hand slows the team down.",
+          "solution": "With AI Content Generation, posts, videos, images and copy are created at volume with AI tools, so the feed never runs dry.",
+          "guidance": "From the LCX deck, 2026-11-25. Wording drafted by Claude for the owner to approve."
+        },
+        "YouTube and Social Distribution": {
+          "subject": "An audience from day one",
+          "problem": "New content usually starts with almost no audience, so even good videos take months to be seen.",
+          "solution": "With YouTube and Social Distribution, your content is published across our YouTube channels and social pages, with a combined audience of 55 million.",
+          "guidance": "From the LCX deck, 2026-11-25. Wording drafted by Claude for the owner to approve."
+        },
+        "Content and Brand Marketing": {
+          "subject": "One story, every touchpoint",
+          "problem": "Early teams often have a good product but no clear positioning, so every post and campaign says something slightly different.",
+          "solution": "With Content and Brand Marketing, positioning, identity and campaigns are built to market both the content and the brand behind it.",
+          "guidance": "From the LCX deck, 2026-11-25. Wording drafted by Claude for the owner to approve."
+        },
+        "YouTube and Social Advertising": {
+          "subject": "Ads that pay their way",
+          "problem": "Paid social spend is easy to waste when nobody has the time to plan, test and adjust each campaign.",
+          "solution": "With YouTube and Social Advertising, paid campaigns are planned, run and optimised on YouTube and social platforms.",
+          "guidance": "From the LCX deck, 2026-11-25. Wording drafted by Claude for the owner to approve."
         }
       },
       "signal_problems": {
@@ -1887,7 +1924,9 @@
         "label": "Found by",
         "format": "text"
       }
-    ]
+    ],
+    "show_profile": true,
+    "show_profile_guidance": "Kartikeya, 2026-11-25: the startup's description, founder details and country in the lead's right column (app/main.py lead_profile, app/static/app.js renderProfile)."
   },
   "schedule": [
     {
@@ -1915,9 +1954,13 @@
   },
   "apollo_discovery": {
     "pages_per_run": 10,
-    "signal_pages_per_run": 10,
+    "signal_pages_per_run": 6,
     "per_page": 100,
     "countries": [
+      {
+        "name": "India",
+        "iso": "IN"
+      },
       {
         "name": "United States",
         "iso": "US"
@@ -1927,45 +1970,23 @@
         "iso": "GB"
       },
       {
-        "name": "India",
-        "iso": "IN"
-      },
-      {
         "name": "United Arab Emirates",
         "iso": "AE"
-      },
-      {
-        "name": "Worldwide outside the four priority markets",
-        "iso": "ALL",
-        "excluded_locations": [
-          "United States",
-          "United Kingdom",
-          "India",
-          "United Arab Emirates",
-          "Canada",
-          "Germany",
-          "Austria",
-          "Italy",
-          "Russia",
-          "Belarus",
-          "Iran",
-          "North Korea",
-          "Syria",
-          "Cuba"
-        ]
       }
     ],
     "searches": [
       {
-        "key": "startups_recently_funded",
+        "key": "startups_india_seed_funded",
         "audience": "startups",
-        "signal": "raised money in the last 6 months",
-        "funded_within_days": 180,
+        "countries": [
+          "IN"
+        ],
+        "signal": "raised money in the last 12 months (early stage)",
+        "funded_within_days": 365,
         "filters": {
           "q_organization_keyword_tags": [
             "saas",
             "software",
-            "information technology & services",
             "internet",
             "consumer internet",
             "e-commerce",
@@ -1974,6 +1995,126 @@
             "fintech",
             "edtech",
             "health tech",
+            "gaming",
+            "media",
+            "consumer goods",
+            "cosmetics",
+            "food & beverages",
+            "apparel & fashion"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "total_funding_range": {
+            "max": 5000000
+          }
+        },
+        "weight": 3
+      },
+      {
+        "key": "startups_india_hiring_marketing",
+        "audience": "startups",
+        "countries": [
+          "IN"
+        ],
+        "signal": "hiring for marketing and content now",
+        "posted_within_days": 30,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "saas",
+            "software",
+            "internet",
+            "consumer internet",
+            "e-commerce",
+            "mobile apps",
+            "artificial intelligence",
+            "fintech",
+            "edtech",
+            "health tech",
+            "gaming",
+            "media",
+            "consumer goods",
+            "cosmetics",
+            "food & beverages",
+            "apparel & fashion"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ],
+          "q_organization_job_titles": [
+            "marketing manager",
+            "growth marketer",
+            "content marketing manager",
+            "social media manager",
+            "brand manager",
+            "video editor",
+            "content creator",
+            "performance marketer"
+          ]
+        },
+        "weight": 3
+      },
+      {
+        "key": "startups_india_early",
+        "audience": "startups",
+        "countries": [
+          "IN"
+        ],
+        "filters": {
+          "q_organization_keyword_tags": [
+            "saas",
+            "software",
+            "internet",
+            "consumer internet",
+            "e-commerce",
+            "mobile apps",
+            "artificial intelligence",
+            "fintech",
+            "edtech",
+            "health tech",
+            "gaming",
+            "media",
+            "consumer goods",
+            "cosmetics",
+            "food & beverages",
+            "apparel & fashion"
+          ],
+          "organization_num_employees_ranges": [
+            "1,10",
+            "11,20",
+            "21,50"
+          ]
+        },
+        "weight": 3
+      },
+      {
+        "key": "startups_recently_funded",
+        "audience": "startups",
+        "countries": [
+          "US",
+          "GB",
+          "AE"
+        ],
+        "signal": "raised money in the last 6 months",
+        "funded_within_days": 180,
+        "filters": {
+          "q_organization_keyword_tags": [
+            "saas",
+            "software",
+            "internet",
+            "consumer internet",
+            "e-commerce",
+            "mobile apps",
+            "artificial intelligence",
+            "fintech",
+            "edtech",
+            "health tech",
+            "gaming",
+            "media",
             "consumer goods",
             "cosmetics",
             "food & beverages",
@@ -1988,13 +2129,17 @@
       {
         "key": "startups_hiring_marketing",
         "audience": "startups",
+        "countries": [
+          "US",
+          "GB",
+          "AE"
+        ],
         "signal": "hiring for marketing and content now",
         "posted_within_days": 30,
         "filters": {
           "q_organization_keyword_tags": [
             "saas",
             "software",
-            "information technology & services",
             "internet",
             "consumer internet",
             "e-commerce",
@@ -2003,6 +2148,8 @@
             "fintech",
             "edtech",
             "health tech",
+            "gaming",
+            "media",
             "consumer goods",
             "cosmetics",
             "food & beverages",
@@ -2024,7 +2171,7 @@
         }
       }
     ],
-    "guidance": "Owner, 2026-11-19: a separate project selling the LCX catalogue to startups as one package (\"startups are more agile\"), at most 50 Apollo credits. Targeting picked for the best chance of a reply: raised money in the last 6 months, or hiring for marketing/content now; 11-200 people; US, UK, India, UAE first.",
+    "guidance": "Owner and Kartikeya, 2026-11-25: more early-stage Indian startups, international kept; targeting set to the LCX deck (https://lcx-services.vercel.app, 22 services: content, distribution on the 55M network, marketing, ads, AI assets, tools). India-only searches run first; Indian startups get the full market bonus.",
     "source": "lcx_apollo"
   },
   "lead_service": {

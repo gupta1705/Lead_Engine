@@ -388,7 +388,10 @@ class Lists:
         self.disallowed = {c.upper() for c in geo.get("disallowed_countries") or []}
         self.unpayable = {c.upper() for c in geo.get("unpayable_countries") or []}
         self.english = {c.upper() for c in geo.get("english_markets") or []}
-        self.priority = {c.upper() for c in (cfg.get("enrichment") or {}).get("reveal_countries") or []}
+        # full priority_market bonus: geography.priority_countries when a project names them (LCX for Startups:
+        # India, owner 2026-11-25), else the reveal countries; english_markets get half either way
+        self.priority = {c.upper() for c in (geo.get("priority_countries")
+                                             or (cfg.get("enrichment") or {}).get("reveal_countries") or [])}
         self.retired = list(j.get("retired_inputs") or [])
         self.parked = rx(j.get("parked_titles"))
         self.botwall = rx(j.get("botwall_titles"))

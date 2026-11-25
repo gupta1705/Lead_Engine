@@ -482,6 +482,23 @@ function fieldSummary(r) {
     .filter((x) => x.v != null && x.v !== "")
     .map((x) => esc(fmtField(x.v, x.f.format)) + (x.f.label ? " " + esc(x.f.label) : "")).join(" · ");
 }
+/* The startup's profile (LCX for Startups): what it does, where it is based, who founded it. */
+function renderProfile(p) {
+  if (!p) return "";
+  const f = p.founder;
+  const where = [p.city, p.country].filter(Boolean).join(", ");
+  const rows = [
+    p.description ? `<dt>About</dt><dd>${esc(p.description)}</dd>` : "",
+    where ? `<dt>Based in</dt><dd>${esc(where)}</dd>` : "",
+    p.founded ? `<dt>Founded</dt><dd>${esc(p.founded)}</dd>` : "",
+    f ? `<dt>Founder</dt><dd>${esc(f.name)}${f.title ? `<div class="small muted">${esc(f.title)}</div>` : ""}`
+      + `${f.headline ? `<div class="small">${esc(f.headline)}</div>` : ""}`
+      + `${f.location ? `<div class="small muted">${esc(f.location)}</div>` : ""}`
+      + `${f.linkedin && /^https?:\/\//i.test(f.linkedin) ? `<div class="small"><a href="${esc(f.linkedin)}" target="_blank" rel="noopener">LinkedIn</a></div>` : ""}</dd>`
+      : `<dt>Founder</dt><dd class="muted">Not looked up yet</dd>`,
+  ].join("");
+  return `<div class="side-group"><div class="group-head">${icon("book", 16)} Startup</div><div class="group-body"><dl class="details">${rows}</dl></div></div>`;
+}
 function uiDetails(d) {
   return (segUi().details || []).map((f) => {
     // LCX Services (2026-10-13): the services it fits are in the Lead service box, as Also fits, beside the one it
@@ -1109,6 +1126,7 @@ async function openLead(id, opts) {
           <div class="actions"><button class="btn subtle" id="reasonCancel">Cancel</button><button class="btn danger" id="reasonGo">Reject</button></div>
         </div>
 
+        ${renderProfile(d.profile)}
         ${renderLeadService(d)}
         <div class="side-group"><div class="group-head">${icon("users", 16)} Contacts</div><div class="group-body">${contacts}</div></div>
         ${(() => {   // who reached out, from which address, when (owner, 2026-09-26)

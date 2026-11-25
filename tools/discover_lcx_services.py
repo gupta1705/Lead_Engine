@@ -393,6 +393,8 @@ def apollo_slices(cfg):
     out = []
     for si, s in enumerate(acfg.get("searches") or []):
         for ci, c in enumerate(acfg.get("countries") or []):
+            if s.get("countries") and c["iso"] not in s["countries"]:
+                continue                     # a search limited to some countries (owner, 2026-11-25: India first)
             out.append({"key": "%s|%s" % (s["key"], c["iso"]), "search": s, "country": c, "order": (si + ci, ci)})
     return out
 
@@ -548,7 +550,9 @@ def slice_order(slices, cursors, now=None):
     """Least-run first, so every audience and country gets its turn; then the diagonal (apollo_slices).
     A slice that is waiting (slice_page) is left out."""
     live = [s for s in slices if slice_page(s, cursors, now) is not None]
-    return sorted(live, key=lambda s: ((cursors.get(s["key"]) or {}).get("runs", 0), s["order"]))
+    # a search's weight (default 1) gives it that many turns per turn of the others (LCX for Startups: India x3)
+    return sorted(live, key=lambda s: ((cursors.get(s["key"]) or {}).get("runs", 0) / max(1, s["search"].get("weight", 1)),
+                                       s["order"]))
 
 
 def run_apollo(db, seg_id, cfg, pages, skip_urls, skip_domains, emit=None, deadline=None, spend=None,
