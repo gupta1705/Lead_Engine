@@ -366,7 +366,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-25** `COMMIT` sql/50 (applied live): a bounce in an Apollo-only project (LCX Services) was refused by the contacts trigger because `mark_bounce` changes `verifier`, so every reply pull that met one rolled back (182 failed `pull_replies` from 2026-11-23). Downgrades away from `valid` now always pass.
+* **2026-11-25** `c7821e3` sql/50 (applied live): a bounce in an Apollo-only project (LCX Services) was refused by the contacts trigger because `mark_bounce` changes `verifier`, so every reply pull that met one rolled back (182 failed `pull_replies` from 2026-11-23). Downgrades away from `valid` now always pass.
 * **2026-11-25** `e687d31` Site check could freeze on a slow site: `read_capped` caps each page at 30 s in all (test in `test_technical_nov.py`). The 14:05 LCX for Startups run froze in `verify_sites` at 14:17 after ~130 of 531 new startups; its two `pipeline_runs` rows were marked failed by hand and the rest ran as a live-only pipeline `finish_run` (verify_sites, promote_chain, enrich_apollo_project, promote_chain) from a one-time schedule entry, both removed afterwards.
 * **2026-11-25** LCX for Startups: owner granted 50 more Apollo credits (`credits_total` 100) and asked to run now. The 13:50 UTC one-time run spent nothing (`credits_per_week` 50 already used since Friday), so `credits_per_week` is now 100 (the all-time `credits_total` 100 still binds) and it ran again at 14:05 from a one-time live schedule entry.
 * **2026-11-25** `a99fd6f` LCX for Startups: "investor, not a startup" wrong-buyer rule; founder headline/city matched by name; UK shown as United Kingdom.
