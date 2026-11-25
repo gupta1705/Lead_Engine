@@ -230,6 +230,20 @@ def log(msg):
     print(msg, flush=True)
 
 
+def read_capped(r, cap):
+    """The body, at most cap bytes and TIMEOUT*2 seconds in all: the socket timeout is per read, so a site that
+    drips a byte at a time never trips it (lcx-startups 2026-11-25: one froze the run for hours)."""
+    end, buf = time.monotonic() + TIMEOUT * 2, b""
+    while len(buf) < cap:
+        if time.monotonic() > end:
+            raise TimeoutError("body too slow")
+        chunk = r.read1(min(65536, cap - len(buf)))
+        if not chunk:
+            break
+        buf += chunk
+    return buf
+
+
 def fetch(url):
     req = urllib.request.Request(url, headers={
         "User-Agent": UA,
@@ -239,7 +253,7 @@ def fetch(url):
         ctype = r.headers.get("Content-Type", "")
         if "html" not in ctype.lower():
             return ""
-        return r.read(2_000_000).decode("utf-8", "ignore")
+        return read_capped(r, 2_000_000).decode("utf-8", "ignore")
 
 
 def robots_for(domain):
@@ -249,7 +263,7 @@ def robots_for(domain):
     try:
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         with _OPENER.open(req, timeout=TIMEOUT) as r:
-            rp.parse(r.read(200_000).decode("utf-8", "ignore").splitlines())
+            rp.parse(read_capped(r, 200_000).decode("utf-8", "ignore").splitlines())
         return rp, None
     except urllib.error.HTTPError as e:
         if e.code in (404, 410):

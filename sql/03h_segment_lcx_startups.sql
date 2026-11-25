@@ -1476,7 +1476,7 @@ values (
     "contact_method": "apollo_people_search",
     "email_verifier": "apollo",
     "credits_per_run": 40,
-    "credits_per_week": 50,
+    "credits_per_week": 100,
     "keep_in_reserve": 700,
     "score_over": 60,
     "require_site_read": true,

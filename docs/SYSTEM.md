@@ -165,6 +165,11 @@ manual "draft" or "send" buttons, no terminal steps between shortlist and send.
   * `_reply_loop`: `outreach.py pull --recent` every 5 minutes (new replies and waiting threads);
   * the daily reply reminder (weekdays from 10:00 IST).
 * Operations page: "Run weekly refresh" runs the whole project pipeline. Single jobs have no buttons.
+* The site check (`verify_sites`, `tools/enrich_sitescrape.py`) reads each page with `read_capped`: at most
+  30 s per body (`TIMEOUT` x 2) as well as 15 s per socket read, because a site that drips bytes never trips
+  the socket timeout and `pool.map` waits on it in order, freezing the whole run (it did, 2026-11-25).
+* A step that hangs leaves its `pipeline_runs` row 'running' after a restart; nothing cleans it up, so mark it
+  failed by hand.
 
 **LCX Clipping weekly refresh, in order:** `expire_leads, discover_podcasts, discover_podcast_index,
 discover_youtube, discover_wikidata_channels, discover_clipping_networks, youtube_freshness,
@@ -359,7 +364,8 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-25** LCX for Startups: owner granted 50 more Apollo credits (`credits_total` 100) and asked to run now: a one-time live schedule entry (Wed 13:40 UTC) ran the weekly refresh on the server, then was removed.
+* **2026-11-25** `COMMIT` Site check could freeze on a slow site: `read_capped` caps each page at 30 s in all (test in `test_technical_nov.py`). The 14:05 LCX for Startups run froze in `verify_sites` at 14:17 after ~130 of 531 new startups; its two `pipeline_runs` rows were marked failed by hand and the rest ran as a live-only pipeline `finish_run` (verify_sites, promote_chain, enrich_apollo_project, promote_chain) from a one-time schedule entry, both removed afterwards.
+* **2026-11-25** LCX for Startups: owner granted 50 more Apollo credits (`credits_total` 100) and asked to run now. The 13:50 UTC one-time run spent nothing (`credits_per_week` 50 already used since Friday), so `credits_per_week` is now 100 (the all-time `credits_total` 100 still binds) and it ran again at 14:05 from a one-time live schedule entry.
 * **2026-11-25** `a99fd6f` LCX for Startups: "investor, not a startup" wrong-buyer rule; founder headline/city matched by name; UK shown as United Kingdom.
 * **2026-11-25** `1d983d4` LCX for Startups: India-first early-stage searches (`countries`, `weight`), India full market bonus (`geography.priority_countries`, +8), early-stage size band, 4 deck services, Startup profile box on the lead sheet.
 * **2026-11-19** `fc50871` New project LCX for Startups (`lcx-startups`, sql/03h): Startup Package to startups; `credits_total` one-off Apollo grant (50) in `apollo_budget`.

@@ -163,6 +163,33 @@ def main():
           ("We build robots.", "India", 2021, "A Founder", "Chennai, India"))
     check("no founder yet: None", app_main.lead_profile({}, [])["founder"], None)
 
+    # 8. a site that drips its page a byte at a time cannot freeze the site check (2026-11-25)
+    import time as _t
+    import enrich_sitescrape as es
+
+    class _Drip:
+        def read1(self, n):
+            _t.sleep(0.05)
+            return b"x"
+
+    _old, es.TIMEOUT = es.TIMEOUT, 0.2
+    try:
+        es.read_capped(_Drip(), 10_000)
+        check("a dripping site is cut off", "no", "cut off")
+    except TimeoutError:
+        check("a dripping site is cut off", True, True)
+    finally:
+        es.TIMEOUT = _old
+
+    class _Body:
+        def __init__(self):
+            self.parts = [b"ab", b"cd", b""]
+
+        def read1(self, n):
+            return self.parts.pop(0)
+
+    check("a normal page reads whole", es.read_capped(_Body(), 100), b"abcd")
+
     bad = RESULTS.count(False)
     print("\n%d passed, %d failed" % (len(RESULTS) - bad, bad))
     return 1 if bad else 0
