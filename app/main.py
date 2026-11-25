@@ -631,7 +631,7 @@ def lead_profile(meta, contacts):
     apollo_org = meta.get("apollo") if isinstance(meta.get("apollo"), dict) else {}
     desc = (apollo_org.get("short_description") or about.get("description") or about.get("about") or "").strip()
     iso = str(meta.get("hq_country") or "").strip().upper()
-    country = _swm.tp.ISO_NAME.get(iso, iso) if iso else None
+    country = ({"GB": "United Kingdom"}.get(iso) or _swm.tp.ISO_NAME.get(iso, iso)) if iso else None
     people = meta.get("apollo_people") if isinstance(meta.get("apollo_people"), dict) else {}
     founder = None
     for c in contacts:                            # best-ranked first: the one the email goes to leads
@@ -639,7 +639,9 @@ def lead_profile(meta, contacts):
             continue
         note = str(c.get("notes") or "")
         p = people.get(note[7:]) if note.startswith("apollo:") else None
-        p = p if isinstance(p, dict) else {}
+        if not isinstance(p, dict):                # the ranked list may not carry notes: match the revealed name
+            p = next((x for x in people.values() if isinstance(x, dict)
+                      and str(x.get("name") or "").strip().lower() == c["full_name"].strip().lower()), {})
         founder = {"name": c["full_name"], "title": c.get("role_title") or p.get("title"),
                    "headline": p.get("headline"), "linkedin": c.get("linkedin_url") or p.get("linkedin_url"),
                    "location": ", ".join(x for x in (p.get("city"), p.get("country")) if x) or None}

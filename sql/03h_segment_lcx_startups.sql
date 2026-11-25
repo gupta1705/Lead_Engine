@@ -741,6 +741,27 @@ values (
           "accounting firm",
           "rankings"
         ]
+      },
+      {
+        "label": "investor, not a startup",
+        "value": 1.0,
+        "where": "any",
+        "only": [
+          "startups"
+        ],
+        "words": [
+          "venture capital",
+          "\\bvc (firm|investor|fund)",
+          "venture partners",
+          "invest(s|ing)? in (pre-seed|seed|founders|startups|companies|technolog|europe|india|africa)",
+          "backs? (outlier |india.s next generation of )?founders",
+          "backing [a-z -]{0,30}founders",
+          "leading (software |technology )?investor",
+          "(early|multi)-stage (technology )?(venture )?investor",
+          "seed fund",
+          "angel (network|fund)"
+        ],
+        "guidance": "2026-11-25: the recently-funded searches return venture capital firms (Elevation Capital was shortlisted at 100). Matched on the firm''s own name, title or description."
       }
     ],
     "software": {
