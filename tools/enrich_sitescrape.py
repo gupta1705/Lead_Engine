@@ -74,7 +74,7 @@ Usage:
 import os
 import argparse
 import html as html_lib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import re
 import socket
 import sys
@@ -98,6 +98,7 @@ from contacts import clean_name  # noqa: E402
 SEGMENT = os.environ.get("SEGMENT_SLUG", "us-production-houses")
 UA = ("TVF-Lead-Engine/0.1 (internal BD research; contact aitools@theviralfever.com)")
 TIMEOUT = 15
+SITE_DEADLINE = 240        # seconds for one whole site (DNS has no timeout of its own)
 DELAY_SECONDS = 2.0          # between requests to the same host
 MAX_PAGES_PER_SITE = 4
 SITE_STAMP = "v2"
@@ -1115,138 +1116,153 @@ def main():
             return (t, None, type(exc).__name__)
 
     done = 0
-    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
-        for t, found, err in pool.map(read_one, targets):
-            eid, name, domain, score = t
-            done += 1
-            log("  [%d/%d] %-32s %s" % (done, len(targets), name[:32], domain))
+    # each site has SITE_DEADLINE seconds in all; one past it is skipped (left for the next run), never waited on:
+    # pool.map waited forever on one hung site and froze the whole run (twice, 2026-11-25), so no `with` either,
+    # whose exit would wait for that thread too
+    pool = ThreadPoolExecutor(max_workers=max(1, args.workers))
+    futures = [pool.submit(read_one, t) for t in targets]
+    late = []
 
-            if err == "no_mx":
-                log("      domain does not resolve -- skipping, likely dead")
-                stats["no_mx"] += 1
-                if not args.dry_run:
-                    db.run(lambda cur, _e=eid: (
-                        # judged: when it was first found gone (before the routes record below is replaced)
-                        mark_dead(cur, _e, now_iso()) if judged else None,
+    def in_order():
+        for t, fut in zip(targets, futures):
+            try:
+                yield fut.result(timeout=SITE_DEADLINE)
+            except FutureTimeout:
+                fut.cancel()
+                late.append(t[2])
+                yield (t, None, "over %ds" % SITE_DEADLINE)
+
+    for t, found, err in in_order():
+        eid, name, domain, score = t
+        done += 1
+        log("  [%d/%d] %-32s %s" % (done, len(targets), name[:32], domain))
+
+        if err == "no_mx":
+            log("      domain does not resolve -- skipping, likely dead")
+            stats["no_mx"] += 1
+            if not args.dry_run:
+                db.run(lambda cur, _e=eid: (
+                    # judged: when it was first found gone (before the routes record below is replaced)
+                    mark_dead(cur, _e, now_iso()) if judged else None,
+                    cur.execute(
+                        "update entities set metadata ="
+                        " jsonb_set(metadata,'{enrichment_result}','\"domain_dead\"')"
+                        " where id = %s", (_e,))))
+                # tried, so contact-finding does not come back to it every run (a judged segment: until
+                # its one re-read a week later, see the target query)
+                db.run(lambda cur, _e=eid: write_routes(cur, _e, {"blocked": "the domain does not resolve"}))
+            continue
+
+        if found is None:
+            log("      read failed (%s) -- left for a later pass" % err)
+            stats["blocked"] += 1
+            continue
+
+        if not args.dry_run:
+            db.run(lambda cur, _e=eid: (cur.execute(
+                "update entities set metadata ="
+                " jsonb_set(metadata,'{site_read}', to_jsonb(%s::text))"
+                " where id = %s", (SITE_STAMP, _e)),
+                # judged: the domain answered (whatever robots.txt says next), so it is not dead
+                mark_alive(cur, _e) if judged else None))
+
+        if found["blocked"]:
+            log("      %s -- not fetched" % found["blocked"])
+            stats["blocked"] += 1
+            if not args.dry_run:
+                db.run(lambda cur, _e=eid, _f=found: write_routes(cur, _e, _f))
+            continue
+
+        emails = [] if args.evidence_only else found["emails"]
+        if not emails:
+            log("      %d page(s) read, no address published%s" % (
+                found["pages"],
+                ("  | team of %d" % found["team_count"]) if found["team_count"] >= 2 else ""))
+            stats["none"] += 1
+            if not args.dry_run:
+                def _write_no_email(cur, _e=eid, _f=found):
+                    # Qualification evidence stands on its own: a site with
+                    # no published address can still show a team page and a
+                    # partnership invitation, and both are scoreable (a judged
+                    # segment: recorded, and the judge does the scoring).
+                    write_size(cur, _e, _f, judged)
+                    write_content_signals(cur, _e, _f, judged)
+                    write_routes(cur, _e, _f)
+                    if own_words(_f.get("about")):
+                        write_about(cur, _e, _f)
+                    if _f["invitation"]:
+                        if not judged:
+                            cur.execute(
+                                "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
+                                (_e,))
+                        write_invitation(cur, _e, _f["invitation"])
+                    # NEVER zero a contact another source already found. In
+                    # --qualify mode most rows arrive WITH an AICP contact;
+                    # writing 0 here because this particular page published
+                    # no mailto: would delete 10 points of real evidence.
+                    cur.execute("select 1 from contacts where entity_id = %s", (_e,))
+                    if cur.fetchone() is None:
                         cur.execute(
                             "update entities set metadata ="
-                            " jsonb_set(metadata,'{enrichment_result}','\"domain_dead\"')"
-                            " where id = %s", (_e,))))
-                    # tried, so contact-finding does not come back to it every run (a judged segment: until
-                    # its one re-read a week later, see the target query)
-                    db.run(lambda cur, _e=eid: write_routes(cur, _e, {"blocked": "the domain does not resolve"}))
-                continue
+                            " jsonb_set(metadata,'{enrichment_result}','\"no_contact_found\"')"
+                            " where id = %s", (_e,))
+                        cur.execute(
+                            "select set_scoring_input(%s,'reachable_decision_maker','0'::jsonb)",
+                            (_e,))
+                db.run(_write_no_email)
+            continue
 
-            if found is None:
-                log("      read failed (%s) -- left for a later pass" % err)
-                stats["blocked"] += 1
-                continue
+        best = emails[0]
+        kind = best["kind"]
+        # reachable_decision_maker = 1.0 means "a NAMED person in a target
+        # role". A personal-shaped address with nobody attached to it is
+        # reachable but not named, so it scores like a role inbox.
+        if kind == "personal" and not best["name"]:
+            kind = "role"
+        stats[kind] += 1
+        rdm = 1.0 if kind == "personal" else 0.5
+        log("      %d page(s) | %s (%s)%s%s"
+            % (found["pages"], best["email"], kind,
+               "  name=" + best["name"] if best["name"] else "",
+               "  invite=" + found["invitation"] if found["invitation"] else ""))
 
-            if not args.dry_run:
-                db.run(lambda cur, _e=eid: (cur.execute(
-                    "update entities set metadata ="
-                    " jsonb_set(metadata,'{site_read}', to_jsonb(%s::text))"
-                    " where id = %s", (SITE_STAMP, _e)),
-                    # judged: the domain answered (whatever robots.txt says next), so it is not dead
-                    mark_alive(cur, _e) if judged else None))
+        if args.dry_run:
+            continue
 
-            if found["blocked"]:
-                log("      %s -- not fetched" % found["blocked"])
-                stats["blocked"] += 1
-                if not args.dry_run:
-                    db.run(lambda cur, _e=eid, _f=found: write_routes(cur, _e, _f))
-                continue
-
-            emails = [] if args.evidence_only else found["emails"]
-            if not emails:
-                log("      %d page(s) read, no address published%s" % (
-                    found["pages"],
-                    ("  | team of %d" % found["team_count"]) if found["team_count"] >= 2 else ""))
-                stats["none"] += 1
-                if not args.dry_run:
-                    def _write_no_email(cur, _e=eid, _f=found):
-                        # Qualification evidence stands on its own: a site with
-                        # no published address can still show a team page and a
-                        # partnership invitation, and both are scoreable (a judged
-                        # segment: recorded, and the judge does the scoring).
-                        write_size(cur, _e, _f, judged)
-                        write_content_signals(cur, _e, _f, judged)
-                        write_routes(cur, _e, _f)
-                        if own_words(_f.get("about")):
-                            write_about(cur, _e, _f)
-                        if _f["invitation"]:
-                            if not judged:
-                                cur.execute(
-                                    "select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                                    (_e,))
-                            write_invitation(cur, _e, _f["invitation"])
-                        # NEVER zero a contact another source already found. In
-                        # --qualify mode most rows arrive WITH an AICP contact;
-                        # writing 0 here because this particular page published
-                        # no mailto: would delete 10 points of real evidence.
-                        cur.execute("select 1 from contacts where entity_id = %s", (_e,))
-                        if cur.fetchone() is None:
-                            cur.execute(
-                                "update entities set metadata ="
-                                " jsonb_set(metadata,'{enrichment_result}','\"no_contact_found\"')"
-                                " where id = %s", (_e,))
-                            cur.execute(
-                                "select set_scoring_input(%s,'reachable_decision_maker','0'::jsonb)",
-                                (_e,))
-                    db.run(_write_no_email)
-                continue
-
-            best = emails[0]
-            kind = best["kind"]
-            # reachable_decision_maker = 1.0 means "a NAMED person in a target
-            # role". A personal-shaped address with nobody attached to it is
-            # reachable but not named, so it scores like a role inbox.
-            if kind == "personal" and not best["name"]:
-                kind = "role"
-            stats[kind] += 1
-            rdm = 1.0 if kind == "personal" else 0.5
-            log("      %d page(s) | %s (%s)%s%s"
-                % (found["pages"], best["email"], kind,
-                   "  name=" + best["name"] if best["name"] else "",
-                   "  invite=" + found["invitation"] if found["invitation"] else ""))
-
-            if args.dry_run:
-                continue
-
-            def _write_found(cur, _e=eid, _f=found, _b=best, _em=emails,
-                             _r=rdm, _k=kind):
+        def _write_found(cur, _e=eid, _f=found, _b=best, _em=emails,
+                         _r=rdm, _k=kind):
+            cur.execute("""
+                insert into contacts (entity_id, full_name, role_title, email,
+                                      email_status, email_verified_at, verifier,
+                                      source, is_primary)
+                values (%s,%s,%s,%s,%s, now(), 'sitescrape_mx', 'site_scrape', true)
+                on conflict do nothing
+            """, (_e, clean_name(_b["name"], _b["email"]), _b["role"], _b["email"],
+                  "unverified" if _k == "personal" else "catch_all"))
+            for extra in _em[1:4]:
                 cur.execute("""
                     insert into contacts (entity_id, full_name, role_title, email,
-                                          email_status, email_verified_at, verifier,
-                                          source, is_primary)
-                    values (%s,%s,%s,%s,%s, now(), 'sitescrape_mx', 'site_scrape', true)
+                                          email_status, source, is_primary)
+                    values (%s,%s,%s,%s,'unverified','site_scrape',false)
                     on conflict do nothing
-                """, (_e, clean_name(_b["name"], _b["email"]), _b["role"], _b["email"],
-                      "unverified" if _k == "personal" else "catch_all"))
-                for extra in _em[1:4]:
-                    cur.execute("""
-                        insert into contacts (entity_id, full_name, role_title, email,
-                                              email_status, source, is_primary)
-                        values (%s,%s,%s,%s,'unverified','site_scrape',false)
-                        on conflict do nothing
-                    """, (_e, clean_name(extra["name"], extra["email"]), extra["role"], extra["email"]))
-                cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
-                            (_e, str(_r)))
-                if _f["invitation"]:
-                    if not judged:                    # a production-house criterion (see the top)
-                        cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
-                                    (_e,))
-                    write_invitation(cur, _e, _f["invitation"])
-                write_size(cur, _e, _f, judged)
-                write_content_signals(cur, _e, _f, judged)
-                write_routes(cur, _e, _f)
-                if own_words(_f.get("about")):
-                    write_about(cur, _e, _f)
-                cur.execute("""update entities
-                               set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
-                                   status = case when status = 'discovered' then 'enriched' else status end
-                               where id = %s""", (_e,))
-            db.run(_write_found)
+                """, (_e, clean_name(extra["name"], extra["email"]), extra["role"], extra["email"]))
+            cur.execute("select set_scoring_input(%s,'reachable_decision_maker',%s::jsonb)",
+                        (_e, str(_r)))
+            if _f["invitation"]:
+                if not judged:                    # a production-house criterion (see the top)
+                    cur.execute("select set_scoring_input(%s,'collaboration_openness','1'::jsonb)",
+                                (_e,))
+                write_invitation(cur, _e, _f["invitation"])
+            write_size(cur, _e, _f, judged)
+            write_content_signals(cur, _e, _f, judged)
+            write_routes(cur, _e, _f)
+            if own_words(_f.get("about")):
+                write_about(cur, _e, _f)
+            cur.execute("""update entities
+                           set metadata = jsonb_set(metadata,'{enrichment_result}','"site_scrape"'),
+                               status = case when status = 'discovered' then 'enriched' else status end
+                           where id = %s""", (_e,))
+        db.run(_write_found)
 
     conn.close()
     log("\n  named person   : %d" % stats["personal"])
@@ -1260,6 +1276,11 @@ def main():
     if not args.dry_run:
         log("\n  re-score with:  python tools/run_sql.py -c "
             "\"select count(*) from score_segment('us-production-houses');\"")
+    pool.shutdown(wait=False, cancel_futures=True)
+    if late:
+        log("  too slow, left for the next run: %d (%s)" % (len(late), ", ".join(late[:20])))
+        sys.stdout.flush()
+        os._exit(0)                   # a hung reader thread would otherwise keep the process alive at exit
     return 0
 
 
