@@ -1439,9 +1439,6 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
             _check_expected_recipient(cur, oid, body, segment)
             cfg = pol.outreach_config(cur, segment)
             dr = _render()
-            too_long = long_subjects(cur, [oid], cfg)
-            if too_long:
-                raise HTTPException(409, "cannot approve: " + too_long[0]["reason"])
             signed = signs_by_person(segment, cfg)
             if dr.signs_as_approver(cfg) or signed:
                 # signed by the approver (from their own Gmail, or LCX Clipping's pool): exactly the text they were shown
@@ -1557,7 +1554,7 @@ def outreach_batch_sample(request: Request, body: dict = Body(...),
         if not ids:
             raise HTTPException(400, "select at least one draft")
         _check_expected_recipients(cur, ids, body, segment)
-        unsigned = long_subjects(cur, ids, cfg)   # a subject over the cap is left out, saying why (2026-10-13)
+        unsigned = []
         if signs_by_person(segment, cfg):
             # LCX Services (and LCX Clipping, signed by its approver since 2026-10-13): said before the sample is read,
             # not after (step 2 refuses the same, the same way): no name or title, or a draft that would still go out
@@ -1612,9 +1609,9 @@ def outreach_batch_approve(request: Request, body: dict = Body(...),
         _check_expected_recipients(cur, ids, body, segment)
         dr = _render()
         signed = signs_by_person(segment, cfg)
-        # drafts that would still go out signed by the project (LCX Services, LCX Clipping), and, in every project with
-        # outreach.subject_max_words, one whose subject is over it (2026-10-13): left out, saying why, and left as they are
-        unsigned = long_subjects(cur, ids, cfg)
+        # drafts that would still go out signed by the project (LCX Services, LCX Clipping): left out, saying why
+        # (a person's subject may be any length, owner 2026-11-26; only drafted subjects are capped)
+        unsigned = []
         if dr.signs_as_approver(cfg) or signed:
             # each one is signed by the approver (from their Gmail, or LCX Clipping's pool), as the sample they read was
             cur.execute("select email, name, title from app_users where lower(email) = lower(%s)", (user or "",))
@@ -1921,26 +1918,6 @@ def signs_by_person(segment, cfg=None):
 
 def needs_signer(segment):
     return NEEDS_SIGNER if sells_services(segment) else NEEDS_SIGNER_ANY
-
-
-def long_subjects(cur, ids, cfg):
-    """[{id, reason}] for the drafts among `ids` whose subject is over outreach.subject_max_words. The owner,
-    2026-10-13: "subject for all emails for all services should be less than 5 or equal to 5 words". The draft step
-    keeps new drafts inside it (tools/draft_render.capped_subject); this keeps one drafted before then, or given a
-    longer subject by hand, from being approved, so a longer subject never ships. Universal (no cap): nothing."""
-    cap = (cfg or {}).get("subject_max_words")
-    if not cap or not ids:
-        return []
-    dr = _render()
-    cur.execute("select id, subject from outreach where id = any(%s::uuid[]) and status = 'drafted'", (list(ids),))
-    out = []
-    for r in cur.fetchall():
-        n = dr.subject_words(r["subject"] or "")
-        if n > int(cap):
-            out.append({"id": str(r["id"]),
-                        "reason": "its subject is %d words, and a subject is at most %d: shorten the subject, or wait "
-                                  "for the email to be drafted again" % (n, int(cap))})
-    return out
 
 
 def project_signoff(body, cfg, person):

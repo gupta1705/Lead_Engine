@@ -170,6 +170,10 @@ manual "draft" or "send" buttons, no terminal steps between shortlist and send.
   the socket timeout and `pool.map` waits on it in order, freezing the whole run (it did, 2026-11-25).
 * A step that hangs leaves its `pipeline_runs` row 'running' after a restart; nothing cleans it up, so mark it
   failed by hand.
+* A job may set `max_minutes` in `app/ops.py JOBS`; `_execute` kills it after that long (the log says so) and the
+  step fails. `verify_sites` has 90 (a normal run is ~25 min): on 2026-11-25 it hung again even with
+  `read_capped` and held the single slot for 20 hours, so the 15-minute outreach tick (full reply pull,
+  drafting) was skipped all that time; timed sends and the 5-minute reply look run in their own lanes.
 
 **LCX Clipping weekly refresh, in order:** `expire_leads, discover_podcasts, discover_podcast_index,
 discover_youtube, discover_wikidata_channels, discover_clipping_networks, youtube_freshness,
@@ -233,6 +237,12 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
 * One first email per company. The draft is shown personalised to whoever looks (their sign-off);
   approval freezes it.
 * No draft for an address on the do-not-contact list (`do_not_contact(email, entity)` in `cmd_draft`).
+* **Subject length (owner, 2026-11-26):** a drafted subject is at most 7 words ("less than 8"):
+  `outreach.subject_max_words: 7` in every project (was 5, Clipping 16). `draft_render.capped_subject` swaps a
+  longer one for the template's `subject_fallback` (Clipping: a show name too long gives "Your channel |
+  Clipping + Distribution"). A subject a **person** writes may be any length: approval no longer checks it
+  (`long_subjects` in app/main.py removed), and a follow-up ("Re: {{opener_subject}}") is never capped, so a
+  long hand-written opener still gets its follow-up.
 
 ---
 
@@ -366,6 +376,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-26** `COMMIT` Subjects: drafted subjects at most 7 words in every project (`subject_max_words` 7, live too); a person's own subject may be any length (approval check removed); follow-ups never capped. Jobs: `max_minutes` (verify_sites 90) after the site check hung a second time (17:12 on 2026-11-25 to the restart on 2026-11-26) and blocked the outreach tick; the stuck `finish_run` rows marked failed by hand.
 * **2026-11-25** `c7821e3` sql/50 (applied live): a bounce in an Apollo-only project (LCX Services) was refused by the contacts trigger because `mark_bounce` changes `verifier`, so every reply pull that met one rolled back (182 failed `pull_replies` from 2026-11-23). Downgrades away from `valid` now always pass.
 * **2026-11-25** `e687d31` Site check could freeze on a slow site: `read_capped` caps each page at 30 s in all (test in `test_technical_nov.py`). The 14:05 LCX for Startups run froze in `verify_sites` at 14:17 after ~130 of 531 new startups; its two `pipeline_runs` rows were marked failed by hand and the rest ran as a live-only pipeline `finish_run` (verify_sites, promote_chain, enrich_apollo_project, promote_chain) from a one-time schedule entry, both removed afterwards.
 * **2026-11-25** LCX for Startups: owner granted 50 more Apollo credits (`credits_total` 100) and asked to run now. The 13:50 UTC one-time run spent nothing (`credits_per_week` 50 already used since Friday), so `credits_per_week` is now 100 (the all-time `credits_total` 100 still binds) and it ran again at 14:05 from a one-time live schedule entry.

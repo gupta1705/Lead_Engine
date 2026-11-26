@@ -1173,6 +1173,8 @@ def subject_words(subject):
 def capped_subject(subject, tpl, ctx):
     subject = clean_text(subject, remove_offer=False)
     cap = ctx.get("subject_max_words")
+    if "{{opener_subject}}" in (tpl or {}).get("subject", ""):
+        return subject      # a follow-up repeats its opener's subject, which a person may have made any length
     if not cap or subject_words(subject) <= cap:
         return subject
     fallback = (tpl or {}).get("subject_fallback")

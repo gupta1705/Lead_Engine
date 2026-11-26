@@ -190,6 +190,15 @@ def main():
 
     check("a normal page reads whole", es.read_capped(_Body(), 100), b"abcd")
 
+    # 9. a job over its max_minutes is killed, so a hang cannot hold the single slot (2026-11-26)
+    import tempfile
+    import ops
+    _log = Path(tempfile.mkdtemp()) / "t.log"
+    _rc = ops._execute("x", {"cmd": [sys.executable, "-c", "import time; time.sleep(30)"], "max_minutes": 0.02},
+                       _log, track=False)
+    check("a hung job is stopped at its limit", (_rc != 0, "over its" in _log.read_text(encoding="utf-8")), (True, True))
+    check("verify_sites has a limit", bool(ops.JOBS["verify_sites"].get("max_minutes")), True)
+
     bad = RESULTS.count(False)
     print("\n%d passed, %d failed" % (len(RESULTS) - bad, bad))
     return 1 if bad else 0

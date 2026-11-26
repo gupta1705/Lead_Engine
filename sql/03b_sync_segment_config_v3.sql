@@ -242,8 +242,8 @@ set config = '{
       "schedule_padding_seconds": 0
     },
     "daily_send_cap": 35,
-    "subject_max_words": 5,
-    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted.",
+    "subject_max_words": 7,
+    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted. The owner, 2026-11-26: drafted subjects under 8 words (7 at most); a subject a person writes may be any length (approval no longer checks it).",
     "theme_max_words": 4,
     "theme_max_words_guidance": "The owner, 2026-10-13: the subject is \"On {{theme}}\", so the theme is at most four words. A longer theme from the model gives way to the lane''s own theme (angles.<lane>.theme), and one of those still longer to \"Stories Built to Travel\" (tools/draft_render.pick_theme).",
     "send_from": "approver",

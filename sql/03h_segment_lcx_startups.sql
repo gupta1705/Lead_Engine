@@ -1550,8 +1550,8 @@ values (
       "followup_daily_cap": 50,
       "schedule_padding_seconds": 0
     },
-    "subject_max_words": 5,
-    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted.",
+    "subject_max_words": 7,
+    "subject_max_words_guidance": "The owner, 2026-10-13: \"subject for all emails for all services should be less than 5 or equal to 5 words\". Every rendered subject is checked against this (tools/draft_render.capped_subject): one over it uses its template''s subject_fallback, and one still over it is not drafted, so a longer subject never ships. \"Re:\" in front of a follow-up is not counted. The owner, 2026-11-26: drafted subjects under 8 words (7 at most); a subject a person writes may be any length (approval no longer checks it).",
     "footer": {
       "text": "Warm regards,\n{{sender_name}}\n{{sender_title}}, {{sender_company}}",
       "guidance": "The owner''s review, 2026-10-13, point 10: the title line reads \"<title>, LCX\" with the company from sender.company. The owner, 2026-10-13: the opt-out line is removed from every project''s footer (\"remove the last line from every single service\"); any reply that is not neutral still stops all mail to that address. No postal address (owner, 2026-10-09). Edited in Outreach -> Footer; templates end with {{footer}}."

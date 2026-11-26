@@ -73,6 +73,8 @@ JOBS = {
         "group": "Enrich",
         "desc": "Read company sites to verify project constraints; contacts come from Apollo.",
         "cmd": [PY, "tools/enrich_sitescrape.py", "--qualify", "--evidence-only", "--limit", "1000", "--workers", "8"],
+        # killed after this long: it hung twice on 2026-11-25 and held the single slot (no reply pulls) for 20 hours
+        "max_minutes": 90,
     },
     "enrich_apollo_project": {
         "label": "Find decision makers on Apollo",
@@ -446,7 +448,12 @@ def _execute(key, job, logpath, env_extra=None, track=True, extra_args=None):
                 env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", **(env_extra or {})})
             if track:
                 _CURRENT["proc"] = proc
-            rc = proc.wait()
+            try:
+                rc = proc.wait(timeout=job["max_minutes"] * 60 if job.get("max_minutes") else None)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                rc = proc.wait()
+                logf.write("\n[ops] stopped: over its %d-minute limit\n" % job["max_minutes"])
         except Exception as e:
             logf.write("\nrunner error: %r\n" % (e,))
             rc = -1

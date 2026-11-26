@@ -101,7 +101,7 @@ def the_copy():
         check("  template %s has a fallback subject of at most 5 words, no dash" % t["key"],
               (bool(t.get("subject_fallback")), len((t.get("subject_fallback") or "x " * 9).split()) <= 5,
                any_dash(t.get("subject_fallback") or "")), (True, True, False))
-    check("  the cap is set in the config", OUT.get("subject_max_words"), 5)
+    check("  the cap is set in the config", OUT.get("subject_max_words"), 7)
 
 
 # ------------------------------------------------------------------ the template, the greeting, the footer

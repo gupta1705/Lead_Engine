@@ -30,7 +30,7 @@ LONG_COMPANY = "Example Studios International Holdings Worldwide"
 # the subject cap each project keeps: five words everywhere, except LCX Clipping's ReelForge subjects (owner,
 # 2026-10-21: "the four ReelForge subjects supersede the earlier five-word rule for LCX Clipping alone"), which
 # may also name the show
-CAP = {"lcx-clipping": 16}
+CAP = {}   # owner 2026-11-26: every project drafts subjects of 7 words at most
 NAMES_SHOW = {"lcx-clipping"}
 ARCHIVE = "6,000"                                      # tools/clipping_templates.context: episodes x 30, or "More"
 fails = 0
@@ -133,7 +133,7 @@ def main():
                   "universal: the writer's own subject, no cap; only a follow-up template")
             continue
         cap = o.get("subject_max_words")
-        want = CAP.get(slug, 5)
+        want = CAP.get(slug, 7)
         check(cap == want, "%s: outreach.subject_max_words is %d" % (slug, want), cap)
         for t in openers(o):
             fb = t.get("subject_fallback")
@@ -154,7 +154,7 @@ def main():
                 if not ok or label in ("company", "lane animation", "a six-word model theme"):
                     check(ok, "%s %s (%s)" % (slug, t["key"], label), got)
             check(tried > 0, "%s %s: %d subjects it can render, all %d words or fewer" % (slug, t["key"], tried, want))
-        if slug != "lcx-services":
+        if slug not in ("lcx-services", "lcx-startups"):   # per-service subjects, checked above
             for t in openers(o):
                 plain = dr.render(t["subject"], {"company": LONG_COMPANY, "channel_name": LONG_COMPANY,
                                                  "theme": "Stories Built to Travel", "archive_potential": ARCHIVE})

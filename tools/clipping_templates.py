@@ -91,9 +91,11 @@ def apply_config(outreach):
     # Keep the existing version field: in-flight drafting checks it again before
     # inserting, so a process using the superseded copy cannot reintroduce it.
     outreach["reelforge_templates"] = VERSION
-    outreach["subject_max_words"] = 16
+    outreach["subject_max_words"] = 7   # owner 2026-11-26: drafted subjects under 8 words
     outreach["subject_max_words_guidance"] = (
-        "LCX Clipping catalogue subjects may name the show; long names use the fallback subject.")
+        "LCX Clipping catalogue subjects may name the show; long names use the fallback subject. The owner, "
+        "2026-11-26: drafted subjects under 8 words (7 at most); a subject a person writes may be any length "
+        "(approval no longer checks it).")
     outreach["neutral_hook"] = "{{company}}'s long-form catalogue could reach new audiences through short clips."
     outreach["generated_hook"] = dict(outreach.get("generated_hook") or {}, enabled=False,
         guidance="Owner's catalogue template, 2026-11-05. Recorded show facts only; no generated hooks or model calls.")

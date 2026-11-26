@@ -105,7 +105,9 @@ class CatalogueTemplate(unittest.TestCase):
                               ('Magnetic by Design: A Human Design Podcast','Julie Reisler | Intuition on Demand'),
                               ('Intermediate Portuguese Podcast','Portuguese With Leo'),('The Show','The Podcast')):
             subject=self.render(meta={'youtube_channel':{'title':title}},company=company)[2][0]
-            self.assertEqual(subject,company+' | Clipping + Distribution')
+            want=company+' | Clipping + Distribution'
+            # owner 2026-11-26: drafted subjects are 7 words at most, so a long show name gives way to the fallback
+            self.assertEqual(subject,want if dr.subject_words(want)<=7 else 'Your channel | Clipping + Distribution')
 
     def test_signature_tracks_actual_sender_and_round_trips(self):
         _, _, (_, body) = self.render()

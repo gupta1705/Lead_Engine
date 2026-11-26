@@ -1035,8 +1035,8 @@
     },
     "sign_as": "approver",
     "sign_as_guidance": "Emails are signed by their approver and sent from that person's connected Gmail (send_from approver).",
-    "subject_max_words": 16,
-    "subject_max_words_guidance": "LCX Clipping catalogue subjects may name the show; long names use the fallback subject.",
+    "subject_max_words": 7,
+    "subject_max_words_guidance": "LCX Clipping catalogue subjects may name the show; long names use the fallback subject. The owner, 2026-11-26: drafted subjects under 8 words (7 at most); a subject a person writes may be any length (approval no longer checks it).",
     "send_window": {
       "enabled": true,
       "start": "10:00",

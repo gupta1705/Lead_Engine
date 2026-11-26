@@ -173,27 +173,14 @@ def main_():
         f = call("GET", "/api/outreach/footer", cookies=asha).json()
         check("the Footer dialog: no opt-out problem, no SET_ME", (f.get("problems"), "SET_ME" in f.get("preview", "")),
               ([], False))
-        # a subject over outreach.subject_max_words is never approved (B), and the clipping draft is left as it was
-        d4, _, b4 = draft()
+        # a subject a person writes may be any length (owner, 2026-11-26): only drafted subjects are capped
+        d4, _, _ = draft()
         cur.execute("update outreach set subject = 'w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17' where id = %s", (d4,))
-        r = call("POST", "/api/outreach/%s/decision" % d4, cookies=asha, json={"action": "approve"})
-        cur.execute("select status, body from outreach where id = %s", (d4,))
-        check("a 17-word subject (the cap is 16): approving is refused, saying why, and the draft is untouched",
-              (r.status_code, "subject is 17 words" in r.json().get("detail", ""), cur.fetchone()), (409, True, ("drafted", b4)))
         d5, _, _ = draft()
         smp = call("POST", "/api/outreach/batch/sample", cookies=asha, json={"ids": [d4, d5]}).json()
-        check("  a batch leaves it out, saying why",
-              (smp.get("approvable"), [(x["id"], "subject is 17 words" in x["reason"]) for x in smp.get("skipped", [])]),
-              ([d5], [(d4, True)]))
-        # given a long subject by hand between the sample and step 2: step 2 leaves it out too, untouched
-        cur.execute("select body from outreach where id = %s", (d5,))
-        b5 = cur.fetchone()[0]
-        cur.execute("update outreach set subject = 'w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17' where id = %s", (d5,))
-        r = call("POST", "/api/outreach/batch/approve", cookies=asha,
-                 json={"ids": smp["approvable"], "sample": smp["sample"], "token": smp["token"]})
-        cur.execute("select status, body from outreach where id = %s", (d5,))
-        check("  step 2 re-checks: a subject made long since the sample is not approved, and left as it was",
-              (r.status_code, cur.fetchone(), "subject is 17 words" in json.dumps(r.json()) and r.json().get("approved") == 0), (200, ("drafted", b5), True))
+        check("a 17-word subject written by hand is approvable, not left out",
+              (sorted(smp.get("approvable") or []), [x for x in smp.get("skipped", []) if "subject" in x["reason"]]),
+              (sorted([d4, d5]), []))
 
         # US Production Houses (repo config): an old draft, written with the opt-out line, approved by Kartikeya
         uph = json.loads((ROOT / "config" / "segment.us-production-houses.json").read_text(encoding="utf-8"))
