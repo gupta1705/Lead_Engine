@@ -135,7 +135,7 @@ def main_():
               (True, False, True, True))
         rows = {r["id"]: r for r in call("GET", "/api/outreach?folder=drafts", cookies=asha).json()["rows"]}
         check("Asha opens it: signed with her own name and title",
-              rows[d1]["body"].endswith("\nAsha Rao\nLCX | lightscameraexperiment.com"), True)
+              rows[d1]["body"].endswith("Regards,\nAsha Rao"), True)
         rows = {r["id"]: r for r in call("GET", "/api/outreach?folder=drafts", cookies=nobody).json()["rows"]}
         check("someone with no name or title sees the project's form", rows[d1]["body"] == b1, True)
         r = call("POST", "/api/outreach/%s/decision" % d1, cookies=nobody, json={"action": "approve"})
@@ -153,7 +153,7 @@ def main_():
         cur.execute("select status, body, approved_by from outreach where id = %s", (d1,))
         st, body, by = cur.fetchone()
         check("Asha approves: stored exactly as she saw it, signed by her",
-              (r.status_code, st, body.endswith("\nAsha Rao\nLCX | lightscameraexperiment.com"), "SET_ME" in body, canon in body),
+              (r.status_code, st, body.endswith("Regards,\nAsha Rao"), "SET_ME" in body, canon in body),
               (200, "approved", True, False, False))
         d2, _, _ = draft("LCX\nClipping desk, LCX, edited by hand")
         d3, _, _ = draft()
@@ -166,7 +166,7 @@ def main_():
         cur.execute("select status, body from outreach where id = %s", (d3,))
         st, body = cur.fetchone()
         check("  the batch approves the signable one, signed by Asha",
-              (r.status_code, st, body.endswith("\nAsha Rao\nLCX | lightscameraexperiment.com")), (200, "approved", True))
+              (r.status_code, st, body.endswith("Regards,\nAsha Rao")), (200, "approved", True))
         m = call("GET", "/api/mailboxes", cookies=asha).json()
         check("it sends from the approver's own Gmail (owner, 2026-10-21), not the old pool mailboxes",
               m.get("mode"), "approver")

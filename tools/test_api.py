@@ -548,6 +548,8 @@ def main_():
               (1, ["another selected draft goes to the same address or company"]))
         check("cancel the approved email: 200", call("POST", "/api/outreach/%s/decision" % m2, cookies=mine,
                                                      json={"action": "cancel"}).status_code, 200)
+        cur.execute("select stopped_reason from outreach where id = %s", (m2,))
+        check("  the email says who cancelled it", (cur.fetchone()[0] or "").startswith("cancelled by "), True)
         e_go, c_go = company("shortlisted")
         with conn.cursor() as _unused:
             m_go = draft(e_go, c_go, status="sending")
@@ -664,6 +666,11 @@ def main_():
 
         # ------------------------------------------------------------ universal
         print("\n-- the Universal page (Apollo stubbed: no credit spent)")
+        # the page's own logic, whatever the live switch says (Apollo paused by the owner on 2026-11-16): on, with
+        # no budget, inside this rolled-back transaction (the page searches as Universal unless a project is named)
+        cur.execute("""update segments set config = jsonb_set(config, '{enrichment}', (config->'enrichment'
+                         || '{"enabled": true, "provider": "apollo"}'::jsonb) - 'credits_per_week' - 'credits_per_run'
+                         - 'credits_total') where slug in (%s, 'universal')""", (TVF,))
         st = call("GET", "/api/universal/status", cookies=tvf).json()
         check("status: connected, credits shown, the filters listed",
               (st["apollo"]["connected"], st["apollo"]["credits"]["lead_credits_left"], bool(st["filters"])), (True, 2483, True))

@@ -173,8 +173,9 @@ manual "draft" or "send" buttons, no terminal steps between shortlist and send.
   and left for the next run. Threads were not enough: on the server the run froze right after its first site
   even with a thread timeout, the mark of a reader stuck in C code (most likely a regex on a page the server is
   served) that never lets other threads run. Test: `tools/test_site_isolation.py`.
-* A step that hangs leaves its `pipeline_runs` row 'running' after a restart; nothing cleans it up, so mark it
-  failed by hand.
+* A restart leaves the dead process's `pipeline_runs` rows 'running'; since 2026-11-26 the scheduler marks every
+  row still 'running' from before it started as failed, "interrupted: the server restarted"
+  (`Scheduler.close_interrupted`, run once ~20 s after start, before the catch-up round). One runner per database.
 * A job may set `max_minutes` in `app/ops.py JOBS`; `_execute` kills it after that long (the log says so) and the
   step fails. `verify_sites` has 90 (a normal run is ~25 min): on 2026-11-25 it hung again even with
   `read_capped` and held the single slot for 20 hours, so the 15-minute outreach tick (full reply pull,
@@ -383,6 +384,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-26** `COMMIT` Restart closes stale 'running' rows (`close_interrupted`); a person's cancel writes "cancelled by <login>" on the email itself (Upagnya's 17 follow-ups of 2026-11-13 looked unexplained: she cancelled them, the reason was only on the first email). Stale tests brought up to the owner's later decisions: Clipping sign-off "Regards, <name>" and catalogue subject (test_approver_sign, test_subjects), one follow-up in every project and auto-replies negative (test_outreach_policy), the 2026-11-16 Apollo pause (test_lcx_services, test_apollo_sourcing and test_api now set their own budget inside the rolled-back transaction). Live: Elevation Capital (lcx-startups) rejected as an investor, its draft withdrawn; the one-time `finish_run` pipeline and schedule entry removed. LCX for Startups second grant result: 7 search pages + 40 founder emails (97 of 100 credits used in all), 531 new startups (213 India, 161 UK, 157 US), 80 shortlisted, 80 drafts (79 after the rejection).
 * **2026-11-26** `007c33d` LCX Services and LCX for Startups send window now ends 11:00 (was 10:30), as Clipping's, so 100 a day per address fits one time zone (live too; approved emails replan via PLAN_KEYS).
 * **2026-11-26** `ccb2ce4` Daily sending limit per address 80 -> 100 (owner's choice; sql/51 applied live, `mailbox_store.DEFAULT_CAP`, users.py, app.js, docs.html).
 * **2026-11-26** `ddf241c` Site check: each site in its own process, killed at 240 s (`read_isolated`); the thread deadline of 4946168 did not fire on the server (froze again at 13:53 after one site).

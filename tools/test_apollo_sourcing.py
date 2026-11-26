@@ -45,10 +45,11 @@ class PolicyTests(unittest.TestCase):
                 self.assertFalse(old_jobs.intersection(steps), slug)
 
     def test_mumbai_locations_are_not_replaced_by_country(self):
+        # since 2026-11-16: Mumbai first, then Navi Mumbai and Thane, then India, each its own search
         c = config("startup-acquisitions")
-        sl = discovery.apollo_slices(c)[0]
-        f = discovery.apollo_filters(sl)
-        self.assertEqual(f["organization_locations"], ["Mumbai, India", "Navi Mumbai, India", "Thane, India"])
+        locs = [discovery.apollo_filters(sl).get("organization_locations") for sl in discovery.apollo_slices(c)]
+        self.assertEqual(locs[0], ["Mumbai, India"])
+        self.assertIn(["Navi Mumbai, India", "Thane, India"], locs)
 
     def test_lcx_has_all_audiences_and_worldwide_coverage(self):
         c = config("lcx-services")
@@ -160,6 +161,8 @@ class DatabaseTests(unittest.TestCase):
     def test_discovery_stages_the_page_and_resumes_without_rebuying(self):
         cfg = config("us-production-houses")
         cfg["apollo_discovery"]["searches"] = cfg["apollo_discovery"]["searches"][:1]
+        # a budget of its own: the live project is paused (owner, 2026-11-16), and paused discovery buys nothing
+        cfg["enrichment"].update(enabled=True, provider="apollo", credits_per_week=10, credits_per_run=10)
         sid, slug = self.project(cfg)
         cursor = self.cur
 

@@ -1467,9 +1467,10 @@ def outreach_decide(oid: str, request: Request, body: dict = Body(...),
                         " approval_mode=%s, spot_checked=true, updated_at=now()"
                         " where id=%s and status='drafted' returning id", (user, mode, oid))
         elif action == "cancel":
-            cur.execute("update outreach set status='cancelled', updated_at=now()"
+            # who cancelled it, on the email itself (2026-11-26: cancelled emails read as unexplained without it)
+            cur.execute("update outreach set status='cancelled', stopped_reason=%s, updated_at=now()"
                         " where id=%s and status in ('drafted','approved')"
-                        " returning id", (oid,))
+                        " returning id", ("cancelled by %s" % user, oid))
             if not cur.fetchone():
                 # an approved email can be withdrawn until its moment comes; once claimed it is Gmail's
                 cur.execute("select status from outreach where id = %s", (oid,))

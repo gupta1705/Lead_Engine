@@ -186,11 +186,8 @@ def main():
           "no theme_max_words: the model's theme, as before")
     clip = CFGS["lcx-clipping"]
     check([(t["key"], t["subject"]) for t in openers(clip)] == [
-        ("reelforge_archive_episode_v1", "500+ more shorts for {{company}}"),
-        ("reelforge_volume_48h_v1", "500+ clips per episode in 48 hrs"),
-        ("reelforge_episode_potential_v1", "How many clips can {{company}} carry?"),
-        ("reelforge_archive_feed_v1", "{{archive_potential}} shorts in {{company}}'s archive")],
-        "lcx-clipping: the owner's four ReelForge subjects (2026-10-21)")
+        ("lcx_catalogue_distribution_v1", "{{channel_name}} | Clipping + Distribution")],
+        "lcx-clipping: the owner's catalogue subject (2026-11-05, kept over AI rewrites 2026-11-10)")
     check(openers(CFGS["startup-acquisitions"])[0]["subject"] == "A conversation worth having",
           "startup-acquisitions: 'A conversation worth having'")
     # the whole drafting path, for one US production house: the subject that would be stored
@@ -216,8 +213,8 @@ def main():
     me = {"email": "suhasc@theviralfever.com", "name": "Suhas C", "title": "Business Development"}
     stored = "Hello,\n\nbody text\n\n" + dr.footer_for(clip)
     mine = dr.personalize(stored, clip, me)
-    # the owner's ReelForge sign-off of 2026-10-21: "Regards," the approver's name, then LCX and its site
-    check(mine.endswith("Regards,\nSuhas C\nLCX | lightscameraexperiment.com"),
+    # the owner's sign-off since 2026-11-05: "Regards," and the approver's name
+    check(mine.endswith("Regards,\nSuhas C"),
           "lcx-clipping: the viewer sees their own sign-off", mine[-40:].replace("\n", " / "))
     check(dr.canonicalize(mine, clip, me) == stored, "lcx-clipping: saving stores it back in the project's form")
     check(dr.personalize(stored, clip, {"email": "x@y", "name": "", "title": ""}) == stored,

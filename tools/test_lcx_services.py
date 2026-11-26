@@ -227,13 +227,14 @@ def offline(cfg, uni):
           (ops.JOBS[s].get("segments") is not None and "lcx-services" not in ops.JOBS[s]["segments"])], [])
     check("  on Fridays, like a harvest", (cfg["schedule"][0]["pipeline"], cfg["schedule"][0]["dow"]), ("weekly_refresh", 4))
     e = cfg["enrichment"]
-    check("Apollo is on (the owner, 2026-10-07: 'Enriching from apollo is acceptable'), inside a stated budget",
+    check("Apollo paused (the owner, 2026-11-16: zero credits; it was 120 a week from 2026-10-07)",
           (e["enabled"], e["provider"], e["credits_per_week"], e["keep_in_reserve"], e["reveal_countries"]),
-          (True, "apollo", 120, 700, ["US", "GB", "IN", "AE"]))
+          (False, "apollo", 0, 700, ["US", "GB", "IN", "AE"]))
     check("  reveals only for leads over 60 whose own site was read (the owner, 2026-10-07)",
           (e["score_over"], e["require_site_read"]), (60, True))
-    check("  the discovery pages fit inside the week's cap with room for the reveals",
-          cfg["apollo_discovery"]["pages_per_run"] <= e["credits_per_week"] - e["credits_per_run"], True)
+    check("  the discovery pages fit inside the week's cap with room for the reveals (when it is on)",
+          not e["enabled"] or cfg["apollo_discovery"]["pages_per_run"] <= e["credits_per_week"] - e["credits_per_run"],
+          True)
     check("  Apollo searches only where its addresses may be written to without consent",
           [c["iso"] for c in cfg["apollo_discovery"]["countries"]], ["US", "GB", "IN", "AE", "ALL"])
     check("  every Apollo search names an audience that exists, and every audience has contact roles",
@@ -952,6 +953,14 @@ def main_():
         # ------------------------------------------------------------ the search page's spending
         print("\n-- the Apollo search page writes what it spends to the ledger, and keeps to the project's budget")
         import universal as uni_page
+        # the budget logic, whatever the live switches say (both paused by the owner on 2026-11-16): inside this
+        # rolled-back transaction LCX Services has its old 120-a-week budget and Universal Apollo on with no budget
+        cur.execute("""update segments set config = jsonb_set(config, '{enrichment}', config->'enrichment'
+                         || '{"enabled": true, "credits_per_week": 120, "credits_per_run": 40}'::jsonb) where slug = %s""",
+                    (lx,))
+        cur.execute("""update segments set config = jsonb_set(config, '{enrichment}', (config->'enrichment'
+                         || '{"enabled": true, "provider": "apollo"}'::jsonb) - 'credits_per_week' - 'credits_per_run'
+                         - 'credits_total') where slug = %s""", (un,))
         keep_sc, keep_st, keep_rv = apollo.search_companies, apollo.status, apollo.reveal_people
         asked = []
         balance = {"left": 2000}

@@ -180,6 +180,7 @@ class Scheduler:
         self._segment = segment        # the default segment
         self._allowed = allowed        # SEGMENTS_ALLOWED, or None for every active one
         self._thread = None
+        self._born = _now()            # rows still "running" from before this are a dead process's (close_interrupted)
         self._stop = threading.Event()
         self._fired = {}               # (segment, name) -> last-fired minute-key, dedupe
         self._kick_lock = threading.Lock()
@@ -274,6 +275,23 @@ class Scheduler:
         except Exception as e:
             print("[scheduler] could not open pipeline_runs row: %r" % e, flush=True)
             return None
+
+    def close_interrupted(self, before=None):
+        """Rows still 'running' from before this process started belong to a process that is gone (a restart, a
+        deploy): failed, saying so, instead of 'running' forever on Operations (2026-11-26: rows from 13, 16, 19
+        and 25 November). One runner per database, so nothing alive is touched. -> how many."""
+        try:
+            with self._cursor() as cur:
+                cur.execute("update pipeline_runs set status='failed', finished_at=now(),"
+                            " detail=coalesce(nullif(detail,'') || E'\\n', '') || 'interrupted: the server restarted'"
+                            " where status='running' and started_at < %s", (before or self._born,))
+                n = cur.rowcount
+            if n:
+                print("[scheduler] %d run(s) left 'running' by the last server marked failed" % n, flush=True)
+            return n
+        except Exception as e:
+            print("[scheduler] could not close interrupted runs: %r" % e, flush=True)
+            return 0
 
     def _close(self, row_id, status, detail=None):
         if not row_id:
@@ -834,6 +852,7 @@ class Scheduler:
         # settle: let the web server finish starting before the first check
         self._stop.wait(20)
         if not self._stop.is_set():
+            self.close_interrupted()
             try:
                 self.catch_up()                 # whatever was approved while the server was restarting
             except Exception as e:              # never let the catch-up stop the loop from starting

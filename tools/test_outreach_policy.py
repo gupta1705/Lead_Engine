@@ -39,10 +39,12 @@ def main():
         cfg = pol.outreach_config(cur, SEG)
         steps = pol.followup_steps(cfg)
         policy = pol.batch_policy(cfg)
-        check("lcx-clipping has two follow-up steps", len(steps) == 2, steps)
+        # one follow-up, 4 days after the first email, in every project (owner, 2026-10-23)
+        check("lcx-clipping has one follow-up, after 4 days", [(s["step"], s["after_days"]) for s in steps] == [(1, 4)],
+              steps)
         check("lcx-clipping has batch approval", policy is not None)
         tvf = pol.outreach_config(cur, "us-production-houses")
-        check("TVF keeps one touch (no follow-ups)", pol.followup_steps(tvf) == [])
+        check("TVF has the same one follow-up", [s["step"] for s in pol.followup_steps(tvf)] == [1])
         check("TVF keeps single approval", pol.batch_policy(tvf) is None)
 
         cur.execute("select id from segments where slug=%s", (SEG,))
@@ -74,23 +76,24 @@ def main():
               pol.insert_followup(cur, d[0][0], 1, steps[0]["template"], "x", "y") is None)
         check("nothing due while a follow-up is pending", due_for() == [])
 
-        cur.execute("update outreach set status='sent', sent_at=now() - interval '3 days' where id=%s", (f1,))
-        check("follow-up 1 sent 3 days ago -> step 2 not due yet (7 days)", due_for() == [])
-        cur.execute("update outreach set sent_at=now() - interval '8 days' where id=%s", (f1,))
-        d = due_for()
-        check("follow-up 1 sent 8 days ago -> follow-up 2 due", len(d) == 1 and d[0][1]["step"] == 2, d)
+        cur.execute("update outreach set status='sent', sent_at=now() - interval '30 days' where id=%s", (f1,))
+        check("after the one follow-up is sent, nothing more is ever due", due_for() == [])
 
-        cur.execute("insert into outreach (entity_id, contact_id, direction, subject, body, status, gmail_message_id,"
-                    " gmail_thread_id) values (%s,%s,'inbound','Re','out of office','received',%s,'thread-test') returning id",
-                    (eid, cid, "r-" + uuid.uuid4().hex))
-        reply = cur.fetchone()[0]
-        check("an untriaged reply pauses the thread", due_for() == [])
-        cur.execute("update outreach set status='triaged', triage='neutral' where id=%s", (reply,))
-        check("an auto-reply (neutral) lets it resume", len(due_for()) == 1)
-
-        f2 = pol.insert_followup(cur, due_for()[0][0], 2, steps[1]["template"], "Re: Opener subject", "fu2")
+        # a reply: the follow-up waits while it is unread, and any negative (an auto-reply too, since 2026-11-25)
+        # ends the thread
+        eid, cid = company("contacted")
+        cur.execute("insert into outreach (entity_id, contact_id, subject, body, status, sent_at, gmail_thread_id,"
+                    " gmail_message_id) values (%s,%s,'Opener subject','b','sent', now() - interval '10 days',"
+                    " 'thread-test-2', %s) returning id", (eid, cid, "m-" + uuid.uuid4().hex))
+        opener = cur.fetchone()[0]
+        f2 = pol.insert_followup(cur, due_for()[0][0], 1, steps[0]["template"], "Re: Opener subject", "fu")
         cur.execute("update outreach set status='approved' where id=%s", (f2,))
-        cur.execute("update outreach set triage='negative' where id=%s", (reply,))
+        cur.execute("insert into outreach (entity_id, contact_id, direction, subject, body, status, gmail_message_id,"
+                    " gmail_thread_id) values (%s,%s,'inbound','Re','out of office','received',%s,'thread-test-2')"
+                    " returning id", (eid, cid, "r-" + uuid.uuid4().hex))
+        reply = cur.fetchone()[0]
+        cur.execute("update outreach set status='triaged', triage='negative', reply_kind='auto_reply' where id=%s",
+                    (reply,))
         cur.execute("update outreach set status='sending' where id=%s and status='approved' returning id", (f2,))
         check("database guard refuses to send a follow-up after a real reply", cur.fetchone() is None)
         cur.execute("select status from outreach where id=%s", (f2,))
@@ -275,6 +278,24 @@ def main():
               picked["key"] in openers and picked.get("kind") != "follow_up", picked["key"])
         check("a production house gets a ReelForge opener too",
               draft_render.pick_template(cfg, {"kind": "production_house"})["key"] in openers)
+
+        # a restart closes the runs the dead process left 'running' (2026-11-26), and only those
+        import contextlib
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
+        import scheduler as sch
+        cur.execute("insert into pipeline_runs (pipeline, step, trigger, status, segment, started_at) values"
+                    " ('zz_test', null, 'manual', 'running', %s, now() - interval '2 hours') returning id", (SEG,))
+        old = cur.fetchone()[0]
+        cur.execute("insert into pipeline_runs (pipeline, step, trigger, status, segment) values"
+                    " ('zz_test', null, 'manual', 'running', %s) returning id", (SEG,))
+        new = cur.fetchone()[0]
+        s = sch.Scheduler(contextlib.contextmanager(lambda: (yield cur)), None, SEG)
+        s.close_interrupted(before=now - dt.timedelta(hours=1))
+        cur.execute("select id, status, detail from pipeline_runs where id in (%s, %s)", (old, new))
+        got = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+        check("a restart: the old 'running' row is failed, saying why",
+              got[old] == ("failed", "interrupted: the server restarted"), got[old])
+        check("  a run started since is left running", got[new][0] == "running", got[new])
     finally:
         conn.rollback()
         conn.close()
