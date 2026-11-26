@@ -343,7 +343,7 @@ def api():
             check("the owner links Asha's sending address", run_users("gmail", a_email), 0)
             cur.execute("select user_email, address, token_enc, daily_cap from user_mailboxes where lower(address) = %s", (a_gmail,))
             row = cur.fetchone()
-            check("  kept for Asha, address in lower case, 80 a day (the owner's limit, 2026-11-13)", (row[0], row[1], row[3]),
+            check("  kept for Asha, address in lower case, 100 a day (the owner's limit, 2026-11-26)", (row[0], row[1], row[3]),
                   (a_email, a_gmail, store.DEFAULT_CAP))
             check("  sealed for the server: not readable as stored, readable with the server's secret",
                   ("1//zz-asha" in row[2], row[2].startswith(store.SEALED), (store.decrypt(row[2]) or {}).get("refresh_token")),

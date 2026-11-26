@@ -3606,7 +3606,7 @@ async function openSendingAddress(opts) {
       </div></li>`;
   }).join("")}</ul>`
     : `<p class="muted">No Gmail connected yet. Until you connect one, the emails you approve wait in Approved.</p>`;
-  const cap = String((rows[0] || {}).daily_cap || 80);
+  const cap = String((rows[0] || {}).daily_cap || 100);
   modal.open(`
     ${modalHead(`${typeIcon("mail")}<span class="key">Your Gmail</span>`)}
     <div class="modal-body single"><div class="modal-main">
