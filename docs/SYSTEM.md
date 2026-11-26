@@ -379,7 +379,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-26** `COMMIT` Site check: `SITE_DEADLINE` 240 s per site; a site past it is skipped, not waited on (the run froze again at 13:27 right after its first site, as at 17:12 the day before).
+* **2026-11-26** `4946168` Site check: `SITE_DEADLINE` 240 s per site; a site past it is skipped, not waited on (the run froze again at 13:27 right after its first site, as at 17:12 the day before).
 * **2026-11-26** `7c807df` Subjects: drafted subjects at most 7 words in every project (`subject_max_words` 7, live too); a person's own subject may be any length (approval check removed); follow-ups never capped. Jobs: `max_minutes` (verify_sites 90) after the site check hung a second time (17:12 on 2026-11-25 to the restart on 2026-11-26) and blocked the outreach tick; the stuck `finish_run` rows marked failed by hand.
 * **2026-11-25** `c7821e3` sql/50 (applied live): a bounce in an Apollo-only project (LCX Services) was refused by the contacts trigger because `mark_bounce` changes `verifier`, so every reply pull that met one rolled back (182 failed `pull_replies` from 2026-11-23). Downgrades away from `valid` now always pass.
 * **2026-11-25** `e687d31` Site check could freeze on a slow site: `read_capped` caps each page at 30 s in all (test in `test_technical_nov.py`). The 14:05 LCX for Startups run froze in `verify_sites` at 14:17 after ~130 of 531 new startups; its two `pipeline_runs` rows were marked failed by hand and the rest ran as a live-only pipeline `finish_run` (verify_sites, promote_chain, enrich_apollo_project, promote_chain) from a one-time schedule entry, both removed afterwards.
