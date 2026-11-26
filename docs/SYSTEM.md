@@ -268,12 +268,12 @@ cut to identity (`channel_id, url, handle, title, expired_at`) by `yt_api.strip_
   (Kartikeya and Upagnya have one). No alias -> the email is held, never sent from a TVF address.
 * **When:** `outreach.send_window`: each email at its own random second between `start` and `end` on the
   **recipient's** clock (location from the lead: Apollo, city/state, phone, country; fallback New York),
-  weekdays only. Clipping 10:00-11:00 (widened 2026-11-13; ~29/day fitted in 30 min for the US); others
-  10:00-10:30. A missed window moves to the next one.
+  weekdays only. Clipping, LCX Services and LCX for Startups 10:00-11:00 (Clipping 2026-11-13, the other two
+  2026-11-26); the others 10:00-10:30. A missed window moves to the next one.
 * **CC:** `outreach.default_cc` (amritanshv@lightscameraexperiment.com), switch per email, frozen at approval.
 * **No approval limit.** The 100/day is a *sending* limit per address. With the 30 s gap a 30-minute window
-  fits 60 sends per address per recipient time zone (a 1-hour window 120), so in the 10:00-10:30 projects 100 is
-  only reached across several time zones; the rest wait for the next day. The Outreach "Sending today" strip shows
+  fits 60 sends per address per recipient time zone (a 1-hour window 120); every LCX project's window is
+  10:00-11:00 since 2026-11-26, so 100 fits one time zone. The Outreach "Sending today" strip shows
   `N/100 sent today` per address and "approved, going out: X on <day>" for the queue spread over the next days.
 * **Checks at approval and at send** (`outreach_policy.ANSWERED_SQL`): already replied, bounced, or on
   the do-not-contact list -> refused.
@@ -383,6 +383,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
+* **2026-11-26** `COMMIT` LCX Services and LCX for Startups send window now ends 11:00 (was 10:30), as Clipping's, so 100 a day per address fits one time zone (live too; approved emails replan via PLAN_KEYS).
 * **2026-11-26** `ccb2ce4` Daily sending limit per address 80 -> 100 (owner's choice; sql/51 applied live, `mailbox_store.DEFAULT_CAP`, users.py, app.js, docs.html).
 * **2026-11-26** `ddf241c` Site check: each site in its own process, killed at 240 s (`read_isolated`); the thread deadline of 4946168 did not fire on the server (froze again at 13:53 after one site).
 * **2026-11-26** `4946168` Site check: `SITE_DEADLINE` 240 s per site; a site past it is skipped, not waited on (the run froze again at 13:27 right after its first site, as at 17:12 the day before).
