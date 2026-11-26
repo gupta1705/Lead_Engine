@@ -383,7 +383,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-26** `COMMIT` LCX Services and LCX for Startups send window now ends 11:00 (was 10:30), as Clipping's, so 100 a day per address fits one time zone (live too; approved emails replan via PLAN_KEYS).
+* **2026-11-26** `007c33d` LCX Services and LCX for Startups send window now ends 11:00 (was 10:30), as Clipping's, so 100 a day per address fits one time zone (live too; approved emails replan via PLAN_KEYS).
 * **2026-11-26** `ccb2ce4` Daily sending limit per address 80 -> 100 (owner's choice; sql/51 applied live, `mailbox_store.DEFAULT_CAP`, users.py, app.js, docs.html).
 * **2026-11-26** `ddf241c` Site check: each site in its own process, killed at 240 s (`read_isolated`); the thread deadline of 4946168 did not fire on the server (froze again at 13:53 after one site).
 * **2026-11-26** `4946168` Site check: `SITE_DEADLINE` 240 s per site; a site past it is skipped, not waited on (the run froze again at 13:27 right after its first site, as at 17:12 the day before).
