@@ -74,7 +74,7 @@ Usage:
 import os
 import argparse
 import html as html_lib
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import ThreadPoolExecutor
 import re
 import socket
 import sys
@@ -1101,38 +1101,10 @@ def main():
     # Each worker owns one domain for the whole of its visit, so the 2-second
     # spacing inside scrape_site is still 2 seconds *per site* -- the thing
     # politeness actually means. Nothing shares a host. Writes all happen on
-    # this thread against the single connection, so there is no concurrent-DB
+    # this process against the single connection, so there is no concurrent-DB
     # question to get wrong.
-    def read_one(t):
-        eid, name, domain, score = t
-        try:
-            alive = resolves(domain)
-            if alive is False:
-                return (t, None, "no_mx")
-            if alive is None:                          # DNS could not say: left for a later pass, not dead
-                return (t, None, "dns_unsure")
-            return (t, scrape_site(domain, name, lang=judged), None)
-        except Exception as exc:                       # never let one site kill the run
-            return (t, None, type(exc).__name__)
-
     done = 0
-    # each site has SITE_DEADLINE seconds in all; one past it is skipped (left for the next run), never waited on:
-    # pool.map waited forever on one hung site and froze the whole run (twice, 2026-11-25), so no `with` either,
-    # whose exit would wait for that thread too
-    pool = ThreadPoolExecutor(max_workers=max(1, args.workers))
-    futures = [pool.submit(read_one, t) for t in targets]
-    late = []
-
-    def in_order():
-        for t, fut in zip(targets, futures):
-            try:
-                yield fut.result(timeout=SITE_DEADLINE)
-            except FutureTimeout:
-                fut.cancel()
-                late.append(t[2])
-                yield (t, None, "over %ds" % SITE_DEADLINE)
-
-    for t, found, err in in_order():
+    for t, found, err in read_isolated(targets, judged, args.workers, SITE_DEADLINE):
         eid, name, domain, score = t
         done += 1
         log("  [%d/%d] %-32s %s" % (done, len(targets), name[:32], domain))
@@ -1276,12 +1248,63 @@ def main():
     if not args.dry_run:
         log("\n  re-score with:  python tools/run_sql.py -c "
             "\"select count(*) from score_segment('us-production-houses');\"")
-    pool.shutdown(wait=False, cancel_futures=True)
-    if late:
-        log("  too slow, left for the next run: %d (%s)" % (len(late), ", ".join(late[:20])))
-        sys.stdout.flush()
-        os._exit(0)                   # a hung reader thread would otherwise keep the process alive at exit
     return 0
+
+
+def read_one(t, judged):
+    eid, name, domain, score = t
+    try:
+        alive = resolves(domain)
+        if alive is False:
+            return (t, None, "no_mx")
+        if alive is None:                          # DNS could not say: left for a later pass, not dead
+            return (t, None, "dns_unsure")
+        return (t, scrape_site(domain, name, lang=judged), None)
+    except Exception as exc:                       # never let one site kill the run
+        return (t, None, type(exc).__name__)
+
+
+def _read_child(conn, t, judged, reader):
+    try:
+        conn.send(reader(t, judged))
+    finally:
+        conn.close()
+
+
+def read_isolated(targets, judged, workers, deadline, reader=read_one):
+    """(t, found, err) for each target, in order, each site read in its own process and killed past `deadline`
+    seconds. Threads were not enough (2026-11-25/26): on the server the run froze right after its first site even
+    with a per-site timeout, the mark of a worker stuck in C code that never lets the other threads run (a regex
+    on some page, most likely), so the main thread could not even notice the time. A process can be killed."""
+    import multiprocessing as mp
+    from multiprocessing.connection import wait
+    ctx = mp.get_context("fork" if "fork" in mp.get_all_start_methods() else "spawn")
+    running, ready, nxt = {}, {}, 0
+    for i in range(len(targets)):
+        while i not in ready:
+            while nxt < len(targets) and len(running) < max(1, workers):
+                a, b = ctx.Pipe(duplex=False)
+                proc = ctx.Process(target=_read_child, args=(b, targets[nxt], judged, reader), daemon=True)
+                proc.start()
+                b.close()
+                running[nxt] = (proc, a, time.monotonic() + deadline)
+                nxt += 1
+            got = wait([a for _, a, _ in running.values()], timeout=1)
+            for k, (proc, a, end) in list(running.items()):
+                if a in got:
+                    try:
+                        ready[k] = a.recv()
+                    except (EOFError, OSError):
+                        ready[k] = (targets[k], None, "reader died")
+                elif time.monotonic() > end:
+                    proc.kill()
+                    ready[k] = (targets[k], None, "over %ds" % deadline)
+                else:
+                    continue
+                proc.join()
+                a.close()
+                del running[k]
+        yield ready.pop(i)
 
 
 if __name__ == "__main__":
