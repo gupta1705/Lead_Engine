@@ -383,7 +383,7 @@ weekly refresh and check `source_runs` where `source='podcast_index'`).
 
 ## 14. Change log (newest first; add every change here)
 
-* **2026-11-26** `COMMIT` Daily sending limit per address 80 -> 100 (owner's choice; sql/51 applied live, `mailbox_store.DEFAULT_CAP`, users.py, app.js, docs.html).
+* **2026-11-26** `ccb2ce4` Daily sending limit per address 80 -> 100 (owner's choice; sql/51 applied live, `mailbox_store.DEFAULT_CAP`, users.py, app.js, docs.html).
 * **2026-11-26** `ddf241c` Site check: each site in its own process, killed at 240 s (`read_isolated`); the thread deadline of 4946168 did not fire on the server (froze again at 13:53 after one site).
 * **2026-11-26** `4946168` Site check: `SITE_DEADLINE` 240 s per site; a site past it is skipped, not waited on (the run froze again at 13:27 right after its first site, as at 17:12 the day before).
 * **2026-11-26** `7c807df` Subjects: drafted subjects at most 7 words in every project (`subject_max_words` 7, live too); a person's own subject may be any length (approval check removed); follow-ups never capped. Jobs: `max_minutes` (verify_sites 90) after the site check hung a second time (17:12 on 2026-11-25 to the restart on 2026-11-26) and blocked the outreach tick; the stuck `finish_run` rows marked failed by hand.
